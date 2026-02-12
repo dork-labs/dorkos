@@ -48,9 +48,9 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       aria-label={`Copy ${label}`}
     >
       {copied ? (
-        <Check className="size-[--size-icon-xs] text-green-500" />
+        <Check className="size-(--size-icon-xs) text-green-500" />
       ) : (
-        <Copy className="size-[--size-icon-xs]" />
+        <Copy className="size-(--size-icon-xs)" />
       )}
     </button>
   );
@@ -102,7 +102,7 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
           <span className="flex items-center gap-1 flex-shrink-0">
             {isSkipMode && (
               <ShieldOff
-                className="size-[--size-icon-xs] text-red-500"
+                className="size-(--size-icon-xs) text-red-500"
                 aria-label="Permissions skipped"
               />
             )}
@@ -120,7 +120,7 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
                 animate={{ rotate: expanded ? 180 : 0 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               >
-                <ChevronDown className="size-[--size-icon-sm]" />
+                <ChevronDown className="size-(--size-icon-sm)" />
               </motion.div>
             </button>
           </span>

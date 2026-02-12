@@ -34,16 +34,16 @@
 }
 
 @theme inline {
-  /* Scaled font sizes */
-  --font-size-3xs: calc(0.625rem * var(--_st));
-  --font-size-3xs--line-height: 0.875rem;
-  --font-size-2xs: calc(0.6875rem * var(--_st));
-  --font-size-2xs--line-height: 1rem;
-  --font-size-xs: calc(0.75rem * var(--_st));
-  --font-size-sm: calc(0.875rem * var(--_st));
-  --font-size-base: calc(1rem * var(--_st));
-  --font-size-lg: calc(1.125rem * var(--_st));
-  --font-size-xl: calc(1.25rem * var(--_st));
+  /* Scaled font sizes (--text-* is the Tailwind v4 namespace for text-* utilities) */
+  --text-3xs: calc(0.625rem * var(--_st));
+  --text-3xs--line-height: 0.875rem;
+  --text-2xs: calc(0.6875rem * var(--_st));
+  --text-2xs--line-height: 1rem;
+  --text-xs: calc(0.75rem * var(--_st));
+  --text-sm: calc(0.875rem * var(--_st));
+  --text-base: calc(1rem * var(--_st));
+  --text-lg: calc(1.125rem * var(--_st));
+  --text-xl: calc(1.25rem * var(--_st));
 
   /* Icon sizes (3 standard tokens) */
   --size-icon-xs: calc(0.75rem * var(--_si));
@@ -234,7 +234,7 @@ body {
 /* iOS input zoom prevention (fallback for low --mobile-scale values) */
 @media (max-width: 767px) {
   textarea, input[type="text"], input[type="email"], input[type="search"], select {
-    font-size: max(1rem, var(--font-size-sm, 0.875rem)) !important;
+    font-size: max(1rem, var(--text-sm, 0.875rem)) !important;
   }
 
   /* Prevent pull-to-refresh */
@@ -257,11 +257,11 @@ body {
 /* Safe area insets for notched devices */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .chat-input-container {
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
   .sidebar-container {
-    padding-left: env(safe-area-inset-left);
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
   [data-vaul-drawer] {
     padding-bottom: env(safe-area-inset-bottom);

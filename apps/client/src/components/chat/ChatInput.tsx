@@ -139,7 +139,7 @@ export function ChatInput({
               className="rounded-md bg-destructive p-1.5 max-md:p-2.5 text-destructive-foreground hover:bg-destructive/90"
               aria-label="Stop generating"
             >
-              <Square className="size-[--size-icon-sm]" />
+              <Square className="size-(--size-icon-sm)" />
             </motion.button>
           ) : hasText ? (
             <motion.button
@@ -154,7 +154,7 @@ export function ChatInput({
               className="rounded-md bg-primary p-1.5 max-md:p-2.5 text-primary-foreground hover:bg-primary/90"
               aria-label="Send message"
             >
-              <CornerDownLeft className="size-[--size-icon-sm]" />
+              <CornerDownLeft className="size-(--size-icon-sm)" />
             </motion.button>
           ) : null}
         </AnimatePresence>

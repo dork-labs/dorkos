@@ -53,7 +53,7 @@ export function PermissionModeItem({ mode, onChangeMode }: PermissionModeItemPro
         <button
           className={`inline-flex items-center gap-1 hover:text-foreground transition-colors duration-150 ${isDangerous ? 'text-red-500' : ''}`}
         >
-          <Icon className="size-[--size-icon-xs]" />
+          <Icon className="size-(--size-icon-xs)" />
           <span>{current.label}</span>
         </button>
       </DropdownMenuTrigger>
@@ -70,7 +70,7 @@ export function PermissionModeItem({ mode, onChangeMode }: PermissionModeItemPro
                 className={isWarn ? 'text-red-500' : ''}
               >
                 <div className="flex items-center gap-2">
-                  <MIcon className="size-[--size-icon-xs] shrink-0" />
+                  <MIcon className="size-(--size-icon-xs) shrink-0" />
                   <div className="text-left">
                     <div>{m.label}</div>
                     <div className="text-[10px] text-muted-foreground">{m.description}</div>

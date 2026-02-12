@@ -114,7 +114,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                 aria-label="Recent directories"
                 title="Recent"
               >
-                <Clock className="size-[--size-icon-sm]" />
+                <Clock className="size-(--size-icon-sm)" />
               </button>
             )}
             <button
@@ -123,7 +123,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
               aria-label="Browse directories"
               title="Browse"
             >
-              <Folder className="size-[--size-icon-sm]" />
+              <Folder className="size-(--size-icon-sm)" />
             </button>
           </div>
 
@@ -143,9 +143,9 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                 title={showHidden ? 'Hide hidden folders' : 'Show hidden folders'}
               >
                 {showHidden ? (
-                  <Eye className="size-[--size-icon-sm] text-muted-foreground" />
+                  <Eye className="size-(--size-icon-sm) text-muted-foreground" />
                 ) : (
-                  <EyeOff className="size-[--size-icon-sm] text-muted-foreground" />
+                  <EyeOff className="size-(--size-icon-sm) text-muted-foreground" />
                 )}
               </button>
             </>
@@ -160,7 +160,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
             <>
               {isLoading && !data ? (
                 <div className="flex items-center justify-center h-20">
-                  <Loader2 className="size-[--size-icon-md] animate-spin text-muted-foreground" />
+                  <Loader2 className="size-(--size-icon-md) animate-spin text-muted-foreground" />
                 </div>
               ) : data?.entries.length === 0 ? (
                 <div className="flex items-center justify-center h-20">
@@ -173,7 +173,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                       onClick={() => handleNavigate(data.parent!)}
                       className="flex items-center gap-2 w-full px-4 py-1.5 text-left hover:bg-accent transition-colors"
                     >
-                      <Folder className="size-[--size-icon-md] text-muted-foreground" />
+                      <Folder className="size-(--size-icon-md) text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">..</span>
                     </button>
                   )}
@@ -183,7 +183,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                       onClick={() => handleNavigate(entry.path)}
                       className="flex items-center gap-2 w-full px-4 py-1.5 text-left hover:bg-accent transition-colors"
                     >
-                      <FolderOpen className="size-[--size-icon-md] text-muted-foreground" />
+                      <FolderOpen className="size-(--size-icon-md) text-muted-foreground" />
                       <span className="text-sm truncate">{entry.name}</span>
                     </button>
                   ))}
@@ -198,7 +198,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                   onClick={() => handleRecentSelect(recent.path)}
                   className="flex items-center gap-2 w-full px-4 py-1.5 text-left hover:bg-accent transition-colors"
                 >
-                  <Folder className="size-[--size-icon-md] text-muted-foreground flex-shrink-0" />
+                  <Folder className="size-(--size-icon-md) text-muted-foreground flex-shrink-0" />
                   <span className="text-sm text-muted-foreground truncate">
                     {recent.path.replace(/^\/Users\/[^/]+/, '~')}
                   </span>

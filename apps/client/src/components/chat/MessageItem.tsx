@@ -66,9 +66,9 @@ export function MessageItem({ message, grouping, sessionId, isNew = false, isStr
       <div className="flex-shrink-0 w-4 mt-[3px]">
         {showIndicator && (
           isUser ? (
-            <ChevronRight className="size-[--size-icon-md] text-muted-foreground" />
+            <ChevronRight className="size-(--size-icon-md) text-muted-foreground" />
           ) : (
-            <span className="flex items-center justify-center size-[--size-icon-md] text-muted-foreground text-[10px]">●</span>
+            <span className="flex items-center justify-center size-(--size-icon-md) text-muted-foreground text-[10px]">●</span>
           )
         )}
       </div>

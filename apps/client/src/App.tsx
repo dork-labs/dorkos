@@ -82,7 +82,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                   className="absolute top-3 left-3 z-30 p-1.5 rounded-md bg-background/80 backdrop-blur border shadow-sm hover:bg-accent transition-colors duration-150"
                   aria-label="Open sidebar"
                 >
-                  <PanelLeft className="size-[--size-icon-md]" />
+                  <PanelLeft className="size-(--size-icon-md)" />
                 </motion.button>
               )}
             </AnimatePresence>
@@ -124,7 +124,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                 className="absolute top-3 left-3 z-30 p-1.5 rounded-md bg-background/80 backdrop-blur border shadow-sm hover:bg-accent transition-colors duration-150"
                 aria-label="Open sidebar"
               >
-                <PanelLeft className="size-[--size-icon-md]" />
+                <PanelLeft className="size-(--size-icon-md)" />
               </motion.button>
             )}
           </AnimatePresence>
@@ -144,11 +144,11 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                     aria-label="Close sidebar"
                   />
                   <motion.div
-                    initial={{ x: -320 }}
+                    initial={{ x: '-90vw' }}
                     animate={{ x: 0 }}
-                    exit={{ x: -320 }}
+                    exit={{ x: '-90vw' }}
                     transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
-                    className="fixed top-0 left-0 z-50 h-full w-80 border-r bg-background overflow-y-auto"
+                    className="fixed top-0 left-0 z-50 h-full w-[90vw] border-r bg-background overflow-y-auto"
                   >
                     <SessionSidebar />
                   </motion.div>

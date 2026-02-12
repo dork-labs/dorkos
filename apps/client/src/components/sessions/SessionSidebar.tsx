@@ -81,7 +81,7 @@ export function SessionSidebar() {
               aria-label="Change working directory"
               title={selectedCwd}
             >
-              <FolderOpen className="size-[--size-icon-sm] text-muted-foreground flex-shrink-0" />
+              <FolderOpen className="size-(--size-icon-sm) text-muted-foreground flex-shrink-0" />
               <PathBreadcrumb path={selectedCwd} maxSegments={3} size="sm" />
             </button>
           )}
@@ -90,7 +90,7 @@ export function SessionSidebar() {
             className="p-2 rounded-md hover:bg-accent transition-colors duration-150"
             aria-label="Close sidebar"
           >
-            <PanelLeftClose className="size-[--size-icon-md] text-muted-foreground" />
+            <PanelLeftClose className="size-(--size-icon-md) text-muted-foreground" />
           </button>
         </div>
         <button
@@ -98,7 +98,7 @@ export function SessionSidebar() {
           disabled={createMutation.isPending}
           className="flex items-center justify-center gap-1.5 w-full rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground active:scale-[0.98] transition-all duration-100 disabled:opacity-50"
         >
-          <Plus className="size-[--size-icon-sm]" />
+          <Plus className="size-(--size-icon-sm)" />
           New chat
         </button>
       </div>
@@ -154,7 +154,7 @@ export function SessionSidebar() {
                 className="p-1 max-md:p-2 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
                 aria-label="Relay status"
               >
-                <Route className="size-[--size-icon-sm]" />
+                <Route className="size-(--size-icon-sm)" />
               </button>
             </HoverCardTrigger>
             <HoverCardContent side="top" align="center" className="w-auto px-3 py-1.5 text-xs">
@@ -167,7 +167,7 @@ export function SessionSidebar() {
                 className="p-1 max-md:p-2 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
                 aria-label="Heartbeat status"
               >
-                <HeartPulse className="size-[--size-icon-sm]" />
+                <HeartPulse className="size-(--size-icon-sm)" />
               </button>
             </HoverCardTrigger>
             <HoverCardContent side="top" align="center" className="w-auto px-3 py-1.5 text-xs">
@@ -180,7 +180,7 @@ export function SessionSidebar() {
           title={`Theme: ${theme}`}
           aria-label={`Theme: ${theme}. Click to cycle.`}
         >
-          <ThemeIcon className="size-[--size-icon-sm]" />
+          <ThemeIcon className="size-(--size-icon-sm)" />
         </button>
         </div>
       </div>

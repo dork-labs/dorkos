@@ -162,7 +162,7 @@ export function MessageList({ messages, sessionId, status }: MessageListProps) {
             className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-background border shadow-sm p-2 hover:shadow-md transition-shadow"
             aria-label="Scroll to bottom"
           >
-            <ArrowDown className="size-[--size-icon-md]" />
+            <ArrowDown className="size-(--size-icon-md)" />
           </motion.button>
         )}
       </AnimatePresence>

@@ -56,7 +56,7 @@ export function ToolApproval({ sessionId, toolCallId, toolName, input }: ToolApp
   return (
     <div className="my-1 rounded border border-amber-500/20 bg-amber-500/10 p-3 text-sm transition-colors duration-200">
       <div className="flex items-center gap-2 mb-2">
-        <Shield className="size-[--size-icon-md] text-amber-500" />
+        <Shield className="size-(--size-icon-md) text-amber-500" />
         <span className="font-semibold">Tool approval required</span>
       </div>
       <div className="font-mono text-xs mb-2">{toolName}</div>
@@ -77,14 +77,14 @@ export function ToolApproval({ sessionId, toolCallId, toolName, input }: ToolApp
           disabled={responding}
           className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 max-md:py-2 text-white text-xs hover:bg-emerald-700 disabled:opacity-50 transition-colors"
         >
-          <Check className="size-[--size-icon-xs]" /> Approve
+          <Check className="size-(--size-icon-xs)" /> Approve
         </button>
         <button
           onClick={handleDeny}
           disabled={responding}
           className="flex items-center gap-1 rounded bg-red-600 px-3 py-1 max-md:py-2 text-white text-xs hover:bg-red-700 disabled:opacity-50 transition-colors"
         >
-          <X className="size-[--size-icon-xs]" /> Deny
+          <X className="size-(--size-icon-xs)" /> Deny
         </button>
       </div>
     </div>

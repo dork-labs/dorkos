@@ -26,7 +26,7 @@ export function PathBreadcrumb({
   const offset = allSegments.length - visible.length;
 
   const textClass = size === 'sm' ? 'text-2xs' : 'text-xs';
-  const chevronClass = 'size-[--size-icon-xs]';
+  const chevronClass = 'size-(--size-icon-xs)';
   const maxWidth = size === 'sm' ? 'max-w-[80px]' : 'max-w-[120px]';
 
   return (
