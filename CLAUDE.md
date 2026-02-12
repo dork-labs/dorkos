@@ -75,6 +75,7 @@ Sessions are derived entirely from SDK JSONL files on disk (`~/.claude/projects/
 React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gray palette).
 
 - **State**: Zustand for UI state (`app-store.ts`), TanStack Query for server state (`use-sessions.ts`, `use-commands.ts`)
+- **URL Parameters**: `?session=` (session ID via nuqs) and `?dir=` (working directory via nuqs) persist client state in the URL for standalone mode. In Obsidian embedded mode, both use Zustand instead. The `?dir=` parameter is omitted when using the server default directory to keep URLs clean.
 - **Chat**: `useChatSession` hook loads message history via `useTransport().getMessages()`, then streams via `transport.sendMessage()` with callback pattern. Tracks text deltas and tool call lifecycle in refs for performance. Exposes `isLoadingHistory` for UI feedback.
 - **Components**: `ChatPanel` > `MessageList` > `MessageItem` + `ToolCallCard`; `SessionSidebar`; `CommandPalette`; `PermissionBanner` + `ToolApproval` for tool approval flow
 - **Markdown Rendering**: Assistant messages are rendered as rich markdown via the `streamdown` library (Vercel). `StreamingText` wraps the `<Streamdown>` component with `github-light`/`github-dark` Shiki themes and shows a blinking cursor during active streaming. User messages remain plain text. The `@source` directive in `index.css` ensures Streamdown's Tailwind classes are included in the CSS output.

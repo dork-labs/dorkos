@@ -99,10 +99,10 @@ N/A — Not a bug fix.
 - **Default:** When no `?dir=` param exists, fall back to server default (keeps URLs clean)
 - **URL format:** `?session=abc123&dir=%2FUsers%2Fdorian%2Fproject` — session and directory coexist as independent params
 
-## 6) Clarifications
+## 6) Clarifications (Resolved)
 
-1. **Should changing the directory clear the selected session?** Currently selecting a new directory likely shows different sessions. Should switching directories also clear `?session=` from the URL, or keep the session param even if it's no longer visible in the new directory's session list?
+1. **Directory change clears session + auto-selects most recent:** When the user switches directories, `?session=` is cleared from the URL. The app then auto-selects the most recent session in the new directory (sessions[0] from the sorted list). This is simpler than persisting last-opened-session-per-directory in localStorage and covers 99% of use cases.
 
-2. **Should the default directory appear in the URL?** When the user hasn't explicitly chosen a directory (server default is used), should the URL remain clean (`?session=abc`) or include the default (`?session=abc&dir=%2Fdefault%2Fpath`)? Recommendation: keep URL clean (no `?dir=` when using default).
+2. **Clean URL for default directory:** No `?dir=` param in the URL when using the server default. The param only appears after the user explicitly selects a directory. Keeps URLs short for sharing.
 
-3. **Recent directories interaction:** The `recentCwds` list in localStorage should still be updated when directory changes (via URL or picker). The new hook should continue to trigger the Zustand `setSelectedCwd` which handles localStorage updates. Should this behavior change?
+3. **Recent directories unchanged:** The `recentCwds` localStorage tracking continues via the existing Zustand `setSelectedCwd` side effect. The new hook syncs to Zustand, which handles localStorage automatically. No refactoring needed.

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '../../contexts/TransportContext';
 import { useAppStore, type RecentCwd } from '../../stores/app-store';
+import { useDirectoryState } from '../../hooks/use-directory-state';
 import { PathBreadcrumb } from '../ui/path-breadcrumb';
 import { formatRelativeTime } from '../../lib/session-utils';
 import {
@@ -42,7 +43,8 @@ interface DirectoryPickerProps {
 
 export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
   const transport = useTransport();
-  const { selectedCwd, setSelectedCwd, recentCwds } = useAppStore();
+  const [selectedCwd, setSelectedCwd] = useDirectoryState();
+  const { recentCwds } = useAppStore();
   const [currentPath, setCurrentPath] = useState(selectedCwd || '');
   const [showHidden, setShowHidden] = useState(false);
   const [view, setView] = useState<PickerView>(() => getInitialView(recentCwds, selectedCwd));

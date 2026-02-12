@@ -20,6 +20,11 @@ vi.mock('../../../hooks/use-session-id', () => ({
   useSessionId: () => [null, mockSetSessionId] as const,
 }));
 
+// Mock useDirectoryState (nuqs-backed)
+vi.mock('../../../hooks/use-directory-state', () => ({
+  useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
+}));
+
 // Mock app store (sidebar state + selectedCwd)
 const mockSetSidebarOpen = vi.fn();
 vi.mock('../../../stores/app-store', () => ({
@@ -176,6 +181,21 @@ describe('SessionSidebar', () => {
     });
 
     expect(screen.queryByText('Today')).toBeNull();
+  });
+
+  it('auto-selects first session when no active session', async () => {
+    mockTransport = createMockTransport({
+      listSessions: vi.fn().mockResolvedValue([
+        makeSession({ id: 's1', title: 'First session' }),
+        makeSession({ id: 's2', title: 'Second session' }),
+      ]),
+    });
+
+    renderWithQuery(<SessionSidebar />);
+
+    await waitFor(() => {
+      expect(mockSetSessionId).toHaveBeenCalledWith('s1');
+    });
   });
 
 });

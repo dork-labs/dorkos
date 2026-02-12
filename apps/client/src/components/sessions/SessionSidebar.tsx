@@ -1,8 +1,9 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '../../contexts/TransportContext';
 import { useSessionId } from '../../hooks/use-session-id';
 import { useAppStore } from '../../stores/app-store';
+import { useDirectoryState } from '../../hooks/use-directory-state';
 import { useIsMobile } from '../../hooks/use-is-mobile';
 import { SessionItem } from './SessionItem';
 import { DirectoryPicker } from './DirectoryPicker';
@@ -22,7 +23,7 @@ export function SessionSidebar() {
   const isMobile = useIsMobile();
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const [selectedCwd] = useDirectoryState();
   const { theme, setTheme } = useTheme();
 
   const themeOrder: Theme[] = ['light', 'dark', 'system'];
@@ -37,6 +38,13 @@ export function SessionSidebar() {
     queryFn: () => transport.listSessions(selectedCwd ?? undefined),
     enabled: selectedCwd !== null,
   });
+
+  // Auto-select most recent session when directory changes and no session is active
+  useEffect(() => {
+    if (!activeSessionId && sessions.length > 0) {
+      setActiveSession(sessions[0].id);
+    }
+  }, [activeSessionId, sessions, setActiveSession]);
 
   const createMutation = useMutation({
     mutationFn: () =>
