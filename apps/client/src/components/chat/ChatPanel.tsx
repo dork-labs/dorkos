@@ -129,7 +129,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         </div>
       )}
 
-      <div className="relative border-t p-4">
+      <div className="chat-input-container relative border-t p-4">
         <AnimatePresence>
           {showCommands && (
             <CommandPalette

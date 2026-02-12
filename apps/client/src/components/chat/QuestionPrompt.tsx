@@ -86,7 +86,7 @@ export function QuestionPrompt({ sessionId, toolCallId, questions, answers: preA
     return (
       <div className="my-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm transition-colors duration-200">
         <div className="flex items-center gap-2">
-          <Check className="h-4 w-4 text-emerald-500" />
+          <Check className="size-[--size-icon-md] text-emerald-500" />
           <div className="flex flex-wrap gap-2">
             {questions.map((q, idx) => {
               let displayValue: string;
@@ -136,7 +136,7 @@ export function QuestionPrompt({ sessionId, toolCallId, questions, answers: preA
         {questions.map((q, qIdx) => (
           <div key={qIdx}>
             <div className="flex items-center gap-2 mb-1">
-              <MessageSquare className="h-3.5 w-3.5 text-amber-500" />
+              <MessageSquare className="size-[--size-icon-sm] text-amber-500" />
               <span className="font-semibold text-sm">{q.header}</span>
             </div>
             <p className="mb-2 text-foreground">{q.question}</p>
@@ -238,7 +238,7 @@ export function QuestionPrompt({ sessionId, toolCallId, questions, answers: preA
         {submitting ? (
           <>Submitting...</>
         ) : (
-          <><Check className="h-3 w-3" /> Submit</>
+          <><Check className="size-[--size-icon-xs]" /> Submit</>
         )}
       </button>
     </div>

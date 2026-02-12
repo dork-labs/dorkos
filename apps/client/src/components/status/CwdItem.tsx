@@ -8,7 +8,7 @@ export function CwdItem({ cwd }: CwdItemProps) {
   const folderName = cwd.split('/').filter(Boolean).pop() ?? cwd;
   return (
     <span className="inline-flex items-center gap-1" title={cwd}>
-      <Folder className="h-3 w-3" />
+      <Folder className="size-[--size-icon-xs]" />
       <span>{folderName}</span>
     </span>
   );

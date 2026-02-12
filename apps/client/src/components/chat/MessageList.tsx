@@ -111,7 +111,7 @@ export function MessageList({ messages, sessionId, status }: MessageListProps) {
   }, [virtualizer, messages.length]);
 
   return (
-    <div ref={parentRef} className="flex-1 overflow-y-auto relative">
+    <div ref={parentRef} className="chat-scroll-area flex-1 overflow-y-auto relative">
       <div
         style={{
           height: virtualizer.getTotalSize(),
@@ -162,7 +162,7 @@ export function MessageList({ messages, sessionId, status }: MessageListProps) {
             className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-background border shadow-sm p-2 hover:shadow-md transition-shadow"
             aria-label="Scroll to bottom"
           >
-            <ArrowDown className="h-4 w-4" />
+            <ArrowDown className="size-[--size-icon-md]" />
           </motion.button>
         )}
       </AnimatePresence>

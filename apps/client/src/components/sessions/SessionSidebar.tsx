@@ -69,7 +69,7 @@ export function SessionSidebar() {
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
 
   return (
-    <div className="flex flex-col h-full p-3">
+    <div className="sidebar-container flex flex-col h-full p-3">
       {/* Header: New Chat + Collapse */}
       <div className="mb-3 space-y-1.5">
         {/* Working directory breadcrumb */}
@@ -81,7 +81,7 @@ export function SessionSidebar() {
               aria-label="Change working directory"
               title={selectedCwd}
             >
-              <FolderOpen className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              <FolderOpen className="size-[--size-icon-sm] text-muted-foreground flex-shrink-0" />
               <PathBreadcrumb path={selectedCwd} maxSegments={3} size="sm" />
             </button>
           )}
@@ -90,7 +90,7 @@ export function SessionSidebar() {
             className="p-2 rounded-md hover:bg-accent transition-colors duration-150"
             aria-label="Close sidebar"
           >
-            <PanelLeftClose className="h-4 w-4 text-muted-foreground" />
+            <PanelLeftClose className="size-[--size-icon-md] text-muted-foreground" />
           </button>
         </div>
         <button
@@ -98,7 +98,7 @@ export function SessionSidebar() {
           disabled={createMutation.isPending}
           className="flex items-center justify-center gap-1.5 w-full rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground active:scale-[0.98] transition-all duration-100 disabled:opacity-50"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="size-[--size-icon-sm]" />
           New chat
         </button>
       </div>
@@ -151,10 +151,10 @@ export function SessionSidebar() {
           <HoverCard openDelay={200} closeDelay={100}>
             <HoverCardTrigger asChild>
               <button
-                className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
+                className="p-1 max-md:p-2 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
                 aria-label="Relay status"
               >
-                <Route className="h-3.5 w-3.5" />
+                <Route className="size-[--size-icon-sm]" />
               </button>
             </HoverCardTrigger>
             <HoverCardContent side="top" align="center" className="w-auto px-3 py-1.5 text-xs">
@@ -164,10 +164,10 @@ export function SessionSidebar() {
           <HoverCard openDelay={200} closeDelay={100}>
             <HoverCardTrigger asChild>
               <button
-                className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
+                className="p-1 max-md:p-2 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
                 aria-label="Heartbeat status"
               >
-                <HeartPulse className="h-3.5 w-3.5" />
+                <HeartPulse className="size-[--size-icon-sm]" />
               </button>
             </HoverCardTrigger>
             <HoverCardContent side="top" align="center" className="w-auto px-3 py-1.5 text-xs">
@@ -176,11 +176,11 @@ export function SessionSidebar() {
           </HoverCard>
         <button
           onClick={cycleTheme}
-          className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
+          className="p-1 max-md:p-2 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
           title={`Theme: ${theme}`}
           aria-label={`Theme: ${theme}. Click to cycle.`}
         >
-          <ThemeIcon className="h-3.5 w-3.5" />
+          <ThemeIcon className="size-[--size-icon-sm]" />
         </button>
         </div>
       </div>

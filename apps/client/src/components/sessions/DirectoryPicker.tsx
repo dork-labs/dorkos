@@ -114,7 +114,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                 aria-label="Recent directories"
                 title="Recent"
               >
-                <Clock className="h-3.5 w-3.5" />
+                <Clock className="size-[--size-icon-sm]" />
               </button>
             )}
             <button
@@ -123,7 +123,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
               aria-label="Browse directories"
               title="Browse"
             >
-              <Folder className="h-3.5 w-3.5" />
+              <Folder className="size-[--size-icon-sm]" />
             </button>
           </div>
 
@@ -138,14 +138,14 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
               <div className="flex-1" />
               <button
                 onClick={() => setShowHidden(!showHidden)}
-                className="p-1 rounded hover:bg-accent transition-colors flex-shrink-0"
+                className="p-1 max-md:p-2 rounded hover:bg-accent transition-colors flex-shrink-0"
                 aria-label={showHidden ? 'Hide hidden folders' : 'Show hidden folders'}
                 title={showHidden ? 'Hide hidden folders' : 'Show hidden folders'}
               >
                 {showHidden ? (
-                  <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Eye className="size-[--size-icon-sm] text-muted-foreground" />
                 ) : (
-                  <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+                  <EyeOff className="size-[--size-icon-sm] text-muted-foreground" />
                 )}
               </button>
             </>
@@ -160,7 +160,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
             <>
               {isLoading && !data ? (
                 <div className="flex items-center justify-center h-20">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <Loader2 className="size-[--size-icon-md] animate-spin text-muted-foreground" />
                 </div>
               ) : data?.entries.length === 0 ? (
                 <div className="flex items-center justify-center h-20">
@@ -173,7 +173,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                       onClick={() => handleNavigate(data.parent!)}
                       className="flex items-center gap-2 w-full px-4 py-1.5 text-left hover:bg-accent transition-colors"
                     >
-                      <Folder className="h-4 w-4 text-muted-foreground" />
+                      <Folder className="size-[--size-icon-md] text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">..</span>
                     </button>
                   )}
@@ -183,7 +183,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                       onClick={() => handleNavigate(entry.path)}
                       className="flex items-center gap-2 w-full px-4 py-1.5 text-left hover:bg-accent transition-colors"
                     >
-                      <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                      <FolderOpen className="size-[--size-icon-md] text-muted-foreground" />
                       <span className="text-sm truncate">{entry.name}</span>
                     </button>
                   ))}
@@ -198,7 +198,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
                   onClick={() => handleRecentSelect(recent.path)}
                   className="flex items-center gap-2 w-full px-4 py-1.5 text-left hover:bg-accent transition-colors"
                 >
-                  <Folder className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <Folder className="size-[--size-icon-md] text-muted-foreground flex-shrink-0" />
                   <span className="text-sm text-muted-foreground truncate">
                     {recent.path.replace(/^\/Users\/[^/]+/, '~')}
                   </span>

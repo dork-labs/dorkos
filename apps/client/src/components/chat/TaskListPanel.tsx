@@ -10,9 +10,9 @@ interface TaskListPanelProps {
 }
 
 const STATUS_ICON: Record<TaskStatus, React.ReactNode> = {
-  in_progress: <Loader2 className="h-3 w-3 shrink-0 animate-spin text-blue-400" />,
-  pending: <Circle className="h-3 w-3 shrink-0 text-muted-foreground" />,
-  completed: <CheckCircle2 className="h-3 w-3 shrink-0 text-green-500" />,
+  in_progress: <Loader2 className="size-[--size-icon-xs] shrink-0 animate-spin text-blue-400" />,
+  pending: <Circle className="size-[--size-icon-xs] shrink-0 text-muted-foreground" />,
+  completed: <CheckCircle2 className="size-[--size-icon-xs] shrink-0 text-green-500" />,
 };
 
 const MAX_VISIBLE = 10;
@@ -36,7 +36,7 @@ export function TaskListPanel({ tasks, activeForm, isCollapsed, onToggleCollapse
             exit={{ opacity: 0, height: 0 }}
             className="flex items-center gap-2 text-xs text-blue-400 mb-1"
           >
-            <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+            <Loader2 className="size-[--size-icon-xs] shrink-0 animate-spin" />
             <span className="truncate">{activeForm}</span>
           </motion.div>
         )}
@@ -46,8 +46,8 @@ export function TaskListPanel({ tasks, activeForm, isCollapsed, onToggleCollapse
         onClick={onToggleCollapse}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground w-full"
       >
-        {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        <ListTodo className="h-3 w-3" />
+        {isCollapsed ? <ChevronRight className="size-[--size-icon-xs]" /> : <ChevronDown className="size-[--size-icon-xs]" />}
+        <ListTodo className="size-[--size-icon-xs]" />
         <span>
           {tasks.length} task{tasks.length !== 1 ? 's' : ''}
           {' '}({done} done{inProgress > 0 ? `, ${inProgress} in progress` : ''}, {open} open)

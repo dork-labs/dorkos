@@ -82,7 +82,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                   className="absolute top-3 left-3 z-30 p-1.5 rounded-md bg-background/80 backdrop-blur border shadow-sm hover:bg-accent transition-colors duration-150"
                   aria-label="Open sidebar"
                 >
-                  <PanelLeft className="h-4 w-4" />
+                  <PanelLeft className="size-[--size-icon-md]" />
                 </motion.button>
               )}
             </AnimatePresence>
@@ -124,7 +124,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                 className="absolute top-3 left-3 z-30 p-1.5 rounded-md bg-background/80 backdrop-blur border shadow-sm hover:bg-accent transition-colors duration-150"
                 aria-label="Open sidebar"
               >
-                <PanelLeft className="h-4 w-4" />
+                <PanelLeft className="size-[--size-icon-md]" />
               </motion.button>
             )}
           </AnimatePresence>

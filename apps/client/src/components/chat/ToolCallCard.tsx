@@ -13,10 +13,10 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const statusIcon = {
-    pending: <Loader2 className="h-3 w-3 animate-spin" />,
-    running: <Loader2 className="h-3 w-3 animate-spin text-blue-500" />,
-    complete: <Check className="h-3 w-3 text-green-500" />,
-    error: <X className="h-3 w-3 text-red-500" />,
+    pending: <Loader2 className="size-[--size-icon-xs] animate-spin" />,
+    running: <Loader2 className="size-[--size-icon-xs] animate-spin text-blue-500" />,
+    complete: <Check className="size-[--size-icon-xs] text-green-500" />,
+    error: <X className="size-[--size-icon-xs] text-red-500" />,
   }[toolCall.status];
 
   return (
@@ -32,7 +32,7 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
           className="ml-auto"
         >
-          <ChevronDown className="h-3 w-3" />
+          <ChevronDown className="size-[--size-icon-xs]" />
         </motion.div>
       </button>
       <AnimatePresence initial={false}>

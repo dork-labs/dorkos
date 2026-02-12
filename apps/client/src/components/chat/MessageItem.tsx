@@ -59,16 +59,16 @@ export function MessageItem({ message, grouping, sessionId, isNew = false, isStr
         <div className="absolute inset-x-0 top-0 h-px bg-border/20" />
       )}
       {message.timestamp && (
-        <span className="absolute right-4 top-1 text-xs text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors duration-150">
+        <span className="absolute right-4 top-1 text-xs text-muted-foreground/0 group-hover:text-muted-foreground/60 max-md:text-muted-foreground/40 transition-colors duration-150">
           {formatTime(message.timestamp)}
         </span>
       )}
       <div className="flex-shrink-0 w-4 mt-[3px]">
         {showIndicator && (
           isUser ? (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <ChevronRight className="size-[--size-icon-md] text-muted-foreground" />
           ) : (
-            <span className="flex items-center justify-center h-4 w-4 text-muted-foreground text-[10px]">●</span>
+            <span className="flex items-center justify-center size-[--size-icon-md] text-muted-foreground text-[10px]">●</span>
           )
         )}
       </div>

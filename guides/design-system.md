@@ -279,6 +279,93 @@ Opacity 0.5. No cursor change beyond `not-allowed`.
 
 ---
 
+## Mobile Responsive Scale
+
+### Overview
+
+The app uses a CSS custom property scale multiplier system that makes text, icons, and interactive elements proportionally larger on mobile (< 768px). Desktop is the source of truth; mobile sizes are derived via multiplication.
+
+### Configuration
+
+- `--mobile-scale: 1.25` — Master dial (25% larger on mobile)
+- Optional per-category overrides:
+  - `--mobile-scale-text` — Text scaling
+  - `--mobile-scale-icon` — Icon scaling
+  - `--mobile-scale-interactive` — Button/interactive element scaling
+
+### Internal Multipliers
+
+- `--_st` — Text multiplier (1 on desktop, scale value on mobile)
+- `--_si` — Icon multiplier
+- `--_sb` — Interactive element multiplier
+
+### Scaled Values at 1.25x
+
+| Element | Desktop | Mobile (x1.25) |
+|---------|---------|----------------|
+| Body text (`text-sm`) | 14px | 17.5px |
+| Small text (`text-xs`) | 12px | 15px |
+| Tiny text (`text-2xs`) | 11px | 13.75px |
+| Micro text (`text-3xs`) | 10px | 12.5px |
+| Large text (`text-base`) | 16px | 20px |
+| Icon xs | 12px | 15px |
+| Icon sm | 16px | 20px |
+| Icon md | 20px | 25px |
+| Button sm | 32px | 40px |
+| Button md | 36px | 45px |
+| Button lg | 40px | 50px |
+
+### Icon Size Convention
+
+Three standard sizes, use `size-[--size-icon-*]` for all icon sizing:
+
+| Token | Desktop | Use Case |
+|-------|---------|----------|
+| `icon-xs` | 12px | Decorative, status indicators, inline affordances |
+| `icon-sm` | 16px | Interactive icons in compact UI (sidebar, tool cards) |
+| `icon-md` | 20px | Primary action icons (buttons, navigation, prominent UI) |
+
+Usage:
+
+```tsx
+<Check className="size-[--size-icon-xs] text-green-500" />
+<FolderOpen className="size-[--size-icon-sm] text-muted-foreground" />
+<PanelLeft className="size-[--size-icon-md]" />
+```
+
+### Hover Pattern Mobile Alternatives
+
+| Pattern | Desktop | Mobile |
+|---------|---------|--------|
+| Message timestamps | Hidden, shown on hover | Always visible at 40% opacity |
+| Session expand chevron | Hidden, shown on hover | Hidden; tap session row to expand |
+| Table action icons | Hidden, shown on hover | Always visible at 60% opacity |
+
+### Safe Area Classes
+
+| Class | Applied To | Purpose |
+|-------|-----------|---------|
+| `chat-input-container` | ChatPanel input wrapper | Bottom safe area inset |
+| `sidebar-container` | SessionSidebar root | Left + bottom safe area insets |
+| `chat-scroll-area` | MessageList scroll container | `touch-action: pan-y` on mobile |
+
+### Adjusting the Scale
+
+```css
+:root {
+  --mobile-scale: 1.0;   /* No mobile scaling */
+  --mobile-scale: 1.25;  /* Default: 25% larger */
+  --mobile-scale: 1.5;   /* 50% larger */
+
+  /* Per-category overrides */
+  --mobile-scale-text: 1.15;
+  --mobile-scale-icon: 1.25;
+  --mobile-scale-interactive: 1.30;
+}
+```
+
+---
+
 ## File Reference
 
 | Concern | File |

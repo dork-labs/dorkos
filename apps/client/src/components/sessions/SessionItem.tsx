@@ -4,6 +4,7 @@ import { ChevronDown, Copy, Check, ShieldOff } from 'lucide-react';
 import type { Session } from '@lifeos/shared/types';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/session-utils';
+import { useIsMobile } from '@/hooks/use-is-mobile';
 
 interface SessionItemProps {
   session: Session;
@@ -43,13 +44,13 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="p-0.5 rounded hover:bg-secondary/80 text-muted-foreground/60 hover:text-muted-foreground transition-colors duration-100"
+      className="p-0.5 max-md:p-2 rounded hover:bg-secondary/80 text-muted-foreground/60 hover:text-muted-foreground transition-colors duration-100"
       aria-label={`Copy ${label}`}
     >
       {copied ? (
-        <Check className="h-3 w-3 text-green-500" />
+        <Check className="size-[--size-icon-xs] text-green-500" />
       ) : (
-        <Copy className="h-3 w-3" />
+        <Copy className="size-[--size-icon-xs]" />
       )}
     </button>
   );
@@ -57,6 +58,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 export function SessionItem({ session, isActive, onClick, isNew = false }: SessionItemProps) {
   const [expanded, setExpanded] = useState(false);
+  const isMobile = useIsMobile();
   const isSkipMode = session.permissionMode === 'bypassPermissions';
 
   const Wrapper = isNew ? motion.div : 'div';
@@ -84,7 +86,12 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
       )}
     >
       <div
-        onClick={onClick}
+        onClick={() => {
+          if (isMobile) {
+            setExpanded((prev) => !prev);
+          }
+          onClick();
+        }}
         className="px-3 py-2 cursor-pointer"
       >
         {/* Line 1: relative time + permission icon + expand */}
@@ -95,14 +102,14 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
           <span className="flex items-center gap-1 flex-shrink-0">
             {isSkipMode && (
               <ShieldOff
-                className="h-3 w-3 text-red-500"
+                className="size-[--size-icon-xs] text-red-500"
                 aria-label="Permissions skipped"
               />
             )}
             <button
               onClick={handleExpandToggle}
               className={cn(
-                'p-0.5 rounded transition-all duration-150',
+                'p-0.5 max-md:p-2 max-md:hidden rounded transition-all duration-150',
                 expanded
                   ? 'opacity-100 text-muted-foreground'
                   : 'opacity-0 group-hover:opacity-100 text-muted-foreground/60 hover:text-muted-foreground'
@@ -113,7 +120,7 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
                 animate={{ rotate: expanded ? 180 : 0 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               >
-                <ChevronDown className="h-3.5 w-3.5" />
+                <ChevronDown className="size-[--size-icon-sm]" />
               </motion.div>
             </button>
           </span>

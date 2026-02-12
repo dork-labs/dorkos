@@ -136,10 +136,10 @@ export function ChatInput({
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={onStop}
-              className="rounded-md bg-destructive p-1.5 text-destructive-foreground hover:bg-destructive/90"
+              className="rounded-md bg-destructive p-1.5 max-md:p-2.5 text-destructive-foreground hover:bg-destructive/90"
               aria-label="Stop generating"
             >
-              <Square className="h-3.5 w-3.5" />
+              <Square className="size-[--size-icon-sm]" />
             </motion.button>
           ) : hasText ? (
             <motion.button
@@ -151,10 +151,10 @@ export function ChatInput({
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={onSubmit}
-              className="rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90"
+              className="rounded-md bg-primary p-1.5 max-md:p-2.5 text-primary-foreground hover:bg-primary/90"
               aria-label="Send message"
             >
-              <CornerDownLeft className="h-3.5 w-3.5" />
+              <CornerDownLeft className="size-[--size-icon-sm]" />
             </motion.button>
           ) : null}
         </AnimatePresence>

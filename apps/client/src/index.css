@@ -1,11 +1,59 @@
 @import "tailwindcss";
 @source "../node_modules/streamdown/dist/*.js";
 
+/* ============================================
+   Mobile Responsive Scale System
+   ============================================
+   Centralized "dial" for mobile scaling.
+   Desktop is source of truth; mobile sizes = desktop × multiplier.
+
+   Adjust --mobile-scale to change how much bigger things are on mobile.
+   Per-category overrides: --mobile-scale-text, --mobile-scale-icon, --mobile-scale-interactive
+   See guides/design-system.md for details.
+   ============================================ */
+
+:root {
+  --mobile-scale: 1.25;
+  /* Optional per-category overrides: */
+  /* --mobile-scale-text: 1.15; */
+  /* --mobile-scale-icon: 1.25; */
+  /* --mobile-scale-interactive: 1.30; */
+
+  /* Internal active multipliers (1 on desktop) */
+  --_st: 1;
+  --_si: 1;
+  --_sb: 1;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --_st: var(--mobile-scale-text, var(--mobile-scale, 1.25));
+    --_si: var(--mobile-scale-icon, var(--mobile-scale, 1.25));
+    --_sb: var(--mobile-scale-interactive, var(--mobile-scale, 1.25));
+  }
+}
+
 @theme inline {
-  --text-2xs: 0.6875rem;
-  --text-2xs--line-height: 1rem;
-  --text-3xs: 0.625rem;
-  --text-3xs--line-height: 0.875rem;
+  /* Scaled font sizes */
+  --font-size-3xs: calc(0.625rem * var(--_st));
+  --font-size-3xs--line-height: 0.875rem;
+  --font-size-2xs: calc(0.6875rem * var(--_st));
+  --font-size-2xs--line-height: 1rem;
+  --font-size-xs: calc(0.75rem * var(--_st));
+  --font-size-sm: calc(0.875rem * var(--_st));
+  --font-size-base: calc(1rem * var(--_st));
+  --font-size-lg: calc(1.125rem * var(--_st));
+  --font-size-xl: calc(1.25rem * var(--_st));
+
+  /* Icon sizes (3 standard tokens) */
+  --size-icon-xs: calc(0.75rem * var(--_si));
+  --size-icon-sm: calc(1rem * var(--_si));
+  --size-icon-md: calc(1.25rem * var(--_si));
+
+  /* Interactive element heights */
+  --size-btn-sm: calc(2rem * var(--_sb));
+  --size-btn-md: calc(2.25rem * var(--_sb));
+  --size-btn-lg: calc(2.5rem * var(--_sb));
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -180,6 +228,43 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* iOS input zoom prevention (fallback for low --mobile-scale values) */
+@media (max-width: 767px) {
+  textarea, input[type="text"], input[type="email"], input[type="search"], select {
+    font-size: max(1rem, var(--font-size-sm, 0.875rem)) !important;
+  }
+
+  /* Prevent pull-to-refresh */
+  body {
+    overscroll-behavior: contain;
+  }
+
+  /* Table action overlay -- always visible on mobile */
+  .msg-assistant div:has(> div > [data-streamdown="table"]) > div:first-child:not(:has(table)) {
+    opacity: 0.6;
+    pointer-events: auto;
+  }
+
+  /* Chat scroll area -- prevent horizontal swipes */
+  .chat-scroll-area {
+    touch-action: pan-y;
+  }
+}
+
+/* Safe area insets for notched devices */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .chat-input-container {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sidebar-container {
+    padding-left: env(safe-area-inset-left);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  [data-vaul-drawer] {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 

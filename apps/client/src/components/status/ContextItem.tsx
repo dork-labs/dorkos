@@ -10,7 +10,7 @@ export function ContextItem({ percent }: ContextItemProps) {
 
   return (
     <span className={`inline-flex items-center gap-1 ${colorClass}`}>
-      <Layers className="h-3 w-3" />
+      <Layers className="size-[--size-icon-xs]" />
       <span>{percent}%</span>
     </span>
   );
