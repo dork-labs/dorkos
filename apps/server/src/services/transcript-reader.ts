@@ -41,7 +41,7 @@ export class TranscriptReader {
   private metaCache = new Map<string, { session: Session; mtimeMs: number }>();
 
   getProjectSlug(cwd: string): string {
-    return cwd.replace(/\//g, '-');
+    return cwd.replace(/[^a-zA-Z0-9-]/g, '-');
   }
 
   getTranscriptsDir(vaultRoot: string): string {

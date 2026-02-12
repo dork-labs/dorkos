@@ -530,5 +530,20 @@ describe('TranscriptReader', () => {
       const slug = transcriptReader.getProjectSlug('/Users/foo/my-vault');
       expect(slug).toBe('-Users-foo-my-vault');
     });
+
+    it('replaces spaces with dashes', () => {
+      const slug = transcriptReader.getProjectSlug('/Users/foo/Obsidian Repo');
+      expect(slug).toBe('-Users-foo-Obsidian-Repo');
+    });
+
+    it('replaces dots with dashes', () => {
+      const slug = transcriptReader.getProjectSlug('/Users/foo/.Trash/project');
+      expect(slug).toBe('-Users-foo--Trash-project');
+    });
+
+    it('replaces all non-alphanumeric non-dash characters', () => {
+      const slug = transcriptReader.getProjectSlug('/Users/foo/my project (v2)');
+      expect(slug).toBe('-Users-foo-my-project--v2-');
+    });
   });
 });
