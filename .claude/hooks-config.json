@@ -1,0 +1,22 @@
+{
+  "thinking-level": {
+    "level": 2
+  },
+  "create-checkpoint": {
+    "prefix": "claude",
+    "maxCheckpoints": 10
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/scripts/hooks/autonomous-check.mjs"
+          }
+        ]
+      }
+    ]
+  }
+}

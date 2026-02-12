@@ -1,0 +1,3 @@
+export const GATEWAY_PORT = 6942;
+export const SERVER_STARTUP_TIMEOUT_MS = 15_000;
+export const HEALTH_POLL_INTERVAL_MS = 300;

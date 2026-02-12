@@ -1,0 +1,20 @@
+{
+  "name": "life-os-gateway",
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "npm@10.9.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "start": "npm run start --workspace=@lifeos/server"
+  },
+  "devDependencies": {
+    "turbo": "^2.8.7"
+  }
+}

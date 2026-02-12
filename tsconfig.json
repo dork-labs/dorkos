@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "references": [
+    { "path": "./apps/client" },
+    { "path": "./apps/server" },
+    { "path": "./apps/obsidian-plugin" },
+    { "path": "./packages/shared" },
+    { "path": "./packages/test-utils" }
+  ],
+  "exclude": ["node_modules"]
+}

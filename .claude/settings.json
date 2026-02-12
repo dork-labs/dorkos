@@ -1,0 +1,95 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash(git:*)",
+      "Bash(npm:*)",
+      "Bash(pnpm:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "Bash(curl:*)",
+      "Bash(sips:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(rm:*)",
+      "Bash(ls:*)"
+    ],
+    "deny": [
+      ".env",
+      ".env.*",
+      "**/*.key",
+      "**/*.pem",
+      "Secrets/**",
+      "Credentials/**",
+      ".git/**"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|MultiEdit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/scripts/hooks/file-guard.mjs"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/scripts/hooks/typecheck-changed.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/scripts/hooks/lint-changed.sh"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/scripts/hooks/check-any-changed.mjs"
+          },
+          {
+            "type": "command",
+            "command": ".claude/scripts/hooks/test-changed.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/scripts/hooks/create-checkpoint.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/scripts/check-docs-changed.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/scripts/hooks/thinking-level.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [],
+    "SessionStart": []
+  },
+  "enabledPlugins": {},
+  "environmentVariables": {
+    "NODE_ENV": "development"
+  }
+}

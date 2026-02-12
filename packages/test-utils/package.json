@@ -1,0 +1,24 @@
+{
+  "name": "@lifeos/test-utils",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mock-factories": "./src/mock-factories.ts",
+    "./react-helpers": "./src/react-helpers.tsx",
+    "./sse-helpers": "./src/sse-helpers.ts"
+  },
+  "dependencies": {
+    "@lifeos/shared": "*"
+  },
+  "devDependencies": {
+    "@lifeos/typescript-config": "*",
+    "@testing-library/react": "^16.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}

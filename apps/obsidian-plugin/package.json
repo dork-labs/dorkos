@@ -1,0 +1,27 @@
+{
+  "name": "@lifeos/obsidian-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lifeos/shared": "*",
+    "@lifeos/server": "*",
+    "@lifeos/client": "*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@lifeos/typescript-config": "*",
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "latest",
+    "obsidian": "latest",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "@lifeos/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./services/agent-manager": "./src/services/agent-manager.ts",
+    "./services/transcript-reader": "./src/services/transcript-reader.ts",
+    "./services/command-registry": "./src/services/command-registry.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "NODE_ENV=production node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "@asteasolutions/zod-to-openapi": "^8.4.0",
+    "@lifeos/shared": "*",
+    "@scalar/express-api-reference": "^0.8.40",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "gray-matter": "^4.0.3",
+    "uuid": "^10.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@lifeos/test-utils": "*",
+    "@lifeos/typescript-config": "*",
+    "@types/cors": "^2.8.0",
+    "@types/express": "^5.0.0",
+    "@types/supertest": "^6.0.3",
+    "@types/uuid": "^10.0.0",
+    "supertest": "^7.2.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

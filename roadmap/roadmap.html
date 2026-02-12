@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Roadmap</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <h1 id="project-name">Loading...</h1>
+        <p id="project-summary" class="summary"></p>
+      </div>
+      <div class="header-actions">
+        <button id="theme-toggle" class="theme-toggle" title="Toggle light/dark mode">
+          <i data-lucide="sun" class="icon icon-sun"></i>
+          <i data-lucide="moon" class="icon icon-moon"></i>
+        </button>
+        <div class="last-updated-group">
+          <span id="last-updated" class="meta-text"></span>
+          <button id="refresh-btn" class="refresh-btn" title="Refresh data">
+            <i data-lucide="refresh-cw" class="icon"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Health Dashboard -->
+    <section class="health-dashboard">
+      <div class="health-card">
+        <span class="health-label">Must-Have Effort</span>
+        <span id="must-have-percent" class="health-value">0%</span>
+        <div id="must-have-warning" class="health-warning hidden">
+          <i data-lucide="alert-triangle" class="icon"></i> Exceeds 60% threshold
+        </div>
+      </div>
+      <div class="health-card">
+        <span class="health-label">Items</span>
+        <span id="total-items" class="health-value">0</span>
+      </div>
+      <div class="health-card">
+        <span class="health-label">In Progress</span>
+        <span id="in-progress-count" class="health-value">0</span>
+      </div>
+      <div class="health-card">
+        <span class="health-label">At Risk / Blocked</span>
+        <span id="at-risk-count" class="health-value risk">0</span>
+      </div>
+    </section>
+
+    <!-- Controls -->
+    <section class="controls">
+      <div class="view-toggle">
+        <button id="timeline-btn" class="toggle-btn active"><i data-lucide="calendar" class="icon"></i> Timeline</button>
+        <button id="status-btn" class="toggle-btn"><i data-lucide="circle-dot" class="icon"></i> Status</button>
+        <button id="priority-btn" class="toggle-btn"><i data-lucide="list" class="icon"></i> Priority</button>
+      </div>
+      <div class="filters">
+        <select id="filter-type" class="filter-select">
+          <option value="">All Types</option>
+          <option value="feature">Feature</option>
+          <option value="bugfix">Bugfix</option>
+          <option value="technical-debt">Technical Debt</option>
+          <option value="research">Research</option>
+          <option value="epic">Epic</option>
+        </select>
+        <select id="filter-moscow" class="filter-select">
+          <option value="">All Priorities</option>
+          <option value="must-have">Must Have</option>
+          <option value="should-have">Should Have</option>
+          <option value="could-have">Could Have</option>
+          <option value="wont-have">Won't Have</option>
+        </select>
+        <select id="filter-status" class="filter-select">
+          <option value="">All Statuses</option>
+          <option value="not-started">Not Started</option>
+          <option value="in-progress">In Progress</option>
+          <option value="completed">Completed</option>
+          <option value="on-hold">On Hold</option>
+        </select>
+        <label class="hide-completed-toggle">
+          <input type="checkbox" id="hide-completed" />
+          <span class="toggle-label">Hide completed</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Timeline View (by time horizon) -->
+    <section id="timeline-view" class="kanban-view">
+      <div class="kanban-column" data-horizon="now">
+        <h2 class="column-header">Now</h2>
+        <div id="now-items" class="column-items"></div>
+      </div>
+      <div class="kanban-column" data-horizon="next">
+        <h2 class="column-header">Next</h2>
+        <div id="next-items" class="column-items"></div>
+      </div>
+      <div class="kanban-column" data-horizon="later">
+        <h2 class="column-header">Later</h2>
+        <div id="later-items" class="column-items"></div>
+      </div>
+    </section>
+
+    <!-- Status View (by status) -->
+    <section id="status-view" class="kanban-view hidden">
+      <div class="kanban-column" data-status="not-started">
+        <h2 class="column-header">Not Started</h2>
+        <div id="not-started-items" class="column-items"></div>
+      </div>
+      <div class="kanban-column" data-status="in-progress">
+        <h2 class="column-header">In Progress</h2>
+        <div id="in-progress-items" class="column-items"></div>
+      </div>
+      <div class="kanban-column" data-status="completed">
+        <h2 class="column-header">Completed</h2>
+        <div id="completed-items" class="column-items"></div>
+      </div>
+      <div class="kanban-column" data-status="on-hold">
+        <h2 class="column-header">On Hold</h2>
+        <div id="on-hold-items" class="column-items"></div>
+      </div>
+    </section>
+
+    <!-- Priority View (by MoSCoW) -->
+    <section id="priority-view" class="list-view hidden">
+      <div class="list-group" data-moscow="must-have">
+        <h2 class="group-header must-have">Must Have</h2>
+        <div id="must-have-items" class="group-items"></div>
+      </div>
+      <div class="list-group" data-moscow="should-have">
+        <h2 class="group-header should-have">Should Have</h2>
+        <div id="should-have-items" class="group-items"></div>
+      </div>
+      <div class="list-group" data-moscow="could-have">
+        <h2 class="group-header could-have">Could Have</h2>
+        <div id="could-have-items" class="group-items"></div>
+      </div>
+      <div class="list-group" data-moscow="wont-have">
+        <h2 class="group-header wont-have">Won't Have</h2>
+        <div id="wont-have-items" class="group-items"></div>
+      </div>
+    </section>
+
+    <!-- Empty State -->
+    <div id="empty-state" class="empty-state hidden">
+      <p>No items match the current filters.</p>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast hidden">
+    <i data-lucide="check" class="icon"></i>
+    <span class="toast-message">Copied to clipboard!</span>
+  </div>
+
+  <!-- Item Detail Modal -->
+  <div id="item-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button id="modal-close" class="modal-close" title="Close">
+        <i data-lucide="x" class="icon"></i>
+      </button>
+
+      <div class="modal-body">
+        <!-- Card-style layout (matches item-card structure) -->
+        <div class="item-header">
+          <span id="modal-title" class="item-title"></span>
+          <div class="item-badges">
+            <span id="modal-status-badge" class="badge status"></span>
+          </div>
+        </div>
+
+        <p id="modal-description" class="item-description"></p>
+
+        <div id="modal-meta" class="item-meta"></div>
+
+        <div id="modal-labels" class="item-labels"></div>
+
+        <div id="modal-spec-links" class="spec-links"></div>
+
+        <div id="modal-actions" class="item-actions">
+          <button id="modal-ideate-btn" class="command-btn" title="Copy ideation command to clipboard">
+            <span class="command-text">/ideate</span>
+            <i data-lucide="copy" class="icon"></i>
+          </button>
+        </div>
+
+        <!-- Additional details (modal-only sections) -->
+        <div class="modal-extra-details">
+          <div id="modal-dependencies-section" class="modal-section hidden">
+            <h3 class="modal-section-title">Dependencies</h3>
+            <ul id="modal-dependencies" class="modal-dependencies"></ul>
+          </div>
+
+          <div id="modal-context-section" class="modal-section hidden">
+            <h3 class="modal-section-title">Ideation Context</h3>
+            <div id="modal-context" class="modal-context"></div>
+          </div>
+
+          <div class="modal-section modal-metadata">
+            <h3 class="modal-section-title">Metadata</h3>
+            <dl class="modal-details">
+              <div class="detail-row">
+                <dt>Health</dt>
+                <dd id="modal-health"></dd>
+              </div>
+              <div class="detail-row">
+                <dt>Time Horizon</dt>
+                <dd id="modal-horizon"></dd>
+              </div>
+              <div class="detail-row">
+                <dt>Created</dt>
+                <dd id="modal-created"></dd>
+              </div>
+              <div class="detail-row">
+                <dt>Updated</dt>
+                <dd id="modal-updated"></dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="modal-section">
+            <h3 class="modal-section-title">Item ID</h3>
+            <div class="modal-id-container">
+              <code id="modal-id" class="modal-id"></code>
+              <button id="modal-copy-id" class="modal-copy-btn" title="Copy ID">
+                <i data-lucide="copy" class="icon"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Markdown Viewer Modal -->
+  <div id="markdown-modal" class="modal markdown-modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content markdown-modal-content">
+      <div class="markdown-modal-header">
+        <div class="markdown-modal-title-row">
+          <i data-lucide="file-text" class="icon markdown-type-icon"></i>
+          <span id="markdown-modal-title" class="markdown-modal-title">Document</span>
+        </div>
+        <button id="markdown-modal-close" class="modal-close" title="Close">
+          <i data-lucide="x" class="icon"></i>
+        </button>
+      </div>
+      <div id="markdown-modal-body" class="markdown-modal-body">
+        <div class="markdown-loading">
+          <i data-lucide="loader-2" class="icon spin"></i>
+          <span>Loading...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="scripts.js"></script>
+</body>
+</html>

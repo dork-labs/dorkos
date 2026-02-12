@@ -1,0 +1,201 @@
+{
+  "projectName": "Next.js Boilerplate",
+  "projectSummary": "A production-ready Next.js 16 boilerplate with modern tooling, type safety, and best practices.",
+  "lastUpdated": "2026-02-01T22:17:59.929097+00:00",
+  "timeHorizons": {
+    "now": {
+      "label": "Now (Current Sprint)",
+      "description": "Active work, 2-week sprint"
+    },
+    "next": {
+      "label": "Next (2-4 weeks)",
+      "description": "Planned for upcoming sprints"
+    },
+    "later": {
+      "label": "Later (1-3 months)",
+      "description": "On the radar but not scheduled"
+    }
+  },
+  "items": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "title": "User Authentication",
+      "description": "Implement passwordless authentication with BetterAuth using email OTP. This includes sign-in, sign-up, and session management.",
+      "type": "feature",
+      "moscow": "must-have",
+      "status": "completed",
+      "health": "on-track",
+      "timeHorizon": "now",
+      "effort": 8,
+      "labels": [
+        "auth",
+        "security"
+      ],
+      "dependencies": [],
+      "createdAt": "2025-12-01T10:00:00.000000+00:00",
+      "updatedAt": "2026-01-15T14:30:00.000000+00:00",
+      "linkedArtifacts": {
+        "specSlug": "add-authentication-betterauth",
+        "specPath": "specs/add-authentication-betterauth/02-specification.md"
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "title": "Dashboard Layout",
+      "description": "Create a responsive dashboard layout with collapsible sidebar navigation for authenticated users.",
+      "type": "feature",
+      "moscow": "must-have",
+      "status": "in-progress",
+      "health": "on-track",
+      "timeHorizon": "now",
+      "effort": 5,
+      "labels": [
+        "ui",
+        "layout"
+      ],
+      "dependencies": [
+        "550e8400-e29b-41d4-a716-446655440001"
+      ],
+      "createdAt": "2025-12-05T10:00:00.000000+00:00",
+      "updatedAt": "2026-02-01T22:17:59.929096+00:00",
+      "workflowState": {
+        "phase": "not-started",
+        "attempts": 0,
+        "lastSession": "2026-02-01T22:17:59.928913+00:00"
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440003",
+      "title": "Database Connection Pooling",
+      "description": "Configure Prisma connection pooling for better performance in serverless deployments on Vercel.",
+      "type": "technical-debt",
+      "moscow": "should-have",
+      "status": "not-started",
+      "health": "on-track",
+      "timeHorizon": "next",
+      "effort": 3,
+      "labels": [
+        "database",
+        "performance"
+      ],
+      "dependencies": [],
+      "createdAt": "2025-12-10T10:00:00.000000+00:00",
+      "updatedAt": "2025-12-10T10:00:00.000000+00:00"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440004",
+      "title": "Fix Mobile Navigation",
+      "description": "Navigation menu doesn't close after clicking a link on mobile devices. Users have to manually close it.",
+      "type": "bugfix",
+      "moscow": "must-have",
+      "status": "not-started",
+      "health": "at-risk",
+      "timeHorizon": "now",
+      "effort": 2,
+      "labels": [
+        "mobile",
+        "ux",
+        "navigation"
+      ],
+      "dependencies": [],
+      "createdAt": "2026-01-25T10:00:00.000000+00:00",
+      "updatedAt": "2026-01-25T10:00:00.000000+00:00"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440005",
+      "title": "Dark Mode Theming",
+      "description": "Complete dark mode implementation with proper color tokens and system preference detection.",
+      "type": "feature",
+      "moscow": "should-have",
+      "status": "completed",
+      "health": "on-track",
+      "timeHorizon": "now",
+      "effort": 5,
+      "labels": [
+        "ui",
+        "theming"
+      ],
+      "dependencies": [],
+      "createdAt": "2025-12-15T10:00:00.000000+00:00",
+      "updatedAt": "2026-01-10T16:45:00.000000+00:00"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440006",
+      "title": "API Rate Limiting Research",
+      "description": "Research and evaluate rate limiting solutions for API routes. Compare Redis vs in-memory vs Upstash approaches.",
+      "type": "research",
+      "moscow": "could-have",
+      "status": "not-started",
+      "health": "on-track",
+      "timeHorizon": "later",
+      "effort": 3,
+      "labels": [
+        "api",
+        "security",
+        "research"
+      ],
+      "dependencies": [],
+      "createdAt": "2026-01-20T10:00:00.000000+00:00",
+      "updatedAt": "2026-01-20T10:00:00.000000+00:00",
+      "ideationContext": {
+        "targetUsers": [
+          "API consumers",
+          "developers"
+        ],
+        "painPoints": [
+          "No rate limiting on public endpoints",
+          "Potential for abuse"
+        ],
+        "successCriteria": [
+          "Clear recommendation with tradeoffs",
+          "Implementation plan"
+        ],
+        "constraints": [
+          "Vercel serverless environment",
+          "Budget-conscious solution"
+        ]
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440007",
+      "title": "Email Templates",
+      "description": "Create React Email templates for authentication emails (OTP codes, welcome emails).",
+      "type": "feature",
+      "moscow": "should-have",
+      "status": "on-hold",
+      "health": "blocked",
+      "timeHorizon": "next",
+      "effort": 5,
+      "labels": [
+        "email",
+        "auth"
+      ],
+      "dependencies": [
+        "550e8400-e29b-41d4-a716-446655440001"
+      ],
+      "createdAt": "2026-01-05T10:00:00.000000+00:00",
+      "updatedAt": "2026-01-28T11:00:00.000000+00:00"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440008",
+      "title": "User Settings Epic",
+      "description": "Epic encompassing all user settings functionality including profile, preferences, and notifications.",
+      "type": "epic",
+      "moscow": "could-have",
+      "status": "not-started",
+      "health": "on-track",
+      "timeHorizon": "later",
+      "effort": 13,
+      "labels": [
+        "user-management",
+        "epic"
+      ],
+      "dependencies": [
+        "550e8400-e29b-41d4-a716-446655440001",
+        "550e8400-e29b-41d4-a716-446655440002"
+      ],
+      "createdAt": "2026-01-15T10:00:00.000000+00:00",
+      "updatedAt": "2026-01-15T10:00:00.000000+00:00"
+    }
+  ]
+}

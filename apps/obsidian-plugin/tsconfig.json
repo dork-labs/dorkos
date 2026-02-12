@@ -1,0 +1,10 @@
+{
+  "extends": "@lifeos/typescript-config/react.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*", "build-plugins/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

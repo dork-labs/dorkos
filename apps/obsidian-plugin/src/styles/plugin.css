@@ -1,0 +1,184 @@
+@import "tailwindcss";
+@source "../../../node_modules/streamdown/dist/*.js";
+
+@theme inline {
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
+  /* Use var() without hsl() wrapper — Obsidian provides raw color values */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-user-msg: var(--user-msg);
+  --radius: var(--radius);
+}
+
+/* Scoped border reset — only inside the copilot container */
+.copilot-view-content * {
+  border-color: var(--color-border);
+}
+
+@keyframes typing-dot {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Assistant message typography */
+.msg-assistant p + p {
+  margin-top: 1em;
+}
+
+.msg-assistant a {
+  color: hsl(var(--ring));
+  text-decoration: none;
+}
+
+.msg-assistant a:hover {
+  text-decoration: underline;
+}
+
+.msg-assistant code {
+  color: hsl(var(--ring));
+}
+
+.msg-assistant ul {
+  list-style: disc;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.msg-assistant ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.msg-assistant li {
+  margin-top: -0.25em;
+}
+
+.msg-assistant th {
+  text-align: left;
+}
+
+.msg-assistant hr {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+.msg-assistant table {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+/* Table action icons: overlay in top-right of table header, show on hover */
+.msg-assistant div:has(> div > [data-streamdown="table"]) {
+  position: relative;
+}
+
+.msg-assistant div:has(> div > [data-streamdown="table"]) > div:first-child:not(:has(table)) {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  height: 37px;
+  display: flex;
+  align-items: center;
+  z-index: 10;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+
+.msg-assistant div:has(> div > [data-streamdown="table"]):hover > div:first-child:not(:has(table)) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Obsidian theme bridge
+ * Obsidian uses raw color values (not HSL triplets), so we override the
+ * Tailwind color-* tokens directly instead of the HSL variable layer.
+ */
+.copilot-view-content {
+  --color-background: var(--background-secondary);
+  --color-foreground: var(--text-normal);
+  --color-card: var(--background-secondary-alt);
+  --color-card-foreground: var(--text-normal);
+  --color-popover: var(--background-primary);
+  --color-popover-foreground: var(--text-normal);
+  --color-primary: var(--interactive-accent);
+  --color-primary-foreground: var(--text-on-accent);
+  --color-secondary: var(--background-secondary-alt);
+  --color-secondary-foreground: var(--text-normal);
+  --color-muted: var(--background-secondary-alt);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--interactive-accent);
+  --color-accent-foreground: var(--text-on-accent);
+  --color-destructive: #e53e3e;
+  --color-destructive-foreground: #fff;
+  --color-border: var(--background-modifier-border);
+  --color-input: var(--background-modifier-form-field);
+  --color-ring: var(--interactive-accent);
+  --color-user-msg: var(--background-secondary-alt);
+
+  /* Raw HSL variables for Tailwind utility classes (bg-background, text-foreground, etc.) */
+  --background: var(--background-secondary);
+  --foreground: var(--text-normal);
+  --card: var(--background-secondary-alt);
+  --card-foreground: var(--text-normal);
+  --popover: var(--background-primary);
+  --popover-foreground: var(--text-normal);
+  --primary: var(--interactive-accent);
+  --primary-foreground: var(--text-on-accent);
+  --secondary: var(--background-secondary-alt);
+  --secondary-foreground: var(--text-normal);
+  --muted: var(--background-secondary-alt);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--interactive-accent);
+  --accent-foreground: var(--text-on-accent);
+  --destructive: #e53e3e;
+  --destructive-foreground: #fff;
+  --border: var(--background-modifier-border);
+  --input: var(--background-modifier-form-field);
+  --ring: var(--interactive-accent);
+  --user-msg: var(--background-secondary-alt);
+
+  color: var(--text-normal);
+  background-color: var(--background-secondary);
+  font-family: var(--font-interface);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}

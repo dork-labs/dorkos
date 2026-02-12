@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-server/
+dist-obsidian/
+.turbo/
+coverage/
+*.tsbuildinfo
+.env

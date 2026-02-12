@@ -1,0 +1,11 @@
+{
+  "name": "@lifeos/typescript-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "base.json",
+    "react.json",
+    "node.json"
+  ]
+}

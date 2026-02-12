@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://next-starter/template-manifest.schema.json",
+  "title": "Template Manifest",
+  "description": "Configuration for template update system",
+  "type": "object",
+  "properties": {
+    "template": {
+      "type": "object",
+      "description": "Core template metadata",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "GitHub repo in owner/repo format",
+          "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$"
+        },
+        "version": {
+          "type": "string",
+          "description": "Current template version (SemVer tag)"
+        },
+        "commit": {
+          "type": "string",
+          "description": "Commit SHA of current version",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "initialVersion": {
+          "type": "string",
+          "description": "Version when user first cloned template"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of last update"
+        }
+      },
+      "required": ["repository", "version"]
+    },
+    "components": {
+      "type": "object",
+      "description": "Component groups with update strategies",
+      "properties": {
+        "harness": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "default": ".claude/" },
+            "strategy": { "enum": ["replace", "merge"], "default": "replace" },
+            "preserveUserAdditions": { "type": "boolean", "default": true }
+          }
+        },
+        "guides": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "default": "developer-guides/" },
+            "strategy": { "enum": ["replace", "merge"], "default": "replace" }
+          }
+        },
+        "roadmap": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "default": "roadmap/" },
+            "strategy": { "enum": ["replace", "merge"], "default": "replace" },
+            "exclude": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["roadmap.json"]
+            }
+          }
+        }
+      }
+    },
+    "skipPatterns": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Glob patterns for files to never update",
+      "default": ["src/**", "public/**", "prisma/schema.prisma", ".env*"]
+    },
+    "userAdditions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "User-created files detected during updates (auto-populated)"
+    },
+    "updateHistory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "date": { "type": "string", "format": "date-time" },
+          "filesUpdated": { "type": "integer", "minimum": 0 },
+          "filesSkipped": { "type": "integer", "minimum": 0 },
+          "conflicts": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["from", "to", "date"]
+      }
+    }
+  },
+  "required": ["template"]
+}

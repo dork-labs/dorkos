@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Product Roadmap",
+  "type": "object",
+  "required": ["projectName", "projectSummary", "lastUpdated", "timeHorizons", "items"],
+  "properties": {
+    "projectName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Name of the project"
+    },
+    "projectSummary": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Brief description of the project"
+    },
+    "lastUpdated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of last update"
+    },
+    "timeHorizons": {
+      "type": "object",
+      "required": ["now", "next", "later"],
+      "properties": {
+        "now": {
+          "type": "object",
+          "required": ["label", "description"],
+          "properties": {
+            "label": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        },
+        "next": {
+          "type": "object",
+          "required": ["label", "description"],
+          "properties": {
+            "label": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        },
+        "later": {
+          "type": "object",
+          "required": ["label", "description"],
+          "properties": {
+            "label": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/roadmapItem" }
+    }
+  },
+  "definitions": {
+    "roadmapItem": {
+      "type": "object",
+      "required": ["id", "title", "type", "moscow", "status", "health", "timeHorizon", "createdAt", "updatedAt"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+          "description": "UUID v4"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "type": {
+          "type": "string",
+          "enum": ["feature", "bugfix", "technical-debt", "research", "epic"]
+        },
+        "moscow": {
+          "type": "string",
+          "enum": ["must-have", "should-have", "could-have", "wont-have"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["not-started", "in-progress", "completed", "on-hold"]
+        },
+        "health": {
+          "type": "string",
+          "enum": ["on-track", "at-risk", "off-track", "blocked"]
+        },
+        "timeHorizon": {
+          "type": "string",
+          "enum": ["now", "next", "later"]
+        },
+        "effort": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Story points (1-13 Fibonacci scale recommended)"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Array of item IDs this depends on"
+        },
+        "labels": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "linkedArtifacts": {
+          "type": "object",
+          "description": "Associated spec files for this roadmap item",
+          "properties": {
+            "specSlug": {
+              "type": "string",
+              "description": "Slug used for spec directory (e.g., 'transaction-sync')"
+            },
+            "ideationPath": {
+              "type": "string",
+              "description": "Path to ideation file (e.g., 'specs/transaction-sync/01-ideation.md')"
+            },
+            "specPath": {
+              "type": "string",
+              "description": "Path to specification file"
+            },
+            "tasksPath": {
+              "type": "string",
+              "description": "Path to tasks breakdown file"
+            },
+            "implementationPath": {
+              "type": "string",
+              "description": "Path to implementation summary file"
+            }
+          },
+          "additionalProperties": false
+        },
+        "ideationContext": {
+          "type": "object",
+          "description": "Rich context for generating ideation prompts",
+          "properties": {
+            "targetUsers": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Who benefits from this feature"
+            },
+            "painPoints": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Problems this solves"
+            },
+            "successCriteria": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "How we measure success"
+            },
+            "constraints": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Explicit limitations or out-of-scope items"
+            }
+          },
+          "additionalProperties": false
+        },
+        "workflowState": {
+          "type": "object",
+          "description": "Tracks autonomous workflow execution state",
+          "properties": {
+            "phase": {
+              "type": "string",
+              "enum": ["not-started", "ideating", "specifying", "decomposing", "implementing", "testing", "committing", "releasing", "completed"],
+              "description": "Current phase in the autonomous workflow"
+            },
+            "specSlug": {
+              "type": "string",
+              "description": "Slug of the associated spec directory (e.g., 'user-auth')"
+            },
+            "tasksTotal": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Total tasks from decomposition"
+            },
+            "tasksCompleted": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of tasks marked complete"
+            },
+            "lastSession": {
+              "type": "string",
+              "format": "date-time",
+              "description": "ISO timestamp of last work session"
+            },
+            "attempts": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Retry attempts for current phase (resets on phase advance)"
+            },
+            "blockers": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Current blocking issues requiring human intervention"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}
