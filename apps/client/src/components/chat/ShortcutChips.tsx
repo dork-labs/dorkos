@@ -22,7 +22,7 @@ export function ShortcutChips({ onChipClick }: ShortcutChipsProps) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="flex items-center gap-2 mt-1.5"
+      className="flex items-center justify-center sm:justify-start gap-2 mt-1.5"
     >
       {chips.map((chip) => (
         <button
