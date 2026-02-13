@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const vaultRoot = path.resolve(__dirname, '../../../../');
+const vaultRoot = process.env.GATEWAY_CWD ?? path.resolve(__dirname, '../../../../');
 const registry = new CommandRegistryService(vaultRoot);
 const router = Router();
 

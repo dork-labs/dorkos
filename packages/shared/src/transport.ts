@@ -4,9 +4,11 @@ import type {
   UpdateSessionRequest,
   BrowseDirectoryResponse,
   CommandRegistry,
+  HealthResponse,
   HistoryMessage,
   StreamEvent,
   TaskItem,
+  ServerConfig,
 } from './types.js';
 
 export interface Transport {
@@ -39,5 +41,6 @@ export interface Transport {
   browseDirectory(dirPath?: string, showHidden?: boolean): Promise<BrowseDirectoryResponse>;
   getDefaultCwd(): Promise<{ path: string }>;
   getCommands(refresh?: boolean): Promise<CommandRegistry>;
-  health(): Promise<{ status: string; version: string; uptime: number }>;
+  health(): Promise<HealthResponse>;
+  getConfig(): Promise<ServerConfig>;
 }

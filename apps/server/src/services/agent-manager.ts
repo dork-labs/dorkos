@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INTERACTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 /** Resolve the Claude Code CLI path for the SDK to spawn. */
-function resolveClaudeCliPath(): string | undefined {
+export function resolveClaudeCliPath(): string | undefined {
   // 1. Try the SDK's bundled cli.js (works when running from source / node_modules)
   try {
     const sdkCli = require.resolve('@anthropic-ai/claude-agent-sdk/cli.js');
@@ -175,7 +175,7 @@ export class AgentManager {
   private readonly claudeCliPath: string | undefined;
 
   constructor(cwd?: string) {
-    this.cwd = cwd ?? path.resolve(__dirname, '../../../../');
+    this.cwd = cwd ?? process.env.GATEWAY_CWD ?? path.resolve(__dirname, '../../../../');
     this.claudeCliPath = resolveClaudeCliPath();
   }
 

@@ -20,7 +20,7 @@ export function StatusLine({ sessionId, sessionStatus, isStreaming }: StatusLine
       role="toolbar"
       aria-label="Session status"
       aria-live="polite"
-      className="flex items-center gap-2 px-1 pt-2 text-xs text-muted-foreground"
+      className="flex flex-wrap items-center justify-center sm:justify-start gap-2 px-1 pt-2 text-xs text-muted-foreground whitespace-nowrap"
     >
       {status.cwd && (
         <>

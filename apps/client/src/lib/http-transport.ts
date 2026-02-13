@@ -4,9 +4,11 @@ import type {
   UpdateSessionRequest,
   BrowseDirectoryResponse,
   CommandRegistry,
+  HealthResponse,
   HistoryMessage,
   StreamEvent,
   TaskItem,
+  ServerConfig,
 } from '@lifeos/shared/types';
 import type { Transport } from '@lifeos/shared/transport';
 
@@ -151,7 +153,11 @@ export class HttpTransport implements Transport {
     return fetchJSON<CommandRegistry>(this.baseUrl, `/commands${refresh ? '?refresh=true' : ''}`);
   }
 
-  health(): Promise<{ status: string; version: string; uptime: number }> {
-    return fetchJSON<{ status: string; version: string; uptime: number }>(this.baseUrl, '/health');
+  health(): Promise<HealthResponse> {
+    return fetchJSON<HealthResponse>(this.baseUrl, '/health');
+  }
+
+  getConfig(): Promise<ServerConfig> {
+    return fetchJSON<ServerConfig>(this.baseUrl, '/config');
   }
 }

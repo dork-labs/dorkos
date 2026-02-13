@@ -11,6 +11,9 @@ export interface ChatMessage {
   toolCalls?: ToolCallState[];
   parts: MessagePart[];
   timestamp: string;
+  messageType?: 'command' | 'compaction';
+  commandName?: string;
+  commandArgs?: string;
 }
 
 export type GroupPosition = 'only' | 'first' | 'middle' | 'last';
@@ -134,6 +137,9 @@ export function useChatSession(sessionId: string, options: ChatSessionOptions = 
             toolCalls: derived.toolCalls.length > 0 ? derived.toolCalls : undefined,
             parts,
             timestamp: m.timestamp || '',
+            messageType: m.messageType,
+            commandName: m.commandName,
+            commandArgs: m.commandArgs,
           };
         }));
       }

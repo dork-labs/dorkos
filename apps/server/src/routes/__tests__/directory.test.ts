@@ -37,6 +37,12 @@ vi.mock('../../services/agent-manager.js', () => ({
   },
 }));
 
+vi.mock('../../services/tunnel-manager.js', () => ({
+  tunnelManager: {
+    status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
+  },
+}));
+
 import request from 'supertest';
 import { createApp } from '../../app.js';
 

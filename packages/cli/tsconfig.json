@@ -1,0 +1,8 @@
+{
+  "extends": "@lifeos/typescript-config/node.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}

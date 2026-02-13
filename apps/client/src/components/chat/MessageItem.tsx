@@ -89,6 +89,7 @@ function formatTime(timestamp: string): string {
 export function MessageItem({ message, grouping, sessionId, isNew = false, isStreaming = false }: MessageItemProps) {
   const isUser = message.role === 'user';
   const { showTimestamps, expandToolCalls, autoHideToolCalls } = useAppStore();
+  const [compactionExpanded, setCompactionExpanded] = useState(false);
   const { position, groupIndex } = grouping;
   const showIndicator = position === 'only' || position === 'first';
   const isGroupStart = position === 'only' || position === 'first';
@@ -143,7 +144,33 @@ export function MessageItem({ message, grouping, sessionId, isNew = false, isStr
       </div>
       <div className="flex-1 min-w-0 max-w-[80ch]">
         {isUser ? (
-          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          message.messageType === 'command' ? (
+            <div className="font-mono text-sm text-muted-foreground truncate">
+              {message.content}
+            </div>
+          ) : message.messageType === 'compaction' ? (
+            <div className="w-full">
+              <button
+                onClick={() => setCompactionExpanded(!compactionExpanded)}
+                className="flex items-center gap-2 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors w-full"
+              >
+                <div className="h-px flex-1 bg-border/40" />
+                <ChevronRight className={cn(
+                  'size-3 transition-transform duration-200',
+                  compactionExpanded && 'rotate-90'
+                )} />
+                <span>Context compacted</span>
+                <div className="h-px flex-1 bg-border/40" />
+              </button>
+              {compactionExpanded && (
+                <div className="mt-2 text-xs text-muted-foreground/60 whitespace-pre-wrap">
+                  {message.content}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          )
         ) : (
           parts.map((part, i) => {
             if (part.type === 'text') {

@@ -5,7 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "dist-server/**", "dist-obsidian/**"],
-      "env": ["NODE_ENV", "VITE_*", "GATEWAY_PORT"]
+      "env": ["NODE_ENV", "VITE_*", "GATEWAY_PORT", "NGROK_*", "TUNNEL_*"]
     },
     "dev": {
       "dependsOn": ["^build"],
@@ -24,6 +24,11 @@
     "typecheck": {
       "dependsOn": ["^build"],
       "cache": true
+    },
+    "pack": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "cache": false
     }
   }
 }

@@ -7,6 +7,7 @@ import sessionRoutes from './routes/sessions.js';
 import commandRoutes from './routes/commands.js';
 import healthRoutes from './routes/health.js';
 import directoryRoutes from './routes/directory.js';
+import configRoutes from './routes/config.js';
 import { generateOpenAPISpec } from './services/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 
@@ -23,6 +24,7 @@ export function createApp() {
   app.use('/api/commands', commandRoutes);
   app.use('/api/health', healthRoutes);
   app.use('/api/directory', directoryRoutes);
+  app.use('/api/config', configRoutes);
 
   // OpenAPI spec + interactive docs
   const spec = generateOpenAPISpec();
@@ -34,7 +36,8 @@ export function createApp() {
 
   // In production, serve the built React app
   if (process.env.NODE_ENV === 'production') {
-    const distPath = path.join(__dirname, '../../client/dist');
+    const distPath = process.env.CLIENT_DIST_PATH
+      ?? path.join(__dirname, '../../client/dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

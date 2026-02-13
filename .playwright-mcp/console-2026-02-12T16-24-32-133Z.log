@@ -1,0 +1,17 @@
+[     165ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/favicon.ico:0
+[    5124ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[    5125ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7102191ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7102192ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7118740ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7118740ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7137343ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7137344ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7140404ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7140405ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:3001/node_modules/.vite/deps/chunk-HRCBKGJO.js?v=8e354bb6:345
+[ 7155802ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/api/sessions/8102aa24-7266-4187-9451-02393cfc6994:0
+[ 7156833ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/api/sessions/8102aa24-7266-4187-9451-02393cfc6994:0
+[ 7166428ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/api/sessions/eee372e9-07e5-41cb-b4b8-dd9fe28925f2:0
+[ 7167438ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/api/sessions/eee372e9-07e5-41cb-b4b8-dd9fe28925f2:0
+[ 7168599ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/api/sessions/958a1e61-18c6-44f5-a031-ad04e02adce8:0
+[ 7169609ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/api/sessions/958a1e61-18c6-44f5-a031-ad04e02adce8:0

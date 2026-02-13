@@ -65,6 +65,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       measureElement: (el) => el?.getBoundingClientRect().height ?? 80,
     });
 
+    const isTouchActiveRef = useRef(false);
+
     // Track scroll position and report to parent
     const handleScroll = useCallback(() => {
       const container = parentRef.current;
@@ -72,15 +74,28 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       const distanceFromBottom =
         container.scrollHeight - container.scrollTop - container.clientHeight;
       const isAtBottom = distanceFromBottom < 200;
+      const changed = isAtBottomRef.current !== isAtBottom;
       isAtBottomRef.current = isAtBottom;
-      onScrollStateChange?.({ isAtBottom, distanceFromBottom });
+      if (changed) {
+        onScrollStateChange?.({ isAtBottom, distanceFromBottom });
+      }
     }, [onScrollStateChange]);
 
     useEffect(() => {
       const container = parentRef.current;
       if (!container) return;
+      const onTouchStart = () => { isTouchActiveRef.current = true; };
+      const onTouchEnd = () => { isTouchActiveRef.current = false; };
       container.addEventListener('scroll', handleScroll, { passive: true });
-      return () => container.removeEventListener('scroll', handleScroll);
+      container.addEventListener('touchstart', onTouchStart, { passive: true });
+      container.addEventListener('touchend', onTouchEnd, { passive: true });
+      container.addEventListener('touchcancel', onTouchEnd, { passive: true });
+      return () => {
+        container.removeEventListener('scroll', handleScroll);
+        container.removeEventListener('touchstart', onTouchStart);
+        container.removeEventListener('touchend', onTouchEnd);
+        container.removeEventListener('touchcancel', onTouchEnd);
+      };
     }, [handleScroll]);
 
     // When the scroll container becomes visible again (e.g. switching Obsidian
@@ -113,9 +128,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     const lastMsg = messages[messages.length - 1];
     const scrollTrigger = `${messages.length}:${lastMsg?.toolCalls?.length ?? 0}`;
 
-    // Auto-scroll to bottom on new messages or tool call additions
+    // Auto-scroll to bottom on new messages or tool call additions.
+    // Skip during active touch to avoid cancelling native momentum scroll.
     useEffect(() => {
-      if (messages.length > 0 && isAtBottomRef.current) {
+      if (messages.length > 0 && isAtBottomRef.current && !isTouchActiveRef.current) {
         virtualizer.scrollToIndex(messages.length - 1, { align: 'end' });
       }
     }, [scrollTrigger, virtualizer]);

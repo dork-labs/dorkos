@@ -20,6 +20,7 @@ export type {
   TextPart,
   ToolCallPart,
   MessagePart,
+  MessageType,
   HistoryMessage,
   HistoryToolCall,
   TaskStatus,
@@ -29,4 +30,7 @@ export type {
   DirectoryEntry,
   CommandEntry,
   CommandRegistry,
+  HealthResponse,
+  TunnelStatus,
+  ServerConfig,
 } from './schemas.js';

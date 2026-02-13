@@ -14,6 +14,7 @@
 
 :root {
   --mobile-scale: 1.25;
+  --user-font-scale: 1;
   /* Optional per-category overrides: */
   /* --mobile-scale-text: 1.15; */
   /* --mobile-scale-icon: 1.25; */
@@ -35,15 +36,15 @@
 
 @theme inline {
   /* Scaled font sizes (--text-* is the Tailwind v4 namespace for text-* utilities) */
-  --text-3xs: calc(0.625rem * var(--_st));
+  --text-3xs: calc(0.625rem * var(--_st) * var(--user-font-scale, 1));
   --text-3xs--line-height: 0.875rem;
-  --text-2xs: calc(0.6875rem * var(--_st));
+  --text-2xs: calc(0.6875rem * var(--_st) * var(--user-font-scale, 1));
   --text-2xs--line-height: 1rem;
-  --text-xs: calc(0.75rem * var(--_st));
-  --text-sm: calc(0.875rem * var(--_st));
-  --text-base: calc(1rem * var(--_st));
-  --text-lg: calc(1.125rem * var(--_st));
-  --text-xl: calc(1.25rem * var(--_st));
+  --text-xs: calc(0.75rem * var(--_st) * var(--user-font-scale, 1));
+  --text-sm: calc(0.875rem * var(--_st) * var(--user-font-scale, 1));
+  --text-base: calc(1rem * var(--_st) * var(--user-font-scale, 1));
+  --text-lg: calc(1.125rem * var(--_st) * var(--user-font-scale, 1));
+  --text-xl: calc(1.25rem * var(--_st) * var(--user-font-scale, 1));
 
   /* Icon sizes (3 standard tokens) */
   --size-icon-xs: calc(0.75rem * var(--_si));
@@ -138,6 +139,39 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
   height: 100dvh;
+}
+
+/* Custom scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+@media (max-width: 767px) {
+  * {
+    scrollbar-width: none;
+  }
+  ::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Fallback for older Safari that doesn't support dvh */

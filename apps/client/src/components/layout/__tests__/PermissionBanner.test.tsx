@@ -26,6 +26,7 @@ function createMockTransport(): Transport {
     updateSession: vi.fn(),
     browseDirectory: vi.fn().mockResolvedValue({ path: '/test', entries: [], parent: null }),
     getDefaultCwd: vi.fn().mockResolvedValue({ path: '/test/cwd' }),
+    getConfig: vi.fn().mockResolvedValue({ version: '1.0.0', port: 6942, uptime: 0, workingDirectory: '/test', nodeVersion: 'v20.0.0', claudeCliPath: null, tunnel: { enabled: false, connected: false, url: null, authEnabled: false, tokenConfigured: false } }),
   };
 }
 
@@ -76,7 +77,7 @@ describe('PermissionBanner', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('shows banner for bypassPermissions mode', () => {
+  it('returns null even for bypassPermissions mode (banner hidden)', () => {
     const session = {
       id: 's2',
       permissionMode: 'bypassPermissions',
@@ -84,25 +85,10 @@ describe('PermissionBanner', () => {
       createdAt: '',
       updatedAt: '',
     };
-    render(
+    const { container } = render(
       <PermissionBanner sessionId="s2" />,
       { wrapper: createWrapper(session) }
     );
-    expect(screen.getByText(/Permissions bypassed/)).toBeDefined();
-  });
-
-  it('banner contains auto-approved text', () => {
-    const session = {
-      id: 's3',
-      permissionMode: 'bypassPermissions',
-      title: 'Test Session',
-      createdAt: '',
-      updatedAt: '',
-    };
-    render(
-      <PermissionBanner sessionId="s3" />,
-      { wrapper: createWrapper(session) }
-    );
-    expect(screen.getByText(/auto-approved/)).toBeDefined();
+    expect(container.textContent).toBe('');
   });
 });

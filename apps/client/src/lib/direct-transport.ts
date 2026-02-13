@@ -5,10 +5,12 @@ import type {
   CreateSessionRequest,
   UpdateSessionRequest,
   BrowseDirectoryResponse,
+  HealthResponse,
   PermissionMode,
   HistoryMessage,
   CommandRegistry,
   TaskItem,
+  ServerConfig,
 } from '@lifeos/shared/types';
 
 export interface DirectTransportServices {
@@ -209,7 +211,25 @@ export class DirectTransport implements Transport {
     return this.services.commandRegistry.getCommands(refresh);
   }
 
-  async health(): Promise<{ status: string; version: string; uptime: number }> {
+  async health(): Promise<HealthResponse> {
     return { status: 'ok', version: '0.1.0', uptime: 0 };
+  }
+
+  async getConfig(): Promise<ServerConfig> {
+    return {
+      version: '0.1.0',
+      port: 0,
+      uptime: 0,
+      workingDirectory: this.services.vaultRoot,
+      nodeVersion: process.version,
+      claudeCliPath: null,
+      tunnel: {
+        enabled: false,
+        connected: false,
+        url: null,
+        authEnabled: false,
+        tokenConfigured: false,
+      },
+    };
   }
 }

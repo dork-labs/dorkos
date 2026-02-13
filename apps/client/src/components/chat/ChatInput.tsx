@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ArrowUp, CornerDownLeft, Square } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -101,6 +101,27 @@ export function ChatInput({
     },
     [onChange]
   );
+
+  // Smoothly shrink textarea back to single-line height after submit clears value
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || value !== '') return;
+    const currentHeight = textarea.scrollHeight;
+    const targetHeight = 24; // matches min-h-[24px]
+    if (currentHeight <= targetHeight) return;
+    // Snapshot current height, enable transition, then animate to target
+    textarea.style.height = `${currentHeight}px`;
+    textarea.style.transition = 'height 200ms ease';
+    requestAnimationFrame(() => {
+      textarea.style.height = `${targetHeight}px`;
+    });
+    const onEnd = () => {
+      textarea.style.transition = '';
+      textarea.style.height = '';
+    };
+    textarea.addEventListener('transitionend', onEnd, { once: true });
+    return () => textarea.removeEventListener('transitionend', onEnd);
+  }, [value]);
 
   const hasText = value.trim().length > 0;
   const showButton = isLoading || hasText;

@@ -147,7 +147,7 @@ describe('TranscriptReader', () => {
       expect(messages[0].content).toBe('Before the tool.\nAfter the tool.');
     });
 
-    it('skips system/command user messages', async () => {
+    it('skips local-command messages and converts command+expansion to command type', async () => {
       const lines = [
         JSON.stringify({
           type: 'user',
@@ -162,7 +162,7 @@ describe('TranscriptReader', () => {
         JSON.stringify({
           type: 'user',
           uuid: 'u3',
-          message: { role: 'user', content: 'Real message' },
+          message: { role: 'user', content: 'Expanded prompt for clear' },
         }),
       ].join('\n');
 
@@ -171,7 +171,9 @@ describe('TranscriptReader', () => {
       const messages = await transcriptReader.readTranscript('/vault', 'session-789');
 
       expect(messages).toHaveLength(1);
-      expect(messages[0].content).toBe('Real message');
+      expect(messages[0].content).toBe('/clear');
+      expect(messages[0].messageType).toBe('command');
+      expect(messages[0].commandName).toBe('/clear');
     });
 
     it('strips system-reminder tags from user messages', async () => {
@@ -263,6 +265,239 @@ describe('TranscriptReader', () => {
       const messages = await transcriptReader.readTranscript('/vault', 's1');
 
       expect(messages).toHaveLength(0);
+    });
+
+    it('classifies command messages with name and args', async () => {
+      const lines = [
+        JSON.stringify({
+          type: 'user',
+          uuid: 'cmd-meta',
+          message: {
+            role: 'user',
+            content: '<command-message>ideate</command-message>\n<command-name>/ideate</command-name>\n<command-args>Add settings screen</command-args>',
+          },
+        }),
+        JSON.stringify({
+          type: 'user',
+          uuid: 'cmd-expansion',
+          message: {
+            role: 'user',
+            content: '# Preflight\nYou are a product ideation assistant...',
+          },
+        }),
+      ].join('\n');
+
+      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      const messages = await transcriptReader.readTranscript('/vault', 'session-cmd');
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        id: 'cmd-expansion',
+        role: 'user',
+        content: '/ideate Add settings screen',
+        messageType: 'command',
+        commandName: '/ideate',
+        commandArgs: 'Add settings screen',
+      });
+    });
+
+    it('classifies Skill tool invocations as command messages with args', async () => {
+      const lines = [
+        // Assistant message with Skill tool_use (captures args)
+        JSON.stringify({
+          type: 'assistant',
+          uuid: 'asst-skill',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: "I'll decompose the spec." },
+              { type: 'tool_use', id: 'toolu_abc', name: 'Skill', input: { skill: 'spec:decompose', args: 'specs/my-feature/02-specification.md' } },
+            ],
+          },
+        }),
+        // Tool result with toolUseResult.commandName
+        JSON.stringify({
+          type: 'user',
+          uuid: 'skill-result',
+          message: {
+            role: 'user',
+            content: [
+              { type: 'tool_result', tool_use_id: 'toolu_abc', content: 'Launching skill: spec:decompose' },
+            ],
+          },
+          toolUseResult: { success: true, commandName: 'spec:decompose' },
+        }),
+        // Expanded skill prompt (plain string)
+        JSON.stringify({
+          type: 'user',
+          uuid: 'skill-expansion',
+          message: {
+            role: 'user',
+            content: '# Decompose Specification into Tasks\n\nDecompose the specification at: specs/my-feature/02-specification.md...',
+          },
+        }),
+      ].join('\n');
+
+      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      const messages = await transcriptReader.readTranscript('/vault', 'session-skill');
+
+      // Should have the assistant message + the command message (expansion collapsed)
+      const cmdMsg = messages.find(m => m.messageType === 'command');
+      expect(cmdMsg).toBeDefined();
+      expect(cmdMsg).toMatchObject({
+        id: 'skill-expansion',
+        role: 'user',
+        content: '/spec:decompose specs/my-feature/02-specification.md',
+        messageType: 'command',
+        commandName: '/spec:decompose',
+        commandArgs: 'specs/my-feature/02-specification.md',
+      });
+    });
+
+    it('handles Skill tool expansion with array content', async () => {
+      const lines = [
+        // Tool result with toolUseResult.commandName
+        JSON.stringify({
+          type: 'user',
+          uuid: 'skill-result',
+          message: {
+            role: 'user',
+            content: [
+              { type: 'tool_result', tool_use_id: 'toolu_xyz', content: 'Launching skill: ideate' },
+            ],
+          },
+          toolUseResult: { success: true, commandName: 'ideate' },
+        }),
+        // Expanded skill prompt as array content (not plain string)
+        JSON.stringify({
+          type: 'user',
+          uuid: 'skill-expansion-array',
+          message: {
+            role: 'user',
+            content: [
+              { type: 'text', text: '# Preflight\nYou are a product ideation assistant...' },
+            ],
+          },
+        }),
+      ].join('\n');
+
+      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      const messages = await transcriptReader.readTranscript('/vault', 'session-skill-array');
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        id: 'skill-expansion-array',
+        role: 'user',
+        content: '/ideate',
+        messageType: 'command',
+        commandName: '/ideate',
+      });
+    });
+
+    it('classifies compaction summaries', async () => {
+      const lines = [
+        JSON.stringify({
+          type: 'user',
+          uuid: 'comp-1',
+          message: {
+            role: 'user',
+            content: 'This session is being continued from a previous conversation. Summary here...',
+          },
+        }),
+      ].join('\n');
+
+      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      const messages = await transcriptReader.readTranscript('/vault', 'session-comp');
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        id: 'comp-1',
+        role: 'user',
+        messageType: 'compaction',
+      });
+      expect(messages[0].content).toContain('This session is being continued');
+    });
+
+    it('skips task notification messages entirely', async () => {
+      const lines = [
+        JSON.stringify({
+          type: 'user',
+          uuid: 'u1',
+          message: { role: 'user', content: 'Hello' },
+        }),
+        JSON.stringify({
+          type: 'user',
+          uuid: 'task-1',
+          message: {
+            role: 'user',
+            content: '<task-notification><task-id>a1</task-id><status>completed</status></task-notification>',
+          },
+        }),
+        JSON.stringify({
+          type: 'user',
+          uuid: 'u2',
+          message: { role: 'user', content: 'Continue working' },
+        }),
+      ].join('\n');
+
+      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      const messages = await transcriptReader.readTranscript('/vault', 'session-task');
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0].content).toBe('Hello');
+      expect(messages[1].content).toBe('Continue working');
+    });
+
+    it('clears pending command on local-command messages', async () => {
+      const lines = [
+        JSON.stringify({
+          type: 'user',
+          uuid: 'cmd-meta',
+          message: { role: 'user', content: '<command-name>/compact</command-name>' },
+        }),
+        JSON.stringify({
+          type: 'user',
+          uuid: 'local-cmd',
+          message: { role: 'user', content: '<local-command-stdout>Compaction complete</local-command-stdout>' },
+        }),
+        JSON.stringify({
+          type: 'user',
+          uuid: 'u1',
+          message: { role: 'user', content: 'Next question' },
+        }),
+      ].join('\n');
+
+      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      const messages = await transcriptReader.readTranscript('/vault', 'session-local');
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('Next question');
+      expect(messages[0].messageType).toBeUndefined();
+    });
+
+    it('normal messages have no messageType', async () => {
+      const lines = [
+        JSON.stringify({
+          type: 'user',
+          uuid: 'u1',
+          message: { role: 'user', content: 'What is the weather?' },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          uuid: 'a1',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'I cannot check the weather.' }],
+          },
+        }),
+      ].join('\n');
+
+      (fs.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(lines);
+      const messages = await transcriptReader.readTranscript('/vault', 'session-normal');
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0].messageType).toBeUndefined();
+      expect(messages[1].messageType).toBeUndefined();
     });
   });
 

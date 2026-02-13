@@ -24,6 +24,7 @@ export default defineConfig({
   server: {
     port: 3000,
     allowedHosts: ['.ngrok-free.app'],
+    ...(process.env.TUNNEL_ENABLED === 'true' && { hmr: { clientPort: 443 } }),
     watch: {
       ignored: ['**/state/**'],
     },

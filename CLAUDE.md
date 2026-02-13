@@ -10,7 +10,7 @@ The Agent SDK is fully integrated via `agent-manager.ts`, which calls the SDK's 
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with three apps and three shared packages:
+This is a Turborepo monorepo with three apps and four shared packages:
 
 ```
 lifeos-gateway/
@@ -19,6 +19,7 @@ lifeos-gateway/
 │   ├── server/           # @lifeos/server - Express API (tsc, NodeNext)
 │   └── obsidian-plugin/  # @lifeos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
 ├── packages/
+│   ├── cli/              # @lifeos/gateway - Publishable npm CLI (esbuild bundle)
 │   ├── shared/           # @lifeos/shared - Zod schemas, types (JIT .ts exports)
 │   ├── typescript-config/ # @lifeos/typescript-config - Shared tsconfig presets
 │   └── test-utils/       # @lifeos/test-utils - Mock factories, test helpers
@@ -38,7 +39,9 @@ turbo test -- --run    # Vitest single run
 turbo build            # Build all 3 apps (client Vite + server tsc + obsidian plugin)
 turbo typecheck        # Type-check all packages
 turbo build --filter=@lifeos/obsidian-plugin  # Build Obsidian plugin only
+npm run build -w packages/cli  # Build CLI package (esbuild bundles server+client+CLI)
 npm start              # Production server (serves built React app)
+npm run dev:tunnel -w apps/server   # Dev server + ngrok tunnel (tunnels Vite on :3000)
 ```
 
 Run a single test file: `npx vitest run apps/server/src/services/__tests__/transcript-reader.test.ts`
@@ -53,13 +56,14 @@ Express server on port `GATEWAY_PORT` (default 6942). Three route groups:
 
 - **`routes/sessions.ts`** - Session listing (from SDK transcripts), session creation, SSE message streaming, message history, tool approve/deny endpoints
 - **`routes/commands.ts`** - Scans `../../.claude/commands/` for slash commands using gray-matter frontmatter parsing
-- **`routes/health.ts`** - Health check
+- **`routes/health.ts`** - Health check; includes optional `tunnel` status field when ngrok is enabled
 
-Three services:
+Four services:
 
 - **`services/agent-manager.ts`** - Manages Claude Agent SDK sessions. Calls `query()` with streaming, maps SDK events (`stream_event`, `tool_use_summary`, `result`) to gateway `StreamEvent` types. Tracks active sessions in-memory with 30-minute timeout. All sessions use `resume: sessionId` for SDK continuity. Accepts optional `cwd` constructor param (used by Obsidian plugin). Resolves the Claude Code CLI path dynamically via `resolveClaudeCliPath()` for Electron compatibility.
 - **`services/transcript-reader.ts`** - Single source of truth for session data. Reads SDK JSONL transcript files from `~/.claude/projects/{slug}/`. Provides `listSessions()` (scans directory, extracts metadata), `getSession()` (single session metadata), and `readTranscript()` (full message history). Extracts titles from first user message, permission mode from init message, timestamps from file stats.
 - **`services/stream-adapter.ts`** - SSE helpers (`initSSEStream`, `sendSSEEvent`, `endSSEStream`) that format `StreamEvent` objects as SSE wire protocol.
+- **`services/tunnel-manager.ts`** - Opt-in ngrok tunnel lifecycle. Singleton that wraps `@ngrok/ngrok` SDK with dynamic import (zero cost when disabled). Configured via env vars: `TUNNEL_ENABLED`, `NGROK_AUTHTOKEN`, `TUNNEL_PORT`, `TUNNEL_AUTH`, `TUNNEL_DOMAIN`. Started after Express binds in `index.ts`; tunnel failure is non-blocking. Exposes `status` getter consumed by `health.ts`. Graceful shutdown via SIGINT/SIGTERM.
 
 ### Session Architecture
 
@@ -119,6 +123,10 @@ Both paths are used by `CommandRegistryService` to find `.claude/commands/` and 
 ### Obsidian Plugin Build
 
 The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plugins (in `apps/obsidian-plugin/build-plugins/`) that post-process `main.js` for Electron compatibility: `copyManifest`, `safeRequires`, `fixDirnamePolyfill`, `patchElectronCompat`. Output goes to `apps/obsidian-plugin/dist/`. See `guides/architecture.md` > "Electron Compatibility Layer" for details.
+
+### CLI Package (`packages/cli`)
+
+The `@lifeos/gateway` npm package bundles the server + client into a standalone CLI tool. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@lifeos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The CLI uses `node:util` parseArgs and sets environment variables (`GATEWAY_PORT`, `CLIENT_DIST_PATH`, `GATEWAY_CWD`, `TUNNEL_ENABLED`, `NODE_ENV`) before dynamically importing the bundled server.
 
 ## Guides
 

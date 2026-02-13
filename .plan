@@ -1,0 +1,74 @@
+# Fix: Mobile Safari page overflow — viewport height issue
+
+## Problem
+
+On iOS Safari, the entire page scrolls vertically. The status bar and part of the chat input can scroll below the fold, making them invisible. Only the message list should scroll internally — the outer shell should be pinned to the viewport.
+
+## Root Cause
+
+The outer container in `App.tsx` (line 112) uses `h-screen`, which maps to `100vh` in CSS. On iOS Safari, `100vh` is **taller than the visible viewport** because it includes the area behind the browser's dynamic toolbar (address bar). When the toolbar is showing, the content overflows and the page becomes scrollable.
+
+This is a well-known iOS Safari bug/behavior. The fix is to use `100dvh` (dynamic viewport height), which adjusts to the actual visible area as the toolbar shows/hides.
+
+## Solution
+
+Two changes:
+
+### 1. Replace `h-screen` with `h-dvh` on the root container
+
+In `App.tsx` line 112:
+```
+- className="flex flex-col h-screen bg-background text-foreground"
++ className="flex flex-col h-dvh bg-background text-foreground"
+```
+
+Tailwind's `h-dvh` maps to `height: 100dvh`, which is supported by all modern browsers (Safari 15.4+, Chrome 108+, Firefox 94+). This correctly tracks the visible viewport even when Safari's toolbar changes size.
+
+### 2. Add `overflow: hidden` on html/body as a belt-and-suspenders fix
+
+In `index.css`, add to the existing `body` rule:
+```css
+body {
+  /* existing styles */
+  overflow: hidden;
+  height: 100dvh;
+}
+
+html {
+  overflow: hidden;
+}
+```
+
+This prevents any possibility of the document itself scrolling. All scrolling happens within the `flex-1 overflow-y-auto` MessageList container.
+
+### 3. Add `-webkit-fill-available` fallback for older Safari
+
+For older iOS Safari versions that don't support `dvh`:
+```css
+@supports not (height: 100dvh) {
+  body, #root {
+    height: -webkit-fill-available;
+  }
+}
+```
+
+## Files to Change
+
+1. `apps/client/src/App.tsx` — Change `h-screen` → `h-dvh` (line 112)
+2. `apps/client/src/index.css` — Add `overflow: hidden` to body, add html overflow hidden, add `-webkit-fill-available` fallback
+
+## Verification
+
+The layout chain should be:
+- `html/body` → no scroll, fills visible viewport
+- `#root` → inherits full height
+- `App div` → `h-dvh` = visible viewport height
+- `ChatPanel` → `flex flex-col h-full` → fills parent
+- `MessageList` → `flex-1 overflow-y-auto` → only this scrolls
+- `chat-input-container` → fixed at bottom, never scrolls off
+
+## Risk Assessment
+
+- `dvh` is well-supported (caniuse: 94%+ global). The fallback covers the rest.
+- `overflow: hidden` on body is safe because all scrolling is already internal to MessageList.
+- No desktop impact — `100dvh` equals `100vh` on desktop browsers where there's no dynamic toolbar.

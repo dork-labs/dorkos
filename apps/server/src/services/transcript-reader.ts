@@ -27,6 +27,7 @@ interface TranscriptLine {
   toolUseResult?: {
     questions?: QuestionItem[];
     answers?: Record<string, string>;
+    commandName?: string;
   };
 }
 
@@ -253,7 +254,10 @@ export class TranscriptReader {
       // Extract first user message for title
       if (!firstUserMessage && parsed.type === 'user' && parsed.message) {
         const text = this.extractTextContent(parsed.message.content);
-        if (text.startsWith('<local-command') || text.startsWith('<command-name>')) {
+        if (text.startsWith('<local-command') || text.startsWith('<command-name>') || text.startsWith('<command-message>') || text.startsWith('<task-notification>')) {
+          continue;
+        }
+        if (text.startsWith('This session is being continued')) {
           continue;
         }
         const cleanText = this.stripSystemTags(text);
@@ -306,6 +310,10 @@ export class TranscriptReader {
 
     const messages: HistoryMessage[] = [];
     const lines = content.split('\n').filter(l => l.trim());
+    // Track pending slash command metadata for correlating with expanded prompt
+    let pendingCommand: { commandName: string; commandArgs: string } | null = null;
+    // Track args from the most recent Skill tool_use (assistant message)
+    let pendingSkillArgs: string | null = null;
     // Map tool_use_id → HistoryToolCall for correlating results
     const toolCallMap = new Map<string, HistoryToolCall>();
     // Map tool_use_id → ToolCallPart for correlating results into parts
@@ -359,7 +367,33 @@ export class TranscriptReader {
           }
 
           // If this user message is purely tool results, skip it as a visible message
-          if (hasToolResult && textParts.length === 0) continue;
+          // But first check if it's a Skill tool invocation (toolUseResult.commandName)
+          if (hasToolResult && textParts.length === 0) {
+            if (parsed.toolUseResult?.commandName) {
+              const cmdName = '/' + parsed.toolUseResult.commandName.replace(/^\//, '');
+              pendingCommand = { commandName: cmdName, commandArgs: pendingSkillArgs || '' };
+              pendingSkillArgs = null;
+            }
+            continue;
+          }
+
+          // If there's a pending command, this array-content message is the expanded skill prompt
+          if (pendingCommand) {
+            const { commandName, commandArgs } = pendingCommand;
+            pendingCommand = null;
+            const displayContent = commandArgs
+              ? `${commandName} ${commandArgs}`
+              : commandName;
+            messages.push({
+              id: parsed.uuid || crypto.randomUUID(),
+              role: 'user',
+              content: displayContent,
+              messageType: 'command',
+              commandName,
+              commandArgs: commandArgs || undefined,
+            });
+            continue;
+          }
 
           // Otherwise it has human text alongside tool results
           if (textParts.length > 0) {
@@ -377,9 +411,56 @@ export class TranscriptReader {
 
         // Plain string content (normal user message)
         const text = typeof msgContent === 'string' ? msgContent : '';
-        if (text.startsWith('<local-command') || text.startsWith('<command-name>')) {
+
+        // Skip task notifications entirely
+        if (text.startsWith('<task-notification>')) {
           continue;
         }
+
+        // Detect command metadata messages (set pendingCommand for next message)
+        if (text.startsWith('<command-message>') || text.startsWith('<command-name>')) {
+          const meta = this.extractCommandMeta(text);
+          if (meta) {
+            pendingCommand = meta;
+          }
+          continue;
+        }
+
+        // Local command messages (like /compact stdout) — skip and clear pending
+        if (text.startsWith('<local-command')) {
+          pendingCommand = null;
+          continue;
+        }
+
+        // If there's a pending command, this message is the expanded skill prompt
+        if (pendingCommand) {
+          const { commandName, commandArgs } = pendingCommand;
+          pendingCommand = null;
+          const displayContent = commandArgs
+            ? `${commandName} ${commandArgs}`
+            : commandName;
+          messages.push({
+            id: parsed.uuid || crypto.randomUUID(),
+            role: 'user',
+            content: displayContent,
+            messageType: 'command',
+            commandName,
+            commandArgs: commandArgs || undefined,
+          });
+          continue;
+        }
+
+        // Detect compaction summaries
+        if (text.startsWith('This session is being continued')) {
+          messages.push({
+            id: parsed.uuid || crypto.randomUUID(),
+            role: 'user',
+            content: text,
+            messageType: 'compaction',
+          });
+          continue;
+        }
+
         const cleanText = this.stripSystemTags(text);
         if (!cleanText.trim()) continue;
 
@@ -419,6 +500,11 @@ export class TranscriptReader {
               if (block.input.answers && typeof block.input.answers === 'object') {
                 tc.answers = block.input.answers as Record<string, string>;
               }
+            }
+            // Track Skill tool args for correlating with expanded prompt
+            if (block.name === 'Skill' && block.input) {
+              const input = block.input as Record<string, unknown>;
+              pendingSkillArgs = (input.args as string) || null;
             }
             toolCalls.push(tc);
             toolCallMap.set(block.id, tc);
@@ -560,6 +646,15 @@ export class TranscriptReader {
       .filter(b => b.type === 'text' && b.text)
       .map(b => b.text!)
       .join('\n');
+  }
+
+  private extractCommandMeta(text: string): { commandName: string; commandArgs: string } | null {
+    const nameMatch = text.match(/<command-name>\/?([^<]+)<\/command-name>/);
+    if (!nameMatch) return null;
+    const commandName = '/' + nameMatch[1].replace(/^\//, '');
+    const argsMatch = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
+    const commandArgs = argsMatch ? argsMatch[1].trim() : '';
+    return { commandName, commandArgs };
   }
 
   private stripSystemTags(text: string): string {

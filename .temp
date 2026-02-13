@@ -1,0 +1,13 @@
+/ideate I want to add a new setting that makes the tool components disappear from the chat shortly
+  after they've completed. So they're visible before they complete, but then they disappear 5 seconds
+  after they complete.                                                                            
+  I want to do this because the tool calls add a lot of clutter into the history.               
+  One challenge is making sure to avoid abrupt jumps as they're removed. I think we can do this by  
+  using the motion library's Animate Presence option, but I'm not sure if that would be the best
+  option. Think deeply about what would make the UI/UX feel really good. It should feel polished and
+  elegant.                                                                                             
+  The default setting should be to have the tool calls disappear from the chat.
+
+  Please think deeply about this feature, as well as what we should call it. Naming is important, as is the description. We want to make sure that it's easy for poeple to understand
+  
+  Think about how we should handle the toggle (should the default be in the toggle's on or off state ... I think the default is off for all of the other preferences)

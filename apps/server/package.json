@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:tunnel": "TUNNEL_ENABLED=true TUNNEL_PORT=3000 tsx watch src/index.ts",
     "build": "tsc",
     "start": "NODE_ENV=production node dist/index.js",
     "test": "vitest run",
@@ -20,6 +21,7 @@
     "@anthropic-ai/claude-agent-sdk": "latest",
     "@asteasolutions/zod-to-openapi": "^8.4.0",
     "@lifeos/shared": "*",
+    "@ngrok/ngrok": "^1.7.0",
     "@scalar/express-api-reference": "^0.8.40",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",

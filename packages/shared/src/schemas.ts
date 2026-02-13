@@ -284,6 +284,14 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
 
 export type MessagePart = z.infer<typeof MessagePartSchema>;
 
+// === Message Type ===
+
+export const MessageTypeSchema = z
+  .enum(['command', 'compaction'])
+  .openapi('MessageType');
+
+export type MessageType = z.infer<typeof MessageTypeSchema>;
+
 // === Chat History Types ===
 
 export const HistoryToolCallSchema = z
@@ -308,6 +316,9 @@ export const HistoryMessageSchema = z
     toolCalls: z.array(HistoryToolCallSchema).optional(),
     parts: z.array(MessagePartSchema).optional(),
     timestamp: z.string().optional(),
+    messageType: MessageTypeSchema.optional(),
+    commandName: z.string().optional(),
+    commandArgs: z.string().optional(),
   })
   .openapi('HistoryMessage');
 
@@ -369,6 +380,19 @@ export const BrowseDirectoryResponseSchema = z
 
 export type BrowseDirectoryResponse = z.infer<typeof BrowseDirectoryResponseSchema>;
 
+// === Tunnel Status ===
+
+export const TunnelStatusSchema = z
+  .object({
+    connected: z.boolean(),
+    url: z.string().nullable(),
+    port: z.number().int().nullable(),
+    startedAt: z.string().nullable(),
+  })
+  .openapi('TunnelStatus');
+
+export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
+
 // === Health Response ===
 
 export const HealthResponseSchema = z
@@ -376,10 +400,33 @@ export const HealthResponseSchema = z
     status: z.string(),
     version: z.string(),
     uptime: z.number(),
+    tunnel: TunnelStatusSchema.optional(),
   })
   .openapi('HealthResponse');
 
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
+
+// === Server Config ===
+
+export const ServerConfigSchema = z
+  .object({
+    version: z.string(),
+    port: z.number().int(),
+    uptime: z.number(),
+    workingDirectory: z.string(),
+    nodeVersion: z.string(),
+    claudeCliPath: z.string().nullable(),
+    tunnel: z.object({
+      enabled: z.boolean(),
+      connected: z.boolean(),
+      url: z.string().nullable(),
+      authEnabled: z.boolean(),
+      tokenConfigured: z.boolean(),
+    }),
+  })
+  .openapi('ServerConfig');
+
+export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 
 // === Error Response ===
 

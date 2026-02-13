@@ -9,7 +9,8 @@ import { SessionItem } from './SessionItem';
 import { DirectoryPicker } from './DirectoryPicker';
 import { groupSessionsByTime } from '@/lib/session-utils';
 import { PathBreadcrumb } from '../ui/path-breadcrumb';
-import { Plus, PanelLeftClose, FolderOpen, Sun, Moon, Monitor, Route, HeartPulse, Bug } from 'lucide-react';
+import { Plus, PanelLeftClose, FolderOpen, Sun, Moon, Monitor, Route, HeartPulse, Bug, Settings } from 'lucide-react';
+import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../ui/hover-card';
 import { useTheme } from '../../hooks/use-theme';
 import type { Theme } from '../../hooks/use-theme';
@@ -23,6 +24,7 @@ export function SessionSidebar() {
   const isMobile = useIsMobile();
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedCwd] = useDirectoryState();
   const { theme, setTheme } = useTheme();
 
@@ -148,6 +150,13 @@ export function SessionSidebar() {
           CC WebUI by Dorkian
         </a>
         <div className="ml-auto flex items-center gap-0.5">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="p-1 max-md:p-2 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
+            aria-label="Settings"
+          >
+            <Settings className="size-(--size-icon-sm)" />
+          </button>
           <HoverCard openDelay={200} closeDelay={100}>
             <HoverCardTrigger asChild>
               <button
@@ -199,6 +208,7 @@ export function SessionSidebar() {
         </div>
       </div>
       <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }
