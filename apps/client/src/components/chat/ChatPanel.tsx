@@ -11,12 +11,15 @@ import { fuzzyMatch } from '../../lib/fuzzy-match';
 import { MessageList } from './MessageList';
 import type { MessageListHandle, ScrollState } from './MessageList';
 import { ChatInput } from './ChatInput';
+import type { ChatInputHandle } from './ChatInput';
 import { TaskListPanel } from './TaskListPanel';
 import { CommandPalette } from '../commands/CommandPalette';
 import { FilePalette } from '../files/FilePalette';
 import type { FileEntry } from '../files/FilePalette';
+import { ShortcutChips } from './ShortcutChips';
 import { StatusLine } from '../status/StatusLine';
 import { useFiles } from '../../hooks/use-files';
+import { useAppStore } from '../../stores/app-store';
 import type { CommandEntry } from '@lifeos/shared/types';
 
 interface ChatPanelProps {
@@ -28,6 +31,7 @@ interface ChatPanelProps {
 export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
   const messageListRef = useRef<MessageListHandle>(null);
+  const chatInputRef = useRef<ChatInputHandle>(null);
   const taskState = useTaskState(sessionId);
   const { messages, input, setInput, handleSubmit, status, error, stop, isLoadingHistory, sessionStatus, streamStartTime, estimatedTokens, isTextStreaming } =
     useChatSession(sessionId, {
@@ -79,6 +83,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     }
   }, [isAtBottom]);
 
+  const showShortcutChips = useAppStore((s) => s.showShortcutChips);
   const [cwd] = useDirectoryState();
   const { data: registry } = useCommands(cwd);
   const allCommands = registry?.commands ?? [];
@@ -258,6 +263,40 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     }
   }, [showFiles, showCommands, filteredFiles, fileSelectedIndex, filteredCommands, selectedIndex]);
 
+  const handleChipClick = useCallback((trigger: string) => {
+    const existingTrigger = input.match(/(^|\s)([/@])([\w.\/:-]*)$/);
+    let newValue: string;
+
+    if (existingTrigger) {
+      const triggerChar = existingTrigger[2];
+      const queryText = existingTrigger[3];
+      const triggerStart = (existingTrigger.index ?? 0) + existingTrigger[1].length;
+
+      if (triggerChar === trigger && !queryText) {
+        // Toggle: same chip clicked again with no query — remove trigger and close palette
+        const prefix = input.slice(0, triggerStart);
+        // Also remove trailing space we may have added before the trigger
+        newValue = prefix.endsWith(' ') && triggerStart > 0 ? prefix.slice(0, -1) : prefix;
+        setInput(newValue);
+        setShowFiles(false);
+        setShowCommands(false);
+        requestAnimationFrame(() => chatInputRef.current?.focusAt(newValue.length));
+        return;
+      }
+      // Different trigger or has query text — replace with new trigger
+      newValue = input.slice(0, triggerStart) + trigger;
+    } else if (input.length > 0 && !input.endsWith(' ')) {
+      newValue = input + ' ' + trigger;
+    } else {
+      newValue = input + trigger;
+    }
+
+    setInput(newValue);
+    detectTrigger(newValue, newValue.length);
+    // Focus textarea with cursor after the trigger so typing filters immediately
+    requestAnimationFrame(() => chatInputRef.current?.focusAt(newValue.length));
+  }, [input, setInput]);
+
   const isPaletteOpen = showCommands || showFiles;
 
   const activeDescendantId = showFiles && filteredFiles.length > 0
@@ -369,12 +408,14 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         </AnimatePresence>
 
         <ChatInput
+          ref={chatInputRef}
           value={input}
           onChange={handleInputChange}
           onSubmit={handleSubmit}
           isLoading={status === 'streaming'}
           onStop={stop}
           onEscape={() => { setShowCommands(false); setShowFiles(false); }}
+          onClear={() => { setInput(''); setShowCommands(false); setShowFiles(false); }}
           isPaletteOpen={isPaletteOpen}
           onArrowUp={handleArrowUp}
           onArrowDown={handleArrowDown}
@@ -382,6 +423,12 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
           activeDescendantId={activeDescendantId}
           onCursorChange={handleCursorChange}
         />
+
+        <AnimatePresence>
+          {showShortcutChips && (
+            <ShortcutChips onChipClick={handleChipClick} />
+          )}
+        </AnimatePresence>
 
         <StatusLine
           sessionId={sessionId}

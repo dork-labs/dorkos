@@ -1,8 +1,13 @@
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { motion } from 'motion/react';
-import { ArrowUp, CornerDownLeft, Square } from 'lucide-react';
+import { ArrowUp, CornerDownLeft, Square, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useIsMobile } from '../../hooks/use-is-mobile';
+
+export interface ChatInputHandle {
+  focus: () => void;
+  focusAt: (pos: number) => void;
+}
 
 interface ChatInputProps {
   value: string;
@@ -11,35 +16,59 @@ interface ChatInputProps {
   isLoading: boolean;
   onStop?: () => void;
   onEscape?: () => void;
+  onClear?: () => void;
   isPaletteOpen?: boolean;
   onArrowUp?: () => void;
   onArrowDown?: () => void;
   onCommandSelect?: () => void;
   activeDescendantId?: string;
+  onCursorChange?: (pos: number) => void;
 }
 
-export function ChatInput({
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({
   value,
   onChange,
   onSubmit,
   isLoading,
   onStop,
   onEscape,
+  onClear,
   isPaletteOpen,
   onArrowUp,
   onArrowDown,
   onCommandSelect,
   activeDescendantId,
-}: ChatInputProps) {
+  onCursorChange,
+}, ref) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastEscapeRef = useRef(0);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => textareaRef.current?.focus(),
+    focusAt: (pos: number) => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    },
+  }));
   const [isFocused, setIsFocused] = useState(false);
   const isMobile = useIsMobile();
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      // Escape always fires (palette or no palette)
       if (e.key === 'Escape') {
-        onEscape?.();
+        const now = Date.now();
+        if (isPaletteOpen) {
+          onEscape?.();
+          lastEscapeRef.current = now;
+        } else if (value.trim() && now - lastEscapeRef.current < 500) {
+          onClear?.();
+          lastEscapeRef.current = 0;
+        } else {
+          onEscape?.();
+          lastEscapeRef.current = now;
+        }
         return;
       }
 
@@ -77,7 +106,7 @@ export function ChatInput({
         }
       }
     },
-    [isLoading, isMobile, value, onSubmit, onEscape, isPaletteOpen, onArrowUp, onArrowDown, onCommandSelect]
+    [isLoading, isMobile, value, onSubmit, onEscape, onClear, isPaletteOpen, onArrowUp, onArrowDown, onCommandSelect]
   );
 
   const handleFocus = useCallback(() => setIsFocused(true), []);
@@ -92,6 +121,7 @@ export function ChatInput({
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       onChange(e.target.value);
+      onCursorChange?.(e.target.selectionStart);
       // Auto-resize textarea
       const textarea = textareaRef.current;
       if (textarea) {
@@ -99,8 +129,14 @@ export function ChatInput({
         textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
       }
     },
-    [onChange]
+    [onChange, onCursorChange]
   );
+
+  const handleSelect = useCallback(() => {
+    if (textareaRef.current) {
+      onCursorChange?.(textareaRef.current.selectionStart);
+    }
+  }, [onCursorChange]);
 
   // Smoothly shrink textarea back to single-line height after submit clears value
   useEffect(() => {
@@ -125,6 +161,7 @@ export function ChatInput({
 
   const hasText = value.trim().length > 0;
   const showButton = isLoading || hasText;
+  const showClear = hasText && !isLoading;
   const SendIcon = isMobile ? ArrowUp : CornerDownLeft;
   const Icon = isLoading ? Square : SendIcon;
 
@@ -142,9 +179,10 @@ export function ChatInput({
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
         onBlur={handleBlur}
+        onSelect={handleSelect}
         role="combobox"
         aria-autocomplete="list"
-        aria-controls="command-palette-listbox"
+        aria-controls={isPaletteOpen ? (activeDescendantId?.startsWith('file-') ? 'file-palette-listbox' : 'command-palette-listbox') : undefined}
         aria-expanded={isPaletteOpen ?? false}
         aria-activedescendant={isPaletteOpen ? activeDescendantId : undefined}
         placeholder="Message Claude..."
@@ -152,6 +190,21 @@ export function ChatInput({
         rows={1}
         disabled={isLoading}
       />
+      <motion.button
+        animate={{ opacity: showClear ? 0.5 : 0, scale: showClear ? 1 : 0.8 }}
+        transition={{ duration: 0.15 }}
+        whileHover={showClear ? { opacity: 1 } : undefined}
+        onClick={onClear}
+        disabled={!showClear}
+        type="button"
+        className={cn(
+          'shrink-0 rounded-lg p-1 transition-colors text-muted-foreground hover:text-foreground',
+          !showClear && 'pointer-events-none'
+        )}
+        aria-label="Clear message"
+      >
+        <X className="size-(--size-icon-sm)" />
+      </motion.button>
       <motion.button
         animate={{ opacity: showButton ? 1 : 0, scale: showButton ? 1 : 0.8 }}
         transition={{ duration: 0.15 }}
@@ -172,4 +225,4 @@ export function ChatInput({
       </motion.button>
     </div>
   );
-}
+});

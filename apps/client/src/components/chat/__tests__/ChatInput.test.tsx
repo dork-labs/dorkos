@@ -211,14 +211,102 @@ describe('ChatInput', () => {
       expect(screen.getByRole('combobox').getAttribute('aria-activedescendant')).toBeNull();
     });
 
-    it('has aria-controls pointing to command palette listbox', () => {
-      render(<ChatInput {...defaultProps} />);
+    it('has aria-controls pointing to command palette listbox when palette is open', () => {
+      render(<ChatInput {...defaultProps} isPaletteOpen={true} activeDescendantId="command-item-0" />);
       expect(screen.getByRole('combobox').getAttribute('aria-controls')).toBe('command-palette-listbox');
+    });
+
+    it('has no aria-controls when palette is closed', () => {
+      render(<ChatInput {...defaultProps} />);
+      expect(screen.getByRole('combobox').getAttribute('aria-controls')).toBeNull();
     });
 
     it('has aria-autocomplete set to list', () => {
       render(<ChatInput {...defaultProps} />);
       expect(screen.getByRole('combobox').getAttribute('aria-autocomplete')).toBe('list');
+    });
+  });
+
+  describe('clear button', () => {
+    it('is visible when text exists', () => {
+      render(<ChatInput {...defaultProps} value="hello" />);
+      expect(screen.getByLabelText('Clear message')).toBeDefined();
+      const btn = screen.getByLabelText('Clear message');
+      expect(btn.className).not.toContain('pointer-events-none');
+    });
+
+    it('is hidden when empty', () => {
+      render(<ChatInput {...defaultProps} value="" />);
+      const btn = screen.getByLabelText('Clear message');
+      expect(btn.className).toContain('pointer-events-none');
+    });
+
+    it('is hidden when loading', () => {
+      render(<ChatInput {...defaultProps} value="hello" isLoading={true} />);
+      const btn = screen.getByLabelText('Clear message');
+      expect(btn.className).toContain('pointer-events-none');
+    });
+
+    it('calls onClear when clicked', () => {
+      const onClear = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" onClear={onClear} />);
+      fireEvent.click(screen.getByLabelText('Clear message'));
+      expect(onClear).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('escape clears text (double-escape)', () => {
+    it('first Escape calls onEscape, not onClear', () => {
+      const onClear = vi.fn();
+      const onEscape = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" isPaletteOpen={false} onClear={onClear} onEscape={onEscape} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledOnce();
+      expect(onClear).not.toHaveBeenCalled();
+    });
+
+    it('second Escape within 500ms calls onClear when text exists', () => {
+      const onClear = vi.fn();
+      const onEscape = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" isPaletteOpen={false} onClear={onClear} onEscape={onEscape} />);
+      const combobox = screen.getByRole('combobox');
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      expect(onClear).toHaveBeenCalledOnce();
+    });
+
+    it('second Escape after 500ms does not call onClear', () => {
+      vi.useFakeTimers();
+      const onClear = vi.fn();
+      const onEscape = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" isPaletteOpen={false} onClear={onClear} onEscape={onEscape} />);
+      const combobox = screen.getByRole('combobox');
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      vi.advanceTimersByTime(600);
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      expect(onClear).not.toHaveBeenCalled();
+      expect(onEscape).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it('calls onEscape when palette open (even with text)', () => {
+      const onClear = vi.fn();
+      const onEscape = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" isPaletteOpen={true} onClear={onClear} onEscape={onEscape} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledOnce();
+      expect(onClear).not.toHaveBeenCalled();
+    });
+
+    it('calls onEscape when palette closed and text is empty', () => {
+      const onClear = vi.fn();
+      const onEscape = vi.fn();
+      render(<ChatInput {...defaultProps} value="" isPaletteOpen={false} onClear={onClear} onEscape={onEscape} />);
+      const combobox = screen.getByRole('combobox');
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledTimes(2);
+      expect(onClear).not.toHaveBeenCalled();
     });
   });
 
