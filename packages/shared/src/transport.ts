@@ -18,7 +18,7 @@ export interface Transport {
   createSession(opts: CreateSessionRequest): Promise<Session>;
   listSessions(cwd?: string): Promise<Session[]>;
   getSession(id: string, cwd?: string): Promise<Session>;
-  updateSession(id: string, opts: UpdateSessionRequest): Promise<Session>;
+  updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session>;
   getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
   sendMessage(
     sessionId: string,

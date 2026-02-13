@@ -95,10 +95,10 @@ export class DirectTransport implements Transport {
     return session;
   }
 
-  async updateSession(id: string, opts: UpdateSessionRequest): Promise<Session> {
+  async updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session> {
     const updated = this.services.agentManager.updateSession(id, opts);
     if (!updated) throw new Error(`Session not found: ${id}`);
-    return this.getSession(id);
+    return this.getSession(id, cwd);
   }
 
   async getMessages(

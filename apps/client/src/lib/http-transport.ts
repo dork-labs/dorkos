@@ -51,8 +51,11 @@ export class HttpTransport implements Transport {
     return fetchJSON<Session>(this.baseUrl, `/sessions/${id}${qs ? `?${qs}` : ''}`);
   }
 
-  updateSession(id: string, opts: UpdateSessionRequest): Promise<Session> {
-    return fetchJSON<Session>(this.baseUrl, `/sessions/${id}`, {
+  updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session> {
+    const params = new URLSearchParams();
+    if (cwd) params.set('cwd', cwd);
+    const qs = params.toString();
+    return fetchJSON<Session>(this.baseUrl, `/sessions/${id}${qs ? `?${qs}` : ''}`, {
       method: 'PATCH',
       body: JSON.stringify(opts),
     });

@@ -90,9 +90,10 @@ describe('AgentManager interactive tools', () => {
       expect(result).toBe(true);
     });
 
-    it('returns false for a non-existent session', () => {
+    it('auto-creates and returns true for a non-existent session', () => {
       const result = manager.updateSession('no-session', { permissionMode: 'plan' });
-      expect(result).toBe(false);
+      expect(result).toBe(true);
+      expect(manager.hasSession('no-session')).toBe(true);
     });
   });
 

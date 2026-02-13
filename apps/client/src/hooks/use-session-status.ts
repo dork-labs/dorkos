@@ -76,8 +76,8 @@ export function useSessionStatus(
     if (opts.permissionMode) setLocalPermissionMode(opts.permissionMode);
 
     try {
-      const updated = await transport.updateSession(sessionId, opts);
-      queryClient.setQueryData(['session', sessionId], updated);
+      const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
+      queryClient.setQueryData(['session', sessionId, selectedCwd], updated);
       // Clear optimistic overrides — server data is now authoritative
       if (opts.model) setLocalModel(null);
       if (opts.permissionMode) setLocalPermissionMode(null);
@@ -87,7 +87,7 @@ export function useSessionStatus(
       if (opts.model) setLocalModel(null);
       if (opts.permissionMode) setLocalPermissionMode(null);
     }
-  }, [transport, sessionId, queryClient]);
+  }, [transport, sessionId, selectedCwd, queryClient]);
 
   return { ...statusData, updateSession };
 }

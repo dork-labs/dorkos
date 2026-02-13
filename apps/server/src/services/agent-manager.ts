@@ -496,8 +496,15 @@ export class AgentManager {
   }
 
   updateSession(sessionId: string, opts: { permissionMode?: PermissionMode; model?: string }): boolean {
-    const session = this.sessions.get(sessionId);
-    if (!session) return false;
+    let session = this.findSession(sessionId);
+    if (!session) {
+      // Auto-create so settings are ready for the next sendMessage call
+      this.ensureSession(sessionId, {
+        permissionMode: opts.permissionMode ?? 'default',
+        hasStarted: true,
+      });
+      session = this.sessions.get(sessionId)!;
+    }
     if (opts.permissionMode) {
       session.permissionMode = opts.permissionMode;
     }
@@ -508,7 +515,7 @@ export class AgentManager {
   }
 
   approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean {
-    const session = this.sessions.get(sessionId);
+    const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
     if (!pending || pending.type !== 'approval') return false;
     pending.resolve(approved);
@@ -516,7 +523,7 @@ export class AgentManager {
   }
 
   submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean {
-    const session = this.sessions.get(sessionId);
+    const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
     if (!pending || pending.type !== 'question') return false;
     pending.resolve(answers);
@@ -536,15 +543,30 @@ export class AgentManager {
     }
   }
 
+  /**
+   * Find a session by its map key OR by its sdkSessionId.
+   * After the SDK assigns a real session ID (on first message), the client
+   * starts using the new ID while the map still stores it under the original key.
+   */
+  private findSession(sessionId: string): AgentSession | undefined {
+    const direct = this.sessions.get(sessionId);
+    if (direct) return direct;
+    // Fallback: linear scan for sdkSessionId match
+    for (const session of this.sessions.values()) {
+      if (session.sdkSessionId === sessionId) return session;
+    }
+    return undefined;
+  }
+
   hasSession(sessionId: string): boolean {
-    return this.sessions.has(sessionId);
+    return !!this.findSession(sessionId);
   }
 
   /**
    * Get the actual SDK session ID (may differ from input if SDK assigned a new one).
    */
   getSdkSessionId(sessionId: string): string | undefined {
-    return this.sessions.get(sessionId)?.sdkSessionId;
+    return this.findSession(sessionId)?.sdkSessionId;
   }
 }
 
