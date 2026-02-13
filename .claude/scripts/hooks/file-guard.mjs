@@ -5,8 +5,9 @@
  */
 
 import { readFileSync, existsSync } from 'fs'
-import { resolve, relative, isAbsolute } from 'path'
-import ignore from 'ignore'
+import path from 'path'
+
+const { resolve, relative, isAbsolute, basename } = path
 
 // Read JSON from stdin
 async function readStdin() {
@@ -98,15 +99,40 @@ function normalizePath(filePath, cwd) {
   return filePath.replace(/^\.\//, '')
 }
 
+// Match a file path against a glob pattern (no external deps)
+function matchesPattern(filePath, pattern) {
+  // Exact match (e.g. ".env")
+  if (filePath === pattern || basename(filePath) === pattern) return true
+
+  // Use Node 22+ path.matchesGlob if available
+  if (typeof path.matchesGlob === 'function') {
+    return path.matchesGlob(filePath, pattern)
+  }
+
+  // Fallback: convert glob to regex
+  const regex = new RegExp(
+    '^' +
+    pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*/g, '{{GLOBSTAR}}')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\{\{GLOBSTAR\}\}/g, '.*')
+      .replace(/\?/g, '[^/]') +
+    '$'
+  )
+  return regex.test(filePath)
+}
+
 // Check if path matches any deny pattern
-function isDenied(filePath, ig) {
+function isDenied(filePath, denyPatterns) {
   if (!filePath) return false
 
-  // Normalize the path
   const normalized = filePath.replace(/^\.\//, '')
 
-  // Check against ignore patterns
-  return ig.ignores(normalized)
+  for (const pattern of denyPatterns) {
+    if (matchesPattern(normalized, pattern)) return true
+  }
+  return false
 }
 
 async function main() {
@@ -121,9 +147,8 @@ async function main() {
     const toolInput = payload.tool_input || {}
     const cwd = process.cwd()
 
-    // Load deny patterns and create ignore instance
+    // Load deny patterns
     const denyPatterns = loadDenyPatterns()
-    const ig = ignore().add(denyPatterns)
 
     // Collect paths to check
     const pathsToCheck = []
@@ -146,7 +171,7 @@ async function main() {
 
     // Check each path against deny patterns
     for (const path of pathsToCheck) {
-      if (path && isDenied(path, ig)) {
+      if (path && isDenied(path, denyPatterns)) {
         console.error(`🚫 Access denied: ${path}`)
         console.error(`   Matches deny pattern in .claude/settings.json`)
         process.exit(2)

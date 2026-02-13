@@ -62,7 +62,7 @@ export function useSessionStatus(
     costUsd: streamingStatus?.costUsd ?? null,
     contextPercent:
       contextTokens && contextMaxTokens
-        ? Math.round((contextTokens / contextMaxTokens) * 100)
+        ? Math.min(100, Math.round((contextTokens / contextMaxTokens) * 100))
         : null,
     isStreaming,
     cwd: session?.cwd ?? null,
@@ -73,9 +73,18 @@ export function useSessionStatus(
     if (opts.model) setLocalModel(opts.model);
     if (opts.permissionMode) setLocalPermissionMode(opts.permissionMode);
 
-    const updated = await transport.updateSession(sessionId, opts);
-    queryClient.setQueryData(['session', sessionId], updated);
-    return updated;
+    try {
+      const updated = await transport.updateSession(sessionId, opts);
+      queryClient.setQueryData(['session', sessionId], updated);
+      // Clear optimistic overrides — server data is now authoritative
+      if (opts.model) setLocalModel(null);
+      if (opts.permissionMode) setLocalPermissionMode(null);
+      return updated;
+    } catch {
+      // Revert optimistic state on failure
+      if (opts.model) setLocalModel(null);
+      if (opts.permissionMode) setLocalPermissionMode(null);
+    }
   }, [transport, sessionId, queryClient]);
 
   return { ...statusData, updateSession };

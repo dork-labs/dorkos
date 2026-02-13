@@ -97,6 +97,7 @@ router.patch('/:id', async (req, res) => {
   const session = await transcriptReader.getSession(cwd, req.params.id);
   if (session) {
     session.permissionMode = permissionMode ?? session.permissionMode;
+    session.model = model ?? session.model;
   }
   res.json(session ?? { id: req.params.id, permissionMode, model });
 });
