@@ -8,3 +8,5 @@ coverage/
 .env
 .temp
 .playwright-mcp
+.DS_Store
+.scratch/

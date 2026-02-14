@@ -333,7 +333,7 @@ npx vitest run src/client/components/chat/__tests__/
 
 **Depends on:** T1, T2, T3
 
-**File:** `CLAUDE.md` (gateway root, i.e., `/Users/doriancollier/Keep/life-os-starter/gateway/CLAUDE.md`)
+**File:** `CLAUDE.md` (repository root)
 
 Add a note about markdown rendering in the Client architecture section. After the existing bullet about Components, add a bullet about markdown rendering.
 
