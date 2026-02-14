@@ -119,7 +119,7 @@ packages/cli/src/cli.ts ── esbuild ─────────────�
 
 ## 5. Open Questions / Clarifications
 
-1. **Package name**: `dorkos` or scoped `@dork/os`? Scoped requires npm org. Unscoped is simpler for `npx`.
+1. **Package name**: `dorkos` or scoped `dorkos`? Scoped requires npm org. Unscoped is simpler for `npx`.
 
 2. **Server code modifications**: Should we modify `apps/server` source to support both monorepo and CLI contexts (via env vars / flags), or should `packages/cli` have its own entry point that wraps the server with CLI-specific path resolution?
 

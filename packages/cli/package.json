@@ -1,5 +1,5 @@
 {
-  "name": "@dork/os",
+  "name": "dorkos",
   "version": "0.1.0",
   "description": "Web-based interface and REST/SSE API for Claude Code",
   "license": "MIT",
@@ -30,9 +30,6 @@
     "LICENSE",
     "README.md"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "engines": {
     "node": ">=18.0.0"
   },

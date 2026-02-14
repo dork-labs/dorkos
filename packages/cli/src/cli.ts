@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -53,6 +54,11 @@ if (values.version) {
 
 // Check for Claude CLI
 checkClaude();
+
+// Ensure ~/.dork config directory exists
+const DORK_HOME = path.join(os.homedir(), '.dork');
+fs.mkdirSync(DORK_HOME, { recursive: true });
+process.env.DORK_HOME = DORK_HOME;
 
 // Set environment variables the server reads
 process.env.GATEWAY_PORT = values.port;

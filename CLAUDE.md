@@ -19,7 +19,7 @@ dorkos/
 │   ├── server/           # @dorkos/server - Express API (tsc, NodeNext)
 │   └── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
 ├── packages/
-│   ├── cli/              # @dork/os - Publishable npm CLI (esbuild bundle)
+│   ├── cli/              # dorkos - Publishable npm CLI (esbuild bundle)
 │   ├── shared/           # @dorkos/shared - Zod schemas, types (JIT .ts exports)
 │   ├── typescript-config/ # @dorkos/typescript-config - Shared tsconfig presets
 │   └── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
@@ -141,7 +141,7 @@ The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plug
 
 ### CLI Package (`packages/cli`)
 
-The `@dork/os` npm package bundles the server + client into a standalone CLI tool. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The CLI uses `node:util` parseArgs and sets environment variables (`GATEWAY_PORT`, `CLIENT_DIST_PATH`, `GATEWAY_CWD`, `TUNNEL_ENABLED`, `NODE_ENV`) before dynamically importing the bundled server.
+The `dorkos` npm package bundles the server + client into a standalone CLI tool. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The CLI uses `node:util` parseArgs and sets environment variables (`GATEWAY_PORT`, `CLIENT_DIST_PATH`, `GATEWAY_CWD`, `TUNNEL_ENABLED`, `NODE_ENV`) before dynamically importing the bundled server.
 
 ## Guides
 

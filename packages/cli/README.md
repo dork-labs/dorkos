@@ -1,4 +1,4 @@
-# @dork/os
+# dorkos
 
 Web-based interface and REST/SSE API for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), built with the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk).
 
@@ -15,7 +15,7 @@ Provides a chat UI for interacting with Claude Code sessions, with tool approval
 ## Install
 
 ```bash
-npm install -g @dork/os
+npm install -g dorkos
 ```
 
 ## Usage

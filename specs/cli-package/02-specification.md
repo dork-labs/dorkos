@@ -2,7 +2,7 @@
 slug: cli-package
 ---
 
-# Specification: Publishable npm CLI Package (`@dork/os`)
+# Specification: Publishable npm CLI Package (`dorkos`)
 
 ## 1. Status
 
@@ -10,7 +10,7 @@ slug: cli-package
 
 ## 2. Overview
 
-Create a `packages/cli` workspace package that bundles DorkOS into a publishable npm CLI tool. Users install via `npm install -g @dork/os` or run with `npx @dork/os`, getting the full web UI + Express API server + optional ngrok tunnel — no git clone required.
+Create a `packages/cli` workspace package that bundles DorkOS into a publishable npm CLI tool. Users install via `npm install -g dorkos` or run with `npx dorkos`, getting the full web UI + Express API server + optional ngrok tunnel — no git clone required.
 
 The CLI entry point parses arguments, sets environment variables, and dynamically imports the bundled server. The build pipeline uses esbuild to bundle the server (inlining `@dorkos/shared`) and Vite to build the React client as static assets.
 
@@ -20,7 +20,7 @@ Currently, running DorkOS requires cloning the monorepo, installing all workspac
 
 ## 4. Goals
 
-- One-command install: `npm install -g @dork/os` or `npx @dork/os`
+- One-command install: `npm install -g dorkos` or `npx dorkos`
 - CLI flags for port, tunnel, working directory, help, version
 - Pre-built React client shipped as static assets inside the package
 - Server bundled with `@dorkos/shared` inlined (no workspace dependency)
@@ -53,7 +53,7 @@ No new runtime dependencies are added. `esbuild` is a devDependency of `packages
 
 ```
 packages/cli/
-├── package.json              # Published package config (@dork/os)
+├── package.json              # Published package config (dorkos)
 ├── tsconfig.json             # Extends shared config
 ├── src/
 │   ├── cli.ts                # CLI entry point (parseArgs → env vars → import server)
@@ -283,7 +283,7 @@ buildCLI();
 
 ```json
 {
-  "name": "@dork/os",
+  "name": "dorkos",
   "version": "0.1.0",
   "description": "Web-based interface and REST/SSE API for Claude Code",
   "type": "module",
@@ -337,7 +337,7 @@ buildCLI();
 }
 ```
 
-The CLI's `build` script calls `turbo build --filter=@dorkos/client` internally, but having a turbo task allows `turbo run pack --filter=@dork/os` as a top-level command.
+The CLI's `build` script calls `turbo build --filter=@dorkos/client` internally, but having a turbo task allows `turbo run pack --filter=dorkos` as a top-level command.
 
 ### 7.11 Environment Variable Flow
 
@@ -358,10 +358,10 @@ cwd/.env        →      (dotenv loads)        →     NGROK_AUTHTOKEN, TUNNEL_A
 
 ```bash
 # Global install
-npm install -g @dork/os
+npm install -g dorkos
 
 # Or run directly
-npx @dork/os
+npx dorkos
 ```
 
 ### Usage
