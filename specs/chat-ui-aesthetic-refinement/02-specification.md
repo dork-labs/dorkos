@@ -11,7 +11,7 @@
 
 ## Overview
 
-Comprehensive aesthetic refinement of the DorkOS Gateway chat UI. Transform the interface from a functional prototype into a world-class minimal chat experience through coordinated updates to color, typography, spacing, motion, and micro-interactions. Every layer works together: warm neutrals, clear typographic hierarchy, consistent 8pt spacing, purposeful motion via motion.dev, and subtle micro-interactions that communicate care.
+Comprehensive aesthetic refinement of the DorkOS chat UI. Transform the interface from a functional prototype into a world-class minimal chat experience through coordinated updates to color, typography, spacing, motion, and micro-interactions. Every layer works together: warm neutrals, clear typographic hierarchy, consistent 8pt spacing, purposeful motion via motion.dev, and subtle micro-interactions that communicate care.
 
 ## Background / Problem Statement
 

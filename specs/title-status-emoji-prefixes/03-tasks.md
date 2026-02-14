@@ -107,7 +107,7 @@ export function useDocumentTitle({ cwd, activeForm, isStreaming, isWaitingForUse
   // Build title (runs on all relevant state changes)
   useEffect(() => {
     if (!cwd) {
-      document.title = 'DorkOS Gateway';
+      document.title = 'DorkOS';
       return;
     }
 
@@ -276,7 +276,7 @@ describe('status prefixes', () => {
     renderHook(() => useDocumentTitle({
       cwd: null, activeForm: null, isStreaming: false, isWaitingForUser: true
     }));
-    expect(document.title).toBe('DorkOS Gateway');
+    expect(document.title).toBe('DorkOS');
   });
 
   it('preserves activeForm with prefix', () => {

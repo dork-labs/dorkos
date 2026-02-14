@@ -12,7 +12,7 @@ slug: monorepo-turborepo-migration
 
 ## 1. Overview
 
-Migrate DorkOS Gateway from a monolithic single-package structure to a Turborepo monorepo with npm workspaces. The project currently ships three independent build targets (React SPA, Express API, Obsidian plugin) from one `package.json` with shared types inlined. This migration splits them into 6 workspace packages with proper dependency boundaries, build caching, and parallel task execution.
+Migrate DorkOS from a monolithic single-package structure to a Turborepo monorepo with npm workspaces. The project currently ships three independent build targets (React SPA, Express API, Obsidian plugin) from one `package.json` with shared types inlined. This migration splits them into 6 workspace packages with proper dependency boundaries, build caching, and parallel task execution.
 
 ## 2. Background / Problem Statement
 
@@ -62,7 +62,7 @@ No new runtime dependencies. `turbo` is the only new devDependency at the root l
 ### 6.1 Package Structure
 
 ```
-dorkos-gateway/
+dorkos/
 ├── apps/
 │   ├── client/                     # @dorkos/client
 │   │   ├── src/                    # 62 files: components, hooks, stores, lib
@@ -136,7 +136,7 @@ client   server     test-utils
 
 ```json
 {
-  "name": "dorkos-gateway",
+  "name": "dorkos",
   "private": true,
   "packageManager": "npm@10.x.x",
   "workspaces": ["apps/*", "packages/*"],

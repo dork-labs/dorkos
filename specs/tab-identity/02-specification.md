@@ -14,14 +14,14 @@ Claude Code — 2026-02-13
 
 ## Overview
 
-When users have multiple DorkOS Gateway tabs open, every tab looks identical — same blank favicon, same "DorkOS Gateway" title. This makes it impossible to tell which tab corresponds to which project. This feature adds deterministic, zero-config visual differentiation using the working directory (cwd) as a seed: color-coded dynamic favicons, a pulsing favicon during AI streaming, and smart document titles with emoji prefixes and task summaries.
+When users have multiple DorkOS tabs open, every tab looks identical — same blank favicon, same "DorkOS" title. This makes it impossible to tell which tab corresponds to which project. This feature adds deterministic, zero-config visual differentiation using the working directory (cwd) as a seed: color-coded dynamic favicons, a pulsing favicon during AI streaming, and smart document titles with emoji prefixes and task summaries.
 
 ## Background / Problem Statement
 
-DorkOS Gateway is a multi-session coding agent UI. Power users frequently open multiple tabs — one per project directory. Currently:
+DorkOS is a multi-session coding agent UI. Power users frequently open multiple tabs — one per project directory. Currently:
 
 - **Favicon**: None exists. All tabs show the browser's default blank icon.
-- **Title**: Hardcoded to "DorkOS Gateway" for every tab.
+- **Title**: Hardcoded to "DorkOS" for every tab.
 - **Streaming feedback**: No tab-level indicator that Claude is working.
 
 Users must click into each tab to figure out which project it belongs to and whether the agent is active. This is a friction point that compounds with each additional tab.
@@ -293,7 +293,7 @@ interface UseDocumentTitleOptions {
 export function useDocumentTitle({ cwd, activeForm }: UseDocumentTitleOptions) {
   useEffect(() => {
     if (!cwd) {
-      document.title = 'DorkOS Gateway';
+      document.title = 'DorkOS';
       return;
     }
 
@@ -317,7 +317,7 @@ export function useDocumentTitle({ cwd, activeForm }: UseDocumentTitleOptions) {
 ```
 
 **Title format examples:**
-- No cwd: `DorkOS Gateway`
+- No cwd: `DorkOS`
 - With cwd: `🤖 webui — DorkOS`
 - With task: `🤖 webui — Running tests — DorkOS`
 
@@ -455,7 +455,7 @@ describe('useDocumentTitle', () => {
   // Validates fallback when no cwd
   it('falls back to default title when cwd is null', () => {
     renderHook(() => useDocumentTitle({ cwd: null, activeForm: null }));
-    expect(document.title).toBe('DorkOS Gateway');
+    expect(document.title).toBe('DorkOS');
   });
 });
 ```

@@ -28,7 +28,7 @@
 
 ## 2) Pre-reading Log
 
-- `apps/client/index.html`: Static HTML template — has `<title>DorkOS Gateway</title>`, no `<link rel="icon">` tag, no existing favicon
+- `apps/client/index.html`: Static HTML template — has `<title>DorkOS</title>`, no `<link rel="icon">` tag, no existing favicon
 - `apps/client/src/components/sessions/SessionSidebar.tsx`: Uses `useDirectoryState()` for `selectedCwd`, which is the value we'll use as seed
 - `apps/client/src/hooks/use-directory-state.ts`: Hook for reading/writing the selected working directory
 - `apps/client/src/stores/app-store.ts`: Zustand store with `selectedCwd` state

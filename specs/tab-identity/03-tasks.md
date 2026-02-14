@@ -180,7 +180,7 @@ interface UseDocumentTitleOptions {
 export function useDocumentTitle({ cwd, activeForm }: UseDocumentTitleOptions) {
   useEffect(() => {
     if (!cwd) {
-      document.title = 'DorkOS Gateway';
+      document.title = 'DorkOS';
       return;
     }
 
@@ -204,7 +204,7 @@ export function useDocumentTitle({ cwd, activeForm }: UseDocumentTitleOptions) {
 ```
 
 **Title format examples:**
-- No cwd: `DorkOS Gateway`
+- No cwd: `DorkOS`
 - With cwd `/Users/test/webui`: `{emoji} webui — DorkOS`
 - With task: `{emoji} webui — Running tests — DorkOS`
 - Long task (50+ chars): truncated to 40 chars with ellipsis
@@ -244,7 +244,7 @@ describe('useDocumentTitle', () => {
 
   it('falls back to default title when cwd is null', () => {
     renderHook(() => useDocumentTitle({ cwd: null, activeForm: null }));
-    expect(document.title).toBe('DorkOS Gateway');
+    expect(document.title).toBe('DorkOS');
   });
 
   it('uses last path segment as directory name', () => {
@@ -257,7 +257,7 @@ describe('useDocumentTitle', () => {
 
 **Acceptance criteria:**
 - Title shows emoji + directory basename + " — DorkOS" when cwd is set
-- Title falls back to "DorkOS Gateway" when cwd is null
+- Title falls back to "DorkOS" when cwd is null
 - Active form text is appended with em-dash separator
 - Long active form text (>40 chars) is truncated with ellipsis
 - All tests pass
@@ -671,7 +671,7 @@ useDocumentTitle({ cwd: selectedCwd, activeForm });
 ```
 
 **Title format examples after this task:**
-- No cwd: `DorkOS Gateway`
+- No cwd: `DorkOS`
 - With cwd: `{emoji} webui — DorkOS`
 - With task: `{emoji} webui — Running tests — DorkOS`
 - Long task: `{emoji} webui — AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA... — DorkOS` (truncated at 40 chars with ellipsis)

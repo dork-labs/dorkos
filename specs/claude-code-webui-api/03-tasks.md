@@ -55,7 +55,7 @@ gateway/
 
 ```json
 {
-  "name": "life-os-gateway",
+  "name": "dorkos",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -988,7 +988,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DorkOS Gateway</title>
+    <title>DorkOS</title>
   </head>
   <body>
     <div id="root"></div>
@@ -1211,7 +1211,7 @@ export function Header() {
       >
         <PanelLeft className="h-5 w-5" />
       </button>
-      <h1 className="text-sm font-semibold flex-1">DorkOS Gateway</h1>
+      <h1 className="text-sm font-semibold flex-1">DorkOS</h1>
     </header>
   );
 }

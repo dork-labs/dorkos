@@ -2,7 +2,7 @@
 
 ## 1. Intent & Assumptions
 
-**Intent**: Package DorkOS Gateway as a standalone npm CLI tool (`dorkos-gateway`) so anyone with Node.js can install and run it via `npx dorkos-gateway` or `npm install -g dorkos-gateway`, with optional `--tunnel` support for remote access.
+**Intent**: Package DorkOS as a standalone npm CLI tool (`dorkos`) so anyone with Node.js can install and run it via `npx dorkos` or `npm install -g dorkos`, with optional `--tunnel` support for remote access.
 
 **Assumptions**:
 - Target users already have Node.js 18+ (Claude Code CLI is npm-distributed)
@@ -108,7 +108,7 @@ packages/cli/src/cli.ts ── esbuild ─────────────�
 - `prepublishOnly` script runs full build pipeline
 - `files` whitelist: `["dist/", "bin/"]`
 - `engines: { "node": ">=18.0.0" }`
-- `bin: { "dorkos-gateway": "./bin/cli.js" }`
+- `bin: { "dorkos": "./bin/cli.js" }`
 - Semantic versioning starting at `0.1.0` (pre-release while stabilizing)
 
 ### Reference Packages
@@ -119,7 +119,7 @@ packages/cli/src/cli.ts ── esbuild ─────────────�
 
 ## 5. Open Questions / Clarifications
 
-1. **Package name**: `dorkos-gateway` or scoped `@dorkos/gateway`? Scoped requires npm org. Unscoped is simpler for `npx`.
+1. **Package name**: `dorkos` or scoped `@dork/os`? Scoped requires npm org. Unscoped is simpler for `npx`.
 
 2. **Server code modifications**: Should we modify `apps/server` source to support both monorepo and CLI contexts (via env vars / flags), or should `packages/cli` have its own entry point that wraps the server with CLI-specific path resolution?
 
@@ -127,7 +127,7 @@ packages/cli/src/cli.ts ── esbuild ─────────────�
 
 4. **Scope of first release**: Just the server + client + tunnel? Or also include the Obsidian plugin build pipeline?
 
-5. **`.env` handling**: In CLI mode, should we look for `.env` in the user's cwd (project-local), `~/.dorkos-gateway/.env` (global config), or just rely on env vars / CLI flags?
+5. **`.env` handling**: In CLI mode, should we look for `.env` in the user's cwd (project-local), `~/.dorkos/.env` (global config), or just rely on env vars / CLI flags?
 
 ## 6. Proposed Architecture
 
@@ -153,7 +153,7 @@ packages/cli/
 ### CLI Interface
 
 ```
-dorkos-gateway [options]
+dorkos [options]
 
 Options:
   -p, --port <port>     Port to listen on (default: 6942)
@@ -168,9 +168,9 @@ Environment:
   TUNNEL_DOMAIN         Custom ngrok domain
 
 Examples:
-  npx dorkos-gateway
-  npx dorkos-gateway --tunnel
-  npx dorkos-gateway --port 8080 --dir ~/projects/myapp
+  npx dorkos
+  npx dorkos --tunnel
+  npx dorkos --port 8080 --dir ~/projects/myapp
 ```
 
 ### Build Pipeline

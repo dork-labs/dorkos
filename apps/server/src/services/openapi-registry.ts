@@ -372,7 +372,7 @@ export function generateOpenAPISpec() {
   return generator.generateDocument({
     openapi: '3.1.0',
     info: {
-      title: 'DorkOS Gateway API',
+      title: 'DorkOS API',
       version: '0.1.0',
       description:
         'REST/SSE API for Claude Code sessions, built with the Claude Agent SDK.',

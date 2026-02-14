@@ -10,7 +10,7 @@
 
 ## Overview
 
-Integrate Vercel's Streamdown library into the DorkOS Gateway chat UI so that assistant messages render rich markdown (headers, code blocks, lists, bold, italic, tables, links, blockquotes) with syntax-highlighted code blocks, instead of displaying raw markdown text.
+Integrate Vercel's Streamdown library into the DorkOS chat UI so that assistant messages render rich markdown (headers, code blocks, lists, bold, italic, tables, links, blockquotes) with syntax-highlighted code blocks, instead of displaying raw markdown text.
 
 ## Background / Problem Statement
 
@@ -230,7 +230,7 @@ it('renders assistant messages with Streamdown', () => {
 ## Security Considerations
 
 - **XSS**: Streamdown renders markdown to React elements (not `dangerouslySetInnerHTML`), providing built-in XSS protection.
-- **Links**: Rendered links are clickable. Since this is an internal tool (DorkOS Gateway), the risk is minimal. If needed later, a `components` override can add `target="_blank" rel="noopener noreferrer"` to links.
+- **Links**: Rendered links are clickable. Since this is an internal tool (DorkOS), the risk is minimal. If needed later, a `components` override can add `target="_blank" rel="noopener noreferrer"` to links.
 - **CDN**: Streamdown v2's CDN loading for Shiki languages/themes connects to external servers. Acceptable for an online chat application.
 
 ## Documentation

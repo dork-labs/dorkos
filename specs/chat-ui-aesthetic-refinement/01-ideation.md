@@ -12,7 +12,7 @@ slug: chat-ui-aesthetic-refinement
 
 ## 1) Intent & Assumptions
 
-- **Task brief:** Study world-class chat interfaces, critique the current DorkOS Gateway chat UI through a Jony Ive lens, and produce a comprehensive plan for making the interface minimal, clean, smooth, and delightful. Focus on code highlighting, color scheme, spacing, subtle animations/micro-interactions (motion.dev), and overall visual polish. Create a design guide documenting the system.
+- **Task brief:** Study world-class chat interfaces, critique the current DorkOS chat UI through a Jony Ive lens, and produce a comprehensive plan for making the interface minimal, clean, smooth, and delightful. Focus on code highlighting, color scheme, spacing, subtle animations/micro-interactions (motion.dev), and overall visual polish. Create a design guide documenting the system.
 - **Assumptions:**
   - Changes build on existing stack (React 19, Tailwind CSS v4, shadcn/ui, Streamdown, Zustand, TanStack Query/Virtual)
   - motion.dev (formerly Framer Motion) is the preferred animation library
@@ -44,7 +44,7 @@ slug: chat-ui-aesthetic-refinement
 - `src/client/components/sessions/SessionItem.tsx`: Title + preview. Active state via `bg-accent`. No hover transition timing.
 
 ### Layout & State
-- `src/client/App.tsx`: Three-row layout (banner + header + main). Header has sidebar toggle + title text "DorkOS Gateway".
+- `src/client/App.tsx`: Three-row layout (banner + header + main). Header has sidebar toggle + title text "DorkOS".
 - `src/client/stores/app-store.ts`: Zustand store. `sidebarOpen` state exists but sidebar has no open/close animation.
 - `src/client/hooks/use-chat-session.ts`: SSE streaming with ref-based updates. Performance-optimized.
 
@@ -133,7 +133,7 @@ No hover feedback on messages. No press state on buttons beyond opacity change. 
 
 - No scroll-to-bottom button when scrolled up in history
 - No timestamp on individual messages
-- The "DorkOS Gateway" header text is utilitarian but adds no warmth
+- The "DorkOS" header text is utilitarian but adds no warmth
 - The "New Session" dashed border button is honest but feels unfinished
 - The permission banner (`bg-red-500`) is functionally a warning but aesthetically a sledgehammer
 - No empty state when no session is selected

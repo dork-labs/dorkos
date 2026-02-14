@@ -147,7 +147,7 @@ export function SessionSidebar() {
           rel="noopener noreferrer"
           className="text-2xs text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
         >
-          CC WebUI by Dorkian
+          DorkOS by Dorkian
         </a>
         <div className="ml-auto flex items-center gap-0.5">
           <button

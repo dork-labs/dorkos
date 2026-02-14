@@ -5,12 +5,12 @@
 
 ## Overview
 
-Successfully migrated DorkOS Gateway from a single-package structure to a Turborepo monorepo with 6 npm workspace packages.
+Successfully migrated DorkOS from a single-package structure to a Turborepo monorepo with 6 npm workspace packages.
 
 ## Final Structure
 
 ```
-dorkos-gateway/
+dorkos/
 ├── apps/
 │   ├── client/            # @dorkos/client — React 19 SPA (Vite 6)
 │   ├── server/            # @dorkos/server — Express API (tsc)

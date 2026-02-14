@@ -12,7 +12,7 @@
 
 ## 1. Overview
 
-This specification defines a CSS custom property scale multiplier system for the DorkOS Gateway client that makes text, icons, and interactive elements proportionally larger on mobile devices. The system provides a single centralized "dial" (`--mobile-scale`) that controls how much bigger UI elements render on screens narrower than 768px, with optional per-category overrides for fine-tuning text, icon, and interactive element scales independently.
+This specification defines a CSS custom property scale multiplier system for the DorkOS client that makes text, icons, and interactive elements proportionally larger on mobile devices. The system provides a single centralized "dial" (`--mobile-scale`) that controls how much bigger UI elements render on screens narrower than 768px, with optional per-category overrides for fine-tuning text, icon, and interactive element scales independently.
 
 The implementation also standardizes all icon instances across the client to three canonical sizes (12px, 16px, 20px on desktop), fixes touch target deficiencies, addresses iOS Safari input zoom, adds safe area inset support for notched devices, and converts hover-only interaction patterns to mobile-friendly alternatives.
 
@@ -20,7 +20,7 @@ The implementation also standardizes all icon instances across the client to thr
 
 ## 2. Background / Problem Statement
 
-The DorkOS Gateway client was designed desktop-first. On mobile devices:
+The DorkOS client was designed desktop-first. On mobile devices:
 
 - **Text is too small.** Body text renders at 14px (`text-sm`), which falls below Apple HIG's recommended 17pt for mobile body text.
 - **Icons are undersized.** The codebase uses five different icon size classes (`h-2.5`, `h-3`, `h-3.5`, `h-4`, `h-5`) with no semantic meaning. Most interactive icons are 12-14px, well below the 20px recommended for mobile tap clarity.

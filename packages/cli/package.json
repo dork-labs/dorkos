@@ -1,28 +1,29 @@
 {
-  "name": "@dorkos/gateway",
+  "name": "@dork/os",
   "version": "0.1.0",
   "description": "Web-based interface and REST/SSE API for Claude Code",
   "license": "MIT",
   "author": "Dorian Collier",
   "repository": {
     "type": "git",
-    "url": "https://github.com/doriancollier/webui.git",
+    "url": "https://github.com/dork-labs/dorkos.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/doriancollier/webui#readme",
-  "bugs": "https://github.com/doriancollier/webui/issues",
+  "homepage": "https://github.com/dork-labs/dorkos#readme",
+  "bugs": "https://github.com/dork-labs/dorkos/issues",
   "keywords": [
     "claude",
     "claude-code",
     "agent-sdk",
-    "gateway",
+    "dorkos",
+    "ai-platform",
     "webui",
     "sse",
     "rest-api"
   ],
   "type": "module",
   "bin": {
-    "dorkos-gateway": "./dist/bin/cli.js"
+    "dorkos": "./dist/bin/cli.js"
   },
   "files": [
     "dist/",

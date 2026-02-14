@@ -64,7 +64,7 @@ export function useDocumentTitle({ cwd, activeForm, isStreaming, isWaitingForUse
   // Build title (runs on all relevant state changes)
   useEffect(() => {
     if (!cwd) {
-      document.title = 'DorkOS Gateway';
+      document.title = 'DorkOS';
       return;
     }
 

@@ -2,7 +2,7 @@
 slug: cli-package
 ---
 
-# Specification: Publishable npm CLI Package (`@dorkos/gateway`)
+# Specification: Publishable npm CLI Package (`@dork/os`)
 
 ## 1. Status
 
@@ -10,17 +10,17 @@ slug: cli-package
 
 ## 2. Overview
 
-Create a `packages/cli` workspace package that bundles DorkOS Gateway into a publishable npm CLI tool. Users install via `npm install -g @dorkos/gateway` or run with `npx @dorkos/gateway`, getting the full web UI + Express API server + optional ngrok tunnel — no git clone required.
+Create a `packages/cli` workspace package that bundles DorkOS into a publishable npm CLI tool. Users install via `npm install -g @dork/os` or run with `npx @dork/os`, getting the full web UI + Express API server + optional ngrok tunnel — no git clone required.
 
 The CLI entry point parses arguments, sets environment variables, and dynamically imports the bundled server. The build pipeline uses esbuild to bundle the server (inlining `@dorkos/shared`) and Vite to build the React client as static assets.
 
 ## 3. Background / Problem Statement
 
-Currently, running DorkOS Gateway requires cloning the monorepo, installing all workspace dependencies, and building from source. This is a barrier for non-developer users or quick setup on new machines. Packaging as an npm CLI enables one-command installation and aligns with how Claude Code itself is distributed.
+Currently, running DorkOS requires cloning the monorepo, installing all workspace dependencies, and building from source. This is a barrier for non-developer users or quick setup on new machines. Packaging as an npm CLI enables one-command installation and aligns with how Claude Code itself is distributed.
 
 ## 4. Goals
 
-- One-command install: `npm install -g @dorkos/gateway` or `npx @dorkos/gateway`
+- One-command install: `npm install -g @dork/os` or `npx @dork/os`
 - CLI flags for port, tunnel, working directory, help, version
 - Pre-built React client shipped as static assets inside the package
 - Server bundled with `@dorkos/shared` inlined (no workspace dependency)
@@ -53,7 +53,7 @@ No new runtime dependencies are added. `esbuild` is a devDependency of `packages
 
 ```
 packages/cli/
-├── package.json              # Published package config (@dorkos/gateway)
+├── package.json              # Published package config (@dork/os)
 ├── tsconfig.json             # Extends shared config
 ├── src/
 │   ├── cli.ts                # CLI entry point (parseArgs → env vars → import server)
@@ -137,7 +137,7 @@ export function checkClaude(): void {
   } catch {
     console.error('Error: Claude Code CLI not found in PATH.');
     console.error('');
-    console.error('DorkOS Gateway requires the Claude Code CLI to function.');
+    console.error('DorkOS requires the Claude Code CLI to function.');
     console.error('Install it with:  npm install -g @anthropic-ai/claude-code');
     console.error('');
     console.error('More info: https://docs.anthropic.com/en/docs/claude-code');
@@ -283,12 +283,12 @@ buildCLI();
 
 ```json
 {
-  "name": "@dorkos/gateway",
+  "name": "@dork/os",
   "version": "0.1.0",
   "description": "Web-based interface and REST/SSE API for Claude Code",
   "type": "module",
   "bin": {
-    "dorkos-gateway": "./dist/bin/cli.js"
+    "dorkos": "./dist/bin/cli.js"
   },
   "files": [
     "dist/"
@@ -337,7 +337,7 @@ buildCLI();
 }
 ```
 
-The CLI's `build` script calls `turbo build --filter=@dorkos/client` internally, but having a turbo task allows `turbo run pack --filter=@dorkos/gateway` as a top-level command.
+The CLI's `build` script calls `turbo build --filter=@dorkos/client` internally, but having a turbo task allows `turbo run pack --filter=@dork/os` as a top-level command.
 
 ### 7.11 Environment Variable Flow
 
@@ -358,32 +358,32 @@ cwd/.env        →      (dotenv loads)        →     NGROK_AUTHTOKEN, TUNNEL_A
 
 ```bash
 # Global install
-npm install -g @dorkos/gateway
+npm install -g @dork/os
 
 # Or run directly
-npx @dorkos/gateway
+npx @dork/os
 ```
 
 ### Usage
 
 ```bash
 # Start with defaults (port 6942, no tunnel)
-dorkos-gateway
+dorkos
 
 # Start with tunnel
-dorkos-gateway --tunnel
+dorkos --tunnel
 
 # Custom port and working directory
-dorkos-gateway --port 8080 --dir ~/projects/myapp
+dorkos --port 8080 --dir ~/projects/myapp
 
 # Help
-dorkos-gateway --help
+dorkos --help
 ```
 
 ### Output
 
 ```
-DorkOS Gateway running on http://localhost:6942
+DorkOS running on http://localhost:6942
 
 ┌─────────────────────────────────────────────────┐
 │  ngrok tunnel active                            │
@@ -397,7 +397,7 @@ DorkOS Gateway running on http://localhost:6942
 ```
 Error: Claude Code CLI not found in PATH.
 
-DorkOS Gateway requires the Claude Code CLI to function.
+DorkOS requires the Claude Code CLI to function.
 Install it with:  npm install -g @anthropic-ai/claude-code
 
 More info: https://docs.anthropic.com/en/docs/claude-code
@@ -462,7 +462,7 @@ cd packages/cli && npm pack --dry-run
 
 ## 12. Documentation
 
-- `dorkos-gateway --help` provides inline usage documentation
+- `dorkos --help` provides inline usage documentation
 - CLAUDE.md should be updated with the new `packages/cli` workspace and its commands
 - No separate guide needed for the first release
 

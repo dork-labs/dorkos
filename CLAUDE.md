@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-DorkOS Gateway is a web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK. It provides a chat UI for interacting with Claude Code sessions, with tool approval flows and slash command discovery.
+DorkOS is a web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK. It provides a chat UI for interacting with Claude Code sessions, with tool approval flows and slash command discovery.
 
 The Agent SDK is fully integrated via `agent-manager.ts`, which calls the SDK's `query()` function and maps streaming events to the gateway's `StreamEvent` types. SDK JSONL transcript files are the single source of truth for all session data.
 
@@ -13,13 +13,13 @@ The Agent SDK is fully integrated via `agent-manager.ts`, which calls the SDK's 
 This is a Turborepo monorepo with three apps and four shared packages:
 
 ```
-dorkos-gateway/
+dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
 │   ├── server/           # @dorkos/server - Express API (tsc, NodeNext)
 │   └── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
 ├── packages/
-│   ├── cli/              # @dorkos/gateway - Publishable npm CLI (esbuild bundle)
+│   ├── cli/              # @dork/os - Publishable npm CLI (esbuild bundle)
 │   ├── shared/           # @dorkos/shared - Zod schemas, types (JIT .ts exports)
 │   ├── typescript-config/ # @dorkos/typescript-config - Shared tsconfig presets
 │   └── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
@@ -141,7 +141,7 @@ The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plug
 
 ### CLI Package (`packages/cli`)
 
-The `@dorkos/gateway` npm package bundles the server + client into a standalone CLI tool. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The CLI uses `node:util` parseArgs and sets environment variables (`GATEWAY_PORT`, `CLIENT_DIST_PATH`, `GATEWAY_CWD`, `TUNNEL_ENABLED`, `NODE_ENV`) before dynamically importing the bundled server.
+The `@dork/os` npm package bundles the server + client into a standalone CLI tool. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The CLI uses `node:util` parseArgs and sets environment variables (`GATEWAY_PORT`, `CLIENT_DIST_PATH`, `GATEWAY_CWD`, `TUNNEL_ENABLED`, `NODE_ENV`) before dynamically importing the bundled server.
 
 ## Guides
 

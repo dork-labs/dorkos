@@ -1,6 +1,6 @@
 # Obsidian Plugin Development Guide
 
-> Developer reference for building the DorkOS Gateway Obsidian plugin — embedding our React chat client as an Obsidian copilot sidebar.
+> Developer reference for building the DorkOS Obsidian plugin — embedding our React chat client as an Obsidian copilot sidebar.
 
 ---
 
@@ -25,7 +25,7 @@ my-plugin/
   "name": "DorkOS Copilot",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "AI copilot sidebar powered by DorkOS Gateway",
+  "description": "AI copilot sidebar powered by DorkOS",
   "author": "DorkOS",
   "authorUrl": "https://github.com/your-repo",
   "isDesktopOnly": true

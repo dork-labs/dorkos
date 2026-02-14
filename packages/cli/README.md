@@ -1,4 +1,4 @@
-# @dorkos/gateway
+# @dork/os
 
 Web-based interface and REST/SSE API for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), built with the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk).
 
@@ -15,23 +15,23 @@ Provides a chat UI for interacting with Claude Code sessions, with tool approval
 ## Install
 
 ```bash
-npm install -g @dorkos/gateway
+npm install -g @dork/os
 ```
 
 ## Usage
 
 ```bash
-# Start the gateway (opens on http://localhost:6942)
-dorkos-gateway
+# Start DorkOS (opens on http://localhost:6942)
+dorkos
 
 # Custom port
-dorkos-gateway --port 8080
+dorkos --port 8080
 
 # Set working directory
-dorkos-gateway --dir ~/projects/myapp
+dorkos --dir ~/projects/myapp
 
 # Enable ngrok tunnel for remote access
-NGROK_AUTHTOKEN=your_token dorkos-gateway --tunnel
+NGROK_AUTHTOKEN=your_token dorkos --tunnel
 ```
 
 ## Options
@@ -63,7 +63,7 @@ NGROK_AUTHTOKEN=your_token dorkos-gateway --tunnel
 
 ## API
 
-Once running, the gateway exposes:
+Once running, DorkOS exposes:
 
 - **`GET /api/sessions`** - List all sessions
 - **`POST /api/sessions`** - Create a new session

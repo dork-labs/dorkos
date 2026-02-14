@@ -2,7 +2,7 @@
 
 ## Overview
 
-The DorkOS Gateway uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. This enables the same React client to run in two modes:
+The DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. This enables the same React client to run in two modes:
 
 1. **Standalone web** -- Express server + HTTP/SSE via `HttpTransport`
 2. **Obsidian plugin** -- In-process services via `DirectTransport`, no server needed

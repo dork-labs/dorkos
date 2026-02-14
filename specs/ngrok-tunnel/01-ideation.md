@@ -10,7 +10,7 @@
 
 ## 1) Intent & Assumptions
 
-**Task brief:** Integrate ngrok tunnel support directly into the DorkOS Gateway server so users can access the gateway externally without manual network configuration. The tunnel should optionally auto-start when the server boots, be controlled via environment variables, support HTTP basic auth, and work in both production and dev mode.
+**Task brief:** Integrate ngrok tunnel support directly into the DorkOS server so users can access the gateway externally without manual network configuration. The tunnel should optionally auto-start when the server boots, be controlled via environment variables, support HTTP basic auth, and work in both production and dev mode.
 
 **Assumptions:**
 - Users have (or will create) a free ngrok account for an auth token

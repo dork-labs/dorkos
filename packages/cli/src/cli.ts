@@ -22,7 +22,7 @@ const { values } = parseArgs({
 
 if (values.help) {
   console.log(`
-Usage: dorkos-gateway [options]
+Usage: dorkos [options]
 
 Web-based interface and REST/SSE API for Claude Code
 
@@ -39,9 +39,9 @@ Environment:
   TUNNEL_DOMAIN      Custom ngrok domain
 
 Examples:
-  dorkos-gateway
-  dorkos-gateway --tunnel
-  dorkos-gateway --port 8080 --dir ~/projects/myapp
+  dorkos
+  dorkos --tunnel
+  dorkos --port 8080 --dir ~/projects/myapp
 `);
   process.exit(0);
 }

@@ -3,7 +3,7 @@ slug: cli-package
 generated: 2026-02-12
 ---
 
-# Task Breakdown: Publishable npm CLI Package (`@dorkos/gateway`)
+# Task Breakdown: Publishable npm CLI Package (`@dork/os`)
 
 ## Phase 1: Server Modifications
 
@@ -89,7 +89,7 @@ this.cwd = cwd ?? process.env.GATEWAY_CWD ?? path.resolve(__dirname, '../../../.
 
 **Description**:
 
-Create the `packages/cli/` directory with the package scaffold. This establishes the workspace package that will be published as `@dorkos/gateway`.
+Create the `packages/cli/` directory with the package scaffold. This establishes the workspace package that will be published as `@dork/os`.
 
 #### 1. Create directory structure
 
@@ -106,12 +106,12 @@ packages/cli/
 
 ```json
 {
-  "name": "@dorkos/gateway",
+  "name": "@dork/os",
   "version": "0.1.0",
   "description": "Web-based interface and REST/SSE API for Claude Code",
   "type": "module",
   "bin": {
-    "dorkos-gateway": "./dist/bin/cli.js"
+    "dorkos": "./dist/bin/cli.js"
   },
   "files": [
     "dist/"
@@ -161,7 +161,7 @@ Extends shared TypeScript config with appropriate settings for the CLI package.
 ```
 
 **Acceptance Criteria**:
-- `npm install` from root succeeds and resolves `@dorkos/gateway` workspace
+- `npm install` from root succeeds and resolves `@dork/os` workspace
 - `turbo` recognizes the new workspace in `npx turbo ls`
 - The `pack` task is listed in turbo tasks
 - Directory structure is in place for subsequent tasks
@@ -239,7 +239,7 @@ await import('../server/index.js');
 The `--help` handler should print usage text similar to:
 
 ```
-Usage: dorkos-gateway [options]
+Usage: dorkos [options]
 
 Web-based interface and REST/SSE API for Claude Code
 
@@ -284,7 +284,7 @@ export function checkClaude(): void {
   } catch {
     console.error('Error: Claude Code CLI not found in PATH.');
     console.error('');
-    console.error('DorkOS Gateway requires the Claude Code CLI to function.');
+    console.error('DorkOS requires the Claude Code CLI to function.');
     console.error('Install it with:  npm install -g @anthropic-ai/claude-code');
     console.error('');
     console.error('More info: https://docs.anthropic.com/en/docs/claude-code');
@@ -517,7 +517,7 @@ Verify `npm pack --dry-run` shows expected files:
 
 Add `packages/cli` to the monorepo structure section and document the new commands:
 - `npm run build` in `packages/cli` — build the CLI package
-- `turbo run pack --filter=@dorkos/gateway` — build via turbo
+- `turbo run pack --filter=@dork/os` — build via turbo
 - `node packages/cli/dist/bin/cli.js` — run locally
 
 **Acceptance Criteria**:

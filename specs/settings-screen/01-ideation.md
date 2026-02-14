@@ -32,7 +32,7 @@ slug: settings-screen
 
 ## 2) Pre-reading Log
 
-- `apps/client/src/components/sessions/SessionSidebar.tsx`: Sidebar with footer (lines 140-201). Footer has status icons, theme toggle, dev tools toggle, and "CC WebUI by Dorkian" attribution. Gear icon goes before attribution text.
+- `apps/client/src/components/sessions/SessionSidebar.tsx`: Sidebar with footer (lines 140-201). Footer has status icons, theme toggle, dev tools toggle, and "DorkOS by Dorkian" attribution. Gear icon goes before attribution text.
 - `apps/client/src/components/ui/responsive-dialog.tsx`: Complete responsive Dialog/Drawer wrapper. Desktop renders Dialog, mobile renders Drawer. Sub-components: `ResponsiveDialog`, `ResponsiveDialogContent`, `ResponsiveDialogHeader`, `ResponsiveDialogTitle`, `ResponsiveDialogDescription`, `ResponsiveDialogFooter`, `ResponsiveDialogClose`.
 - `apps/client/src/components/sessions/DirectoryPicker.tsx`: Reference implementation using ResponsiveDialog + TanStack Query for data fetching. Pattern: `open`/`onOpenChange` props, `useQuery` for server data.
 - `apps/client/src/components/ui/` directory: Has `dialog.tsx`, `drawer.tsx`, `responsive-dialog.tsx`, `responsive-dropdown-menu.tsx`, `dropdown-menu.tsx`, `hover-card.tsx`, `path-breadcrumb.tsx`. **Missing:** Switch, Label, Separator, Badge.

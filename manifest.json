@@ -3,7 +3,7 @@
   "name": "DorkOS Copilot",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "AI copilot sidebar powered by DorkOS Gateway",
+  "description": "AI copilot sidebar powered by DorkOS",
   "author": "DorkOS",
   "isDesktopOnly": true
 }

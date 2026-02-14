@@ -1,4 +1,4 @@
-# DorkOS Gateway Design System
+# DorkOS Design System
 
 **Version:** 1.0
 **Philosophy:** Less, but better.

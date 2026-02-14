@@ -12,7 +12,7 @@ slug: settings-screen
 
 ## 1. Overview
 
-Add a settings screen to the CC WebUI. A gear icon in the sidebar footer opens a responsive dialog (Dialog on desktop, Drawer on mobile) with two sections: editable client preferences (auto-saved to localStorage) and read-only server configuration display (fetched from a new API endpoint).
+Add a settings screen to the DorkOS. A gear icon in the sidebar footer opens a responsive dialog (Dialog on desktop, Drawer on mobile) with two sections: editable client preferences (auto-saved to localStorage) and read-only server configuration display (fetched from a new API endpoint).
 
 ## 2. Background / Problem Statement
 

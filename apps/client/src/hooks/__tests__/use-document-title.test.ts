@@ -32,7 +32,7 @@ describe('useDocumentTitle', () => {
 
   it('falls back to default title when cwd is null', () => {
     renderHook(() => useDocumentTitle({ cwd: null, activeForm: null, ...defaults }));
-    expect(document.title).toBe('DorkOS Gateway');
+    expect(document.title).toBe('DorkOS');
   });
 
   it('uses last path segment as directory name', () => {
@@ -128,7 +128,7 @@ describe('status prefixes', () => {
     renderHook(() => useDocumentTitle({
       cwd: null, activeForm: null, isStreaming: false, isWaitingForUser: true,
     }));
-    expect(document.title).toBe('DorkOS Gateway');
+    expect(document.title).toBe('DorkOS');
   });
 
   it('preserves activeForm with prefix', () => {

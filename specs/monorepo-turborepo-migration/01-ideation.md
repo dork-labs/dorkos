@@ -10,7 +10,7 @@
 
 ## 1) Intent & Assumptions
 
-**Task brief:** Migrate the DorkOS Gateway project from a single-package structure to a Turborepo monorepo with proper package boundaries. The project currently has three distinct build targets (web client, Express server, Obsidian plugin) sharing a common types layer, all in one `package.json`. The migration should also update all developer guides in `guides/` and Claude Code commands/skills in `.claude/` to reflect the new structure.
+**Task brief:** Migrate the DorkOS project from a single-package structure to a Turborepo monorepo with proper package boundaries. The project currently has three distinct build targets (web client, Express server, Obsidian plugin) sharing a common types layer, all in one `package.json`. The migration should also update all developer guides in `guides/` and Claude Code commands/skills in `.claude/` to reflect the new structure.
 
 **Assumptions:**
 - npm workspaces will be the workspace protocol (project already uses npm)
@@ -235,7 +235,7 @@ Rationale: The project already has clear package boundaries and a dependency gra
 ## 7) Proposed Package Structure
 
 ```
-dorkos-gateway/
+dorkos/
 ├── apps/
 │   ├── client/                     # @dorkos/client
 │   │   ├── src/                    # React components, hooks, stores
