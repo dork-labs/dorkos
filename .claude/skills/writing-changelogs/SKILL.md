@@ -1,9 +1,9 @@
 ---
-name: changelog-writing
+name: writing-changelogs
 description: Write human-friendly changelog entries and release notes. Use when populating changelog, preparing releases, or reviewing release notes quality.
 ---
 
-# Changelog Writing Skill
+# Writing Changelogs
 
 Write changelog entries and release notes that humans actually want to read. This skill activates when writing changelog entries, preparing GitHub releases, or reviewing release notes quality.
 

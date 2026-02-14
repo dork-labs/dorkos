@@ -4,7 +4,7 @@ description: >-
   React 19 and TanStack Query expert for server/client components, data fetching,
   caching, and state management. Use PROACTIVELY when working with React components,
   server actions, data fetching patterns, or TanStack Query integration.
-tools: Read, Edit, Bash, Grep, Glob, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
+tools: Read, Edit, Bash, Grep, Glob, mcp__context7__resolve-library-id, mcp__context7__query-docs
 model: sonnet
 category: react
 displayName: React + TanStack

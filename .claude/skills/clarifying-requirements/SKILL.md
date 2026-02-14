@@ -1,9 +1,9 @@
 ---
-name: proactive-clarification
-description: Proactively analyze user prompts, identify gaps, and ask clarifying questions before diving into work. Use when user submits vague or ambiguous requests, requests lack clear acceptance criteria, scope boundaries are undefined, or hidden complexity is detected.
+name: clarifying-requirements
+description: Analyzes user prompts for gaps, ambiguities, and unstated assumptions, then asks clarifying questions before work begins. Use when requests are vague, lack acceptance criteria, or have hidden complexity.
 ---
 
-# Proactive Clarification
+# Clarifying Requirements
 
 This skill teaches you to analyze user prompts for gaps, ambiguities, and unstated assumptions—then ask the questions the user failed to ask BEFORE beginning work.
 

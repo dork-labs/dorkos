@@ -53,18 +53,26 @@ The gateway uses a **hexagonal architecture** with a `Transport` interface (`pac
 
 ### Server (`apps/server/src/`)
 
-Express server on port `GATEWAY_PORT` (default 6942). Three route groups:
+Express server on port `GATEWAY_PORT` (default 6942). Seven route groups:
 
 - **`routes/sessions.ts`** - Session listing (from SDK transcripts), session creation, SSE message streaming, message history, tool approve/deny endpoints
-- **`routes/commands.ts`** - Scans `../../.claude/commands/` for slash commands using gray-matter frontmatter parsing
+- **`routes/commands.ts`** - Slash command listing via `CommandRegistryService`, which scans `.claude/commands/` using gray-matter frontmatter parsing
 - **`routes/health.ts`** - Health check; includes optional `tunnel` status field when ngrok is enabled
+- **`routes/directory.ts`** - Directory browsing for working directory selection
+- **`routes/config.ts`** - Configuration management endpoints
+- **`routes/files.ts`** - File operations (read/list files)
+- **`routes/git.ts`** - Git status and branch information
 
-Five services:
+Nine services:
 
 - **`services/agent-manager.ts`** - Manages Claude Agent SDK sessions. Calls `query()` with streaming, maps SDK events (`stream_event`, `tool_use_summary`, `result`) to gateway `StreamEvent` types. Tracks active sessions in-memory with 30-minute timeout. All sessions use `resume: sessionId` for SDK continuity. Accepts optional `cwd` constructor param (used by Obsidian plugin). Resolves the Claude Code CLI path dynamically via `resolveClaudeCliPath()` for Electron compatibility.
 - **`services/transcript-reader.ts`** - Single source of truth for session data. Reads SDK JSONL transcript files from `~/.claude/projects/{slug}/`. Provides `listSessions()` (scans directory, extracts metadata), `getSession()` (single session metadata), and `readTranscript()` (full message history). Extracts titles from first user message, permission mode from init message, timestamps from file stats.
 - **`services/session-broadcaster.ts`** - Manages cross-client session synchronization. Watches JSONL transcript files via chokidar for changes (including CLI writes). Maintains SSE connections with passive clients via `registerClient()`. Broadcasts `sync_update` events when files change. Debounces rapid writes (100ms). Uses incremental byte-offset reading via `transcriptReader.readFromOffset()`. Graceful shutdown closes all watchers and connections.
 - **`services/stream-adapter.ts`** - SSE helpers (`initSSEStream`, `sendSSEEvent`, `endSSEStream`) that format `StreamEvent` objects as SSE wire protocol.
+- **`services/command-registry.ts`** - Scans `.claude/commands/` for slash commands. Parses YAML frontmatter via gray-matter. Caches results; supports `forceRefresh`. Used by `routes/commands.ts`.
+- **`services/openapi-registry.ts`** - Auto-generates OpenAPI spec from Zod schemas. Powers `/api/docs` (Scalar UI) and `/api/openapi.json`.
+- **`services/file-lister.ts`** - Lists files in a directory for the client file browser.
+- **`services/git-status.ts`** - Provides git status information (branch, changed files).
 - **`services/tunnel-manager.ts`** - Opt-in ngrok tunnel lifecycle. Singleton that wraps `@ngrok/ngrok` SDK with dynamic import (zero cost when disabled). Configured via env vars: `TUNNEL_ENABLED`, `NGROK_AUTHTOKEN`, `TUNNEL_PORT`, `TUNNEL_AUTH`, `TUNNEL_DOMAIN`. Started after Express binds in `index.ts`; tunnel failure is non-blocking. Exposes `status` getter consumed by `health.ts`. Graceful shutdown via SIGINT/SIGTERM.
 
 ### Session Architecture
@@ -108,7 +116,7 @@ Configured in each app's `tsconfig.json` (for IDE/tsc) and `vite.config.ts` (for
 
 Messages flow: client POST to `/api/sessions/:id/messages` -> server yields `StreamEvent` objects as SSE -> client parses in `useChatSession`.
 
-Event types: `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `error`, `done`.
+Event types: `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`.
 
 ### Session Sync Protocol
 

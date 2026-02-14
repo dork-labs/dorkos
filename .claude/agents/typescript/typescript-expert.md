@@ -6,7 +6,7 @@ description: >-
   strategies, and modern tooling. Use PROACTIVELY for any TypeScript/JavaScript
   issues including complex type gymnastics, build performance, debugging, and
   architectural decisions.
-tools: Read, Edit, Bash, Grep, Glob, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
+tools: Read, Edit, Bash, Grep, Glob, mcp__context7__resolve-library-id, mcp__context7__query-docs
 model: sonnet
 category: framework
 displayName: TypeScript

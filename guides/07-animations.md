@@ -526,5 +526,5 @@ Faster animations feel more responsive; slower animations can feel laggy.
 ## References
 
 - [Motion Documentation](https://motion.dev/) - Official API reference
-- [Calm Tech Design System](../docs/DESIGN_SYSTEM.md) - Animation philosophy and duration standards
+- [Calm Tech Design System](./design-system.md) - Animation philosophy and duration standards
 - [Styling and Theming Guide](./08-styling-theming.md) - CSS transitions and Tailwind utilities

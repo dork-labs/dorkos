@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Write, Grep, Glob, Task, mcp__context7__resolve-library-id, mcp__context7__get-library-docs, Bash(ls:*), Bash(echo:*), Bash(command:*), Bash(npm:*), Bash(claude:*)
+allowed-tools: Read, Write, Grep, Glob, Task, mcp__context7__resolve-library-id, mcp__context7__query-docs, Bash(ls:*), Bash(echo:*), Bash(command:*), Bash(npm:*), Bash(claude:*)
 description: Generate a spec file for a new feature or bugfix
 category: validation
 argument-hint: "<feature-or-bugfix-description>"
@@ -110,7 +110,7 @@ First, analyze the request to understand:
 
 If the feature involves external libraries or frameworks AND Context7 is available:
 - Use `mcp__context7__resolve-library-id` to find the library
-- Use `mcp__context7__get-library-docs` to get up-to-date documentation
+- Use `mcp__context7__query-docs` to get up-to-date documentation
 - Reference official patterns and best practices from the docs
 
 ## END-TO-END INTEGRATION ANALYSIS

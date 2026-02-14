@@ -188,7 +188,7 @@ mcp__context7__resolve-library-id: { libraryName: "[package-name]" }
 ### Step 3.2: Fetch Migration Guide
 
 ```
-mcp__context7__get-library-docs: {
+mcp__context7__query-docs: {
   context7CompatibleLibraryID: "[library-id]",
   topic: "migration guide v[current] to v[target]"
 }

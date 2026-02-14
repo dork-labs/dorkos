@@ -1,7 +1,7 @@
 ---
 description: Debug and fix failing tests using test-driven analysis and self-debugging methodology
 argument-hint: "[test-file-path or test-name]"
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__context7__resolve-library-id, mcp__context7__query-docs
 ---
 
 # Test Failure Debugging

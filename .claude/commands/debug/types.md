@@ -1,7 +1,7 @@
 ---
 description: Debug and fix TypeScript type errors with systematic analysis and expert guidance
 argument-hint: "[error-message or file-path]"
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__context7__resolve-library-id, mcp__context7__query-docs
 ---
 
 # TypeScript Type Error Debugging
@@ -268,7 +268,7 @@ For errors involving third-party libraries:
 
 ```
 mcp__context7__resolve-library-id: { libraryName: "[library]" }
-mcp__context7__get-library-docs: {
+mcp__context7__query-docs: {
   context7CompatibleLibraryID: "[id]",
   topic: "types"
 }

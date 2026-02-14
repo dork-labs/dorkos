@@ -23,7 +23,7 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | Agents | 5 | `.claude/agents/` |
 | Skills | 8 | `.claude/skills/` |
 | Rules | 3 | `.claude/rules/` |
-| Hooks | 8 | `.claude/settings.json` |
+| Hooks | 9 | `.claude/settings.json`, `.claude/hooks-config.json` |
 | MCP Servers | 2 | `.mcp.json` |
 | Guides | 12 | `guides/` |
 
@@ -80,14 +80,14 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 
 | Skill | Expertise | When Applied |
 |-------|-----------|--------------|
-| `proactive-clarification` | Identifying gaps, asking clarifying questions | Vague requests, ambiguous scope, hidden complexity |
+| `clarifying-requirements` | Identifying gaps, asking clarifying questions | Vague requests, ambiguous scope, hidden complexity |
 | `debugging-systematically` | Debugging methodology, troubleshooting patterns | Investigating bugs, tracing issues |
 | `designing-frontend` | Calm Tech design language, UI decisions | Planning UI, reviewing designs, hierarchy decisions |
 | `styling-with-tailwind-shadcn` | Tailwind CSS v4, Shadcn UI implementation | Writing styles, building components, theming |
 | `managing-roadmap-moscow` | MoSCoW prioritization, roadmap utilities | Product planning, prioritization decisions |
 | `writing-developer-guides` | Developer guide structure for AI agents | Creating/updating files in guides/ |
 | `orchestrating-parallel-work` | Parallel agent execution, batch scheduling | Coordinating multiple concurrent tasks, optimizing task ordering |
-| `changelog-writing` | Human-friendly changelog entries, release notes | Populating changelog, preparing releases |
+| `writing-changelogs` | Human-friendly changelog entries, release notes | Populating changelog, preparing releases |
 
 ### Rules (Path-Triggered)
 
@@ -108,7 +108,7 @@ Hooks run automatically at lifecycle events. Configured in `settings.json` with 
 | `PreToolUse` | file-guard | Block access to sensitive files (.env, .key, .pem) |
 | `PostToolUse` | typecheck-changed, lint-changed, check-any-changed, test-changed | Validate code after edits |
 | `UserPromptSubmit` | thinking-level | Adjust Claude's thinking mode based on prompt complexity |
-| `Stop` | create-checkpoint, check-docs-changed | Session cleanup, checkpoint creation, doc reminders |
+| `Stop` | create-checkpoint, check-docs-changed, autonomous-check | Session cleanup, checkpoint creation, doc reminders, prevent premature stop during autonomous work |
 
 ### MCP Servers
 
@@ -229,14 +229,14 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   └── research-expert.md
 │
 ├── skills/                # Reusable expertise (8 total)
-│   ├── proactive-clarification/
+│   ├── clarifying-requirements/
 │   ├── debugging-systematically/
 │   ├── designing-frontend/
 │   ├── styling-with-tailwind-shadcn/
 │   ├── managing-roadmap-moscow/
 │   ├── writing-developer-guides/
 │   ├── orchestrating-parallel-work/
-│   └── changelog-writing/
+│   └── writing-changelogs/
 │
 └── rules/                 # Path-specific guidance (3 total)
     ├── api.md             # API route handlers

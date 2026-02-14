@@ -19,21 +19,21 @@ grep '"tailwindcss"' package.json
 
 # Fetch Tailwind v4 docs
 mcp__context7__resolve-library-id: { libraryName: "tailwindcss" }
-mcp__context7__get-library-docs: {
+mcp__context7__query-docs: {
   context7CompatibleLibraryID: "[resolved-id]",
   topic: "[specific topic, e.g., '@theme directive', 'dark mode', 'custom utilities']"
 }
 
 # Fetch Shadcn docs
 mcp__context7__resolve-library-id: { libraryName: "shadcn" }
-mcp__context7__get-library-docs: {
+mcp__context7__query-docs: {
   context7CompatibleLibraryID: "[resolved-id]",
   topic: "[component name, e.g., 'Button', 'Form', 'Dialog']"
 }
 
 # Fetch Base UI docs (for primitive behavior)
 mcp__context7__resolve-library-id: { libraryName: "base-ui react" }
-mcp__context7__get-library-docs: {
+mcp__context7__query-docs: {
   context7CompatibleLibraryID: "/mui/base-ui",
   topic: "[component, e.g., 'button render prop', 'dialog composition']"
 }
@@ -357,7 +357,7 @@ Breakpoints: `sm` (640px), `md` (768px), `lg` (1024px), `xl` (1280px), `2xl` (15
 ## References
 
 - `designing-frontend` skill — Design thinking, hierarchy, component decisions
-- `docs/DESIGN_SYSTEM.md` — Full design language documentation
+- `guides/design-system.md` — Full design language documentation
 - `guides/08-styling-theming.md` — Practical styling patterns
 - `guides/07-animations.md` — Animation patterns
 - `src/app/globals.css` — Implemented tokens and utilities

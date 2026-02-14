@@ -1,7 +1,7 @@
 ---
 description: Debug and fix browser issues by inspecting, diagnosing, and resolving visual or technical problems
 argument-hint: "[issue-description] [--url <url>]"
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, Skill, mcp__playwright__browser_snapshot, mcp__playwright__browser_navigate, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_resize, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_evaluate, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, Skill, mcp__playwright__browser_snapshot, mcp__playwright__browser_navigate, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_resize, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_evaluate, mcp__context7__resolve-library-id, mcp__context7__query-docs
 ---
 
 # Browser Debug
@@ -397,7 +397,7 @@ Grep: { pattern: "[search-term]", type: "tsx" }
 **For library issues:**
 ```
 mcp__context7__resolve-library-id: { libraryName: "[library]" }
-mcp__context7__get-library-docs: {
+mcp__context7__query-docs: {
   context7CompatibleLibraryID: "[id]",
   topic: "[specific issue]"
 }

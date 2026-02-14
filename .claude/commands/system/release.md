@@ -450,7 +450,7 @@ If push fails, report error and provide recovery commands.
 
 ### 5.6: GitHub Release Notes
 
-**Reference**: Use the `changelog-writing` skill for guidance on writing user-friendly release notes.
+**Reference**: Use the `writing-changelogs` skill for guidance on writing user-friendly release notes.
 
 Ask using AskUserQuestion:
 ```

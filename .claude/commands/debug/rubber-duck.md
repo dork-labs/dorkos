@@ -1,7 +1,7 @@
 ---
 description: Structured problem articulation using rubber duck debugging methodology to systematically work through complex bugs
 argument-hint: "[brief-problem-description]"
-allowed-tools: Read, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
+allowed-tools: Read, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__context7__resolve-library-id, mcp__context7__query-docs
 ---
 
 # Rubber Duck Debugging
