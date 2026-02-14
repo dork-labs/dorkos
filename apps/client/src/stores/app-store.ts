@@ -52,6 +52,10 @@ interface AppState {
   setShowStatusBarGit: (v: boolean) => void;
   showTaskCelebrations: boolean;
   setShowTaskCelebrations: (v: boolean) => void;
+  enableNotificationSound: boolean;
+  setEnableNotificationSound: (v: boolean) => void;
+  showStatusBarSound: boolean;
+  setShowStatusBarSound: (v: boolean) => void;
   verboseLogging: boolean;
   setVerboseLogging: (v: boolean) => void;
   fontSize: 'small' | 'medium' | 'large';
@@ -62,6 +66,8 @@ interface AppState {
 
   isStreaming: boolean;
   setIsStreaming: (v: boolean) => void;
+  isWaitingForUser: boolean;
+  setIsWaitingForUser: (v: boolean) => void;
   activeForm: string | null;
   setActiveForm: (v: string | null) => void;
 
@@ -207,6 +213,24 @@ export const useAppStore = create<AppState>()(devtools((set) => ({
     set({ showTaskCelebrations: v });
   },
 
+  enableNotificationSound: (() => {
+    try { return localStorage.getItem('gateway-enable-notification-sound') !== 'false'; }
+    catch { return true; }
+  })(),
+  setEnableNotificationSound: (v) => {
+    try { localStorage.setItem('gateway-enable-notification-sound', String(v)); } catch {}
+    set({ enableNotificationSound: v });
+  },
+
+  showStatusBarSound: (() => {
+    try { return localStorage.getItem('gateway-show-status-bar-sound') !== 'false'; }
+    catch { return true; }
+  })(),
+  setShowStatusBarSound: (v) => {
+    try { localStorage.setItem('gateway-show-status-bar-sound', String(v)); } catch {}
+    set({ showStatusBarSound: v });
+  },
+
   verboseLogging: (() => {
     try { return localStorage.getItem('gateway-verbose-logging') === 'true'; }
     catch { return false; }
@@ -281,6 +305,8 @@ export const useAppStore = create<AppState>()(devtools((set) => ({
       localStorage.removeItem('gateway-show-status-bar-context');
       localStorage.removeItem('gateway-show-status-bar-git');
       localStorage.removeItem('gateway-show-task-celebrations');
+      localStorage.removeItem('gateway-enable-notification-sound');
+      localStorage.removeItem('gateway-show-status-bar-sound');
       localStorage.removeItem('gateway-font-family');
     } catch {}
     document.documentElement.style.setProperty('--user-font-scale', '1');
@@ -303,11 +329,15 @@ export const useAppStore = create<AppState>()(devtools((set) => ({
       showStatusBarContext: true,
       showStatusBarGit: true,
       showTaskCelebrations: true,
+      enableNotificationSound: true,
+      showStatusBarSound: true,
     });
   },
 
   isStreaming: false,
   setIsStreaming: (v) => set({ isStreaming: v }),
+  isWaitingForUser: false,
+  setIsWaitingForUser: (v) => set({ isWaitingForUser: v }),
   activeForm: null,
   setActiveForm: (v) => set({ activeForm: v }),
 

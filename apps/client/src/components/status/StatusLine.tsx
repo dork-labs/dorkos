@@ -8,8 +8,9 @@ import { ModelItem } from './ModelItem';
 import { CostItem } from './CostItem';
 import { ContextItem } from './ContextItem';
 import { GitStatusItem } from './GitStatusItem';
+import { NotificationSoundItem } from './NotificationSoundItem';
 import { useGitStatus } from '../../hooks/use-git-status';
-import type { SessionStatusEvent } from '@lifeos/shared/types';
+import type { SessionStatusEvent } from '@dorkos/shared/types';
 
 interface StatusLineProps {
   sessionId: string;
@@ -28,6 +29,9 @@ export function StatusLine({ sessionId, sessionStatus, isStreaming }: StatusLine
     showStatusBarCost,
     showStatusBarContext,
     showStatusBarGit,
+    showStatusBarSound,
+    enableNotificationSound,
+    setEnableNotificationSound,
   } = useAppStore();
   const { data: gitStatus } = useGitStatus(status.cwd);
 
@@ -67,6 +71,17 @@ export function StatusLine({ sessionId, sessionStatus, isStreaming }: StatusLine
   }
   if (showStatusBarContext && status.contextPercent !== null) {
     entries.push({ key: 'context', node: <ContextItem percent={status.contextPercent} /> });
+  }
+  if (showStatusBarSound) {
+    entries.push({
+      key: 'sound',
+      node: (
+        <NotificationSoundItem
+          enabled={enableNotificationSound}
+          onToggle={() => setEnableNotificationSound(!enableNotificationSound)}
+        />
+      ),
+    });
   }
 
   const hasItems = entries.length > 0;

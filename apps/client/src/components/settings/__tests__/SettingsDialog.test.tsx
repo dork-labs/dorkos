@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Transport } from '@lifeos/shared/transport';
+import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '../../../contexts/TransportContext';
 import { SettingsDialog } from '../SettingsDialog';
 
@@ -243,7 +243,7 @@ describe('SettingsDialog', () => {
     const statusBarLabel = screen.getByText(/show directory/i);
     const statusBarPanel = statusBarLabel.closest('[role="tabpanel"]')!;
     const switches = statusBarPanel.querySelectorAll('[role="switch"]');
-    expect(switches.length).toBe(6);
+    expect(switches.length).toBe(7);
     switches.forEach((sw) => {
       expect(sw.getAttribute('data-state')).toBe('checked');
     });
@@ -302,5 +302,23 @@ describe('SettingsDialog', () => {
     const toggle = row.querySelector('[role="switch"]');
     expect(toggle).toBeDefined();
     expect(toggle?.getAttribute('data-state')).toBe('checked');
+  });
+
+  it('renders "Notification sound" toggle in Preferences tab', () => {
+    render(
+      <SettingsDialog open={true} onOpenChange={vi.fn()} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.getByText('Notification sound')).toBeDefined();
+    expect(screen.getByText('Play a sound when AI finishes responding (3s+ responses)')).toBeDefined();
+  });
+
+  it('renders "Show sound toggle" in Status Bar tab', () => {
+    render(
+      <SettingsDialog open={true} onOpenChange={vi.fn()} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.getByText('Show sound toggle')).toBeDefined();
+    expect(screen.getByText('Display notification sound toggle')).toBeDefined();
   });
 });

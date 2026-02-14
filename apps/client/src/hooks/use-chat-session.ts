@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { TextDelta, ToolCallEvent, ApprovalEvent, QuestionPromptEvent, ErrorEvent, SessionStatusEvent, QuestionItem, TaskUpdateEvent, MessagePart, HistoryMessage } from '@lifeos/shared/types';
+import type { TextDelta, ToolCallEvent, ApprovalEvent, QuestionPromptEvent, ErrorEvent, SessionStatusEvent, QuestionItem, TaskUpdateEvent, MessagePart, HistoryMessage } from '@dorkos/shared/types';
 import { useTransport } from '../contexts/TransportContext';
 import { useAppStore } from '../stores/app-store';
 
@@ -46,6 +46,8 @@ interface ChatSessionOptions {
   onTaskEvent?: (event: TaskUpdateEvent) => void;
   /** Called when the SDK assigns a different session ID (e.g., first message in a new session) */
   onSessionIdChange?: (newSessionId: string) => void;
+  /** Called when streaming completes after 3+ seconds (for notification sound) */
+  onStreamingDone?: () => void;
 }
 
 /** Derive flat content and toolCalls from parts for backward compat */
@@ -453,6 +455,13 @@ export function useChatSession(sessionId: string, options: ChatSessionOptions = 
         const doneData = data as { sessionId?: string };
         if (doneData.sessionId && doneData.sessionId !== sessionId) {
           options.onSessionIdChange?.(doneData.sessionId);
+        }
+        // Play notification sound if response took 3+ seconds
+        if (streamStartTimeRef.current) {
+          const elapsed = Date.now() - streamStartTimeRef.current;
+          if (elapsed >= 3000) {
+            options.onStreamingDone?.();
+          }
         }
         // Reset inference indicator state
         streamStartTimeRef.current = null;

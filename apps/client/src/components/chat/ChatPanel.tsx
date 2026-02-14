@@ -26,6 +26,7 @@ import { useIsMobile } from '../../hooks/use-is-mobile';
 import { useInteractiveShortcuts } from '../../hooks/use-interactive-shortcuts';
 import { useAppStore } from '../../stores/app-store';
 import { useCelebrations } from '../../hooks/use-celebrations';
+import { playNotificationSound } from '../../lib/notification-sound';
 import type { InteractiveToolHandle } from './MessageItem';
 import type { CommandEntry, TaskUpdateEvent } from '@dorkos/shared/types';
 
@@ -41,6 +42,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   const chatInputRef = useRef<ChatInputHandle>(null);
   const taskState = useTaskState(sessionId);
   const celebrations = useCelebrations();
+  const enableNotificationSound = useAppStore((s) => s.enableNotificationSound);
 
   const handleTaskEventWithCelebrations = useCallback(
     (event: TaskUpdateEvent) => {
@@ -61,6 +63,11 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
       transformContent,
       onTaskEvent: handleTaskEventWithCelebrations,
       onSessionIdChange: setSessionId,
+      onStreamingDone: useCallback(() => {
+        if (enableNotificationSound) {
+          playNotificationSound();
+        }
+      }, [enableNotificationSound]),
     });
   const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status === 'streaming');
 
@@ -212,12 +219,18 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   };
 
   const setIsStreaming = useAppStore((s) => s.setIsStreaming);
+  const setIsWaitingForUser = useAppStore((s) => s.setIsWaitingForUser);
   const setActiveForm = useAppStore((s) => s.setActiveForm);
 
   useEffect(() => {
     setIsStreaming(status === 'streaming');
     return () => setIsStreaming(false);
   }, [status, setIsStreaming]);
+
+  useEffect(() => {
+    setIsWaitingForUser(isWaitingForUser);
+    return () => setIsWaitingForUser(false);
+  }, [isWaitingForUser, setIsWaitingForUser]);
 
   useEffect(() => {
     setActiveForm(taskState.activeForm);

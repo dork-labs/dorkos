@@ -48,6 +48,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     showStatusBarGit, setShowStatusBarGit,
     showShortcutChips, setShowShortcutChips,
     showTaskCelebrations, setShowTaskCelebrations,
+    enableNotificationSound, setEnableNotificationSound,
+    showStatusBarSound, setShowStatusBarSound,
   } = useAppStore();
 
   const transport = useTransport();
@@ -156,6 +158,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <Switch checked={showTaskCelebrations} onCheckedChange={setShowTaskCelebrations} />
                 </SettingRow>
 
+                <SettingRow label="Notification sound" description="Play a sound when AI finishes responding (3s+ responses)">
+                  <Switch checked={enableNotificationSound} onCheckedChange={setEnableNotificationSound} />
+                </SettingRow>
+
                 <SettingRow label="Show dev tools" description="Enable developer tools panel">
                   <Switch checked={devtoolsOpen} onCheckedChange={() => toggleDevtools()} />
                 </SettingRow>
@@ -184,6 +190,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </SettingRow>
               <SettingRow label="Show context usage" description="Display context window utilization">
                 <Switch checked={showStatusBarContext} onCheckedChange={setShowStatusBarContext} />
+              </SettingRow>
+              <SettingRow label="Show sound toggle" description="Display notification sound toggle">
+                <Switch checked={showStatusBarSound} onCheckedChange={setShowStatusBarSound} />
               </SettingRow>
             </TabsContent>
 
