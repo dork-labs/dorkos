@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useTransport, useAppStore, useTheme, cn, FONT_CONFIGS, type FontFamilyKey } from '@/layers/shared/lib';
+import { useTransport, useAppStore, useTheme } from '@/layers/shared/model';
+import { cn, FONT_CONFIGS, type FontFamilyKey } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSessionStatus } from '@/layers/entities/session';
-import { useAppStore } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import { CwdItem } from './CwdItem';
 import { PermissionModeItem } from './PermissionModeItem';
 import { ModelItem } from './ModelItem';

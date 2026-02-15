@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Check } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useIsMobile } from '../lib/use-is-mobile';
+import { useIsMobile } from '../model';
 import {
   DropdownMenu,
   DropdownMenuTrigger,

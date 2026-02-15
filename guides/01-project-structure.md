@@ -32,9 +32,10 @@ src/
 ├── main.tsx             # Vite entry point
 ├── index.css            # Global styles
 ├── layers/              # FSD architecture layers
-│   ├── shared/          # Reusable utilities, UI primitives
+│   ├── shared/          # Reusable utilities, UI primitives, hooks & stores
 │   │   ├── ui/          # Shadcn components (button, card, dialog, etc.)
-│   │   └── lib/         # cn(), Transport, http-transport, direct-transport
+│   │   ├── model/       # TransportContext, app-store, hooks (useTheme, useIsMobile, etc.)
+│   │   └── lib/         # cn(), Transports, font-config, favicon-utils, celebrations
 │   ├── entities/        # Business domain objects
 │   │   ├── session/     # Session types, hooks, transport calls
 │   │   │   ├── ui/
@@ -142,7 +143,7 @@ import { SessionBadge } from '@/layers/entities/session/ui/SessionBadge'  // WRO
 3. **Add hooks** in `model/`:
    ```typescript
    // model/use-my-feature.ts
-   import { useTransport } from '@/layers/shared/lib/transport-context'
+   import { useTransport } from '@/layers/shared/model'
    import type { Session } from '@/layers/entities/session'
    ```
 
@@ -184,7 +185,7 @@ import { SessionBadge } from '@/layers/entities/session/ui/SessionBadge'  // WRO
 3. **Add data access** via Transport:
    ```typescript
    // api/queries.ts
-   import { useTransport } from '@/layers/shared/lib/transport-context'
+   import { useTransport } from '@/layers/shared/model'
 
    export function useSessionQuery(id: string) {
      const transport = useTransport()
@@ -290,7 +291,7 @@ The hexagonal Transport interface bridges FSD and the monorepo:
 ```
 packages/shared/transport.ts    → Transport interface (port)
 layers/shared/lib/              → HttpTransport, DirectTransport (adapters)
-layers/shared/lib/              → TransportContext (React DI)
+layers/shared/model/            → TransportContext (React DI), app-store, hooks
 layers/entities/*/api/          → Transport consumption (queries/mutations)
 layers/features/*/model/        → Hooks composing entity data
 ```

@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Copy, Check, ShieldOff } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
-import { cn, formatRelativeTime, useIsMobile } from '@/layers/shared/lib';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
+import { useIsMobile } from '@/layers/shared/model';
 
 interface SessionItemProps {
   session: Session;

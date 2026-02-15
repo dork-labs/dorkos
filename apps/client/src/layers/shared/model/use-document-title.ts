@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { hashToEmoji } from './favicon-utils';
+import { hashToEmoji } from '@/layers/shared/lib';
 
 interface UseDocumentTitleOptions {
   cwd: string | null;

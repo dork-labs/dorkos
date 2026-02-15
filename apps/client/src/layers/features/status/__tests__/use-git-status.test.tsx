@@ -4,7 +4,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { TransportProvider } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
 import { useGitStatus, isGitStatusOk } from '../model/use-git-status';
 import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 

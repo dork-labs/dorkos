@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useTransport, useAppStore } from '@/layers/shared/lib';
+import { useTransport, useAppStore } from '@/layers/shared/model';
 import type { TaskItem, TaskUpdateEvent, TaskStatus } from '@dorkos/shared/types';
 
 const STATUS_ORDER: Record<TaskStatus, number> = {

@@ -11,7 +11,7 @@ vi.mock('motion/react', () => ({
 
 const mockApproveTool = vi.fn().mockResolvedValue(undefined);
 const mockDenyTool = vi.fn().mockResolvedValue(undefined);
-vi.mock('@/layers/shared/lib/TransportContext', () => ({
+vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: () => ({
     approveTool: mockApproveTool,
     denyTool: mockDenyTool,

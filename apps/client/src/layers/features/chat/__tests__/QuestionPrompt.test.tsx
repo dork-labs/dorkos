@@ -50,7 +50,7 @@ vi.mock('motion/react', () => ({
 }));
 
 const mockSubmitAnswers = vi.fn().mockResolvedValue({ ok: true });
-vi.mock('@/layers/shared/lib/TransportContext', () => ({
+vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: () => ({
     submitAnswers: mockSubmitAnswers,
   }),

@@ -1,4 +1,5 @@
-import { getPlatform, useAppStore } from '@/layers/shared/lib';
+import { getPlatform } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import { useQueryState } from 'nuqs';
 
 export function useSessionId(): [string | null, (id: string | null) => void] {

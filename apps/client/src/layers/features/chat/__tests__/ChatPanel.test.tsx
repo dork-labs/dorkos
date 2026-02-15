@@ -17,7 +17,7 @@ vi.mock('motion/react', () => ({
 
 // Mock useIsMobile — default to mobile
 const mockUseIsMobile = vi.fn(() => true);
-vi.mock('@/layers/shared/lib/use-is-mobile', () => ({
+vi.mock('@/layers/shared/model/use-is-mobile', () => ({
   useIsMobile: () => mockUseIsMobile(),
 }));
 
@@ -72,7 +72,7 @@ vi.mock('@/layers/entities/session/model/use-directory-state', () => ({
 
 // Mock useAppStore
 const mockShowShortcutChips = vi.fn(() => true);
-vi.mock('@/layers/shared/lib/app-store', () => ({
+vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) => {
     const state = { showShortcutChips: mockShowShortcutChips(), setIsStreaming: vi.fn(), setIsWaitingForUser: vi.fn(), setActiveForm: vi.fn() };
     return selector(state);

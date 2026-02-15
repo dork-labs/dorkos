@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
 import { MessageItem } from '../ui/MessageItem';
-import { useAppStore } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import type { MessageGrouping } from '../model/use-chat-session';
 
 afterEach(() => {

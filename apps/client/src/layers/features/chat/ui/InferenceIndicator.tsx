@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Shield, MessageSquare } from 'lucide-react';
-import { useElapsedTime } from '@/layers/shared/lib';
+import { useElapsedTime } from '@/layers/shared/model';
 import { useRotatingVerb } from '../model/use-rotating-verb';
 import { DEFAULT_THEME, type IndicatorTheme } from './inference-themes';
 import { BYPASS_INFERENCE_VERBS } from './inference-verbs';

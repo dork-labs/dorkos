@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useAppStore, useIsMobile, useFavicon, useDocumentTitle } from '@/layers/shared/lib';
+import { useAppStore, useIsMobile, useFavicon, useDocumentTitle } from '@/layers/shared/model';
 import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entities/session';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';

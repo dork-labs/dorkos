@@ -4,7 +4,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { MessageList, computeGrouping, type MessageListHandle } from '../ui/MessageList';
 import type { ChatMessage } from '../model/use-chat-session';
-import { useAppStore } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 
 // jsdom does not implement IntersectionObserver
 globalThis.IntersectionObserver = vi.fn().mockImplementation(() => ({

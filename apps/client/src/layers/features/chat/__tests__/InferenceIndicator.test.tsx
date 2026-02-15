@@ -25,7 +25,7 @@ vi.mock('motion/react', () => ({
 }));
 
 // Mock the hooks to control their output
-vi.mock('@/layers/shared/lib/use-elapsed-time', () => ({
+vi.mock('@/layers/shared/model/use-elapsed-time', () => ({
   useElapsedTime: vi.fn(() => ({ formatted: '2m 14s', ms: 134000 })),
 }));
 

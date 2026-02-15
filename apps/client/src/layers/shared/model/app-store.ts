@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { type FontFamilyKey, DEFAULT_FONT, getFontConfig, isValidFontKey } from './font-config';
-import { loadGoogleFont, removeGoogleFont, applyFontCSS, removeFontCSS } from './font-loader';
+import {
+  type FontFamilyKey, DEFAULT_FONT, getFontConfig, isValidFontKey,
+  loadGoogleFont, removeGoogleFont, applyFontCSS, removeFontCSS,
+} from '@/layers/shared/lib';
 
 export interface ContextFile {
   id: string;

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TextDelta, ToolCallEvent, ApprovalEvent, QuestionPromptEvent, ErrorEvent, SessionStatusEvent, QuestionItem, TaskUpdateEvent, MessagePart, HistoryMessage } from '@dorkos/shared/types';
-import { useTransport, useAppStore } from '@/layers/shared/lib';
+import { useTransport, useAppStore } from '@/layers/shared/model';
 
 export interface ChatMessage {
   id: string;

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useTransport } from '@/layers/shared/lib';
+import { useTransport } from '@/layers/shared/model';
 import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 
 export function useGitStatus(cwd: string | null) {

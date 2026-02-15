@@ -5,11 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useChatSession } from '../model/use-chat-session';
 import type { Transport } from '@dorkos/shared/transport';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { TransportProvider } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
 
 // Mock app store (selectedCwd)
-vi.mock('@/layers/shared/lib', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/lib');
+vi.mock('@/layers/shared/model', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/model');
   return {
     ...actual,
     useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {

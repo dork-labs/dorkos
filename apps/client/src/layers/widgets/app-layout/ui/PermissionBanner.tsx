@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { useTransport } from '@/layers/shared/lib';
+import { useTransport } from '@/layers/shared/model';
 
 const DEFAULT_MESSAGE = 'Permissions bypassed - all tool calls auto-approved';
 

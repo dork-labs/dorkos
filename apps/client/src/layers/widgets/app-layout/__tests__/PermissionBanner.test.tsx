@@ -4,7 +4,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PermissionBanner } from '../ui/PermissionBanner';
 import type { Transport } from '@dorkos/shared/transport';
-import { TransportProvider } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
 
 afterEach(() => {
   cleanup();

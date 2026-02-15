@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionSidebar } from '../ui/SessionSidebar';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
-import { TransportProvider } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
 
 // Mock motion/react
 vi.mock('motion/react', () => ({
@@ -27,7 +27,7 @@ vi.mock('@/layers/entities/session/model/use-directory-state', () => ({
 
 // Mock app store (sidebar state + selectedCwd)
 const mockSetSidebarOpen = vi.fn();
-vi.mock('@/layers/shared/lib/app-store', () => ({
+vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
       setSidebarOpen: mockSetSidebarOpen,
@@ -39,7 +39,7 @@ vi.mock('@/layers/shared/lib/app-store', () => ({
 }));
 
 // Mock useIsMobile
-vi.mock('@/layers/shared/lib/use-is-mobile', () => ({
+vi.mock('@/layers/shared/model/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 

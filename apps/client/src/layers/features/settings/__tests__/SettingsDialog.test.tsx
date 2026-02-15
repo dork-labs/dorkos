@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { TransportProvider } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
 import { SettingsDialog } from '../ui/SettingsDialog';
 
 // Mock motion/react to render plain elements

@@ -13,7 +13,7 @@ let mockStoreDir: string | null = null;
 const mockSetStoreDir = vi.fn((dir: string | null) => {
   mockStoreDir = dir;
 });
-vi.mock('@/layers/shared/lib/app-store', () => ({
+vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
       selectedCwd: mockStoreDir,

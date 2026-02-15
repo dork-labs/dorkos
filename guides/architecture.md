@@ -117,17 +117,16 @@ packages/
     types.ts                -- Shared type definitions
 
 apps/
-  client/src/
-    contexts/
-      TransportContext.tsx   -- React Context DI
-    lib/
-      http-transport.ts     -- HTTP/SSE adapter
-      direct-transport.ts   -- In-process adapter
-      platform.ts           -- Platform adapter (embedded detection, file ops)
-    hooks/
-      use-chat-session.ts   -- Chat streaming (uses useTransport)
-      use-sessions.ts       -- Session CRUD (uses useTransport)
-      use-commands.ts       -- Command palette (uses useTransport)
+  client/src/layers/
+    shared/
+      model/
+        TransportContext.tsx -- React Context DI (useTransport, TransportProvider)
+        app-store.ts        -- Zustand UI state store
+        use-theme.ts        -- Theme hook (+ 7 other hooks)
+      lib/
+        http-transport.ts   -- HTTP/SSE adapter
+        direct-transport.ts -- In-process adapter
+        utils.ts            -- cn() utility
     components/
       App.tsx               -- Main app shell
     main.tsx                -- Standalone entry (HttpTransport)

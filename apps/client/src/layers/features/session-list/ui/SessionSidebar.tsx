@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTransport, useAppStore, useIsMobile, groupSessionsByTime, useTheme, type Theme } from '@/layers/shared/lib';
+import { useTransport, useAppStore, useIsMobile, useTheme, type Theme } from '@/layers/shared/model';
+import { groupSessionsByTime } from '@/layers/shared/lib';
 import { PathBreadcrumb, HoverCard, HoverCardContent, HoverCardTrigger } from '@/layers/shared/ui';
 import { useSessionId, useDirectoryState } from '@/layers/entities/session';
 import { SessionItem } from './SessionItem';

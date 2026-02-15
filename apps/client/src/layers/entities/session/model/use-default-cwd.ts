@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useTransport, useAppStore } from '@/layers/shared/lib';
+import { useTransport, useAppStore } from '@/layers/shared/model';
 import { useEffect } from 'react';
 
 /**

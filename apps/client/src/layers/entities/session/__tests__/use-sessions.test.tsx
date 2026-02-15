@@ -3,7 +3,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { TransportProvider } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
 import { useSessions } from '../model/use-sessions';
 
 // Mock useSessionId (nuqs-backed)
@@ -16,7 +16,7 @@ vi.mock('@/layers/entities/session/model/use-session-id', () => ({
 }));
 
 // Mock app store (selectedCwd)
-vi.mock('@/layers/shared/lib/app-store', () => ({
+vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: () => ({ selectedCwd: '/test/cwd' }),
 }));
 

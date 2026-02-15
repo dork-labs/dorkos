@@ -4,7 +4,7 @@ import {
   generateCircleFavicon,
   generatePulseFrames,
   setFavicon,
-} from './favicon-utils';
+} from '@/layers/shared/lib';
 
 interface UseFaviconOptions {
   cwd: string | null;

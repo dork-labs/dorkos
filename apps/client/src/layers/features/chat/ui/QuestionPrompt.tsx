@@ -1,6 +1,7 @@
 import { useState, useImperativeHandle, forwardRef } from 'react';
 import { Check, MessageSquare } from 'lucide-react';
-import { useTransport, cn } from '@/layers/shared/lib';
+import { useTransport } from '@/layers/shared/model';
+import { cn } from '@/layers/shared/lib';
 import { Tabs, TabsList, TabsTrigger, TabsContent, Kbd } from '@/layers/shared/ui';
 import type { QuestionItem } from '@dorkos/shared/types';
 

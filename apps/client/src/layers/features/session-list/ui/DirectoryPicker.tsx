@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useTransport, useAppStore, type RecentCwd, formatRelativeTime, shortenHomePath } from '@/layers/shared/lib';
+import { useTransport, useAppStore, type RecentCwd } from '@/layers/shared/model';
+import { formatRelativeTime, shortenHomePath } from '@/layers/shared/lib';
 import { PathBreadcrumb, ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle } from '@/layers/shared/ui';
 import { useDirectoryState } from '@/layers/entities/session';
 import {

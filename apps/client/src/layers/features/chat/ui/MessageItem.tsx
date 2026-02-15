@@ -8,7 +8,8 @@ import { ToolApproval } from './ToolApproval';
 import type { ToolApprovalHandle } from './ToolApproval';
 import { QuestionPrompt } from './QuestionPrompt';
 import type { QuestionPromptHandle } from './QuestionPrompt';
-import { useAppStore, cn } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
+import { cn } from '@/layers/shared/lib';
 
 export type InteractiveToolHandle = ToolApprovalHandle | QuestionPromptHandle;
 

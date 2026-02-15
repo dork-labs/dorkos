@@ -89,7 +89,8 @@ Is it app initialization, providers, or entry point?
 | Module | Layer | Contents |
 |--------|-------|----------|
 | `shared/ui/` | shared | Shadcn components (button, card, dialog, etc.) |
-| `shared/lib/` | shared | cn(), Transport infrastructure, http-transport, direct-transport |
+| `shared/model/` | shared | TransportContext, app-store, 8 hooks (useTheme, useIsMobile, etc.) |
+| `shared/lib/` | shared | cn(), Transports, font-config, favicon-utils, celebrations |
 | `entities/session/` | entities | Session types, useSessions hook, session transport calls |
 | `entities/command/` | entities | Command types, useCommands hook |
 | `features/chat/` | features | ChatPanel, MessageList, MessageItem, ToolCallCard, StreamingText, useChatSession |
@@ -142,7 +143,7 @@ import { CommandPalette } from '@/layers/features/commands'
 // entities/session/model/use-current-session.ts (shared across features)
 
 // Option 3: Use Zustand store in shared layer for truly global UI state
-// shared/lib/app-store.ts (e.g., sidebar open/closed)
+// shared/model/app-store.ts (e.g., sidebar open/closed)
 
 // FORBIDDEN: Model/hook importing from sibling feature
 // features/chat/model/use-chat-session.ts → features/files/model/use-files.ts
@@ -201,7 +202,7 @@ grep -r "from '@/layers/" apps/client/src/layers/shared/ --include="*.ts" | grep
 - **Feature-to-feature imports**: Features must not import from each other; lift shared logic to entities
 - **Giant features**: If a feature has 20+ files, split into multiple features or extract entities
 - **Skipping index.ts**: Every module needs a public API barrel export
-- **Transport in wrong layer**: Transport interface lives in `packages/shared`, Transport implementations in `shared/lib/`
+- **Transport in wrong layer**: Transport interface lives in `packages/shared`, Transport implementations in `shared/lib/`, TransportContext in `shared/model/`
 
 ## References
 

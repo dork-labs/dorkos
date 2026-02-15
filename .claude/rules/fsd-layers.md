@@ -96,6 +96,8 @@ Each module should organize code by purpose:
 
 Not all segments are required — only create what the module needs.
 
+**Note on `shared/` layer:** The `shared/` layer uses both `model/` and `lib/` segments at the top level. `shared/model/` contains hooks, stores, and React context (TransportContext, app-store, useTheme, useIsMobile, etc.). `shared/lib/` contains pure utilities, Transport implementations, and helpers (cn, font-config, favicon-utils, celebrations, etc.). Import hooks and stores from `@/layers/shared/model`, utilities from `@/layers/shared/lib`.
+
 ## Server Size Monitoring
 
 See `.claude/rules/server-structure.md` for service count thresholds and domain grouping guidance.

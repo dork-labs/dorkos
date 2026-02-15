@@ -1,6 +1,7 @@
 import { useState, useImperativeHandle, forwardRef } from 'react';
 import { Check, X, Shield } from 'lucide-react';
-import { useTransport, ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
+import { useTransport } from '@/layers/shared/model';
+import { ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
 import { Kbd } from '@/layers/shared/ui';
 
 interface ToolApprovalProps {

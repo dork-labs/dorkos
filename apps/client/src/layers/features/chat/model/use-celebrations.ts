@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { useAppStore, useIdleDetector, CelebrationEngine, type CelebrationEvent } from '@/layers/shared/lib';
+import { useAppStore, useIdleDetector } from '@/layers/shared/model';
+import { CelebrationEngine, type CelebrationEvent } from '@/layers/shared/lib';
 import type { TaskItem, TaskUpdateEvent } from '@dorkos/shared/types';
 
 export interface CelebrationsAPI {

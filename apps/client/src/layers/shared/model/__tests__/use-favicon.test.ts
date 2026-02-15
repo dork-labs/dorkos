@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useFavicon } from '../use-favicon';
 
-vi.mock('../favicon-utils', () => ({
+vi.mock('@/layers/shared/lib', () => ({
   hashToHslColor: vi.fn(() => 'hsl(180, 70%, 55%)'),
   generateCircleFavicon: vi.fn(() => 'data:image/png;base64,solid'),
   generatePulseFrames: vi.fn(() =>
@@ -14,7 +14,7 @@ vi.mock('../favicon-utils', () => ({
   setFavicon: vi.fn(),
 }));
 
-import { generateCircleFavicon, setFavicon } from '../favicon-utils';
+import { generateCircleFavicon, setFavicon } from '@/layers/shared/lib';
 
 describe('useFavicon', () => {
   beforeEach(() => {

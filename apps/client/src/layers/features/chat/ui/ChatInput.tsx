@@ -1,7 +1,8 @@
 import { useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { motion } from 'motion/react';
 import { ArrowUp, CornerDownLeft, Square, X } from 'lucide-react';
-import { cn, useIsMobile } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
+import { useIsMobile } from '@/layers/shared/model';
 
 export interface ChatInputHandle {
   focus: () => void;

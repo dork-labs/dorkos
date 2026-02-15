@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { getPlatform, useAppStore } from '@/layers/shared/lib';
+import { getPlatform } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import { useQueryState } from 'nuqs';
 import { useSessionId } from './use-session-id';
 
