@@ -87,12 +87,29 @@ Sessions are derived entirely from SDK JSONL files on disk (`~/.claude/projects/
 
 ### Client (`apps/client/src/`)
 
-React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gray palette).
+React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gray palette). Uses **Feature-Sliced Design (FSD)** architecture with strict unidirectional layer imports.
 
-- **State**: Zustand for UI state (`app-store.ts`), TanStack Query for server state (`use-sessions.ts`, `use-commands.ts`)
+**FSD Layers** (`apps/client/src/layers/`):
+
+| Layer | Modules | Purpose |
+|-------|---------|---------|
+| `shared/ui/` | 14 shadcn primitives (Badge, Dialog, Select, Tabs, etc.) | Reusable UI primitives |
+| `shared/lib/` | cn, Transports, app-store, hooks (useTheme, useIsMobile, etc.) | Domain-agnostic utilities |
+| `entities/session/` | useSessionId, useSessions, useDirectoryState, useDefaultCwd | Session domain hooks |
+| `entities/command/` | useCommands | Command domain hook |
+| `features/chat/` | ChatPanel, MessageList, MessageItem, ToolCallCard, useChatSession | Chat interface |
+| `features/session-list/` | SessionSidebar, SessionItem, DirectoryPicker | Session management |
+| `features/commands/` | CommandPalette | Slash command palette |
+| `features/settings/` | SettingsDialog | Settings UI |
+| `features/files/` | FilePalette, useFiles | File browser |
+| `features/status/` | StatusLine, GitStatusItem, ModelItem, etc. | Status bar |
+| `widgets/app-layout/` | PermissionBanner | App-level layout components |
+
+**Layer dependency rule**: `shared` ← `entities` ← `features` ← `widgets` ← `app` (strictly unidirectional). See `.claude/rules/fsd-layers.md` for full import rules.
+
+- **State**: Zustand for UI state (`layers/shared/lib/app-store.ts`), TanStack Query for server state (`entities/session/`, `entities/command/`)
 - **URL Parameters**: `?session=` (session ID via nuqs) and `?dir=` (working directory via nuqs) persist client state in the URL for standalone mode. In Obsidian embedded mode, both use Zustand instead. The `?dir=` parameter is omitted when using the server default directory to keep URLs clean.
-- **Chat**: `useChatSession` hook loads message history via `useTransport().getMessages()`, then streams via `transport.sendMessage()` with callback pattern. Tracks text deltas and tool call lifecycle in refs for performance. Exposes `isLoadingHistory` for UI feedback.
-- **Components**: `ChatPanel` > `MessageList` > `MessageItem` + `ToolCallCard`; `SessionSidebar`; `CommandPalette`; `PermissionBanner` + `ToolApproval` for tool approval flow
+- **Barrel Exports**: Every FSD module has an `index.ts` barrel. Import from barrels only (e.g., `import { ChatPanel } from '@/layers/features/chat'`), never from internal paths.
 - **Markdown Rendering**: Assistant messages are rendered as rich markdown via the `streamdown` library (Vercel). `StreamingText` wraps the `<Streamdown>` component with `github-light`/`github-dark` Shiki themes and shows a blinking cursor during active streaming. User messages remain plain text. The `@source` directive in `index.css` ensures Streamdown's Tailwind classes are included in the CSS output.
 - **Animations**: `motion` (motion.dev) for UI animations. `App.tsx` wraps the app in `<MotionConfig reducedMotion="user">` to respect `prefers-reduced-motion`. Used for: message entrance animations (new messages only, not history), tool card expand/collapse, command palette enter/exit, sidebar width toggle, button micro-interactions. Tests mock `motion/react` to render plain elements.
 - **Design System**: Color palette, typography, spacing (8pt grid), and motion specs are documented in `guides/design-system.md`.
@@ -108,6 +125,7 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gra
 ### Path Aliases
 
 - `@/*` -> `./src/*` (within each app, scoped to that app's source)
+- FSD layer imports use `@/layers/shared/lib`, `@/layers/features/chat`, etc.
 
 Cross-package imports use the `@dorkos/*` package names (e.g., `import { Session } from '@dorkos/shared/types'`). The old `@shared/*` alias has been removed.
 

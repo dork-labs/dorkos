@@ -21,12 +21,12 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 |-----------|-------|----------|
 | Commands | 45 | `.claude/commands/` |
 | Agents | 5 | `.claude/agents/` |
-| Skills | 8 | `.claude/skills/` |
-| Rules | 3 | `.claude/rules/` |
+| Skills | 9 | `.claude/skills/` |
+| Rules | 5 | `.claude/rules/` |
 | Claude Hooks | 9 | `.claude/hooks/`, configured in `.claude/settings.json` |
 | Git Hooks | 1 | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers | 2 | `.mcp.json` |
-| Guides | 12 | `guides/` |
+| Guides | 13 | `guides/` |
 
 ## Component Types
 
@@ -89,6 +89,7 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 | `writing-developer-guides` | Developer guide structure for AI agents | Creating/updating files in guides/ |
 | `orchestrating-parallel-work` | Parallel agent execution, batch scheduling | Coordinating multiple concurrent tasks, optimizing task ordering |
 | `writing-changelogs` | Human-friendly changelog entries, release notes | Populating changelog, preparing releases |
+| `organizing-fsd-architecture` | Feature-Sliced Design layer placement, imports | Structuring client code, creating features, reviewing architecture |
 
 ### Rules (Path-Triggered)
 
@@ -99,6 +100,8 @@ Rules inject context-specific guidance when Claude works with matching files. Ea
 | `api.md` | `apps/server/src/routes/**/*.ts` | Zod validation, service layer usage, error handling |
 | `testing.md` | `**/__tests__/**/*.ts`, `**/*.test.ts` | Vitest patterns, mocking, component testing |
 | `components.md` | `apps/client/src/**/*.tsx` | Shadcn patterns, accessibility, styling |
+| `fsd-layers.md` | `apps/client/src/layers/**/*.ts(x)` | FSD layer dependency rules, barrel imports |
+| `server-structure.md` | `apps/server/src/services/**/*.ts`, `routes/**/*.ts` | Service count monitoring, domain grouping thresholds |
 
 ### Hooks (Event-Triggered)
 
@@ -130,6 +133,7 @@ All documentation lives in `guides/`:
 
 | Guide | Content |
 |-------|---------|
+| `01-project-structure.md` | FSD layer hierarchy, directory layout, adding features |
 | `architecture.md` | Hexagonal architecture, Transport interface, Electron compatibility |
 | `design-system.md` | Color palette, typography, spacing, motion specs |
 | `api-reference.md` | OpenAPI spec, Scalar docs UI, Zod schema patterns |
@@ -233,20 +237,23 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   ├── product-manager.md
 │   └── research-expert.md
 │
-├── skills/                # Reusable expertise (8 total)
+├── skills/                # Reusable expertise (9 total)
 │   ├── clarifying-requirements/
 │   ├── debugging-systematically/
 │   ├── designing-frontend/
 │   ├── styling-with-tailwind-shadcn/
 │   ├── managing-roadmap-moscow/
+│   ├── organizing-fsd-architecture/
 │   ├── writing-developer-guides/
 │   ├── orchestrating-parallel-work/
 │   └── writing-changelogs/
 │
-└── rules/                 # Path-specific guidance (3 total)
+└── rules/                 # Path-specific guidance (5 total)
     ├── api.md             # API route handlers
-    ├── testing.md         # Test patterns
-    └── components.md      # UI components
+    ├── components.md      # UI components
+    ├── fsd-layers.md      # FSD layer imports
+    ├── server-structure.md # Server size monitoring
+    └── testing.md         # Test patterns
 ```
 
 ## Core Workflows

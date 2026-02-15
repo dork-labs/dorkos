@@ -28,7 +28,7 @@ Base primitives following Shadcn patterns:
 ```typescript
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@/lib/utils"
+import { cn } from "@/layers/shared/lib"
 
 const componentVariants = cva(
   "base-classes-here",
@@ -227,7 +227,7 @@ const width = React.useMemo(() => {
 Always use `cn()` for conditional/merged classes:
 
 ```typescript
-import { cn } from "@/lib/utils"
+import { cn } from "@/layers/shared/lib"
 
 <div className={cn(
   "base-classes",

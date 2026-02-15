@@ -27,17 +27,25 @@ Determine the current file's layer from its path, then enforce:
 
 ### Cross-Module Rule
 
-Modules at the **same layer level** must NOT import from each other:
+Modules at the **same layer level** have restricted cross-imports:
+
+**UI composition across features: ALLOWED.** A feature's UI component may render a sibling feature's component for composition purposes (e.g., ChatPanel renders CommandPalette, StatusLine).
+
+**Model/hook cross-imports: FORBIDDEN.** A feature's model/hooks must never import from another feature's model/hooks. This prevents circular business logic dependencies.
 
 ```typescript
-// FORBIDDEN: Feature importing another feature
+// ALLOWED: UI composition (feature renders sibling component)
 // In features/chat/ui/ChatPanel.tsx
-import { CommandPalette } from '@/layers/features/commands'  // WRONG
-
-// CORRECT: Compose at widget layer
-// In widgets/app-layout/ui/Layout.tsx
-import { ChatPanel } from '@/layers/features/chat'
 import { CommandPalette } from '@/layers/features/commands'
+import { StatusLine } from '@/layers/features/status'
+
+// FORBIDDEN: Model/hook cross-import (business logic coupling)
+// In features/chat/model/use-chat-session.ts
+import { useFiles } from '@/layers/features/files'  // WRONG — lift to entities or shared
+
+// FORBIDDEN: Entity importing sibling entity
+// In entities/session/model/hooks.ts
+import { useCommands } from '@/layers/entities/command'  // WRONG
 ```
 
 ## Import Conventions
@@ -90,10 +98,4 @@ Not all segments are required — only create what the module needs.
 
 ## Server Size Monitoring
 
-When creating or editing files in `apps/server/src/services/`:
-
-**Count the service files.** If there are 15 or more `.ts` files in `services/`, proactively suggest domain grouping:
-
-> "The server now has [N] service files. Consider grouping related services into domain directories (e.g., `domains/session/`, `domains/agent/`) for clearer ownership."
-
-This is a suggestion, not a blocking rule.
+See `.claude/rules/server-structure.md` for service count thresholds and domain grouping guidance.

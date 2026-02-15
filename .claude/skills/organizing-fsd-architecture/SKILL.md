@@ -94,10 +94,10 @@ Is it app initialization, providers, or entry point?
 | `entities/command/` | entities | Command types, useCommands hook |
 | `features/chat/` | features | ChatPanel, MessageList, MessageItem, ToolCallCard, StreamingText, useChatSession |
 | `features/commands/` | features | CommandPalette |
-| `features/settings/` | features | SettingsPanel |
-| `features/files/` | features | FileBrowser |
-| `features/session-list/` | features | SessionSidebar |
-| `widgets/app-layout/` | widgets | Header, Layout, main workspace composition |
+| `features/settings/` | features | SettingsDialog |
+| `features/files/` | features | FilePalette, useFiles |
+| `features/session-list/` | features | SessionSidebar, SessionItem, DirectoryPicker |
+| `widgets/app-layout/` | widgets | PermissionBanner |
 
 ### Server (`apps/server/src/`)
 
@@ -129,17 +129,23 @@ import { ChatPanel } from '@/layers/features/chat/ui/ChatPanel'
 
 ## Cross-Feature Communication
 
-When features need to communicate:
+**UI composition across features is allowed.** A feature's UI component may render a sibling feature's component (e.g., ChatPanel renders CommandPalette). **Model/hook cross-imports are forbidden** — this prevents circular business logic dependencies.
+
+When features need to share data or logic:
 
 ```typescript
-// Option 1: Lift shared logic to entities layer
-// entities/session/model/use-current-session.ts (shared across features)
+// Option 1: UI composition (ALLOWED)
+// features/chat/ui/ChatPanel.tsx renders features/commands CommandPalette
+import { CommandPalette } from '@/layers/features/commands'
 
-// Option 2: Pass data through props from widget
-// widgets/app-layout/ui/Layout.tsx composes features with shared state
+// Option 2: Lift shared logic to entities layer
+// entities/session/model/use-current-session.ts (shared across features)
 
 // Option 3: Use Zustand store in shared layer for truly global UI state
 // shared/lib/app-store.ts (e.g., sidebar open/closed)
+
+// FORBIDDEN: Model/hook importing from sibling feature
+// features/chat/model/use-chat-session.ts → features/files/model/use-files.ts
 ```
 
 ## Server Size Awareness
