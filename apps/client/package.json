@@ -5,10 +5,10 @@
   "type": "module",
   "exports": {
     "./App": "./src/App.tsx",
-    "./stores/app-store": "./src/stores/app-store.ts",
-    "./contexts/TransportContext": "./src/contexts/TransportContext.tsx",
-    "./lib/direct-transport": "./src/lib/direct-transport.ts",
-    "./lib/platform": "./src/lib/platform.ts"
+    "./stores/app-store": "./src/layers/shared/lib/app-store.ts",
+    "./contexts/TransportContext": "./src/layers/shared/lib/TransportContext.tsx",
+    "./lib/direct-transport": "./src/layers/shared/lib/direct-transport.ts",
+    "./lib/platform": "./src/layers/shared/lib/platform.ts"
   },
   "scripts": {
     "dev": "vite",

@@ -23,6 +23,7 @@ dorkos/
 │   ├── shared/           # @dorkos/shared - Zod schemas, types (JIT .ts exports)
 │   ├── typescript-config/ # @dorkos/typescript-config - Shared tsconfig presets
 │   └── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
+├── research/             # Research artifacts (persisted by research-expert agent)
 ├── turbo.json
 ├── vitest.workspace.ts
 └── package.json          # Root workspace config + turbo only

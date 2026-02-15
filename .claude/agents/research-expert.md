@@ -103,14 +103,14 @@ Detect the expected research mode from task description keywords:
 To prevent token explosion and preserve formatting:
 
 1. **Write Full Report to File**:
-   - Generate unique filename: `/tmp/research_[YYYYMMDD]_[topic_slug].md`
-   - Example: `/tmp/research_20240328_transformer_attention.md`
+   - Generate unique filename: `research/[YYYYMMDD]_[topic_slug].md`
+   - Example: `research/20240328_transformer_attention.md`
    - Write comprehensive findings using the Write tool
    - Include all sections below in the file
 
 2. **Return Lightweight Summary**:
    ```
-   Research completed and saved to: /tmp/research_[timestamp]_[topic_slug].md
+   Research completed and saved to: research/[YYYYMMDD]_[topic_slug].md
    
    Summary: [2-3 sentence overview of findings]
    Key Topics Covered: [bullet list of main areas]

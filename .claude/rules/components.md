@@ -1,14 +1,27 @@
 ---
-paths: apps/client/src/**/*.tsx
+paths: apps/client/src/**/*.tsx, apps/client/src/layers/**/ui/**/*.tsx
 ---
 
 # UI Component Rules
 
-These rules apply to all React components in `apps/client/src/components/` and client UI segments.
+These rules apply to all React components in `apps/client/src/` and FSD UI segments.
+
+## FSD Layer Awareness
+
+Components live in different FSD layers with different rules:
+
+| Location | Layer | Can Import From |
+|----------|-------|-----------------|
+| `layers/shared/ui/` | shared | Nothing in layers/ (Shadcn primitives) |
+| `layers/entities/*/ui/` | entities | `shared/` only |
+| `layers/features/*/ui/` | features | `entities/`, `shared/` |
+| `layers/widgets/*/ui/` | widgets | `features/`, `entities/`, `shared/` |
+
+See `.claude/rules/fsd-layers.md` for full import rules.
 
 ## Component Structure
 
-### Shadcn UI Components (`apps/client/src/components/ui/`)
+### Shadcn UI Components (`layers/shared/ui/`)
 
 Base primitives following Shadcn patterns:
 
@@ -56,13 +69,13 @@ function Component({
 export { Component, componentVariants }
 ```
 
-### Feature Components (`apps/client/src/`)
+### FSD Layer Components (`layers/features/*/ui/`, `layers/entities/*/ui/`, etc.)
 
-Feature/widget components with business logic:
+Feature/entity components with business logic:
 
 ```typescript
-import { Button } from '@/components/ui/button'
-import { useQueryState } from 'nuqs'
+import { Button } from '@/layers/shared/ui'
+import { useSession } from '@/layers/entities/session'
 import type { Session } from '@dorkos/shared/types'
 
 interface Props {
@@ -71,7 +84,7 @@ interface Props {
 }
 
 export function FeatureComponent({ session, onAction }: Props) {
-  const [sessionId] = useQueryState('session')
+  const { currentSession } = useSession()
 
   return (
     <div className="space-y-4">

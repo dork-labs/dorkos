@@ -3,9 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { App } from './App';
-import { HttpTransport } from './lib/http-transport';
-import { TransportProvider } from './contexts/TransportContext';
-import { useAppStore } from './stores/app-store';
+import { HttpTransport, TransportProvider, useAppStore } from '@/layers/shared/lib';
 import './index.css';
 
 function DevtoolsToggle() {

@@ -1,16 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { useAppStore } from './stores/app-store';
-import { useSessionId } from './hooks/use-session-id';
-import { useIsMobile } from './hooks/use-is-mobile';
-import { useDefaultCwd } from './hooks/use-default-cwd';
+import { useAppStore, useIsMobile, useFavicon, useDocumentTitle } from '@/layers/shared/lib';
+import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entities/session';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';
-import { PermissionBanner } from './components/layout/PermissionBanner';
-import { SessionSidebar } from './components/sessions/SessionSidebar';
-import { ChatPanel } from './components/chat/ChatPanel';
-import { useDirectoryState } from './hooks/use-directory-state';
-import { useFavicon } from './hooks/use-favicon';
-import { useDocumentTitle } from './hooks/use-document-title';
+import { PermissionBanner } from '@/layers/widgets/app-layout';
+import { SessionSidebar } from '@/layers/features/session-list';
+import { ChatPanel } from '@/layers/features/chat';
 
 interface AppProps {
   /** Optional transform applied to message content before sending to server */

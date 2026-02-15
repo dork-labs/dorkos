@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/scripts/hooks/file-guard.mjs"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/file-guard.mjs"
           }
         ]
       }
@@ -44,19 +44,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/scripts/hooks/typecheck-changed.sh"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/typecheck-changed.sh"
           },
           {
             "type": "command",
-            "command": ".claude/scripts/hooks/lint-changed.sh"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/lint-changed.sh"
           },
           {
             "type": "command",
-            "command": "node .claude/scripts/hooks/check-any-changed.mjs"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/check-any-changed.mjs"
           },
           {
             "type": "command",
-            "command": ".claude/scripts/hooks/test-changed.sh"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/test-changed.sh"
           }
         ]
       }
@@ -66,15 +66,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/scripts/hooks/create-checkpoint.sh"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/create-checkpoint.sh"
           },
           {
             "type": "command",
-            "command": ".claude/scripts/hooks/check-docs-changed.sh"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-docs-changed.sh"
           },
           {
             "type": "command",
-            "command": "node .claude/scripts/hooks/autonomous-check.mjs"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/autonomous-check.mjs"
           }
         ]
       }
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/scripts/hooks/thinking-level.sh"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/thinking-level.sh"
           }
         ]
       }

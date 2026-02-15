@@ -23,7 +23,8 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | Agents | 5 | `.claude/agents/` |
 | Skills | 8 | `.claude/skills/` |
 | Rules | 3 | `.claude/rules/` |
-| Hooks | 9 | `.claude/settings.json`, `.claude/hooks-config.json` |
+| Claude Hooks | 9 | `.claude/hooks/`, configured in `.claude/settings.json` |
+| Git Hooks | 1 | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers | 2 | `.mcp.json` |
 | Guides | 12 | `guides/` |
 
@@ -101,7 +102,11 @@ Rules inject context-specific guidance when Claude works with matching files. Ea
 
 ### Hooks (Event-Triggered)
 
-Hooks run automatically at lifecycle events. Configured in `settings.json` with local scripts in `.claude/scripts/hooks/`.
+Hooks run automatically at lifecycle events. Configured in `settings.json` with scripts in `.claude/hooks/`.
+
+**Important:** All hook commands use `cd "$(git rev-parse --show-toplevel)" &&` prefix to ensure they run from the repo root, even when subagents change the working directory.
+
+Git hooks (post-commit, etc.) are separate and live in `.claude/git-hooks/`. Install via `.claude/scripts/install-git-hooks.sh`.
 
 | Event | Hooks | Purpose |
 |-------|-------|---------|
@@ -384,6 +389,42 @@ See `guides/11-parallel-execution.md` for complete patterns and decision framewo
 3. Document in this README under Rules section
 4. Update CLAUDE.md "Path-Specific Rules" section
 
+### Adding a New Claude Hook
+
+1. Create the script in `.claude/hooks/[name].{sh,mjs}`
+2. Add to `.claude/settings.json` under the appropriate lifecycle event
+3. **CWD-safety (required):** Prefix the command with `cd "$(git rev-parse --show-toplevel)" &&`
+   ```json
+   {
+     "type": "command",
+     "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/my-hook.mjs"
+   }
+   ```
+   This prevents `MODULE_NOT_FOUND` errors when subagents change the working directory.
+4. Make shell scripts executable: `chmod +x .claude/hooks/my-hook.sh`
+5. Document in this README under the Hooks table
+6. If the hook has user-configurable options, add them to `.claude/hooks-config.json`
+
+### Adding a New Git Hook
+
+1. Create the script in `.claude/git-hooks/[name].py` (or `.sh`)
+2. Register it in `.claude/scripts/install-git-hooks.sh` by adding to `HOOK_DEFS`
+3. Run `.claude/scripts/install-git-hooks.sh` to install
+
+### Script Directory Conventions
+
+```
+.claude/
+├── hooks/           # Claude Code lifecycle hooks (settings.json)
+│                    # PreToolUse, PostToolUse, Stop, UserPromptSubmit, etc.
+├── git-hooks/       # Git hooks (post-commit, pre-push, etc.)
+│                    # Installed as symlinks into .git/hooks/
+└── scripts/         # Standalone utility scripts (not hooks)
+                     # Install helpers, backfill scripts, etc.
+```
+
+**Key distinction:** `.claude/hooks/` = Claude Code automation. `.claude/git-hooks/` = Git automation. `.claude/scripts/` = Manual utilities.
+
 ### Review Cycle
 
 Run `/system:review` periodically to:
@@ -438,10 +479,10 @@ ls -la .claude/commands/
 cat .claude/settings.json | python3 -m json.tool
 
 # Test hooks manually
-echo '{}' | .claude/scripts/hooks/thinking-level.sh
+echo '{}' | .claude/hooks/thinking-level.sh
 
 # Check shell scripts are executable
-ls -la .claude/scripts/hooks/
+ls -la .claude/hooks/
 ```
 
 ### Rules Not Triggering

@@ -17,7 +17,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAULT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-HOOKS_SOURCE="$VAULT_ROOT/.claude/hooks"
+HOOKS_SOURCE="$VAULT_ROOT/.claude/git-hooks"
 GIT_HOOKS="$VAULT_ROOT/.git/hooks"
 
 # Colors for output
@@ -63,7 +63,7 @@ install_hooks() {
             if [ -L "$target_path" ]; then
                 # It's a symlink, check if it points to our file
                 local current_target=$(readlink "$target_path")
-                local expected_target="../../.claude/hooks/$source_file"
+                local expected_target="../../.claude/git-hooks/$source_file"
 
                 if [ "$current_target" = "$expected_target" ]; then
                     echo -e "${GREEN}✓${NC} $hook_name already installed (symlink)"
@@ -80,7 +80,7 @@ install_hooks() {
 
         # Create relative symlink
         cd "$GIT_HOOKS"
-        ln -sf "../../.claude/hooks/$source_file" "$hook_name"
+        ln -sf "../../.claude/git-hooks/$source_file" "$hook_name"
         cd - > /dev/null
 
         # Ensure executable
@@ -115,7 +115,7 @@ uninstall_hooks() {
 
         if [ -L "$target_path" ]; then
             local current_target=$(readlink "$target_path")
-            local expected_target="../../.claude/hooks/$source_file"
+            local expected_target="../../.claude/git-hooks/$source_file"
 
             if [ "$current_target" = "$expected_target" ]; then
                 rm "$target_path"
@@ -160,7 +160,7 @@ show_status() {
             echo -e "${RED}source missing${NC}"
         elif [ -L "$target_path" ]; then
             local current_target=$(readlink "$target_path")
-            local expected_target="../../.claude/hooks/$source_file"
+            local expected_target="../../.claude/git-hooks/$source_file"
 
             if [ "$current_target" = "$expected_target" ]; then
                 echo -e "${GREEN}installed (symlink)${NC}"

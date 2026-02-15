@@ -414,5 +414,4 @@ pnpm install
 
 - Knip is configured in `knip.config.ts`
 - The boilerplate intentionally keeps Shadcn UI components as a library
-- FSD scaffold templates (entities/user, shared/api) are kept as patterns
-- Example files (use-example.ts, example-store.ts) are kept for demonstration
+- FSD layer structure (shared, entities, features, widgets) documented in `guides/01-project-structure.md`

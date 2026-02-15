@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/scripts/hooks/autonomous-check.mjs"
+            "command": "node .claude/hooks/autonomous-check.mjs"
           }
         ]
       }

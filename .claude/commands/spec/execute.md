@@ -408,7 +408,7 @@ The task description contains ALL implementation details including:
 
 ### Step 2: Implement
 - Write the code following project conventions
-- Follow FSD architecture (check which layer: entities, features, widgets)
+- Follow FSD architecture — place code in the correct layer (see `organizing-fsd-architecture` skill and `guides/01-project-structure.md`)
 - Add proper error handling
 - Include TypeScript types
 

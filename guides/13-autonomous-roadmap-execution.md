@@ -301,7 +301,7 @@ The stop hook is configured in `.claude/hooks-config.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/scripts/hooks/autonomous-check.mjs"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/autonomous-check.mjs"
           }
         ]
       }

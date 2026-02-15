@@ -198,7 +198,7 @@ Reference these when answering:
 | "push to remote" | `/git:push` | `git push` |
 | "create a branch" | Direct prompt: "Create branch X" | `git checkout -b` |
 | "run database migration" | `/db:migrate` | `pnpm prisma migrate deploy` |
-| "scaffold a feature" | `/dev:scaffold [name]` | Create FSD directory structure |
+| "scaffold a feature" | Direct prompt: "Create feature X" | Create FSD directory structure per `guides/01-project-structure.md` |
 | "review recent work" | `/review-recent-work` | Manual code inspection |
 | "manage roadmap" | `/roadmap [subcommand]` | Edit `roadmap/roadmap.json` |
 | "git status" | Direct prompt: "Show git status" | `git status && git diff` |
