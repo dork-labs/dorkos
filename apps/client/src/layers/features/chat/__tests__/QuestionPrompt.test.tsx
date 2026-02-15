@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createRef } from 'react';
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { QuestionPrompt, type QuestionPromptHandle } from '../ui/QuestionPrompt';

@@ -79,7 +79,7 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
 
   return (
     <Wrapper
-      {...(animationProps as any)}
+      {...(animationProps as Record<string, unknown>)}
       className={cn(
         'group rounded-lg transition-colors duration-150',
         isActive
@@ -88,11 +88,20 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
       )}
     >
       <div
+        role="button"
+        tabIndex={0}
         onClick={() => {
           if (isMobile) {
             setExpanded((prev) => !prev);
           }
           onClick();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (isMobile) setExpanded((prev) => !prev);
+            onClick();
+          }
         }}
         className="cursor-pointer px-3 py-2"
       >

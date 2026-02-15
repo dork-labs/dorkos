@@ -45,7 +45,7 @@ export class CopilotView extends ItemView {
     setPlatformAdapter(createObsidianAdapter(this.app));
 
     // Resolve paths: Obsidian vault is workspace/, repo root is its parent
-    const vaultPath = (this.app.vault.adapter as any).basePath as string;
+    const vaultPath = (this.app.vault.adapter as unknown as { basePath: string }).basePath;
     const repoRoot = path.resolve(vaultPath, '..');
 
     // Create service instances for DirectTransport

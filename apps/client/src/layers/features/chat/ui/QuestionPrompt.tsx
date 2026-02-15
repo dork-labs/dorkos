@@ -332,6 +332,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     disabled={submitting}
                     onChange={(e) => handleOtherText(qIdx, e.target.value)}
                     className="bg-background mt-1 w-full resize-y rounded border border-amber-500/30 px-2 py-1 text-sm focus:ring-1 focus:ring-amber-500/50 focus:outline-none"
+                    // eslint-disable-next-line jsx-a11y/no-autofocus -- Intentional: focus the answer input when "Other" is selected
                     autoFocus
                   />
                 )}

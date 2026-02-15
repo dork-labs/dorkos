@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { TFile } from 'obsidian';
 import { useObsidian } from '../contexts/ObsidianContext';
 
 export interface ActiveFileInfo {

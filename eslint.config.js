@@ -79,6 +79,7 @@ export default tseslint.config(
       'react-hooks/purity': 'warn',
       'react-hooks/preserve-manual-memoization': 'warn',
       'react-hooks/immutability': 'warn',
+      'react-hooks/incompatible-library': 'off',
 
       // Accessibility (all warnings)
       ...jsxA11y.flatConfigs.recommended.rules,
@@ -170,6 +171,7 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/no-unsafe-function-type': 'off',
       'require-yield': 'off',
+      'react/display-name': 'off',
     },
   },
 

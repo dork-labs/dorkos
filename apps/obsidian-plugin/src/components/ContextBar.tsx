@@ -44,6 +44,7 @@ export function ContextBar({
 
   return (
     <div
+      role="region"
       className={`min-w-0 flex-1 transition-colors ${isDragOver ? 'bg-accent/50' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

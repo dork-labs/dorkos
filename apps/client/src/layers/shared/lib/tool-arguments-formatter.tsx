@@ -71,7 +71,7 @@ function renderValue(value: unknown, maxLen: number): React.ReactNode {
   return <span>{String(value)}</span>;
 }
 
-export function ToolArgumentsDisplay({ toolName, input }: ToolArgumentsDisplayProps) {
+export function ToolArgumentsDisplay({ toolName: _toolName, input }: ToolArgumentsDisplayProps) {
   if (!input) return null;
 
   let parsed: Record<string, unknown>;

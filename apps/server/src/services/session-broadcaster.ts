@@ -163,7 +163,7 @@ export class SessionBroadcaster {
     try {
       const { newOffset } = await this.transcriptReader.readFromOffset(vaultRoot, sessionId, 0);
       this.offsets.set(sessionId, newOffset);
-    } catch (err) {
+    } catch (_err) {
       // File may not exist yet, start at 0
       this.offsets.set(sessionId, 0);
     }

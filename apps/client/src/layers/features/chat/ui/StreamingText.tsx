@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Streamdown } from 'streamdown';
 import type { LinkSafetyModalProps } from 'streamdown';

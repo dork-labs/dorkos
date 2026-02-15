@@ -66,7 +66,11 @@ export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: Co
                     role="option"
                     aria-selected={isSelected}
                     data-selected={isSelected}
+                    tabIndex={isSelected ? 0 : -1}
                     onClick={() => onSelect(cmd)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') onSelect(cmd);
+                    }}
                     className="data-[selected=true]:bg-ring/10 data-[selected=true]:text-foreground hover:bg-muted flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 transition-colors duration-100"
                   >
                     <span className="font-mono text-sm">{cmd.fullCommand}</span>

@@ -189,7 +189,7 @@ describe('AgentManager interactive tools', () => {
       // Start consuming sendMessage (will call query())
       const gen = manager.sendMessage('sess-1', 'hello');
       // Pull the first value to kick off the generator (it will block on SDK)
-      const firstResult = gen.next();
+      const _firstResult = gen.next();
 
       // Advance past session timeout
       vi.advanceTimersByTime(31 * 60 * 1000);
@@ -607,7 +607,7 @@ describe('AgentManager interactive tools', () => {
 
       // Start consuming sendMessage
       const gen = manager.sendMessage('sess-1', 'ask me');
-      const collectedEvents: StreamEvent[] = [];
+      const _collectedEvents: StreamEvent[] = [];
 
       // Pull the first event (init is consumed internally, no yield)
       // The generator will block on the second SDK next() call,

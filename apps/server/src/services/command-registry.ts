@@ -54,7 +54,7 @@ class CommandRegistryService {
           try {
             const content = await fs.readFile(filePath, 'utf-8');
 
-            let frontmatter: Record<string, any>;
+            let frontmatter: Record<string, unknown>;
             try {
               frontmatter = matter(content).data;
             } catch {
@@ -68,12 +68,12 @@ class CommandRegistryService {
               namespace: entry.name,
               command: commandName,
               fullCommand: `/${entry.name}:${commandName}`,
-              description: frontmatter.description || '',
-              argumentHint: frontmatter['argument-hint'],
+              description: (frontmatter.description as string) || '',
+              argumentHint: frontmatter['argument-hint'] as string | undefined,
               allowedTools:
                 typeof allowedToolsRaw === 'string'
                   ? allowedToolsRaw.split(',').map((t: string) => t.trim())
-                  : allowedToolsRaw,
+                  : (allowedToolsRaw as string[] | undefined),
               filePath: path.relative(process.cwd(), filePath),
             });
           } catch (fileErr) {

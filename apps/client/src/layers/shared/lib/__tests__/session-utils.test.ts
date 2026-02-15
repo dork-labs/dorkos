@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { groupSessionsByTime, formatRelativeTime, type TimeGroup } from '../session-utils';
+import { groupSessionsByTime, formatRelativeTime } from '../session-utils';
 import type { Session } from '@dorkos/shared/types';
 
 function makeSession(overrides: Partial<Session> = {}): Session {

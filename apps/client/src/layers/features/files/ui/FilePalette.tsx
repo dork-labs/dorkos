@@ -69,7 +69,11 @@ export function FilePalette({ filteredFiles, selectedIndex, onSelect }: FilePale
                 role="option"
                 aria-selected={isSelected}
                 data-selected={isSelected}
+                tabIndex={isSelected ? 0 : -1}
                 onClick={() => onSelect(entry)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSelect(entry);
+                }}
                 className="data-[selected=true]:bg-ring/10 data-[selected=true]:text-foreground hover:bg-muted flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 transition-colors duration-100"
               >
                 <Icon className="text-muted-foreground size-4 shrink-0" />
