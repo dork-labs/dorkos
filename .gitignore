@@ -5,6 +5,7 @@ dist-obsidian/
 .turbo/
 coverage/
 *.tsbuildinfo
+*.timestamp-*
 .env
 .temp
 .playwright-mcp
