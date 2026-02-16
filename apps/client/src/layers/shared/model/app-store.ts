@@ -11,6 +11,24 @@ import {
   removeFontCSS,
 } from '@/layers/shared/lib';
 
+/** Read a boolean from localStorage with try/catch safety. */
+function readBool(key: string, defaultValue: boolean): boolean {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) return defaultValue;
+    return stored === 'true';
+  } catch {
+    return defaultValue;
+  }
+}
+
+/** Write a boolean to localStorage with try/catch safety. */
+function writeBool(key: string, v: boolean): void {
+  try {
+    localStorage.setItem(key, String(v));
+  } catch {}
+}
+
 export interface ContextFile {
   id: string;
   path: string;
@@ -85,6 +103,42 @@ interface AppState {
   clearContextFiles: () => void;
 }
 
+// localStorage keys for all persisted boolean settings
+const BOOL_KEYS = {
+  showTimestamps: 'gateway-show-timestamps',
+  expandToolCalls: 'gateway-expand-tool-calls',
+  autoHideToolCalls: 'gateway-auto-hide-tool-calls',
+  showShortcutChips: 'gateway-show-shortcut-chips',
+  showStatusBarCwd: 'gateway-show-status-bar-cwd',
+  showStatusBarPermission: 'gateway-show-status-bar-permission',
+  showStatusBarModel: 'gateway-show-status-bar-model',
+  showStatusBarCost: 'gateway-show-status-bar-cost',
+  showStatusBarContext: 'gateway-show-status-bar-context',
+  showStatusBarGit: 'gateway-show-status-bar-git',
+  showTaskCelebrations: 'gateway-show-task-celebrations',
+  enableNotificationSound: 'gateway-enable-notification-sound',
+  showStatusBarSound: 'gateway-show-status-bar-sound',
+  verboseLogging: 'gateway-verbose-logging',
+} as const;
+
+// Default values for each persisted boolean
+const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
+  showTimestamps: false,
+  expandToolCalls: false,
+  autoHideToolCalls: true,
+  showShortcutChips: true,
+  showStatusBarCwd: true,
+  showStatusBarPermission: true,
+  showStatusBarModel: true,
+  showStatusBarCost: true,
+  showStatusBarContext: true,
+  showStatusBarGit: true,
+  showTaskCelebrations: true,
+  enableNotificationSound: true,
+  showStatusBarSound: true,
+  verboseLogging: false,
+};
+
 export const useAppStore = create<AppState>()(
   devtools(
     (set) => ({
@@ -122,201 +176,75 @@ export const useAppStore = create<AppState>()(
       devtoolsOpen: false,
       toggleDevtools: () => set((s) => ({ devtoolsOpen: !s.devtoolsOpen })),
 
-      showTimestamps: (() => {
-        try {
-          return localStorage.getItem('gateway-show-timestamps') === 'true';
-        } catch {
-          return false;
-        }
-      })(),
+      // Persisted boolean settings — DRY via readBool/writeBool helpers
+      showTimestamps: readBool(BOOL_KEYS.showTimestamps, false),
       setShowTimestamps: (v) => {
-        try {
-          localStorage.setItem('gateway-show-timestamps', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showTimestamps, v);
         set({ showTimestamps: v });
       },
-
-      expandToolCalls: (() => {
-        try {
-          return localStorage.getItem('gateway-expand-tool-calls') === 'true';
-        } catch {
-          return false;
-        }
-      })(),
+      expandToolCalls: readBool(BOOL_KEYS.expandToolCalls, false),
       setExpandToolCalls: (v) => {
-        try {
-          localStorage.setItem('gateway-expand-tool-calls', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.expandToolCalls, v);
         set({ expandToolCalls: v });
       },
-
-      autoHideToolCalls: (() => {
-        try {
-          const stored = localStorage.getItem('gateway-auto-hide-tool-calls');
-          return stored === null ? true : stored === 'true';
-        } catch {
-          return true;
-        }
-      })(),
+      autoHideToolCalls: readBool(BOOL_KEYS.autoHideToolCalls, true),
       setAutoHideToolCalls: (v) => {
-        try {
-          localStorage.setItem('gateway-auto-hide-tool-calls', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.autoHideToolCalls, v);
         set({ autoHideToolCalls: v });
       },
-
-      showShortcutChips: (() => {
-        try {
-          const stored = localStorage.getItem('gateway-show-shortcut-chips');
-          return stored === null ? true : stored === 'true';
-        } catch {
-          return true;
-        }
-      })(),
+      showShortcutChips: readBool(BOOL_KEYS.showShortcutChips, true),
       setShowShortcutChips: (v) => {
-        try {
-          localStorage.setItem('gateway-show-shortcut-chips', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showShortcutChips, v);
         set({ showShortcutChips: v });
       },
-
-      showStatusBarCwd: (() => {
-        try {
-          return localStorage.getItem('gateway-show-status-bar-cwd') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      showStatusBarCwd: readBool(BOOL_KEYS.showStatusBarCwd, true),
       setShowStatusBarCwd: (v) => {
-        try {
-          localStorage.setItem('gateway-show-status-bar-cwd', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showStatusBarCwd, v);
         set({ showStatusBarCwd: v });
       },
-
-      showStatusBarPermission: (() => {
-        try {
-          return localStorage.getItem('gateway-show-status-bar-permission') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      showStatusBarPermission: readBool(BOOL_KEYS.showStatusBarPermission, true),
       setShowStatusBarPermission: (v) => {
-        try {
-          localStorage.setItem('gateway-show-status-bar-permission', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showStatusBarPermission, v);
         set({ showStatusBarPermission: v });
       },
-
-      showStatusBarModel: (() => {
-        try {
-          return localStorage.getItem('gateway-show-status-bar-model') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      showStatusBarModel: readBool(BOOL_KEYS.showStatusBarModel, true),
       setShowStatusBarModel: (v) => {
-        try {
-          localStorage.setItem('gateway-show-status-bar-model', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showStatusBarModel, v);
         set({ showStatusBarModel: v });
       },
-
-      showStatusBarCost: (() => {
-        try {
-          return localStorage.getItem('gateway-show-status-bar-cost') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      showStatusBarCost: readBool(BOOL_KEYS.showStatusBarCost, true),
       setShowStatusBarCost: (v) => {
-        try {
-          localStorage.setItem('gateway-show-status-bar-cost', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showStatusBarCost, v);
         set({ showStatusBarCost: v });
       },
-
-      showStatusBarContext: (() => {
-        try {
-          return localStorage.getItem('gateway-show-status-bar-context') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      showStatusBarContext: readBool(BOOL_KEYS.showStatusBarContext, true),
       setShowStatusBarContext: (v) => {
-        try {
-          localStorage.setItem('gateway-show-status-bar-context', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showStatusBarContext, v);
         set({ showStatusBarContext: v });
       },
-
-      showStatusBarGit: (() => {
-        try {
-          return localStorage.getItem('gateway-show-status-bar-git') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      showStatusBarGit: readBool(BOOL_KEYS.showStatusBarGit, true),
       setShowStatusBarGit: (v) => {
-        try {
-          localStorage.setItem('gateway-show-status-bar-git', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showStatusBarGit, v);
         set({ showStatusBarGit: v });
       },
-
-      showTaskCelebrations: (() => {
-        try {
-          return localStorage.getItem('gateway-show-task-celebrations') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      showTaskCelebrations: readBool(BOOL_KEYS.showTaskCelebrations, true),
       setShowTaskCelebrations: (v) => {
-        try {
-          localStorage.setItem('gateway-show-task-celebrations', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showTaskCelebrations, v);
         set({ showTaskCelebrations: v });
       },
-
-      enableNotificationSound: (() => {
-        try {
-          return localStorage.getItem('gateway-enable-notification-sound') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      enableNotificationSound: readBool(BOOL_KEYS.enableNotificationSound, true),
       setEnableNotificationSound: (v) => {
-        try {
-          localStorage.setItem('gateway-enable-notification-sound', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.enableNotificationSound, v);
         set({ enableNotificationSound: v });
       },
-
-      showStatusBarSound: (() => {
-        try {
-          return localStorage.getItem('gateway-show-status-bar-sound') !== 'false';
-        } catch {
-          return true;
-        }
-      })(),
+      showStatusBarSound: readBool(BOOL_KEYS.showStatusBarSound, true),
       setShowStatusBarSound: (v) => {
-        try {
-          localStorage.setItem('gateway-show-status-bar-sound', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.showStatusBarSound, v);
         set({ showStatusBarSound: v });
       },
-
-      verboseLogging: (() => {
-        try {
-          return localStorage.getItem('gateway-verbose-logging') === 'true';
-        } catch {
-          return false;
-        }
-      })(),
+      verboseLogging: readBool(BOOL_KEYS.verboseLogging, false),
       setVerboseLogging: (v) => {
-        try {
-          localStorage.setItem('gateway-verbose-logging', String(v));
-        } catch {}
+        writeBool(BOOL_KEYS.verboseLogging, v);
         set({ verboseLogging: v });
       },
 
@@ -376,21 +304,10 @@ export const useAppStore = create<AppState>()(
 
       resetPreferences: () => {
         try {
-          localStorage.removeItem('gateway-show-timestamps');
-          localStorage.removeItem('gateway-expand-tool-calls');
-          localStorage.removeItem('gateway-auto-hide-tool-calls');
-          localStorage.removeItem('gateway-show-shortcut-chips');
-          localStorage.removeItem('gateway-verbose-logging');
+          for (const lsKey of Object.values(BOOL_KEYS)) {
+            localStorage.removeItem(lsKey);
+          }
           localStorage.removeItem('gateway-font-size');
-          localStorage.removeItem('gateway-show-status-bar-cwd');
-          localStorage.removeItem('gateway-show-status-bar-permission');
-          localStorage.removeItem('gateway-show-status-bar-model');
-          localStorage.removeItem('gateway-show-status-bar-cost');
-          localStorage.removeItem('gateway-show-status-bar-context');
-          localStorage.removeItem('gateway-show-status-bar-git');
-          localStorage.removeItem('gateway-show-task-celebrations');
-          localStorage.removeItem('gateway-enable-notification-sound');
-          localStorage.removeItem('gateway-show-status-bar-sound');
           localStorage.removeItem('gateway-font-family');
         } catch {}
         document.documentElement.style.setProperty('--user-font-scale', '1');
@@ -398,23 +315,10 @@ export const useAppStore = create<AppState>()(
         if (defaultConfig.googleFontsUrl) loadGoogleFont(defaultConfig.googleFontsUrl);
         applyFontCSS(defaultConfig.sans, defaultConfig.mono);
         set({
-          showTimestamps: false,
-          expandToolCalls: false,
-          autoHideToolCalls: true,
-          showShortcutChips: true,
-          verboseLogging: false,
+          ...BOOL_DEFAULTS,
           devtoolsOpen: false,
           fontSize: 'medium',
           fontFamily: DEFAULT_FONT,
-          showStatusBarCwd: true,
-          showStatusBarPermission: true,
-          showStatusBarModel: true,
-          showStatusBarCost: true,
-          showStatusBarContext: true,
-          showStatusBarGit: true,
-          showTaskCelebrations: true,
-          enableNotificationSound: true,
-          showStatusBarSound: true,
         });
       },
 

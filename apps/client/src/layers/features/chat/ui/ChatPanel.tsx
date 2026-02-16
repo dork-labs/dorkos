@@ -5,9 +5,11 @@ import { ArrowDown } from 'lucide-react';
 import { useChatSession } from '../model/use-chat-session';
 import { useCommands } from '@/layers/entities/command';
 import { useTaskState } from '../model/use-task-state';
+import { useCommandPalette } from '../model/use-command-palette';
+import { useFileAutocomplete } from '../model/use-file-autocomplete';
 import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
 import { useIsMobile, useInteractiveShortcuts, useAppStore } from '@/layers/shared/model';
-import { fuzzyMatch, playNotificationSound } from '@/layers/shared/lib';
+import { playNotificationSound } from '@/layers/shared/lib';
 import { MessageList } from './MessageList';
 import type { MessageListHandle, ScrollState } from './MessageList';
 import { ChatInput } from './ChatInput';
@@ -23,7 +25,7 @@ import { StatusLine } from '@/layers/features/status';
 import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
 import type { InteractiveToolHandle } from './MessageItem';
-import type { CommandEntry, TaskUpdateEvent } from '@dorkos/shared/types';
+import type { TaskUpdateEvent } from '@dorkos/shared/types';
 
 interface ChatPanelProps {
   sessionId: string;
@@ -42,9 +44,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   const handleTaskEventWithCelebrations = useCallback(
     (event: TaskUpdateEvent) => {
       taskState.handleTaskEvent(event);
-      // Project task list forward: if this event updates a task's status,
-      // apply it to the current list so the engine sees the correct state
-      // (React state updates are batched, so taskState.tasks is still stale here)
       const projectedTasks = taskState.tasks.map((t) =>
         t.id === event.task.id ? { ...t, ...event.task } : t
       );
@@ -92,7 +91,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     setActiveOptionCount(handle && 'getOptionCount' in handle ? handle.getOptionCount() : 0);
   }, []);
 
-  // Reset focused index and option count when active interaction changes
   useEffect(() => {
     setFocusedOptionIndex(0);
     setActiveOptionCount(0);
@@ -137,7 +135,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
       if (handle && 'navigateQuestion' in handle) {
         handle.navigateQuestion(direction);
         setFocusedOptionIndex(0);
-        // Refresh option count since different questions may have different option counts
         setActiveOptionCount(handle.getOptionCount());
       }
     }, []),
@@ -149,19 +146,9 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     focusedIndex: focusedOptionIndex,
   });
 
-  const [showCommands, setShowCommands] = useState(false);
-  const [commandQuery, setCommandQuery] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [slashTriggerPos, setSlashTriggerPos] = useState(-1);
-
-  // File autocomplete state
-  const [showFiles, setShowFiles] = useState(false);
-  const [fileQuery, setFileQuery] = useState('');
-  const [fileSelectedIndex, setFileSelectedIndex] = useState(0);
-  const [fileTriggerPos, setFileTriggerPos] = useState(-1);
   const [cursorPos, setCursorPos] = useState(0);
 
-  // Scroll overlay state (Tasks #7, #8, #9)
+  // Scroll overlay state
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const prevMessageCountRef = useRef(messages.length);
@@ -176,7 +163,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     setHasNewMessages(false);
   }, []);
 
-  // Detect new messages arriving when user is scrolled up
   useEffect(() => {
     const prevCount = prevMessageCountRef.current;
     prevMessageCountRef.current = messages.length;
@@ -185,7 +171,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     }
   }, [messages.length, isAtBottom]);
 
-  // Reset hasNewMessages when user scrolls to bottom
   useEffect(() => {
     if (isAtBottom) {
       setHasNewMessages(false);
@@ -249,24 +234,10 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   const showShortcutChips = useAppStore((s) => s.showShortcutChips);
   const [cwd] = useDirectoryState();
   const { data: registry } = useCommands(cwd);
-
   const allCommands = useMemo(() => registry?.commands ?? [], [registry]);
   const { data: fileList } = useFiles(cwd);
 
-  const filteredCommands = useMemo(() => {
-    if (!commandQuery) return allCommands;
-    return allCommands
-      .map((cmd) => {
-        const searchText = `${cmd.fullCommand} ${cmd.description}`;
-        const result = fuzzyMatch(commandQuery, searchText);
-        return { cmd, ...result };
-      })
-      .filter((r) => r.match)
-      .sort((a, b) => b.score - a.score)
-      .map((r) => r.cmd);
-  }, [allCommands, commandQuery]);
-
-  // Build FileEntry list from raw file paths (extract directories as unique prefixes)
+  // Build FileEntry list from raw file paths
   const allFileEntries = useMemo(() => {
     if (!fileList?.files) return [];
     const entries: FileEntry[] = [];
@@ -293,65 +264,31 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     return entries;
   }, [fileList]);
 
-  const filteredFiles = useMemo(() => {
-    if (!showFiles) return [];
-    if (!fileQuery)
-      return allFileEntries.slice(0, 50).map((e) => ({ ...e, indices: [] as number[] }));
-    return allFileEntries
-      .map((entry) => ({ ...entry, ...fuzzyMatch(fileQuery, entry.path) }))
-      .filter((r) => r.match)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 50);
-  }, [allFileEntries, fileQuery, showFiles]);
+  const cmdPalette = useCommandPalette({
+    commands: allCommands,
+    input,
+    cursorPos,
+  });
 
-  // Reset selectedIndex when filter changes or palette opens/closes
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [commandQuery, showCommands]);
-
-  useEffect(() => {
-    setFileSelectedIndex(0);
-  }, [fileQuery, showFiles]);
-
-  // Clamp selectedIndex when filteredCommands shrinks
-  useEffect(() => {
-    if (filteredCommands.length > 0 && selectedIndex >= filteredCommands.length) {
-      setSelectedIndex(filteredCommands.length - 1);
-    }
-  }, [filteredCommands.length, selectedIndex]);
-
-  // Clamp fileSelectedIndex when filteredFiles shrinks
-  useEffect(() => {
-    if (filteredFiles.length > 0 && fileSelectedIndex >= filteredFiles.length) {
-      setFileSelectedIndex(filteredFiles.length - 1);
-    }
-  }, [filteredFiles.length, fileSelectedIndex]);
+  const fileComplete = useFileAutocomplete({
+    fileEntries: allFileEntries,
+    input,
+    cursorPos,
+  });
 
   function detectTrigger(value: string, cursor: number) {
-    const textToCursor = value.slice(0, cursor);
-
-    // Check for @ file trigger first
-    const fileMatch = textToCursor.match(/(^|\s)@([\w./:-]*)$/);
-    if (fileMatch) {
-      setShowFiles(true);
-      setFileQuery(fileMatch[2]);
-      setFileTriggerPos((fileMatch.index ?? 0) + fileMatch[1].length);
-      setShowCommands(false);
+    // Check @ file trigger first
+    if (fileComplete.detectFileTrigger(value, cursor)) {
+      cmdPalette.setShowCommands(false);
       return;
     }
-
-    // Check for / command trigger
-    const cmdMatch = textToCursor.match(/(^|\s)\/([\w:-]*)$/);
-    if (cmdMatch) {
-      setShowCommands(true);
-      setCommandQuery(cmdMatch[2]);
-      setSlashTriggerPos((cmdMatch.index ?? 0) + cmdMatch[1].length);
-      setShowFiles(false);
+    // Then / command trigger
+    if (cmdPalette.detectCommandTrigger(value, cursor)) {
+      fileComplete.setShowFiles(false);
       return;
     }
-
-    setShowFiles(false);
-    setShowCommands(false);
+    fileComplete.setShowFiles(false);
+    cmdPalette.setShowCommands(false);
   }
 
   function handleInputChange(value: string) {
@@ -364,73 +301,56 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
       setCursorPos(pos);
       detectTrigger(input, pos);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- detectTrigger is component-scoped
     [input]
   );
 
-  function handleCommandSelect(cmd: CommandEntry) {
-    const before = input.slice(0, slashTriggerPos);
-    setInput(before + cmd.fullCommand + ' ');
-    setShowCommands(false);
+  function handleCommandSelect(cmd: import('@dorkos/shared/types').CommandEntry) {
+    const newValue = cmdPalette.handleCommandSelect(cmd);
+    setInput(newValue);
   }
 
   function handleFileSelect(entry: FileEntry) {
-    const before = input.slice(0, fileTriggerPos);
-    const after = input.slice(fileTriggerPos + 1 + fileQuery.length); // +1 for @
-    if (entry.isDirectory) {
-      const newValue = before + '@' + entry.path + after;
-      setInput(newValue);
-      const newCursor = before.length + 1 + entry.path.length;
-      setCursorPos(newCursor);
-      setFileQuery(entry.path);
-      setFileSelectedIndex(0);
-    } else {
-      setInput(before + '@' + entry.path + ' ' + after);
-      setShowFiles(false);
+    const result = fileComplete.handleFileSelect(entry);
+    setInput(result.newValue);
+    if (result.newCursorPos !== undefined) {
+      setCursorPos(result.newCursorPos);
     }
   }
 
   const handleArrowDown = useCallback(() => {
-    if (showFiles) {
-      setFileSelectedIndex((prev) =>
-        filteredFiles.length === 0 ? 0 : (prev + 1) % filteredFiles.length
-      );
+    if (fileComplete.showFiles) {
+      fileComplete.handleArrowDown();
     } else {
-      setSelectedIndex((prev) =>
-        filteredCommands.length === 0 ? 0 : (prev + 1) % filteredCommands.length
-      );
+      cmdPalette.handleArrowDown();
     }
-  }, [showFiles, filteredFiles.length, filteredCommands.length]);
+  }, [fileComplete.showFiles, fileComplete.handleArrowDown, cmdPalette.handleArrowDown]);
 
   const handleArrowUp = useCallback(() => {
-    if (showFiles) {
-      setFileSelectedIndex((prev) =>
-        filteredFiles.length === 0 ? 0 : (prev - 1 + filteredFiles.length) % filteredFiles.length
-      );
+    if (fileComplete.showFiles) {
+      fileComplete.handleArrowUp();
     } else {
-      setSelectedIndex((prev) =>
-        filteredCommands.length === 0
-          ? 0
-          : (prev - 1 + filteredCommands.length) % filteredCommands.length
-      );
+      cmdPalette.handleArrowUp();
     }
-  }, [showFiles, filteredFiles.length, filteredCommands.length]);
+  }, [fileComplete.showFiles, fileComplete.handleArrowUp, cmdPalette.handleArrowUp]);
 
   const handleKeyboardSelect = useCallback(() => {
-    if (showFiles) {
-      if (filteredFiles.length > 0 && fileSelectedIndex < filteredFiles.length) {
-        handleFileSelect(filteredFiles[fileSelectedIndex]);
-      } else {
-        setShowFiles(false);
+    if (fileComplete.showFiles) {
+      const result = fileComplete.handleKeyboardSelect();
+      if (result) {
+        setInput(result.newValue);
+        if (result.newCursorPos !== undefined) {
+          setCursorPos(result.newCursorPos);
+        }
       }
-    } else if (showCommands) {
-      if (filteredCommands.length > 0 && selectedIndex < filteredCommands.length) {
-        handleCommandSelect(filteredCommands[selectedIndex]);
-      } else {
-        setShowCommands(false);
+    } else if (cmdPalette.showCommands) {
+      const newValue = cmdPalette.handleKeyboardSelect();
+      if (newValue) {
+        setInput(newValue);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: handleFileSelect/handleCommandSelect are component-scoped
-  }, [showFiles, showCommands, filteredFiles, fileSelectedIndex, filteredCommands, selectedIndex]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hook returns are stable
+  }, [fileComplete.showFiles, cmdPalette.showCommands]);
 
   const handleChipClick = useCallback(
     (trigger: string) => {
@@ -443,17 +363,14 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         const triggerStart = (existingTrigger.index ?? 0) + existingTrigger[1].length;
 
         if (triggerChar === trigger && !queryText) {
-          // Toggle: same chip clicked again with no query — remove trigger and close palette
           const prefix = input.slice(0, triggerStart);
-          // Also remove trailing space we may have added before the trigger
           newValue = prefix.endsWith(' ') && triggerStart > 0 ? prefix.slice(0, -1) : prefix;
           setInput(newValue);
-          setShowFiles(false);
-          setShowCommands(false);
+          fileComplete.setShowFiles(false);
+          cmdPalette.setShowCommands(false);
           requestAnimationFrame(() => chatInputRef.current?.focusAt(newValue.length));
           return;
         }
-        // Different trigger or has query text — replace with new trigger
         newValue = input.slice(0, triggerStart) + trigger;
       } else if (input.length > 0 && !input.endsWith(' ')) {
         newValue = input + ' ' + trigger;
@@ -463,19 +380,18 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
 
       setInput(newValue);
       detectTrigger(newValue, newValue.length);
-      // Focus textarea with cursor after the trigger so typing filters immediately
       requestAnimationFrame(() => chatInputRef.current?.focusAt(newValue.length));
     },
     [input, setInput]
   );
 
-  const isPaletteOpen = showCommands || showFiles;
+  const isPaletteOpen = cmdPalette.showCommands || fileComplete.showFiles;
 
   const activeDescendantId =
-    showFiles && filteredFiles.length > 0
-      ? `file-item-${fileSelectedIndex}`
-      : showCommands && filteredCommands.length > 0
-        ? `command-item-${selectedIndex}`
+    fileComplete.showFiles && fileComplete.filteredFiles.length > 0
+      ? `file-item-${fileComplete.fileSelectedIndex}`
+      : cmdPalette.showCommands && cmdPalette.filteredCommands.length > 0
+        ? `command-item-${cmdPalette.selectedIndex}`
         : undefined;
 
   return (
@@ -536,7 +452,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
           />
         )}
 
-        {/* "New messages" pill — centered above scroll button */}
         <AnimatePresence>
           {hasNewMessages && !isAtBottom && (
             <motion.button
@@ -554,7 +469,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
           )}
         </AnimatePresence>
 
-        {/* Scroll-to-bottom button — right-aligned, fixed above input */}
         <AnimatePresence>
           {!isAtBottom && messages.length > 0 && !isLoadingHistory && (
             <motion.button
@@ -594,17 +508,17 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
 
       <div className="chat-input-container relative border-t p-4">
         <AnimatePresence>
-          {showCommands && (
+          {cmdPalette.showCommands && (
             <CommandPalette
-              filteredCommands={filteredCommands}
-              selectedIndex={selectedIndex}
+              filteredCommands={cmdPalette.filteredCommands}
+              selectedIndex={cmdPalette.selectedIndex}
               onSelect={handleCommandSelect}
             />
           )}
-          {showFiles && (
+          {fileComplete.showFiles && (
             <FilePalette
-              filteredFiles={filteredFiles}
-              selectedIndex={fileSelectedIndex}
+              filteredFiles={fileComplete.filteredFiles}
+              selectedIndex={fileComplete.fileSelectedIndex}
               onSelect={handleFileSelect}
             />
           )}
@@ -619,13 +533,13 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
           sessionBusy={sessionBusy}
           onStop={stop}
           onEscape={() => {
-            setShowCommands(false);
-            setShowFiles(false);
+            cmdPalette.setShowCommands(false);
+            fileComplete.setShowFiles(false);
           }}
           onClear={() => {
             setInput('');
-            setShowCommands(false);
-            setShowFiles(false);
+            cmdPalette.setShowCommands(false);
+            fileComplete.setShowFiles(false);
           }}
           isPaletteOpen={isPaletteOpen}
           onArrowUp={handleArrowUp}

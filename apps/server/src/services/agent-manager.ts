@@ -10,16 +10,19 @@ import {
   type Query,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { Response } from 'express';
-import type {
-  StreamEvent,
-  PermissionMode,
-  TaskUpdateEvent,
-  TaskStatus,
-} from '@dorkos/shared/types';
+import type { StreamEvent, PermissionMode } from '@dorkos/shared/types';
+import { SessionLockManager } from './session-lock.js';
+import {
+  handleAskUserQuestion,
+  handleToolApproval,
+  type PendingInteraction,
+} from './interactive-handlers.js';
+import { buildTaskEvent, TASK_TOOL_NAMES } from './build-task-event.js';
+
+// Re-export for backward compatibility
+export { buildTaskEvent } from './build-task-event.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const INTERACTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
  * Resolve the Claude Code CLI path for the SDK to spawn.
@@ -48,21 +51,6 @@ export function resolveClaudeCliPath(): string | undefined {
   return undefined;
 }
 
-interface SessionLock {
-  clientId: string;
-  acquiredAt: number;
-  ttl: number;
-  response: Response;
-}
-
-interface PendingInteraction {
-  type: 'question' | 'approval';
-  toolCallId: string;
-  resolve: (result: unknown) => void;
-  reject: (reason: unknown) => void;
-  timeout: ReturnType<typeof setTimeout>;
-}
-
 interface AgentSession {
   sdkSessionId: string;
   lastActivity: number;
@@ -78,135 +66,6 @@ interface AgentSession {
   eventQueueNotify?: () => void;
 }
 
-function handleAskUserQuestion(
-  session: AgentSession,
-  toolUseId: string,
-  input: Record<string, unknown>
-): Promise<PermissionResult> {
-  session.eventQueue.push({
-    type: 'question_prompt',
-    data: {
-      toolCallId: toolUseId,
-      questions: input.questions as import('@dorkos/shared/types').QuestionItem[],
-    },
-  });
-  session.eventQueueNotify?.();
-
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      session.pendingInteractions.delete(toolUseId);
-      resolve({ behavior: 'deny', message: 'User did not respond within 10 minutes' });
-    }, INTERACTION_TIMEOUT_MS);
-
-    session.pendingInteractions.set(toolUseId, {
-      type: 'question',
-      toolCallId: toolUseId,
-      resolve: (answers) => {
-        clearTimeout(timeout);
-        session.pendingInteractions.delete(toolUseId);
-        resolve({
-          behavior: 'allow',
-          updatedInput: { ...input, answers },
-        });
-      },
-      reject: () => {
-        clearTimeout(timeout);
-        session.pendingInteractions.delete(toolUseId);
-        resolve({ behavior: 'deny', message: 'Interaction cancelled' });
-      },
-      timeout,
-    });
-  });
-}
-
-function handleToolApproval(
-  session: AgentSession,
-  toolUseId: string,
-  toolName: string,
-  input: Record<string, unknown>
-): Promise<PermissionResult> {
-  session.eventQueue.push({
-    type: 'approval_required',
-    data: {
-      toolCallId: toolUseId,
-      toolName,
-      input: JSON.stringify(input),
-    },
-  });
-  session.eventQueueNotify?.();
-
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      session.pendingInteractions.delete(toolUseId);
-      resolve({ behavior: 'deny', message: 'Tool approval timed out after 10 minutes' });
-    }, INTERACTION_TIMEOUT_MS);
-
-    session.pendingInteractions.set(toolUseId, {
-      type: 'approval',
-      toolCallId: toolUseId,
-      resolve: (approved) => {
-        clearTimeout(timeout);
-        session.pendingInteractions.delete(toolUseId);
-        resolve(
-          approved
-            ? { behavior: 'allow', updatedInput: input }
-            : { behavior: 'deny', message: 'User denied tool execution' }
-        );
-      },
-      reject: () => {
-        clearTimeout(timeout);
-        session.pendingInteractions.delete(toolUseId);
-        resolve({ behavior: 'deny', message: 'Interaction cancelled' });
-      },
-      timeout,
-    });
-  });
-}
-
-const TASK_TOOL_NAMES = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
-
-/**
- * Build a TaskUpdateEvent from a TaskCreate/TaskUpdate tool call input.
- *
- * @param toolName - SDK tool name (TaskCreate or TaskUpdate)
- * @param input - Raw tool input from the SDK stream
- */
-export function buildTaskEvent(
-  toolName: string,
-  input: Record<string, unknown>
-): TaskUpdateEvent | null {
-  switch (toolName) {
-    case 'TaskCreate':
-      return {
-        action: 'create',
-        task: {
-          id: '',
-          subject: (input.subject as string) ?? '',
-          description: input.description as string | undefined,
-          activeForm: input.activeForm as string | undefined,
-          status: 'pending',
-        },
-      };
-    case 'TaskUpdate': {
-      // Only include fields the SDK actually sent — the client's stripDefaults
-      // strips empty strings during merge, so absent fields use '' sentinel.
-      const task: TaskUpdateEvent['task'] = {
-        id: (input.taskId as string) ?? '',
-        subject: (input.subject as string) ?? '',
-        status: (input.status as TaskStatus) ?? ('' as TaskStatus),
-      };
-      if (input.activeForm) task.activeForm = input.activeForm as string;
-      if (input.description) task.description = input.description as string;
-      if (input.addBlockedBy) task.blockedBy = input.addBlockedBy as string[];
-      if (input.addBlocks) task.blocks = input.addBlocks as string[];
-      if (input.owner) task.owner = input.owner as string;
-      return { action: 'update', task };
-    }
-    default:
-      return null;
-  }
-}
-
 /**
  * Manages Claude Agent SDK sessions — creation, resumption, streaming, tool approval,
  * and session locking. Calls the SDK's `query()` function and maps streaming events
@@ -214,9 +73,8 @@ export function buildTaskEvent(
  */
 export class AgentManager {
   private sessions = new Map<string, AgentSession>();
-  private sessionLocks = new Map<string, SessionLock>();
+  private lockManager = new SessionLockManager();
   private readonly SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-  private readonly LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private readonly cwd: string;
   private readonly claudeCliPath: string | undefined;
 
@@ -257,8 +115,6 @@ export class AgentManager {
     opts?: { permissionMode?: PermissionMode; cwd?: string }
   ): AsyncGenerator<StreamEvent> {
     // Auto-create session if it doesn't exist (for resuming SDK sessions).
-    // Sessions hitting this path already exist on disk (created by CLI or a
-    // previous server run), so hasStarted must be true to trigger resume.
     if (!this.sessions.has(sessionId)) {
       this.ensureSession(sessionId, {
         permissionMode: opts?.permissionMode ?? 'default',
@@ -278,7 +134,6 @@ export class AgentManager {
       ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
     };
 
-    // Only resume if the session has been started (JSONL exists)
     if (session.hasStarted) {
       sdkOptions.resume = session.sdkSessionId;
     }
@@ -306,7 +161,6 @@ export class AgentManager {
       (sdkOptions as Record<string, unknown>).model = session.model;
     }
 
-    // Register canUseTool callback for interactive tools
     sdkOptions.canUseTool = async (
       toolName: string,
       input: Record<string, unknown>,
@@ -317,7 +171,6 @@ export class AgentManager {
         suggestions?: unknown[];
       }
     ): Promise<PermissionResult> => {
-      // AskUserQuestion: pause, collect answers, inject into input
       if (toolName === 'AskUserQuestion') {
         console.log(
           `[canUseTool] ${toolName} → routing to question handler (toolUseID=${context.toolUseID})`
@@ -325,7 +178,6 @@ export class AgentManager {
         return handleAskUserQuestion(session, context.toolUseID, input);
       }
 
-      // Tool approval: pause when permissionMode is 'default'
       if (session.permissionMode === 'default') {
         console.log(
           `[canUseTool] ${toolName} → requesting approval (permissionMode=default, toolUseID=${context.toolUseID})`
@@ -333,7 +185,6 @@ export class AgentManager {
         return handleToolApproval(session, context.toolUseID, toolName, input);
       }
 
-      // All other cases: allow immediately
       console.log(
         `[canUseTool] ${toolName} → auto-allow (permissionMode=${session.permissionMode}, toolUseID=${context.toolUseID})`
       );
@@ -377,24 +228,20 @@ export class AgentManager {
 
     try {
       const sdkIterator = agentQuery[Symbol.asyncIterator]();
-      // Cache the SDK promise so we never call .next() twice concurrently
       let pendingSdkPromise: Promise<{ sdk: true; result: IteratorResult<SDKMessage> }> | null =
         null;
 
       while (true) {
-        // Drain any events pushed by canUseTool callbacks
         while (session.eventQueue.length > 0) {
           const queuedEvent = session.eventQueue.shift()!;
           if (queuedEvent.type === 'done') emittedDone = true;
           yield queuedEvent;
         }
 
-        // Race between SDK yielding next message and queue getting a new event
         const queuePromise = new Promise<'queue'>((resolve) => {
           session.eventQueueNotify = () => resolve('queue');
         });
 
-        // Only call .next() if we don't already have a pending SDK promise
         if (!pendingSdkPromise) {
           pendingSdkPromise = sdkIterator.next().then((result) => ({ sdk: true as const, result }));
         }
@@ -402,12 +249,9 @@ export class AgentManager {
         const winner = await Promise.race([queuePromise, pendingSdkPromise]);
 
         if (winner === 'queue') {
-          // Queue got new items from canUseTool, drain them on next iteration.
-          // pendingSdkPromise stays cached — we'll race it again next time.
           continue;
         }
 
-        // SDK yielded a message — consume the cached promise
         pendingSdkPromise = null;
         const { result } = winner;
         if (result.done) break;
@@ -450,19 +294,14 @@ export class AgentManager {
       setToolState: (tool: boolean, name: string, id: string) => void;
     }
   ): AsyncGenerator<StreamEvent> {
-    // Capture session ID from init (for new sessions where SDK assigns the ID)
     if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
       session.sdkSessionId = message.session_id;
       session.hasStarted = true;
-      // Forward model info from init
       const initModel = (message as Record<string, unknown>).model as string | undefined;
       if (initModel) {
         yield {
           type: 'session_status',
-          data: {
-            sessionId,
-            model: initModel,
-          },
+          data: { sessionId, model: initModel },
         };
       }
       return;
@@ -553,7 +392,6 @@ export class AgentManager {
     if (message.type === 'result') {
       const result = message as Record<string, unknown>;
       const usage = result.usage as Record<string, unknown> | undefined;
-      // modelUsage is Record<string, ModelUsage> — grab the first entry for contextWindow
       const modelUsageMap = result.modelUsage as
         | Record<string, Record<string, unknown>>
         | undefined;
@@ -581,7 +419,6 @@ export class AgentManager {
   ): boolean {
     let session = this.findSession(sessionId);
     if (!session) {
-      // Auto-create so settings are ready for the next sendMessage call
       this.ensureSession(sessionId, {
         permissionMode: opts.permissionMode ?? 'default',
         hasStarted: true,
@@ -593,7 +430,6 @@ export class AgentManager {
         `[updateSession] ${sessionId} permissionMode: ${session.permissionMode} → ${opts.permissionMode}`
       );
       session.permissionMode = opts.permissionMode;
-      // Propagate to active SDK query for mid-stream changes
       if (session.activeQuery) {
         console.log(
           `[updateSession] ${sessionId} calling setPermissionMode(${opts.permissionMode}) on active query`
@@ -635,33 +471,25 @@ export class AgentManager {
 
   checkSessionHealth(): void {
     const now = Date.now();
+    const expiredIds: string[] = [];
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity > this.SESSION_TIMEOUT_MS) {
-        // Clean up any pending interactions
         for (const interaction of session.pendingInteractions.values()) {
           clearTimeout(interaction.timeout);
         }
         this.sessions.delete(id);
-        this.sessionLocks.delete(id); // Clean up stale locks too
+        expiredIds.push(id);
       }
     }
-    // Clean up expired locks
-    for (const [id, lock] of this.sessionLocks) {
-      if (now - lock.acquiredAt > lock.ttl) {
-        this.sessionLocks.delete(id);
-      }
-    }
+    this.lockManager.cleanup(expiredIds);
   }
 
   /**
    * Find a session by its map key OR by its sdkSessionId.
-   * After the SDK assigns a real session ID (on first message), the client
-   * starts using the new ID while the map still stores it under the original key.
    */
   private findSession(sessionId: string): AgentSession | undefined {
     const direct = this.sessions.get(sessionId);
     if (direct) return direct;
-    // Fallback: linear scan for sdkSessionId match
     for (const session of this.sessions.values()) {
       if (session.sdkSessionId === sessionId) return session;
     }
@@ -672,81 +500,26 @@ export class AgentManager {
     return !!this.findSession(sessionId);
   }
 
-  /**
-   * Get the actual SDK session ID (may differ from input if SDK assigned a new one).
-   */
+  /** Get the actual SDK session ID (may differ from input if SDK assigned a new one). */
   getSdkSessionId(sessionId: string): string | undefined {
     return this.findSession(sessionId)?.sdkSessionId;
   }
 
-  /**
-   * Attempt to acquire a lock on a session for a specific client.
-   * Returns true if the lock was acquired, false if the session is locked by another client.
-   */
+  // Session lock delegation
   acquireLock(sessionId: string, clientId: string, res: Response): boolean {
-    const existing = this.sessionLocks.get(sessionId);
-    if (existing) {
-      const expired = Date.now() - existing.acquiredAt > existing.ttl;
-      if (expired) {
-        this.sessionLocks.delete(sessionId);
-      } else if (existing.clientId !== clientId) {
-        return false;
-      }
-    }
-    const lock: SessionLock = {
-      clientId,
-      acquiredAt: Date.now(),
-      ttl: this.LOCK_TTL_MS,
-      response: res,
-    };
-    this.sessionLocks.set(sessionId, lock);
-    res.on('close', () => {
-      const current = this.sessionLocks.get(sessionId);
-      if (current === lock) {
-        this.sessionLocks.delete(sessionId);
-      }
-    });
-    return true;
+    return this.lockManager.acquireLock(sessionId, clientId, res);
   }
 
-  /**
-   * Release a lock on a session if it's held by the specified client.
-   */
   releaseLock(sessionId: string, clientId: string): void {
-    const lock = this.sessionLocks.get(sessionId);
-    if (lock && lock.clientId === clientId) {
-      this.sessionLocks.delete(sessionId);
-    }
+    this.lockManager.releaseLock(sessionId, clientId);
   }
 
-  /**
-   * Check if a session is locked.
-   * If clientId is provided, returns false if the lock is held by that client (owns the lock).
-   * Returns true if the session is locked by another client.
-   */
   isLocked(sessionId: string, clientId?: string): boolean {
-    const lock = this.sessionLocks.get(sessionId);
-    if (!lock) return false;
-    if (Date.now() - lock.acquiredAt > lock.ttl) {
-      this.sessionLocks.delete(sessionId);
-      return false;
-    }
-    if (clientId && lock.clientId === clientId) return false;
-    return true;
+    return this.lockManager.isLocked(sessionId, clientId);
   }
 
-  /**
-   * Get information about the current lock on a session.
-   * Returns null if the session is not locked or the lock has expired.
-   */
   getLockInfo(sessionId: string): { clientId: string; acquiredAt: number } | null {
-    const lock = this.sessionLocks.get(sessionId);
-    if (!lock) return null;
-    if (Date.now() - lock.acquiredAt > lock.ttl) {
-      this.sessionLocks.delete(sessionId);
-      return null;
-    }
-    return { clientId: lock.clientId, acquiredAt: lock.acquiredAt };
+    return this.lockManager.getLockInfo(sessionId);
   }
 }
 

@@ -6,52 +6,13 @@ import type {
   PermissionMode,
   HistoryMessage,
   HistoryToolCall,
-  QuestionItem,
   TaskItem,
-  TaskStatus,
-  MessagePart,
-  ToolCallPart,
 } from '@dorkos/shared/types';
+import { parseTranscript, extractTextContent, stripSystemTags } from './transcript-parser.js';
+import type { TranscriptLine } from './transcript-parser.js';
+import { parseTasks } from './task-reader.js';
 
 export type { HistoryMessage, HistoryToolCall };
-
-interface TranscriptLine {
-  type: string;
-  uuid?: string;
-  message?: {
-    role: string;
-    content: string | ContentBlock[];
-    model?: string;
-    usage?: {
-      input_tokens?: number;
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
-  };
-  timestamp?: string;
-  sessionId?: string;
-  permissionMode?: string;
-  subtype?: string;
-  cwd?: string;
-  /** SDK-provided structured answers for AskUserQuestion tool results */
-  toolUseResult?: {
-    questions?: QuestionItem[];
-    answers?: Record<string, string>;
-    commandName?: string;
-  };
-}
-
-interface ContentBlock {
-  type: string;
-  text?: string;
-  // tool_use fields
-  name?: string;
-  id?: string;
-  input?: Record<string, unknown>;
-  // tool_result fields
-  tool_use_id?: string;
-  content?: string | ContentBlock[];
-}
 
 /**
  * Single source of truth for session data — reads SDK JSONL transcript files
@@ -278,7 +239,7 @@ export class TranscriptReader {
 
       // Extract first user message for title
       if (!firstUserMessage && parsed.type === 'user' && parsed.message) {
-        const text = this.extractTextContent(parsed.message.content);
+        const text = extractTextContent(parsed.message.content);
         if (
           text.startsWith('<local-command') ||
           text.startsWith('<command-name>') ||
@@ -290,7 +251,7 @@ export class TranscriptReader {
         if (text.startsWith('This session is being continued')) {
           continue;
         }
-        const cleanText = this.stripSystemTags(text);
+        const cleanText = stripSystemTags(text);
         if (!cleanText.trim()) continue;
 
         firstUserMessage = cleanText.trim();
@@ -330,244 +291,8 @@ export class TranscriptReader {
       return [];
     }
 
-    const messages: HistoryMessage[] = [];
     const lines = content.split('\n').filter((l) => l.trim());
-    // Track pending slash command metadata for correlating with expanded prompt
-    let pendingCommand: { commandName: string; commandArgs: string } | null = null;
-    // Track args from the most recent Skill tool_use (assistant message)
-    let pendingSkillArgs: string | null = null;
-    // Map tool_use_id → HistoryToolCall for correlating results
-    const toolCallMap = new Map<string, HistoryToolCall>();
-    // Map tool_use_id → ToolCallPart for correlating results into parts
-    const toolCallPartMap = new Map<string, ToolCallPart>();
-
-    for (const line of lines) {
-      let parsed: TranscriptLine;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      if (parsed.type === 'user' && parsed.message) {
-        const msgContent = parsed.message.content;
-
-        // Check for tool_result blocks in array content (auto-generated user messages)
-        if (Array.isArray(msgContent)) {
-          let hasToolResult = false;
-          const textParts: string[] = [];
-
-          // Extract structured answers from SDK's toolUseResult field (if present)
-          const sdkAnswers = parsed.toolUseResult?.answers;
-
-          for (const block of msgContent) {
-            if (block.type === 'tool_result' && block.tool_use_id) {
-              hasToolResult = true;
-              const resultText = this.extractToolResultContent(block.content);
-              const tc = toolCallMap.get(block.tool_use_id);
-              if (tc) {
-                tc.result = resultText;
-                // AskUserQuestion: extract answers from SDK metadata or parse from result text
-                if (tc.toolName === 'AskUserQuestion' && tc.questions && !tc.answers) {
-                  tc.answers = sdkAnswers
-                    ? this.mapSdkAnswersToIndices(sdkAnswers, tc.questions)
-                    : this.parseQuestionAnswers(resultText, tc.questions);
-                }
-              }
-              const tcPart = toolCallPartMap.get(block.tool_use_id);
-              if (tcPart) {
-                tcPart.result = resultText;
-                if (tcPart.toolName === 'AskUserQuestion' && tcPart.questions && !tcPart.answers) {
-                  tcPart.answers = sdkAnswers
-                    ? this.mapSdkAnswersToIndices(sdkAnswers, tcPart.questions as QuestionItem[])
-                    : this.parseQuestionAnswers(resultText, tcPart.questions as QuestionItem[]);
-                }
-              }
-            } else if (block.type === 'text' && block.text) {
-              textParts.push(block.text);
-            }
-          }
-
-          // If this user message is purely tool results, skip it as a visible message
-          // But first check if it's a Skill tool invocation (toolUseResult.commandName)
-          if (hasToolResult && textParts.length === 0) {
-            if (parsed.toolUseResult?.commandName) {
-              const cmdName = '/' + parsed.toolUseResult.commandName.replace(/^\//, '');
-              pendingCommand = { commandName: cmdName, commandArgs: pendingSkillArgs || '' };
-              pendingSkillArgs = null;
-            }
-            continue;
-          }
-
-          // If there's a pending command, this array-content message is the expanded skill prompt
-          if (pendingCommand) {
-            const { commandName, commandArgs } = pendingCommand;
-            pendingCommand = null;
-            const displayContent = commandArgs ? `${commandName} ${commandArgs}` : commandName;
-            messages.push({
-              id: parsed.uuid || crypto.randomUUID(),
-              role: 'user',
-              content: displayContent,
-              messageType: 'command',
-              commandName,
-              commandArgs: commandArgs || undefined,
-            });
-            continue;
-          }
-
-          // Otherwise it has human text alongside tool results
-          if (textParts.length > 0) {
-            const cleanText = this.stripSystemTags(textParts.join('\n'));
-            if (cleanText.trim()) {
-              messages.push({
-                id: parsed.uuid || crypto.randomUUID(),
-                role: 'user',
-                content: cleanText,
-              });
-            }
-          }
-          continue;
-        }
-
-        // Plain string content (normal user message)
-        const text = typeof msgContent === 'string' ? msgContent : '';
-
-        // Skip task notifications entirely
-        if (text.startsWith('<task-notification>')) {
-          continue;
-        }
-
-        // Detect command metadata messages (set pendingCommand for next message)
-        if (text.startsWith('<command-message>') || text.startsWith('<command-name>')) {
-          const meta = this.extractCommandMeta(text);
-          if (meta) {
-            pendingCommand = meta;
-          }
-          continue;
-        }
-
-        // Local command messages (like /compact stdout) — skip and clear pending
-        if (text.startsWith('<local-command')) {
-          pendingCommand = null;
-          continue;
-        }
-
-        // If there's a pending command, this message is the expanded skill prompt
-        if (pendingCommand) {
-          const { commandName, commandArgs } = pendingCommand;
-          pendingCommand = null;
-          const displayContent = commandArgs ? `${commandName} ${commandArgs}` : commandName;
-          messages.push({
-            id: parsed.uuid || crypto.randomUUID(),
-            role: 'user',
-            content: displayContent,
-            messageType: 'command',
-            commandName,
-            commandArgs: commandArgs || undefined,
-          });
-          continue;
-        }
-
-        // Detect compaction summaries
-        if (text.startsWith('This session is being continued')) {
-          messages.push({
-            id: parsed.uuid || crypto.randomUUID(),
-            role: 'user',
-            content: text,
-            messageType: 'compaction',
-          });
-          continue;
-        }
-
-        const cleanText = this.stripSystemTags(text);
-        if (!cleanText.trim()) continue;
-
-        messages.push({
-          id: parsed.uuid || crypto.randomUUID(),
-          role: 'user',
-          content: cleanText,
-        });
-      } else if (parsed.type === 'assistant' && parsed.message) {
-        const contentBlocks = parsed.message.content;
-        if (!Array.isArray(contentBlocks)) continue;
-
-        const parts: MessagePart[] = [];
-        const toolCalls: HistoryToolCall[] = [];
-
-        for (const block of contentBlocks) {
-          if (block.type === 'text' && block.text) {
-            // Merge adjacent text parts
-            const lastPart = parts[parts.length - 1];
-            if (lastPart && lastPart.type === 'text') {
-              lastPart.text += '\n' + block.text;
-            } else {
-              parts.push({ type: 'text', text: block.text });
-            }
-          } else if (block.type === 'tool_use' && block.name && block.id) {
-            const tc: HistoryToolCall = {
-              toolCallId: block.id,
-              toolName: block.name,
-              input: block.input ? JSON.stringify(block.input) : undefined,
-              status: 'complete',
-            };
-            // Preserve question/answer data for AskUserQuestion tool calls
-            if (block.name === 'AskUserQuestion' && block.input) {
-              if (Array.isArray(block.input.questions)) {
-                tc.questions = block.input.questions as QuestionItem[];
-              }
-              if (block.input.answers && typeof block.input.answers === 'object') {
-                tc.answers = block.input.answers as Record<string, string>;
-              }
-            }
-            // Track Skill tool args for correlating with expanded prompt
-            if (block.name === 'Skill' && block.input) {
-              const input = block.input as Record<string, unknown>;
-              pendingSkillArgs = (input.args as string) || null;
-            }
-            toolCalls.push(tc);
-            toolCallMap.set(block.id, tc);
-
-            // Add tool call part inline to preserve ordering
-            const toolCallPart: ToolCallPart = {
-              type: 'tool_call',
-              toolCallId: block.id,
-              toolName: block.name,
-              input: block.input ? JSON.stringify(block.input) : undefined,
-              status: 'complete',
-              ...(tc.questions
-                ? {
-                    interactiveType: 'question' as const,
-                    questions: tc.questions,
-                    answers: tc.answers,
-                  }
-                : {}),
-            };
-            parts.push(toolCallPart);
-            toolCallPartMap.set(block.id, toolCallPart);
-          }
-        }
-
-        if (parts.length === 0) continue;
-
-        // Derive flat content from text parts
-        const text = parts
-          .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-          .map((p) => p.text)
-          .join('\n')
-          .trim();
-
-        messages.push({
-          id: parsed.uuid || crypto.randomUUID(),
-          role: 'assistant',
-          content: text,
-          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-          parts,
-          timestamp: parsed.timestamp,
-        });
-      }
-    }
-
-    return messages;
+    return parseTranscript(lines);
   }
 
   /**
@@ -583,10 +308,6 @@ export class TranscriptReader {
     }
   }
 
-  /**
-   * Read task state from an SDK session transcript.
-   * Parses TaskCreate/TaskUpdate tool_use blocks and reconstructs final state.
-   */
   /** Get an ETag for a session transcript (mtime + size) for HTTP caching. */
   async getTranscriptETag(vaultRoot: string, sessionId: string): Promise<string | null> {
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
@@ -614,57 +335,7 @@ export class TranscriptReader {
     }
 
     const lines = content.split('\n').filter((l) => l.trim());
-    const tasks = new Map<string, TaskItem>();
-    let nextId = 1;
-
-    for (const line of lines) {
-      let parsed: TranscriptLine;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      if (parsed.type !== 'assistant') continue;
-      const message = parsed.message;
-      if (!message?.content || !Array.isArray(message.content)) continue;
-
-      for (const block of message.content) {
-        if (block.type !== 'tool_use') continue;
-        if (!block.name || !['TaskCreate', 'TaskUpdate'].includes(block.name)) continue;
-        const input = block.input;
-        if (!input) continue;
-
-        if (block.name === 'TaskCreate') {
-          const id = String(nextId++);
-          tasks.set(id, {
-            id,
-            subject: (input.subject as string) ?? '',
-            description: input.description as string | undefined,
-            activeForm: input.activeForm as string | undefined,
-            status: 'pending',
-          });
-        } else if (block.name === 'TaskUpdate' && input.taskId) {
-          const existing = tasks.get(input.taskId as string);
-          if (existing) {
-            if (input.status) existing.status = input.status as TaskStatus;
-            if (input.subject) existing.subject = input.subject as string;
-            if (input.activeForm) existing.activeForm = input.activeForm as string;
-            if (input.description) existing.description = input.description as string;
-            if (input.addBlockedBy)
-              existing.blockedBy = [
-                ...(existing.blockedBy ?? []),
-                ...(input.addBlockedBy as string[]),
-              ];
-            if (input.addBlocks)
-              existing.blocks = [...(existing.blocks ?? []), ...(input.addBlocks as string[])];
-            if (input.owner) existing.owner = input.owner as string;
-          }
-        }
-      }
-    }
-
-    return Array.from(tasks.values());
+    return parseTasks(lines);
   }
 
   /**
@@ -695,88 +366,6 @@ export class TranscriptReader {
     } finally {
       await fileHandle.close();
     }
-  }
-
-  private extractToolResultContent(content: string | ContentBlock[] | undefined): string {
-    if (!content) return '';
-    if (typeof content === 'string') return content;
-    if (!Array.isArray(content)) return '';
-    return content
-      .filter((b) => b.type === 'text' && b.text)
-      .map((b) => b.text!)
-      .join('\n');
-  }
-
-  private extractTextContent(content: string | ContentBlock[]): string {
-    if (typeof content === 'string') return content;
-    if (!Array.isArray(content)) return '';
-    return content
-      .filter((b) => b.type === 'text' && b.text)
-      .map((b) => b.text!)
-      .join('\n');
-  }
-
-  private extractCommandMeta(text: string): { commandName: string; commandArgs: string } | null {
-    const nameMatch = text.match(/<command-name>\/?([^<]+)<\/command-name>/);
-    if (!nameMatch) return null;
-    const commandName = '/' + nameMatch[1].replace(/^\//, '');
-    const argsMatch = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
-    const commandArgs = argsMatch ? argsMatch[1].trim() : '';
-    return { commandName, commandArgs };
-  }
-
-  private stripSystemTags(text: string): string {
-    return text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
-  }
-
-  /**
-   * Map SDK's toolUseResult.answers (keyed by question text) to index-keyed record.
-   * SDK stores answers as { "Question text": "Answer value" }.
-   * Client expects { "0": "Answer value", "1": "..." }.
-   */
-  private mapSdkAnswersToIndices(
-    sdkAnswers: Record<string, string>,
-    questions: QuestionItem[]
-  ): Record<string, string> {
-    const answers: Record<string, string> = {};
-    for (const [questionText, answerText] of Object.entries(sdkAnswers)) {
-      const qIdx = questions.findIndex((q) => q.question === questionText);
-      if (qIdx !== -1) {
-        answers[String(qIdx)] = answerText;
-      }
-    }
-    // If SDK answer keys are already indices (our gateway format), use directly
-    if (Object.keys(answers).length === 0) {
-      for (const [key, value] of Object.entries(sdkAnswers)) {
-        if (/^\d+$/.test(key)) {
-          answers[key] = value;
-        }
-      }
-    }
-    return answers;
-  }
-
-  /**
-   * Parse answers from AskUserQuestion tool_result text (fallback).
-   * Format: `..."Question text"="Answer text", "Q2"="A2". You can now...`
-   * Falls back to empty record (truthy signal) if parsing fails.
-   */
-  private parseQuestionAnswers(
-    resultText: string,
-    questions: QuestionItem[]
-  ): Record<string, string> {
-    const answers: Record<string, string> = {};
-    // Match "question"="answer" pairs in the result text
-    const pairRegex = /"([^"]+?)"\s*=\s*"([^"]+?)"/g;
-    let match;
-    while ((match = pairRegex.exec(resultText)) !== null) {
-      const [, questionText, answerText] = match;
-      const qIdx = questions.findIndex((q) => q.question === questionText);
-      if (qIdx !== -1) {
-        answers[String(qIdx)] = answerText;
-      }
-    }
-    return answers;
   }
 }
 

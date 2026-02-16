@@ -6,7 +6,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
-// Type for accessing private sessionLocks for testing
+// Type for accessing private lockManager internals for testing
 interface SessionLock {
   clientId: string;
   acquiredAt: number;
@@ -14,8 +14,17 @@ interface SessionLock {
   response: Response;
 }
 
-interface AgentManagerWithLocks {
-  sessionLocks: Map<string, SessionLock>;
+interface LockManagerWithLocks {
+  locks: Map<string, SessionLock>;
+}
+
+interface AgentManagerWithLockManager {
+  lockManager: LockManagerWithLocks;
+}
+
+/** Helper to access the private locks map for test manipulation. */
+function getLocksMap(am: unknown): Map<string, SessionLock> {
+  return (am as AgentManagerWithLockManager).lockManager.locks;
 }
 
 describe('AgentManager - Session Locking', () => {
@@ -89,7 +98,7 @@ describe('AgentManager - Session Locking', () => {
       const lockInfo = agentManager.getLockInfo('session1');
       if (lockInfo) {
         // Access the private sessionLocks map via type assertion
-        const locks = (agentManager as unknown as AgentManagerWithLocks).sessionLocks;
+        const locks = getLocksMap(agentManager);
         const lock = locks.get('session1');
         if (lock) {
           lock.acquiredAt = Date.now() - 6 * 60 * 1000; // 6 minutes ago
@@ -157,7 +166,7 @@ describe('AgentManager - Session Locking', () => {
       agentManager.acquireLock('session1', 'client1', res);
 
       // Expire the lock
-      const locks = (agentManager as unknown as AgentManagerWithLocks).sessionLocks;
+      const locks = getLocksMap(agentManager);
       const lock = locks.get('session1');
       if (lock) {
         lock.acquiredAt = Date.now() - 6 * 60 * 1000; // 6 minutes ago
@@ -190,7 +199,7 @@ describe('AgentManager - Session Locking', () => {
       agentManager.acquireLock('session1', 'client1', res);
 
       // Expire the lock
-      const locks = (agentManager as unknown as AgentManagerWithLocks).sessionLocks;
+      const locks = getLocksMap(agentManager);
       const lock = locks.get('session1');
       if (lock) {
         lock.acquiredAt = Date.now() - 6 * 60 * 1000; // 6 minutes ago
@@ -206,7 +215,7 @@ describe('AgentManager - Session Locking', () => {
       agentManager.acquireLock('session1', 'client1', res);
 
       // Expire the lock
-      const locks = (agentManager as unknown as AgentManagerWithLocks).sessionLocks;
+      const locks = getLocksMap(agentManager);
       const lock = locks.get('session1');
       if (lock) {
         lock.acquiredAt = Date.now() - 6 * 60 * 1000; // 6 minutes ago
