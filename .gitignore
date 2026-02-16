@@ -1,16 +1,31 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
 dist-server/
 dist-obsidian/
-.turbo/
-coverage/
 *.tsbuildinfo
-*.timestamp-*
+
+# Turborepo
+.turbo/
+
+# Test & coverage
+coverage/
+
+# Environment & secrets
 .env
-.temp
-.playwright-mcp
-.DS_Store
-.scratch/
+
+# Tooling caches
 .eslintcache
+*.timestamp-*
+.playwright-mcp
+
+# OS files
+.DS_Store
+
+# Project working files
 .plan
+.scratch/
+.temp
 roadmap/specs
