@@ -16,7 +16,8 @@
     "lint": "turbo lint",
     "lint:fix": "turbo lint -- --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "docs:export-api": "dotenv -- tsx scripts/export-openapi.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

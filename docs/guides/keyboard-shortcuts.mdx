@@ -1,0 +1,66 @@
+---
+title: Keyboard Shortcuts
+description: Navigate DorkOS efficiently with keyboard shortcuts
+---
+
+# Keyboard Shortcuts
+
+DorkOS supports keyboard shortcuts to help you respond to Claude's requests without reaching for the mouse. When Claude needs your approval or input, you can use these shortcuts to interact quickly.
+
+## When Shortcuts Work
+
+Keyboard shortcuts activate automatically when Claude pauses to ask for your approval or answer. You'll see visual indicators (amber borders and key hints) on the active request.
+
+**Note:** Shortcuts are only available on desktop (screens 768px and wider). On mobile devices, use the on-screen buttons.
+
+## Tool Approval Shortcuts
+
+When Claude asks to approve a tool (like running a command or accessing a file), you can respond with:
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Approve the tool call |
+| `Escape` | Deny the tool call |
+
+## Question Response Shortcuts
+
+When Claude asks you a question with multiple options, you can use these shortcuts to select answers:
+
+### Selecting Options
+
+| Key | Action |
+|-----|--------|
+| `1` - `9` | Toggle the option at that position (1 is the first option, 2 is the second, etc.) |
+| `↑` (Arrow Up) | Move focus to the previous option |
+| `↓` (Arrow Down) | Move focus to the next option |
+| `Space` | Toggle the currently focused option |
+| `Enter` | Submit your answer(s) |
+
+### Navigating Between Questions
+
+When Claude asks multiple questions at once, you can switch between them:
+
+| Key | Action |
+|-----|--------|
+| `←` (Arrow Left) or `[` | Go to the previous question |
+| `→` (Arrow Right) or `]` | Go to the next question |
+
+### Free-Text Responses
+
+If you select "Other" to provide a custom answer, most shortcuts are disabled while you're typing. Only `Enter` remains active to submit your response.
+
+## Visual Indicators
+
+When shortcuts are active, you'll see:
+
+- **Amber border ring** around the active request
+- **Key hints** next to buttons showing which keys to press (e.g., `Enter`, `Esc`, `1`, `2`)
+- **Highlighted option** when using arrow keys to navigate
+
+## Multiple Pending Requests
+
+If Claude asks for multiple approvals or answers at once, only the first pending request responds to keyboard shortcuts. After you resolve it, the next request automatically becomes active.
+
+## Chat Input
+
+When you're typing a message in the chat input, all shortcuts are disabled so you can type freely. Shortcuts only activate when Claude is waiting for your approval or answer.

@@ -1,0 +1,11 @@
+{
+  "title": "Guides",
+  "pages": [
+    "cli-usage",
+    "obsidian-plugin",
+    "tunnel-setup",
+    "tool-approval",
+    "slash-commands",
+    "keyboard-shortcuts"
+  ]
+}

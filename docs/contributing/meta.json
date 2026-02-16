@@ -1,0 +1,8 @@
+{
+  "title": "Contributing",
+  "pages": [
+    "development-setup",
+    "architecture",
+    "testing"
+  ]
+}

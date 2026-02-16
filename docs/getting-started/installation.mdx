@@ -1,0 +1,42 @@
+---
+title: Installation
+description: Install DorkOS via npm and start your first session
+---
+
+# Installation
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) 20 or later
+- npm 10 or later
+- A Claude API key ([get one here](https://console.anthropic.com/))
+
+## Install
+
+Install DorkOS globally via npm:
+
+```bash
+npm install -g dorkos
+```
+
+## Set Your API Key
+
+DorkOS needs your Anthropic API key to communicate with Claude:
+
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+```
+
+To persist this, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
+
+## Start DorkOS
+
+```bash
+dorkos
+```
+
+The server starts on port 4242 and opens your browser automatically.
+
+## Verify
+
+Visit [http://localhost:4242](http://localhost:4242) to see the DorkOS interface.

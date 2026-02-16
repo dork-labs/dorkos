@@ -1,0 +1,108 @@
+---
+title: Tool Approval
+description: Understanding how tool approval works in DorkOS
+---
+
+# Tool Approval
+
+DorkOS gives you control over what actions Claude can take during a conversation. When tool approval is enabled, Claude will pause and ask for your permission before running certain operations.
+
+## What is Tool Approval?
+
+Tool approval is a safety feature that lets you review and approve (or deny) actions before Claude executes them. When Claude wants to use a tool — like reading a file, running a command, or modifying code — DorkOS will show you what Claude is planning to do and wait for your decision.
+
+## How It Works
+
+### Approving Tools
+
+When Claude needs to use a tool, you'll see a tool approval card appear in the chat. This card shows:
+
+- **Tool name** — The specific operation Claude wants to perform
+- **Tool input** — The parameters or arguments for the tool (like file paths, search terms, or command arguments)
+- **Approve and Deny buttons** — Your decision controls
+
+To approve the tool:
+1. Review the tool name and input to understand what Claude is about to do
+2. Click the **Approve** button to allow the action
+3. Claude will execute the tool and continue with your task
+
+### Denying Tools
+
+If you don't want Claude to perform a specific action:
+1. Click the **Deny** button to reject the tool call
+2. Claude will receive a denial message and choose a different approach
+3. You can explain in your next message why you denied the action, or ask Claude to try something else
+
+### Approval Timeout
+
+Tool approvals have a 10-minute timeout. If you don't respond within 10 minutes, the tool call is automatically denied and Claude will continue with a different approach. This prevents sessions from hanging indefinitely while waiting for approval.
+
+## Question Prompts
+
+Some tools need more than just approval — they need answers from you. When Claude uses the `AskUserQuestion` tool, you'll see an interactive question prompt instead of a simple approve/deny choice.
+
+### Answering Questions
+
+Question prompts show:
+- **The question** — What Claude needs to know
+- **Answer options** — Pre-defined choices you can select
+- **Other option** — A free-text field if none of the options fit
+
+Types of questions:
+- **Single-select questions** — Choose one option from a list (radio buttons)
+- **Multi-select questions** — Choose multiple options (checkboxes)
+
+To respond:
+1. Read the question carefully
+2. Select one or more options (depending on the question type)
+3. Or enter your own answer in the "Other" field
+4. Click **Submit** to send your answers back to Claude
+
+Your answers are injected into the tool's input, and Claude continues with your selections incorporated into its reasoning.
+
+## Permission Modes
+
+DorkOS supports different permission modes that control when tool approval is required:
+
+- **Default mode** — Every tool call requires approval (maximum control)
+- **Auto-approve mode** — Tools run automatically without approval (faster, less control)
+
+The permission mode is set when you start a new session. You can see the current mode in the session info.
+
+## Tips for Using Tool Approval
+
+**Review carefully**: Tool inputs can be long or complex. Take time to read through the parameters to understand exactly what Claude is doing.
+
+**Deny when uncertain**: If you're not sure what a tool does or why Claude wants to use it, it's safer to deny and ask Claude to explain.
+
+**Context matters**: Sometimes Claude will explain why it needs a tool before asking for approval. Read the full assistant message to understand the context.
+
+**Question prompts are flexible**: When presented with options, you can always choose "Other" and provide a custom answer if the pre-defined choices don't match your needs.
+
+## Common Scenarios
+
+### File Operations
+When Claude wants to read, write, or modify files, you'll see tool calls like:
+- `Read` — Reading file contents
+- `Write` — Creating or overwriting a file
+- `Edit` — Making specific edits to an existing file
+
+Review the file paths carefully to ensure Claude is working with the right files.
+
+### Search Operations
+Tools like `Grep` and `Glob` search for files or content. Check the search patterns to make sure Claude is searching in the right places.
+
+### Command Execution
+The `Bash` tool runs terminal commands. Always review the command to ensure it's safe and does what you expect.
+
+### Web Access
+Tools like `WebFetch` and `WebSearch` access the internet. Review the URLs or search queries to ensure they're appropriate.
+
+## Getting Help
+
+If you're unsure about a tool call:
+- Deny the action and ask Claude to explain what it's trying to do
+- Request that Claude use a different approach
+- Ask Claude to break down the task into smaller, clearer steps
+
+Tool approval gives you full transparency and control over Claude's actions. Use it to stay informed and keep your sessions safe.

@@ -1,0 +1,36 @@
+---
+title: Configuration
+description: Environment variables and configuration options for DorkOS
+---
+
+# Configuration
+
+DorkOS is configured via environment variables.
+
+## Required
+
+| Variable | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | Your Anthropic API key |
+
+## Optional
+
+| Variable | Default | Description |
+|---|---|---|
+| `DORKOS_PORT` | `4242` | Port for the DorkOS server |
+| `DORKOS_DEFAULT_CWD` | Current directory | Default working directory for sessions |
+
+## Tunnel Configuration
+
+DorkOS supports ngrok tunnels for remote access.
+
+| Variable | Description |
+|---|---|
+| `TUNNEL_ENABLED` | Set to `true` to enable ngrok tunnel |
+| `NGROK_AUTHTOKEN` | Your ngrok authentication token |
+| `TUNNEL_DOMAIN` | Custom tunnel domain (optional) |
+| `TUNNEL_AUTH` | Basic auth for the tunnel in `user:pass` format (optional) |
+
+## Config Directory
+
+DorkOS creates a `~/.dork/` directory on startup for storing configuration.

@@ -1,0 +1,320 @@
+---
+title: Architecture
+description: High-level architecture overview for DorkOS contributors
+---
+
+# Architecture
+
+DorkOS uses a hexagonal (ports & adapters) architecture that allows the same React client to run in two different modes:
+
+1. **Standalone web** — Express server + HTTP/SSE communication
+2. **Obsidian plugin** — In-process services, no server needed
+
+This guide explains how the pieces fit together.
+
+## Monorepo Structure
+
+DorkOS is organized as a Turborepo monorepo with npm workspaces:
+
+```
+dorkos/
+├── apps/
+│   ├── client/           # React 19 + Vite 6 + Tailwind 4
+│   ├── server/           # Express + TypeScript
+│   └── obsidian-plugin/  # Obsidian plugin (Vite lib build)
+├── packages/
+│   ├── cli/              # Publishable npm CLI package
+│   ├── shared/           # Shared types and schemas
+│   ├── typescript-config/ # Shared TypeScript configs
+│   └── test-utils/       # Mock factories and test helpers
+```
+
+## Hexagonal Architecture: The Transport Interface
+
+The core abstraction in DorkOS is the **Transport** interface (`packages/shared/src/transport.ts`). This interface defines 9 methods that handle all client-server communication:
+
+```typescript
+interface Transport {
+  createSession(opts)        → Session
+  listSessions()             → Session[]
+  getSession(id)             → Session
+  getMessages(sessionId)     → { messages: HistoryMessage[] }
+  sendMessage(id, content, onEvent, signal, cwd?) → void
+  approveTool(sessionId, toolCallId)        → { ok: boolean }
+  denyTool(sessionId, toolCallId)           → { ok: boolean }
+  getCommands(refresh?)      → CommandRegistry
+  health()                   → { status, version, uptime }
+}
+```
+
+### Two Transport Implementations
+
+#### HttpTransport (Standalone Web)
+
+`HttpTransport` communicates with the Express server over HTTP:
+
+- Uses standard `fetch()` for CRUD operations
+- Parses Server-Sent Events (SSE) streams in `sendMessage()`
+- Converts SSE events into `StreamEvent` objects that update the UI
+
+#### DirectTransport (Obsidian Plugin)
+
+`DirectTransport` calls service instances directly in the same process:
+
+- No HTTP, no port binding, no network serialization
+- Iterates `AsyncGenerator<StreamEvent>` from the Agent SDK
+- Much lower latency, perfect for embedded contexts
+
+Both implementations expose the same interface, so the React client doesn't know (or care) which one it's using.
+
+## Dependency Injection via React Context
+
+The Transport is injected into the React app via a Context provider:
+
+```typescript
+// Standalone web (main.tsx)
+const transport = new HttpTransport({ baseUrl: '/api' })
+
+<TransportProvider transport={transport}>
+  <App />
+</TransportProvider>
+```
+
+```typescript
+// Obsidian plugin (CopilotView.tsx)
+const agentManager = new AgentManager(repoRoot)
+const transcriptReader = new TranscriptReader()
+const commandRegistry = new CommandRegistryService(repoRoot)
+
+const transport = new DirectTransport({
+  agentManager,
+  transcriptReader,
+  commandRegistry,
+  vaultRoot: repoRoot
+})
+
+<TransportProvider transport={transport}>
+  <ObsidianApp>
+    <App />
+  </ObsidianApp>
+</TransportProvider>
+```
+
+Components and hooks access the transport via `useTransport()`:
+
+```typescript
+import { useTransport } from '@/layers/shared/model/TransportContext'
+
+function MyComponent() {
+  const transport = useTransport()
+  const sessions = await transport.listSessions()
+  // ...
+}
+```
+
+## Server Architecture
+
+The Express server (`apps/server/`) is organized into routes and services:
+
+### Routes
+
+Seven route groups handle REST/SSE endpoints:
+
+- **`sessions.ts`** — Session listing, creation, message streaming, tool approval/denial
+- **`commands.ts`** — Slash command discovery
+- **`health.ts`** — Health checks and tunnel status
+- **`directory.ts`** — Directory browsing for working directory selection
+- **`config.ts`** — Configuration management
+- **`files.ts`** — File operations
+- **`git.ts`** — Git status and branch info
+
+### Services
+
+Nine services provide the core business logic:
+
+- **`agent-manager.ts`** — Manages Claude Agent SDK sessions, calls `query()` with streaming
+- **`transcript-reader.ts`** — Reads SDK JSONL transcript files (single source of truth for session data)
+- **`session-broadcaster.ts`** — Watches JSONL files for changes, broadcasts sync events to clients
+- **`stream-adapter.ts`** — SSE helpers for formatting `StreamEvent` objects
+- **`command-registry.ts`** — Scans `.claude/commands/` for slash commands
+- **`openapi-registry.ts`** — Auto-generates OpenAPI spec from Zod schemas
+- **`file-lister.ts`** — Lists files in directories
+- **`git-status.ts`** — Provides git status information
+- **`tunnel-manager.ts`** — Optional ngrok tunnel lifecycle
+
+### Session Storage: SDK JSONL Transcripts
+
+Sessions are **not** stored in a database. Instead, the `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/{slug}/*.jsonl`. This means:
+
+- All sessions are visible (CLI-started, DorkOS-started, etc.)
+- Session ID = SDK session ID (UUID from filename)
+- No delete endpoint (sessions persist in SDK storage)
+- Session metadata (title, preview, timestamps) is extracted from file content on every request
+
+The `AgentManager` calls the SDK's `query()` function with `resume: sessionId` for continuity across clients.
+
+## Client Architecture
+
+The React client (`apps/client/`) uses Feature-Sliced Design (FSD) architecture:
+
+### FSD Layers
+
+| Layer                    | Purpose                     | Examples                                |
+| ------------------------ | --------------------------- | --------------------------------------- |
+| `shared/ui/`             | Reusable UI primitives      | Badge, Dialog, Select, Tabs (shadcn)    |
+| `shared/model/`          | Hooks, stores, context      | TransportContext, app-store, useTheme   |
+| `shared/lib/`            | Domain-agnostic utilities   | cn(), font-config, celebrations         |
+| `entities/session/`      | Session domain hooks        | useSessionId, useSessions               |
+| `entities/command/`      | Command domain hook         | useCommands                             |
+| `features/chat/`         | Chat interface              | ChatPanel, MessageList, ToolCallCard    |
+| `features/session-list/` | Session management          | SessionSidebar, SessionItem             |
+| `features/commands/`     | Slash command palette       | CommandPalette                          |
+| `features/settings/`     | Settings UI                 | SettingsDialog                          |
+| `features/files/`        | File browser                | FilePalette, useFiles                   |
+| `features/status/`       | Status bar                  | StatusLine, GitStatusItem, ModelItem    |
+| `widgets/app-layout/`    | App-level layout components | PermissionBanner                        |
+
+Layers follow a strict dependency rule: `shared` ← `entities` ← `features` ← `widgets` ← `app` (unidirectional only).
+
+### State Management
+
+- **Zustand** for UI state (sidebar open/closed, theme, etc.) — `layers/shared/model/app-store.ts`
+- **TanStack Query** for server state (sessions, messages, commands) — `entities/session/`, `entities/command/`
+- **URL Parameters** (standalone mode) — `?session=` and `?dir=` persist state in the URL for bookmarking and sharing
+
+### Markdown Rendering
+
+Assistant messages are rendered as rich markdown via the `streamdown` library (from Vercel). The `StreamingText` component wraps `<Streamdown>` with syntax highlighting (Shiki) and shows a blinking cursor during active streaming. User messages remain plain text.
+
+## Data Flow: Message from UI → Claude → Back
+
+### Standalone Web (HttpTransport)
+
+```
+User types message
+  ↓
+ChatPanel → useChatSession.handleSubmit()
+  ↓
+transport.sendMessage(sessionId, content, onEvent, signal, cwd)
+  ↓
+fetch(POST /api/sessions/:id/messages) + ReadableStream SSE parsing
+  ↓
+Express route → AgentManager.sendMessage() → SDK query()
+  ↓
+SDK yields StreamEvent objects → SSE wire format
+  ↓
+HttpTransport parses SSE → calls onEvent(event)
+  ↓
+React state updates → UI re-renders with new message chunks
+```
+
+### Obsidian Plugin (DirectTransport)
+
+```
+User types message
+  ↓
+ChatPanel → useChatSession.handleSubmit()
+  ↓
+transport.sendMessage(sessionId, content, onEvent, signal, cwd)
+  ↓
+DirectTransport → agentManager.sendMessage() → SDK query()
+  ↓
+SDK yields AsyncGenerator<StreamEvent>
+  ↓
+DirectTransport iterates generator → calls onEvent(event)
+  ↓
+React state updates → UI re-renders with new message chunks
+```
+
+### StreamEvent Types
+
+Events flowing from the SDK to the UI include:
+
+- **`text_delta`** — Incremental text for assistant messages
+- **`tool_call_start`** — Tool invocation begins
+- **`tool_call_delta`** — Incremental tool input/output
+- **`tool_call_end`** — Tool invocation completes
+- **`tool_result`** — Tool execution result
+- **`approval_required`** — Tool needs user approval
+- **`question_prompt`** — Claude is asking the user a question
+- **`error`** — Error occurred during execution
+- **`done`** — Message stream complete
+- **`session_status`** — Session state changed
+- **`task_update`** — Task list updated
+
+## Session Sync Protocol
+
+Clients can subscribe to real-time session changes via `GET /api/sessions/:id/stream` (persistent SSE connection). This enables multi-client sync (e.g., CLI writes → DorkOS UI updates automatically).
+
+Events:
+
+- **`sync_connected`** — Sent on initial connection
+- **`sync_update`** — Sent when new content is written to the session's JSONL file
+
+Clients receiving `sync_update` should re-fetch message history. The `GET /messages` endpoint supports ETag caching for efficient polling.
+
+## Testing
+
+Tests use Vitest with `vi.mock()` for Node modules. All client tests inject mock `Transport` objects via `TransportProvider`:
+
+```typescript
+import { createMockTransport } from '@dorkos/test-utils'
+
+const mockTransport = createMockTransport({
+  listSessions: vi.fn().mockResolvedValue([]),
+  sendMessage: vi.fn(),
+})
+
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <TransportProvider transport={mockTransport}>
+      {children}
+    </TransportProvider>
+  )
+}
+
+render(<MyComponent />, { wrapper: Wrapper })
+```
+
+This pattern provides type safety and explicit test setup without global mocks.
+
+## Getting Started with Development
+
+1. **Clone the repo** and install dependencies:
+   ```bash
+   git clone https://github.com/dork-labs/dorkos.git
+   cd dorkos
+   npm install
+   ```
+
+2. **Set up environment variables** (copy `.env.example` to `.env`)
+
+3. **Start the dev server**:
+   ```bash
+   npm run dev  # Runs both client (Vite) and server (Express)
+   ```
+
+4. **Open the browser**: http://localhost:3000
+
+5. **Explore the codebase**:
+   - Client UI components: `apps/client/src/layers/`
+   - Server routes: `apps/server/src/routes/`
+   - Server services: `apps/server/src/services/`
+   - Shared types: `packages/shared/src/`
+
+## Key Architectural Benefits
+
+✅ **Same React app runs standalone and embedded** — Transport abstraction enables code reuse
+✅ **Server-optional** — Obsidian plugin has zero network latency
+✅ **Type-safe** — Zod schemas generate both TypeScript types and OpenAPI specs
+✅ **Testable** — Mock Transport objects make testing React hooks and components straightforward
+✅ **Real-time sync** — SSE streaming and file watching keep all clients in sync
+✅ **SDK-first** — JSONL transcripts are the single source of truth (no separate database)
+
+---
+
+For more detailed documentation, see:
+
+- [API Reference](/docs/api-reference) — OpenAPI spec, Zod schemas, endpoints
+- [Interactive Tools](/docs/interactive-tools) — Tool approval flows, AskUserQuestion, TaskList
+- [Design System](/docs/design-system) — Color palette, typography, spacing, motion specs

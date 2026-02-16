@@ -1,0 +1,306 @@
+---
+title: Obsidian Plugin
+description: Use DorkOS inside Obsidian as a sidebar plugin
+---
+
+# Obsidian Plugin
+
+DorkOS can run as a sidebar plugin inside Obsidian, giving you an AI copilot that understands your vault context and integrates seamlessly with your workflow.
+
+## Features
+
+The Obsidian plugin provides several advantages over the standalone web interface:
+
+- **Active File Tracking**: DorkOS automatically tracks the currently open file in Obsidian and includes it as context
+- **Drag-and-Drop Context**: Drag files from Obsidian's file explorer directly into the chat to add them as context
+- **File Navigation**: Click on file references in the chat to open them in Obsidian
+- **Vault-Aware Sessions**: The working directory is automatically set to your vault's parent directory (repository root)
+- **Native Theme Integration**: The plugin automatically adapts to your Obsidian theme (light/dark mode)
+
+## Requirements
+
+- **Obsidian Desktop**: The plugin requires Obsidian's desktop app (not mobile). It uses Node.js APIs that are only available in the Electron desktop environment.
+- **Claude Code CLI**: You must have the Claude Code CLI installed globally:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+Verify the installation:
+
+```bash
+claude --version
+```
+
+## Installation
+
+### Manual Installation (Development)
+
+Currently, the plugin is in development and must be installed manually:
+
+1. **Build the plugin** from the DorkOS monorepo root:
+
+```bash
+turbo run build --filter=@dorkos/obsidian-plugin
+```
+
+This builds the plugin to `apps/obsidian-plugin/dist/` with three required files:
+- `main.js` — the plugin code
+- `styles.css` — plugin styles
+- `manifest.json` — plugin metadata
+
+2. **Create a symlink** in your vault's plugins directory:
+
+```bash
+# From your vault directory
+cd .obsidian/plugins
+ln -s /path/to/dorkos/apps/obsidian-plugin/dist dorkos-copilot
+```
+
+On Windows, use `mklink /D`:
+
+```powershell
+mklink /D dorkos-copilot C:\path\to\dorkos\apps\obsidian-plugin\dist
+```
+
+3. **Restart Obsidian** (or reload the workspace with `Ctrl/Cmd + R`)
+
+4. **Enable the plugin**:
+   - Open Settings → Community Plugins
+   - Find "DorkOS Copilot" in the list
+   - Toggle it on
+
+### Future: Community Plugin
+
+The plugin will eventually be published to Obsidian's Community Plugin directory for one-click installation.
+
+## Configuration
+
+### API Key Setup
+
+The plugin uses the same Claude Code CLI that the standalone version uses, so it requires the same API key configuration:
+
+1. **Set your Anthropic API key** as an environment variable:
+
+```bash
+export ANTHROPIC_API_KEY="your-api-key-here"
+```
+
+Add this to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) to persist it across sessions.
+
+2. **Verify the key** is loaded by running:
+
+```bash
+echo $ANTHROPIC_API_KEY
+```
+
+**Important**: Obsidian must be launched from a terminal or application launcher that has access to the environment variable. If you launch Obsidian from macOS Spotlight or Windows Start Menu, it may not inherit your shell's environment.
+
+### Working Directory Context
+
+The plugin automatically sets the working directory to your **vault's parent directory** (repository root). This assumes your vault is located inside a Git repository:
+
+```
+my-project/           ← Working directory (repo root)
+├── .claude/
+│   └── commands/     ← Slash commands directory
+├── workspace/        ← Your Obsidian vault
+│   ├── .obsidian/
+│   └── notes/
+└── .git/
+```
+
+This allows DorkOS to:
+- Access slash commands from `.claude/commands/` in the repo root
+- Read/write files in the entire repository (not just the vault)
+- Use Git commands and repository context
+
+## Usage
+
+### Opening the Copilot Sidebar
+
+There are three ways to open the DorkOS copilot:
+
+1. **Ribbon Icon**: Click the robot icon in the left sidebar ribbon
+2. **Command Palette**: Press `Ctrl/Cmd + P` and search for "Open Copilot"
+3. **Keyboard Shortcut**: You can assign a custom hotkey in Settings → Hotkeys → "Open Copilot"
+
+The copilot will open in the right sidebar as a new panel.
+
+### Starting a Session
+
+When you first open the copilot, it will automatically create a new chat session. The session is scoped to the current working directory (your repository root).
+
+You can:
+- Send messages to Claude by typing in the input field
+- Use slash commands by typing `/` and selecting from the autocomplete menu
+- Approve or deny tool calls when Claude requests permission to run commands
+
+### Adding Context
+
+The Obsidian plugin provides two ways to add file context to your conversation:
+
+#### 1. Active File (Automatic)
+
+The currently open file in Obsidian is automatically tracked and shown as a context chip above the chat input. This updates automatically as you switch between files.
+
+The active file chip:
+- Shows a file icon and the basename
+- Has an "active" badge to distinguish it from manually added files
+- Cannot be removed (it auto-updates with the active file)
+- Clicking it opens the file in Obsidian (useful if you've switched tabs)
+
+#### 2. Drag-and-Drop Files (Manual)
+
+You can drag files from Obsidian's file explorer directly into the chat area to add them as context:
+
+1. Click and hold a file in the file explorer
+2. Drag it over the chat panel (the drop zone will highlight)
+3. Release to add it as a context chip
+
+Manually added context chips:
+- Show a file icon and basename
+- Can be clicked to open the file
+- Can be removed with the "x" button
+- Persist until you explicitly remove them
+
+When you send a message, both the active file and any manually added files are included as context in the message.
+
+### Opening Files from Chat
+
+When Claude references files in its responses (e.g., in tool call results), you can click on file paths to open them in Obsidian. The file will open in the main editor pane.
+
+### Managing Sessions
+
+The session list in the left sidebar shows all your chat sessions (including those started from the CLI or standalone web interface). You can:
+
+- Click a session to open it
+- See the session title (derived from the first message) and preview
+- View timestamps for when the session was last updated
+
+**Note**: Sessions cannot be deleted from the UI. They persist in the Claude SDK's storage at `~/.claude/projects/{slug}/`.
+
+## Troubleshooting
+
+### Plugin Won't Load
+
+If Obsidian shows "Failed to load plugin: dorkos-copilot":
+
+1. **Open the Developer Console** to see the actual error:
+   - **macOS**: `Cmd + Option + I`
+   - **Windows/Linux**: `Ctrl + Shift + I`
+
+2. Check the Console tab for error messages. Common issues:
+
+   - **"Cannot find module 'X'"**: A dependency is missing. This is usually a build issue — rebuild the plugin.
+   - **"Claude Code executable not found"**: The CLI isn't installed or not in your PATH. Run `npm install -g @anthropic-ai/claude-code`.
+   - **"ANTHROPIC_API_KEY not set"**: The API key isn't in the environment. See [API Key Setup](#api-key-setup) above.
+
+3. Try disabling and re-enabling the plugin in Settings → Community Plugins.
+
+### API Key Not Working
+
+If you see errors about missing API keys:
+
+- Verify the key is set: `echo $ANTHROPIC_API_KEY`
+- Make sure Obsidian was launched from a context that has the environment variable (e.g., from a terminal that sources your `.zshrc`/`.bashrc`)
+- On macOS, you may need to restart your computer or use `launchctl setenv` to set system-wide environment variables
+
+### Text Not Selectable
+
+If you can't select text in the chat panel:
+
+This is a known quirk of Obsidian's default styles. The plugin includes a CSS fix (`user-select: text`) in its stylesheet. If text still isn't selectable, check that `styles.css` exists in the plugin directory.
+
+### Active File Not Updating
+
+If the active file chip doesn't update when you switch files:
+
+- Make sure you're switching between files in the main editor (not just hovering)
+- Check the developer console for errors in the event listener
+- Try closing and reopening the copilot sidebar
+
+### Drag-and-Drop Not Working
+
+If dragging files doesn't work:
+
+- Make sure you're dragging from Obsidian's file explorer (not an external app)
+- The drop zone should highlight when you drag over it. If it doesn't, check the console for JavaScript errors.
+- Try clicking the file in the explorer first to "activate" it, then drag
+
+### Session List Empty
+
+If no sessions appear in the sidebar:
+
+- Sessions are read from `~/.claude/projects/{slug}/` where `{slug}` is derived from your repository path
+- If you haven't created any sessions yet, the list will be empty
+- Sessions created from the CLI or standalone web interface (with the same working directory) will appear here
+
+### Performance Issues
+
+The plugin bundles the entire React client and Claude Agent SDK into a single file (~10.4MB, 2.7MB gzipped). On older machines, this may cause:
+
+- Slow initial load when enabling the plugin
+- Occasional UI lag when switching files or opening large sessions
+
+If you experience performance issues:
+
+- Close and reopen the copilot sidebar to reset the React app
+- Disable other plugins to reduce memory usage
+- Consider using the standalone web interface instead (lighter weight)
+
+## Differences from Standalone Mode
+
+| Feature             | Standalone Web                        | Obsidian Plugin                         |
+| ------------------- | ------------------------------------- | --------------------------------------- |
+| Transport           | HTTP/SSE to Express server            | In-process services (no network calls)  |
+| Session ID storage  | URL query parameter (`?session=`)     | Internal state (not in URL)             |
+| Layout              | Full viewport, responsive             | Fixed sidebar width (~300px)            |
+| Active file context | Not available                         | Auto-tracked via workspace events       |
+| File drag-and-drop  | Not available                         | From Obsidian file explorer             |
+| Open file action    | Not available                         | Opens in Obsidian editor                |
+| Theme               | Uses DorkOS custom properties         | Adapts to Obsidian theme variables      |
+| Working directory   | Configurable via directory picker     | Automatically set to vault parent       |
+
+## Advanced Usage
+
+### Keyboard Shortcuts
+
+You can set custom keyboard shortcuts for plugin commands in Settings → Hotkeys:
+
+- **Open Copilot**: Open/focus the copilot sidebar
+- You can also set shortcuts for Obsidian's built-in "Focus left sidebar" / "Focus right sidebar" commands to quickly jump between the file explorer and copilot
+
+### Hot Reload for Development
+
+If you're actively developing the plugin, install the [Hot Reload](https://github.com/pjeby/hot-reload) community plugin:
+
+1. Install Hot Reload from Community Plugins
+2. Create a `.hotreload` file in `apps/obsidian-plugin/dist/`:
+
+```bash
+touch apps/obsidian-plugin/dist/.hotreload
+```
+
+3. Now when you rebuild the plugin (`turbo run build --filter=@dorkos/obsidian-plugin`), it will auto-reload in Obsidian without needing to restart.
+
+### Using with Multiple Vaults
+
+If you use multiple Obsidian vaults:
+
+- Each vault can have its own symlink to the plugin
+- Sessions are stored globally in `~/.claude/projects/` and keyed by repository path
+- If two vaults are in the same repository, they'll share sessions (this is usually what you want)
+- If they're in different repositories, each will have its own independent session list
+
+## Support
+
+If you encounter issues not covered in this guide:
+
+1. Check the [developer console](#plugin-wont-load) for detailed error messages
+2. Look for existing issues in the [GitHub repository](https://github.com/dork-labs/dorkos)
+3. Open a new issue with:
+   - The error message from the console
+   - Steps to reproduce
+   - Your Obsidian version (Help → About)
+   - Your DorkOS version (visible in the plugin's manifest.json)

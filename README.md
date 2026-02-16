@@ -1,89 +1,73 @@
 # DorkOS
 
-Web-based interface and channel-agnostic REST/SSE API for Claude Code, powered by the Claude Agent SDK.
+[![npm version](https://img.shields.io/npm/v/dorkos)](https://www.npmjs.com/package/dorkos)
+[![license](https://img.shields.io/npm/l/dorkos)](LICENSE)
 
-## Prerequisites
+Web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK.
 
-- Node.js 20+
-- npm
+## What is DorkOS?
+
+DorkOS gives Claude Code a browser-based chat UI with tool approval flows, slash command discovery, and cross-client session synchronization. It wraps the Claude Agent SDK with a REST/SSE API that any client can consume.
+
+## Install
+
+```bash
+npm install -g dorkos
+```
 
 ## Quick Start
 
 ```bash
-npm install
-npx turbo dev
+export ANTHROPIC_API_KEY=your-key-here
+dorkos
 ```
 
-This starts:
+The server starts on port 4242 and opens your browser automatically.
 
-- **Express server** on `http://localhost:4242` (API + SSE)
-- **Vite dev server** on `http://localhost:5173` (React UI with HMR)
+<!-- TODO: Add screenshot or GIF of the UI -->
+
+## Features
+
+- Chat UI with rich markdown rendering and syntax highlighting
+- Tool approval and deny flows for safe AI interactions
+- Slash command discovery from `.claude/commands/`
+- Real-time SSE streaming responses
+- Cross-client session sync (CLI, web, Obsidian)
+- Obsidian plugin with sidebar integration
+- ngrok tunnel support for remote access
+- Interactive API documentation at `/api/docs` (OpenAPI 3.1)
+- Working directory picker for project context
+
+## Documentation
+
+Full documentation is available in the [`guides/`](guides/) directory:
+
+- [Architecture Overview](guides/architecture.md) - Hexagonal architecture, Transport interface, module layout
+- [API Reference](guides/api-reference.md) - OpenAPI spec, endpoints, SSE streaming protocol
+- [Design System](guides/design-system.md) - Color palette, typography, spacing, motion specs
+- [Obsidian Plugin Development](guides/obsidian-plugin-development.md) - Plugin architecture and development guide
+- [Interactive Tools](guides/interactive-tools.md) - Tool approval flows and interactive patterns
+
+See [CLAUDE.md](CLAUDE.md) for comprehensive technical documentation.
 
 ## Development
 
 ```bash
-npm run dev          # Start both server and client
-npm run dev:server   # Server only (tsx watch)
-npm run dev:client   # Client only (Vite)
-npm run test         # Run tests in watch mode
-npm run test:run     # Run tests once
+git clone https://github.com/dork-labs/dorkos.git
+cd dorkos
+npm install
+cp .env.example .env  # Add your ANTHROPIC_API_KEY
+npm run dev
 ```
 
-## Production
+This starts the Express server on port 4242 and the Vite dev server on port 5173.
 
-```bash
-npm run build        # Build client (Vite) + compile server (tsc)
-npm start            # Start production server
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
 
-## API Reference
+## Contributing
 
-| Method | Endpoint                     | Description                        |
-| ------ | ---------------------------- | ---------------------------------- |
-| GET    | `/api/health`                | Server health check                |
-| POST   | `/api/sessions`              | Create new session                 |
-| GET    | `/api/sessions`              | List all sessions                  |
-| GET    | `/api/sessions/:id`          | Get session details                |
-| DELETE | `/api/sessions/:id`          | Delete session                     |
-| POST   | `/api/sessions/:id/messages` | Send message (SSE stream response) |
-| POST   | `/api/sessions/:id/approve`  | Approve pending tool call          |
-| POST   | `/api/sessions/:id/deny`     | Deny pending tool call             |
-| GET    | `/api/commands`              | List slash commands                |
-| GET    | `/api/commands?refresh=true` | Refresh and list commands          |
+We welcome contributions! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
 
-## Architecture
+## License
 
-```
-dorkos/
-├── apps/
-│   ├── server/           # Express API server
-│   │   ├── index.ts      # Server entry point
-│   │   ├── routes/       # API route handlers
-│   │   ├── services/     # Business logic (agent manager, session store, etc.)
-│   │   └── middleware/    # Error handler
-│   ├── client/           # React 19 + Vite frontend
-│   │   ├── App.tsx       # Root layout
-│   │   ├── components/   # UI components (chat, sessions, commands, layout)
-│   │   ├── hooks/        # Custom hooks (useChatSession, useCommands, useSessions)
-│   │   ├── stores/       # Zustand state management
-│   │   └── lib/          # API client, utilities
-│   └── shared/           # Types shared between server and client
-├── package.json
-├── tsconfig.json         # Base TypeScript config
-├── tsconfig.server.json  # Server-specific config
-└── vite.config.ts        # Vite + React + Tailwind config
-```
-
-## Environment Variables
-
-| Variable       | Default       | Description                 |
-| -------------- | ------------- | --------------------------- |
-| `DORKOS_PORT` | `4242`        | Port for the Express server |
-| `NODE_ENV`     | `development` | Environment mode            |
-
-## Key Technologies
-
-- **Backend**: Express, Claude Agent SDK, SSE streaming
-- **Frontend**: React 19, Vite 6, TypeScript, Tailwind CSS 4, shadcn/ui
-- **State**: Zustand (client state), TanStack Query (server state)
-- **Testing**: Vitest, React Testing Library
+[MIT](LICENSE)

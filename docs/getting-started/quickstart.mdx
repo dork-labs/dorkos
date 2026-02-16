@@ -1,0 +1,30 @@
+---
+title: Quickstart
+description: Walk through your first DorkOS conversation
+---
+
+# Quickstart
+
+This guide walks you through your first conversation with Claude Code via DorkOS.
+
+## Start a Session
+
+1. Launch DorkOS with `dorkos`
+2. The web interface opens in your browser
+3. Type a message in the chat input and press Enter
+
+## Working Directory
+
+DorkOS operates in a working directory, just like Claude Code CLI. By default, it uses the directory where you launched `dorkos`. You can change the working directory using the directory picker in the sidebar.
+
+## Tool Approval
+
+When Claude wants to use a tool (read files, run commands, etc.), you will see an approval prompt. Review the tool call and approve or deny it.
+
+## Slash Commands
+
+Type `/` in the chat input to see available slash commands. These are loaded from `.claude/commands/` in your working directory.
+
+## Sessions
+
+Your conversations are saved as sessions. Use the sidebar to switch between sessions or start new ones. Sessions are stored as SDK transcript files and are visible across all Claude Code clients (CLI, DorkOS, etc.).

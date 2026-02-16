@@ -1,18 +1,15 @@
 # dorkos
 
-Web-based interface and REST/SSE API for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), built with the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk).
+[![npm version](https://img.shields.io/npm/v/dorkos)](https://www.npmjs.com/package/dorkos)
+[![license](https://img.shields.io/npm/l/dorkos)](https://github.com/dork-labs/dorkos/blob/main/LICENSE)
 
-Provides a chat UI for interacting with Claude Code sessions, with tool approval flows, slash command discovery, and real-time session sync across multiple clients.
+Web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK.
 
-## Prerequisites
+## What is DorkOS?
 
-- **Node.js** >= 18
-- **Claude Code CLI** installed and available in your PATH:
-  ```bash
-  npm install -g @anthropic-ai/claude-code
-  ```
+DorkOS provides a browser-based chat UI for interacting with Claude Code sessions. It includes tool approval flows, slash command discovery, cross-client session sync, and a full REST/SSE API — all powered by the Claude Agent SDK.
 
-## Install
+## Installation
 
 ```bash
 npm install -g dorkos
@@ -21,58 +18,51 @@ npm install -g dorkos
 ## Usage
 
 ```bash
-# Start DorkOS (opens on http://localhost:4242)
 dorkos
-
-# Custom port
-dorkos --port 8080
-
-# Set working directory
-dorkos --dir ~/projects/myapp
-
-# Enable ngrok tunnel for remote access
-NGROK_AUTHTOKEN=your_token dorkos --tunnel
 ```
 
-## Options
+The server starts on port 4242 and opens your browser automatically. You'll see the DorkOS chat interface where you can start Claude Code sessions, approve tool calls, and use slash commands.
 
-| Flag            | Short | Description         | Default           |
-| --------------- | ----- | ------------------- | ----------------- |
-| `--port <port>` | `-p`  | Port to listen on   | `4242`            |
-| `--tunnel`      | `-t`  | Enable ngrok tunnel | `false`           |
-| `--dir <path>`  | `-d`  | Working directory   | Current directory |
-| `--help`        | `-h`  | Show help message   |                   |
-| `--version`     | `-v`  | Show version number |                   |
+## Configuration
 
-## Environment Variables
+### Required
 
-| Variable          | Description                                |
-| ----------------- | ------------------------------------------ |
-| `NGROK_AUTHTOKEN` | ngrok auth token (required for `--tunnel`) |
-| `TUNNEL_AUTH`     | HTTP basic auth for tunnel (`user:pass`)   |
-| `TUNNEL_DOMAIN`   | Custom ngrok domain                        |
+| Variable | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | Your Anthropic API key |
 
-## Features
+### Optional
 
-- Chat UI for Claude Code with rich markdown rendering
-- Tool approval/deny flow for safe AI interactions
-- Slash command discovery from `.claude/commands/`
-- SSE streaming for real-time responses
-- Session sync across multiple clients (including CLI)
-- REST API with OpenAPI docs at `/api/docs`
+| Variable | Default | Description |
+|---|---|---|
+| `DORKOS_PORT` | `4242` | Server port |
+| `DORKOS_DEFAULT_CWD` | Current directory | Default working directory for sessions |
 
-## API
+### Tunnel Configuration
 
-Once running, DorkOS exposes:
+DorkOS supports ngrok tunnels for remote access:
 
-- **`GET /api/sessions`** - List all sessions
-- **`POST /api/sessions`** - Create a new session
-- **`GET /api/sessions/:id/messages`** - Get message history
-- **`POST /api/sessions/:id/messages`** - Send a message (SSE stream)
-- **`GET /api/sessions/:id/stream`** - Subscribe to session changes (SSE)
-- **`GET /api/docs`** - Interactive API documentation (Scalar)
-- **`GET /api/openapi.json`** - OpenAPI specification
+| Variable | Description |
+|---|---|
+| `TUNNEL_ENABLED` | Set to `true` to enable ngrok tunnel |
+| `NGROK_AUTHTOKEN` | Your ngrok authentication token |
+| `TUNNEL_DOMAIN` | Custom tunnel domain (optional) |
+| `TUNNEL_AUTH` | Basic auth in `user:pass` format (optional) |
+
+## Config Directory
+
+DorkOS creates a `~/.dork/` directory on startup for configuration storage.
+
+## API Documentation
+
+When running, DorkOS serves interactive API documentation at `/api/docs` (powered by Scalar UI) and the raw OpenAPI spec at `/api/openapi.json`.
+
+## Links
+
+- [Documentation](https://github.com/dork-labs/dorkos/tree/main/docs)
+- [GitHub](https://github.com/dork-labs/dorkos)
+- [Issues](https://github.com/dork-labs/dorkos/issues)
 
 ## License
 
-MIT
+[MIT](https://github.com/dork-labs/dorkos/blob/main/LICENSE)
