@@ -1,0 +1,10 @@
+[gtr "copy"]
+    include = .env.example
+
+[gtr "hook"]
+    postCreate = npm install
+    postCreate = .claude/scripts/worktree-setup.sh
+
+[gtr "defaults"]
+    editor = cursor
+    ai = claude

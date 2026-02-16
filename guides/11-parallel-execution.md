@@ -359,6 +359,44 @@ for (id of ids) {
 | `/debug:api`      | Parallel diagnostics         | Component, action, DAL, DB |
 | `/debug:browser`  | Parallel diagnostics         | Visual, console, network   |
 
+## Git Worktrees for Full Isolation
+
+Git worktrees provide process-level isolation for parallel work on different branches. Use `git-worktree-runner` (gtr) to manage worktrees with automatic dependency installation and port allocation.
+
+### When to Use Worktrees vs Task Agents
+
+| Scenario | Use Worktrees | Use Task Agents |
+| --- | --- | --- |
+| Different branches | Yes | No |
+| Full build isolation | Yes | No |
+| Same branch, parallel reads | No | Yes |
+| Quick analysis/research | No | Yes |
+| Long-running dev server needed | Yes | No |
+| Shared mutable state ok | N/A | Yes (sequential) |
+
+**Rule of thumb**: Worktrees = different branches, full isolation. Task agents = same branch, shared context.
+
+### Commands
+
+```bash
+git gtr new <branch> --yes          # Create worktree (auto npm install + port setup)
+git gtr new <branch> --from-current --yes  # Branch from current instead of main
+git gtr list                        # List worktrees
+git gtr rm <branch> --yes           # Remove worktree
+```
+
+Agent-friendly slash commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`.
+
+### Port Allocation
+
+Each worktree gets a deterministic port derived from its folder name (range 4250-4399). The main worktree uses port 4242 (default). This means multiple DorkOS instances can run simultaneously without conflicts.
+
+### Cleanup Protocol
+
+1. Verify all changes are committed or stashed
+2. `/worktree:remove <branch>` (or `git gtr rm <branch> --yes`)
+3. Optionally delete the branch with `--delete-branch`
+
 ## Best Practices Summary
 
 1. **Always store task IDs** — You'll need them to collect results

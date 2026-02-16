@@ -52,7 +52,12 @@ npm run lint -- --fix  # Auto-fix ESLint issues
 npm run format         # Prettier format all files
 npm run format:check   # Check formatting without writing
 npm run docs:export-api  # Export OpenAPI spec to docs/api/openapi.json (loads .env)
+git gtr new <branch>     # Create worktree (runs npm install + port setup via .gtrconfig)
+git gtr list             # List all worktrees
+git gtr rm <branch>      # Remove worktree
 ```
+
+Slash commands for agent-friendly worktree management: `/worktree:create`, `/worktree:list`, `/worktree:remove`.
 
 Run a single test file: `npx vitest run apps/server/src/services/__tests__/transcript-reader.test.ts`
 
