@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const defaultRoot = process.env.GATEWAY_CWD ?? path.resolve(__dirname, '../../../../');
+const defaultRoot = process.env.DORKOS_DEFAULT_CWD ?? path.resolve(__dirname, '../../../../');
 const registryCache = new Map<string, CommandRegistryService>();
 
 function getRegistry(cwd?: string): CommandRegistryService {

@@ -5,7 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "dist-server/**", "dist-obsidian/**"],
-      "env": ["NODE_ENV", "VITE_*", "GATEWAY_PORT", "NGROK_*", "TUNNEL_*"]
+      "env": ["NODE_ENV", "VITE_*", "DORKOS_PORT", "NGROK_*", "TUNNEL_*"]
     },
     "dev": {
       "dependsOn": ["^build"],

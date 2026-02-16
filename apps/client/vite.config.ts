@@ -30,7 +30,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: `http://localhost:${process.env.GATEWAY_PORT || 6942}`,
+        target: `http://localhost:${process.env.DORKOS_PORT || 6942}`,
         changeOrigin: true,
       },
     },

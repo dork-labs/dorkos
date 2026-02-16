@@ -105,20 +105,20 @@ interface AppState {
 
 // localStorage keys for all persisted boolean settings
 const BOOL_KEYS = {
-  showTimestamps: 'gateway-show-timestamps',
-  expandToolCalls: 'gateway-expand-tool-calls',
-  autoHideToolCalls: 'gateway-auto-hide-tool-calls',
-  showShortcutChips: 'gateway-show-shortcut-chips',
-  showStatusBarCwd: 'gateway-show-status-bar-cwd',
-  showStatusBarPermission: 'gateway-show-status-bar-permission',
-  showStatusBarModel: 'gateway-show-status-bar-model',
-  showStatusBarCost: 'gateway-show-status-bar-cost',
-  showStatusBarContext: 'gateway-show-status-bar-context',
-  showStatusBarGit: 'gateway-show-status-bar-git',
-  showTaskCelebrations: 'gateway-show-task-celebrations',
-  enableNotificationSound: 'gateway-enable-notification-sound',
-  showStatusBarSound: 'gateway-show-status-bar-sound',
-  verboseLogging: 'gateway-verbose-logging',
+  showTimestamps: 'dorkos-show-timestamps',
+  expandToolCalls: 'dorkos-expand-tool-calls',
+  autoHideToolCalls: 'dorkos-auto-hide-tool-calls',
+  showShortcutChips: 'dorkos-show-shortcut-chips',
+  showStatusBarCwd: 'dorkos-show-status-bar-cwd',
+  showStatusBarPermission: 'dorkos-show-status-bar-permission',
+  showStatusBarModel: 'dorkos-show-status-bar-model',
+  showStatusBarCost: 'dorkos-show-status-bar-cost',
+  showStatusBarContext: 'dorkos-show-status-bar-context',
+  showStatusBarGit: 'dorkos-show-status-bar-git',
+  showTaskCelebrations: 'dorkos-show-task-celebrations',
+  enableNotificationSound: 'dorkos-enable-notification-sound',
+  showStatusBarSound: 'dorkos-show-status-bar-sound',
+  verboseLogging: 'dorkos-verbose-logging',
 } as const;
 
 // Default values for each persisted boolean
@@ -155,14 +155,14 @@ export const useAppStore = create<AppState>()(
           const entry: RecentCwd = { path: cwd, accessedAt: new Date().toISOString() };
           const recents = [entry, ...s.recentCwds.filter((r) => r.path !== cwd)].slice(0, 10);
           try {
-            localStorage.setItem('gateway-recent-cwds', JSON.stringify(recents));
+            localStorage.setItem('dorkos-recent-cwds', JSON.stringify(recents));
           } catch {}
           return { selectedCwd: cwd, recentCwds: recents };
         }),
 
       recentCwds: (() => {
         try {
-          const raw: unknown[] = JSON.parse(localStorage.getItem('gateway-recent-cwds') || '[]');
+          const raw: unknown[] = JSON.parse(localStorage.getItem('dorkos-recent-cwds') || '[]');
           return raw.map((item) =>
             typeof item === 'string'
               ? { path: item, accessedAt: new Date().toISOString() }
@@ -250,7 +250,7 @@ export const useAppStore = create<AppState>()(
 
       fontSize: (() => {
         try {
-          const stored = localStorage.getItem('gateway-font-size');
+          const stored = localStorage.getItem('dorkos-font-size');
           if (stored === 'small' || stored === 'medium' || stored === 'large') {
             const scaleMap = { small: '0.9', medium: '1', large: '1.15' };
             document.documentElement.style.setProperty('--user-font-scale', scaleMap[stored]);
@@ -261,7 +261,7 @@ export const useAppStore = create<AppState>()(
       })() as 'small' | 'medium' | 'large',
       setFontSize: (v) => {
         try {
-          localStorage.setItem('gateway-font-size', v);
+          localStorage.setItem('dorkos-font-size', v);
         } catch {}
         const scaleMap = { small: '0.9', medium: '1', large: '1.15' };
         document.documentElement.style.setProperty('--user-font-scale', scaleMap[v]);
@@ -270,7 +270,7 @@ export const useAppStore = create<AppState>()(
 
       fontFamily: (() => {
         try {
-          const stored = localStorage.getItem('gateway-font-family');
+          const stored = localStorage.getItem('dorkos-font-family');
           const key = isValidFontKey(stored ?? '') ? stored! : DEFAULT_FONT;
           const config = getFontConfig(key);
           if (config.googleFontsUrl) {
@@ -286,7 +286,7 @@ export const useAppStore = create<AppState>()(
       })() as FontFamilyKey,
       setFontFamily: (key) => {
         try {
-          localStorage.setItem('gateway-font-family', key);
+          localStorage.setItem('dorkos-font-family', key);
         } catch {}
         const config = getFontConfig(key);
         if (config.googleFontsUrl) {
@@ -307,8 +307,8 @@ export const useAppStore = create<AppState>()(
           for (const lsKey of Object.values(BOOL_KEYS)) {
             localStorage.removeItem(lsKey);
           }
-          localStorage.removeItem('gateway-font-size');
-          localStorage.removeItem('gateway-font-family');
+          localStorage.removeItem('dorkos-font-size');
+          localStorage.removeItem('dorkos-font-family');
         } catch {}
         document.documentElement.style.setProperty('--user-font-scale', '1');
         const defaultConfig = getFontConfig(DEFAULT_FONT);

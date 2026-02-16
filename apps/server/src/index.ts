@@ -12,7 +12,7 @@ if (!process.env.CLIENT_DIST_PATH) {
   dotenv.config({ path: path.join(__dirname, '../../../.env') });
 }
 
-const PORT = parseInt(process.env.GATEWAY_PORT || '6942', 10);
+const PORT = parseInt(process.env.DORKOS_PORT || '6942', 10);
 
 // Global reference for graceful shutdown
 let sessionBroadcaster: SessionBroadcaster | null = null;
@@ -26,7 +26,7 @@ async function start() {
 
   const host = process.env.TUNNEL_ENABLED === 'true' ? '0.0.0.0' : 'localhost';
   app.listen(PORT, host, () => {
-    console.log(`Gateway server running on http://localhost:${PORT}`);
+    console.log(`DorkOS server running on http://localhost:${PORT}`);
   });
 
   // Run session health check every 5 minutes

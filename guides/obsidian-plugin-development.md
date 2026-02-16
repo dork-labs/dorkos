@@ -783,7 +783,7 @@ this.registerDomEvent(document, "keydown", (e) => { ... });
 ## 13. Directory Structure
 
 ```
-gateway/                              # Turborepo monorepo root
+dorkos/                               # Turborepo monorepo root
 ├── turbo.json                        # Task pipeline configuration
 ├── package.json                      # Root package.json (workspaces)
 ├── packages/
@@ -844,7 +844,7 @@ Our plugin is built to `apps/obsidian-plugin/dist/`. The Obsidian vault symlinks
 
 ```bash
 # Already done for this vault:
-ln -s /path/to/gateway/apps/obsidian-plugin/dist workspace/.obsidian/plugins/dorkos-copilot
+ln -s /path/to/dorkos/apps/obsidian-plugin/dist workspace/.obsidian/plugins/dorkos-copilot
 ```
 
 The Vite build outputs all three required files:

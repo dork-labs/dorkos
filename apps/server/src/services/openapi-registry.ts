@@ -383,6 +383,6 @@ export function generateOpenAPISpec() {
       version: '0.1.0',
       description: 'REST/SSE API for Claude Code sessions, built with the Claude Agent SDK.',
     },
-    servers: [{ url: 'http://localhost:6942' }],
+    servers: [{ url: `http://localhost:${process.env.DORKOS_PORT || 6942}` }],
   });
 }

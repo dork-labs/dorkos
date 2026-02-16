@@ -123,11 +123,19 @@ function matchesPattern(filePath, pattern) {
   return regex.test(filePath);
 }
 
+// Paths that are safe to access despite matching deny patterns
+const ALLOW_LIST = ['.env.example'];
+
 // Check if path matches any deny pattern
 function isDenied(filePath, denyPatterns) {
   if (!filePath) return false;
 
   const normalized = filePath.replace(/^\.\//, '');
+
+  // Allow-list takes priority over deny patterns
+  if (ALLOW_LIST.includes(normalized) || ALLOW_LIST.includes(basename(normalized))) {
+    return false;
+  }
 
   for (const pattern of denyPatterns) {
     if (matchesPattern(normalized, pattern)) return true;

@@ -10,9 +10,8 @@ Web-based interface and channel-agnostic REST/SSE API for Claude Code, powered b
 ## Quick Start
 
 ```bash
-cd gateway
 npm install
-npm run dev
+npx turbo dev
 ```
 
 This starts:
@@ -55,8 +54,8 @@ npm start            # Start production server
 ## Architecture
 
 ```
-gateway/
-├── src/
+dorkos/
+├── apps/
 │   ├── server/           # Express API server
 │   │   ├── index.ts      # Server entry point
 │   │   ├── routes/       # API route handlers
@@ -79,7 +78,7 @@ gateway/
 
 | Variable       | Default       | Description                 |
 | -------------- | ------------- | --------------------------- |
-| `GATEWAY_PORT` | `6942`        | Port for the Express server |
+| `DORKOS_PORT` | `6942`        | Port for the Express server |
 | `NODE_ENV`     | `development` | Environment mode            |
 
 ## Key Technologies

@@ -1,4 +1,4 @@
-# Gateway Architecture
+# DorkOS Architecture
 
 ## Overview
 

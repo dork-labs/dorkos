@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 DorkOS is a web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK. It provides a chat UI for interacting with Claude Code sessions, with tool approval flows and slash command discovery.
 
-The Agent SDK is fully integrated via `agent-manager.ts`, which calls the SDK's `query()` function and maps streaming events to the gateway's `StreamEvent` types. SDK JSONL transcript files are the single source of truth for all session data.
+The Agent SDK is fully integrated via `agent-manager.ts`, which calls the SDK's `query()` function and maps streaming events to the DorkOS `StreamEvent` types. SDK JSONL transcript files are the single source of truth for all session data.
 
 ## Monorepo Structure
 
@@ -54,11 +54,11 @@ Run a single test file: `npx vitest run apps/server/src/services/__tests__/trans
 
 ## Architecture
 
-The gateway uses a **hexagonal architecture** with a `Transport` interface (`packages/shared/src/transport.ts`) that decouples the React client from its backend. Two adapters exist: `HttpTransport` (standalone web, HTTP/SSE to Express) and `DirectTransport` (Obsidian plugin, in-process services). Transport is injected via React Context (`TransportContext`). See `guides/architecture.md` for full details.
+DorkOS uses a **hexagonal architecture** with a `Transport` interface (`packages/shared/src/transport.ts`) that decouples the React client from its backend. Two adapters exist: `HttpTransport` (standalone web, HTTP/SSE to Express) and `DirectTransport` (Obsidian plugin, in-process services). Transport is injected via React Context (`TransportContext`). See `guides/architecture.md` for full details.
 
 ### Server (`apps/server/src/`)
 
-Express server on port `GATEWAY_PORT` (default 6942). Seven route groups:
+Express server on port `DORKOS_PORT` (default 6942). Seven route groups:
 
 - **`routes/sessions.ts`** - Session listing (from SDK transcripts), session creation, SSE message streaming, message history, tool approve/deny endpoints
 - **`routes/commands.ts`** - Slash command listing via `CommandRegistryService`, which scans `.claude/commands/` using gray-matter frontmatter parsing
@@ -70,7 +70,7 @@ Express server on port `GATEWAY_PORT` (default 6942). Seven route groups:
 
 Nine services:
 
-- **`services/agent-manager.ts`** - Manages Claude Agent SDK sessions. Calls `query()` with streaming, maps SDK events (`stream_event`, `tool_use_summary`, `result`) to gateway `StreamEvent` types. Tracks active sessions in-memory with 30-minute timeout. All sessions use `resume: sessionId` for SDK continuity. Accepts optional `cwd` constructor param (used by Obsidian plugin). Resolves the Claude Code CLI path dynamically via `resolveClaudeCliPath()` for Electron compatibility.
+- **`services/agent-manager.ts`** - Manages Claude Agent SDK sessions. Calls `query()` with streaming, maps SDK events (`stream_event`, `tool_use_summary`, `result`) to DorkOS `StreamEvent` types. Tracks active sessions in-memory with 30-minute timeout. All sessions use `resume: sessionId` for SDK continuity. Accepts optional `cwd` constructor param (used by Obsidian plugin). Resolves the Claude Code CLI path dynamically via `resolveClaudeCliPath()` for Electron compatibility.
 - **`services/transcript-reader.ts`** - Single source of truth for session data. Reads SDK JSONL transcript files from `~/.claude/projects/{slug}/`. Provides `listSessions()` (scans directory, extracts metadata), `getSession()` (single session metadata), and `readTranscript()` (full message history). Extracts titles from first user message, permission mode from init message, timestamps from file stats.
 - **`services/session-broadcaster.ts`** - Manages cross-client session synchronization. Watches JSONL transcript files via chokidar for changes (including CLI writes). Maintains SSE connections with passive clients via `registerClient()`. Broadcasts `sync_update` events when files change. Debounces rapid writes (100ms). Uses incremental byte-offset reading via `transcriptReader.readFromOffset()`. Graceful shutdown closes all watchers and connections.
 - **`services/stream-adapter.ts`** - SSE helpers (`initSSEStream`, `sendSSEEvent`, `endSSEStream`) that format `StreamEvent` objects as SSE wire protocol.
@@ -84,7 +84,7 @@ Nine services:
 
 Sessions are derived entirely from SDK JSONL files on disk (`~/.claude/projects/{slug}/*.jsonl`). There is no separate session store - the `TranscriptReader` scans these files to build the session list. This means:
 
-- All sessions are visible (CLI-started, gateway-started, etc.)
+- All sessions are visible (CLI-started, DorkOS-started, etc.)
 - Session ID = SDK session ID (UUID from JSONL filename)
 - No delete endpoint (sessions persist in SDK storage)
 - Session metadata (title, preview, timestamps) is extracted from file content and stats on every request
@@ -159,7 +159,7 @@ POST /messages uses session locking to prevent concurrent writes. Clients send a
 
 ### Session History
 
-When a session is opened, the client fetches message history via GET `/api/sessions/:id/messages`. The server reads the SDK's JSONL transcript file at `~/.claude/projects/{slug}/{sessionId}.jsonl`, parsing user and assistant messages. This works for sessions started from any client (CLI, gateway, etc.) since all use the same SDK storage.
+When a session is opened, the client fetches message history via GET `/api/sessions/:id/messages`. The server reads the SDK's JSONL transcript file at `~/.claude/projects/{slug}/{sessionId}.jsonl`, parsing user and assistant messages. This works for sessions started from any client (CLI, DorkOS, etc.) since all use the same SDK storage.
 
 ### Vault Root Resolution
 
@@ -175,7 +175,7 @@ The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plug
 
 ### CLI Package (`packages/cli`)
 
-The `dorkos` npm package bundles the server + client into a standalone CLI tool. Published to npm as `dorkos` (unscoped). Install via `npm install -g dorkos`, run via `dorkos`. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The version is injected at build time via esbuild's `define` config (reads from `packages/cli/package.json`). The CLI creates `~/.dork/` on startup for config storage and sets `DORK_HOME` env var. It also sets `GATEWAY_PORT`, `CLIENT_DIST_PATH`, `GATEWAY_CWD`, `TUNNEL_ENABLED`, and `NODE_ENV` before dynamically importing the bundled server.
+The `dorkos` npm package bundles the server + client into a standalone CLI tool. Published to npm as `dorkos` (unscoped). Install via `npm install -g dorkos`, run via `dorkos`. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The version is injected at build time via esbuild's `define` config (reads from `packages/cli/package.json`). The CLI creates `~/.dork/` on startup for config storage and sets `DORK_HOME` env var. It also sets `DORKOS_PORT`, `CLIENT_DIST_PATH`, `DORKOS_DEFAULT_CWD`, `TUNNEL_ENABLED`, and `NODE_ENV` before dynamically importing the bundled server.
 
 ## Guides
 

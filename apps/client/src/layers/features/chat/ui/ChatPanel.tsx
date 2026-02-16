@@ -181,7 +181,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [showHint, setShowHint] = useState(() => {
     if (!isMobile) return false;
-    const count = parseInt(localStorage.getItem('gateway-gesture-hint-count') || '0', 10);
+    const count = parseInt(localStorage.getItem('dorkos-gesture-hint-count') || '0', 10);
     return count < 3;
   });
 
@@ -189,16 +189,16 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     if (!showHint) return;
     const timer = setTimeout(() => {
       setShowHint(false);
-      const count = parseInt(localStorage.getItem('gateway-gesture-hint-count') || '0', 10);
-      localStorage.setItem('gateway-gesture-hint-count', String(count + 1));
+      const count = parseInt(localStorage.getItem('dorkos-gesture-hint-count') || '0', 10);
+      localStorage.setItem('dorkos-gesture-hint-count', String(count + 1));
     }, 4000);
     return () => clearTimeout(timer);
   }, [showHint]);
 
   const dismissHint = useCallback(() => {
     setShowHint(false);
-    const count = parseInt(localStorage.getItem('gateway-gesture-hint-count') || '0', 10);
-    localStorage.setItem('gateway-gesture-hint-count', String(count + 1));
+    const count = parseInt(localStorage.getItem('dorkos-gesture-hint-count') || '0', 10);
+    localStorage.setItem('dorkos-gesture-hint-count', String(count + 1));
   }, []);
 
   const SWIPE_THRESHOLD = 80;

@@ -18,7 +18,7 @@ function getInitialView(recentCwds: RecentCwd[], selectedCwd: string | null): Pi
   if (recentCwds.length === 0) return 'browse';
   if (recentCwds.length === 1 && recentCwds[0].path === selectedCwd) return 'browse';
   try {
-    const raw = localStorage.getItem('gateway-picker-view');
+    const raw = localStorage.getItem('dorkos-picker-view');
     if (raw) {
       const pref = JSON.parse(raw) as { view: PickerView; timestamp: string };
       const age = Date.now() - new Date(pref.timestamp).getTime();
@@ -62,7 +62,7 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
     setView(v);
     try {
       localStorage.setItem(
-        'gateway-picker-view',
+        'dorkos-picker-view',
         JSON.stringify({ view: v, timestamp: new Date().toISOString() })
       );
     } catch {}

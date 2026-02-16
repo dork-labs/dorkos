@@ -2,7 +2,7 @@
 
 ## Overview
 
-Interactive tools are tools that pause the Claude Agent SDK mid-execution to collect input from the user through the gateway UI, then resume the SDK with the user's response. They bridge the gap between the SDK's synchronous `canUseTool` callback and the asynchronous nature of a web-based UI where users need time to read, decide, and respond.
+Interactive tools are tools that pause the Claude Agent SDK mid-execution to collect input from the user through the DorkOS UI, then resume the SDK with the user's response. They bridge the gap between the SDK's synchronous `canUseTool` callback and the asynchronous nature of a web-based UI where users need time to read, decide, and respond.
 
 Two interactive tools exist today:
 

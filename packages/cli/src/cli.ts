@@ -61,14 +61,14 @@ fs.mkdirSync(DORK_HOME, { recursive: true });
 process.env.DORK_HOME = DORK_HOME;
 
 // Set environment variables the server reads
-process.env.GATEWAY_PORT = values.port;
+process.env.DORKOS_PORT = values.port;
 process.env.NODE_ENV = 'production';
 process.env.CLIENT_DIST_PATH = path.join(__dirname, '../client');
 
 if (values.tunnel) process.env.TUNNEL_ENABLED = 'true';
 
 const resolvedDir = path.resolve(values.dir!);
-process.env.GATEWAY_CWD = resolvedDir;
+process.env.DORKOS_DEFAULT_CWD = resolvedDir;
 
 // Load .env from user's cwd (project-local, optional)
 const envPath = path.join(resolvedDir, '.env');

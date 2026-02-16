@@ -96,7 +96,7 @@ export function mapSdkAnswersToIndices(
       answers[String(qIdx)] = answerText;
     }
   }
-  // If SDK answer keys are already indices (our gateway format), use directly
+  // If SDK answer keys are already indices (our DorkOS format), use directly
   if (Object.keys(answers).length === 0) {
     for (const [key, value] of Object.entries(sdkAnswers)) {
       if (/^\d+$/.test(key)) {

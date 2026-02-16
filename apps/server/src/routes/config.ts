@@ -16,7 +16,7 @@ router.get('/', (_req, res) => {
 
   res.json({
     version: '1.0.0',
-    port: parseInt(process.env.GATEWAY_PORT || '6942', 10),
+    port: parseInt(process.env.DORKOS_PORT || '6942', 10),
     uptime: process.uptime(),
     workingDirectory: process.cwd(),
     nodeVersion: process.version,

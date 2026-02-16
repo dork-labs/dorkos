@@ -69,7 +69,7 @@ interface AgentSession {
 /**
  * Manages Claude Agent SDK sessions — creation, resumption, streaming, tool approval,
  * and session locking. Calls the SDK's `query()` function and maps streaming events
- * to gateway `StreamEvent` types. Tracks active sessions in-memory with 30-minute timeout.
+ * to DorkOS `StreamEvent` types. Tracks active sessions in-memory with 30-minute timeout.
  */
 export class AgentManager {
   private sessions = new Map<string, AgentSession>();
@@ -79,7 +79,7 @@ export class AgentManager {
   private readonly claudeCliPath: string | undefined;
 
   constructor(cwd?: string) {
-    this.cwd = cwd ?? process.env.GATEWAY_CWD ?? path.resolve(__dirname, '../../../../');
+    this.cwd = cwd ?? process.env.DORKOS_DEFAULT_CWD ?? path.resolve(__dirname, '../../../../');
     this.claudeCliPath = resolveClaudeCliPath();
   }
 

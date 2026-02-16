@@ -94,7 +94,7 @@ describe('AppStore', () => {
   it('persists autoHideToolCalls to localStorage', async () => {
     const { useAppStore } = await import('../app-store');
     useAppStore.getState().setAutoHideToolCalls(false);
-    expect(localStorage.getItem('gateway-auto-hide-tool-calls')).toBe('false');
+    expect(localStorage.getItem('dorkos-auto-hide-tool-calls')).toBe('false');
   });
 
   it('resets autoHideToolCalls to true on resetPreferences', async () => {

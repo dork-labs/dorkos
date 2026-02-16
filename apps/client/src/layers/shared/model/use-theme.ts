@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 export type Theme = 'light' | 'dark' | 'system';
 
-const STORAGE_KEY = 'gateway-theme';
+const STORAGE_KEY = 'dorkos-theme';
 const DARK_MQ = '(prefers-color-scheme: dark)';
 
 function getStored(): Theme {
