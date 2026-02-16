@@ -44,4 +44,6 @@ export type {
   GitStatusResponse,
   GitStatusError,
   SessionLockedError,
+  ConfigPatchRequest,
+  ConfigPatchResponse,
 } from './schemas.js';

@@ -42,6 +42,8 @@ async function buildCLI() {
       'gray-matter',
       'uuid',
       'zod',
+      'conf',
+      '@inquirer/prompts',
     ],
     sourcemap: true,
     banner: {
@@ -58,7 +60,7 @@ async function buildCLI() {
     target: 'node18',
     format: 'esm',
     outfile: path.join(OUT, 'bin/cli.js'),
-    external: ['dotenv', '../server/index.js'],
+    external: ['dotenv', '../server/index.js', 'conf', '@inquirer/prompts'],
     define: { __CLI_VERSION__: JSON.stringify(version) },
     banner: { js: '#!/usr/bin/env node' },
   });

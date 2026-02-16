@@ -64,11 +64,11 @@ Express server on port `DORKOS_PORT` (default 4242). Seven route groups:
 - **`routes/commands.ts`** - Slash command listing via `CommandRegistryService`, which scans `.claude/commands/` using gray-matter frontmatter parsing
 - **`routes/health.ts`** - Health check; includes optional `tunnel` status field when ngrok is enabled
 - **`routes/directory.ts`** - Directory browsing for working directory selection
-- **`routes/config.ts`** - Configuration management endpoints
+- **`routes/config.ts`** - Configuration management endpoints (GET for server config, PATCH for user config updates with Zod validation)
 - **`routes/files.ts`** - File operations (read/list files)
 - **`routes/git.ts`** - Git status and branch information
 
-Nine services:
+Ten services:
 
 - **`services/agent-manager.ts`** - Manages Claude Agent SDK sessions. Calls `query()` with streaming, maps SDK events (`stream_event`, `tool_use_summary`, `result`) to DorkOS `StreamEvent` types. Tracks active sessions in-memory with 30-minute timeout. All sessions use `resume: sessionId` for SDK continuity. Accepts optional `cwd` constructor param (used by Obsidian plugin). Resolves the Claude Code CLI path dynamically via `resolveClaudeCliPath()` for Electron compatibility.
 - **`services/transcript-reader.ts`** - Single source of truth for session data. Reads SDK JSONL transcript files from `~/.claude/projects/{slug}/`. Provides `listSessions()` (scans directory, extracts metadata), `getSession()` (single session metadata), and `readTranscript()` (full message history). Extracts titles from first user message, permission mode from init message, timestamps from file stats.
@@ -79,6 +79,7 @@ Nine services:
 - **`services/file-lister.ts`** - Lists files in a directory for the client file browser.
 - **`services/git-status.ts`** - Provides git status information (branch, changed files).
 - **`services/tunnel-manager.ts`** - Opt-in ngrok tunnel lifecycle. Singleton that wraps `@ngrok/ngrok` SDK with dynamic import (zero cost when disabled). Configured via env vars: `TUNNEL_ENABLED`, `NGROK_AUTHTOKEN`, `TUNNEL_PORT`, `TUNNEL_AUTH`, `TUNNEL_DOMAIN`. Started after Express binds in `index.ts`; tunnel failure is non-blocking. Exposes `status` getter consumed by `health.ts`. Graceful shutdown via SIGINT/SIGTERM.
+- **`services/config-manager.ts`** - Manages persistent user config at `~/.dork/config.json`. Uses `conf` for atomic JSON I/O with Ajv validation. Singleton initialized via `initConfigManager()` at server startup and in CLI subcommands. Handles first-run detection, corrupt config recovery (backup + recreate), and sensitive field warnings.
 
 ### Session Architecture
 
@@ -121,7 +122,7 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gra
 
 ### Shared (`packages/shared/src/`)
 
-`schemas.ts` defines Zod schemas for all types with OpenAPI metadata. Each schema exports an inferred TypeScript type (e.g., `export type Session = z.infer<typeof SessionSchema>`). `types.ts` re-exports all types from `schemas.ts`, so existing `import { Session } from '@dorkos/shared/types'` imports work unchanged.
+`schemas.ts` defines Zod schemas for all types with OpenAPI metadata. Each schema exports an inferred TypeScript type (e.g., `export type Session = z.infer<typeof SessionSchema>`). `types.ts` re-exports all types from `schemas.ts`, so existing `import { Session } from '@dorkos/shared/types'` imports work unchanged. `config-schema.ts` defines `UserConfigSchema` (Zod) for the persistent config file, exporting the `UserConfig` type, defaults, and sensitive key list. Imported as `@dorkos/shared/config-schema`.
 
 **API docs** are available at `/api/docs` (Scalar UI) and `/api/openapi.json` (raw spec). The OpenAPI spec is auto-generated from the Zod schemas in `apps/server/src/services/openapi-registry.ts`.
 
@@ -177,6 +178,8 @@ The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plug
 
 The `dorkos` npm package bundles the server + client into a standalone CLI tool. Published to npm as `dorkos` (unscoped). Install via `npm install -g dorkos`, run via `dorkos`. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The version is injected at build time via esbuild's `define` config (reads from `packages/cli/package.json`). The CLI creates `~/.dork/` on startup for config storage and sets `DORK_HOME` env var. It also sets `DORKOS_PORT`, `CLIENT_DIST_PATH`, `DORKOS_DEFAULT_CWD`, `TUNNEL_ENABLED`, and `NODE_ENV` before dynamically importing the bundled server.
 
+CLI subcommands: `dorkos config` (manage config), `dorkos init` (interactive setup wizard). Config precedence: CLI flags > environment variables > `~/.dork/config.json` > built-in defaults.
+
 ## Guides
 
 Detailed documentation lives in `guides/`:
@@ -187,6 +190,7 @@ Detailed documentation lives in `guides/`:
 | [`guides/design-system.md`](guides/design-system.md)                                     | Color palette, typography, spacing (8pt grid), motion specs, component conventions                                                                                  |
 | [`guides/obsidian-plugin-development.md`](guides/obsidian-plugin-development.md)         | Plugin lifecycle, ItemView pattern, React mounting, active file tracking, drag-and-drop, Vite build config, Electron quirks, debugging, common issues               |
 | [`guides/api-reference.md`](guides/api-reference.md)                                     | OpenAPI spec, Scalar docs UI, Zod schema patterns, adding endpoints, SSE streaming, validation errors                                                               |
+| [`guides/configuration.md`](guides/configuration.md)                                     | Config file system, settings reference, CLI commands, precedence rules, REST API, error recovery                                                                    |
 | [`guides/interactive-tools.md`](guides/interactive-tools.md)                             | Tool approval, AskUserQuestion, TaskList interactive flows                                                                                                          |
 | [`guides/keyboard-shortcuts.md`](guides/keyboard-shortcuts.md)                           | Keyboard shortcuts and hotkeys                                                                                                                                      |
 | [`guides/05-data-fetching.md`](guides/05-data-fetching.md)                               | TanStack Query patterns, mutations                                                                                                                                  |

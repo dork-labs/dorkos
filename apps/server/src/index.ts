@@ -3,6 +3,7 @@ import { agentManager } from './services/agent-manager.js';
 import { tunnelManager } from './services/tunnel-manager.js';
 import { SessionBroadcaster } from './services/session-broadcaster.js';
 import { transcriptReader } from './services/transcript-reader.js';
+import { initConfigManager } from './services/config-manager.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { INTERVALS } from './config/constants.js';
 
@@ -12,6 +13,7 @@ const PORT = parseInt(process.env.DORKOS_PORT || String(DEFAULT_PORT), 10);
 let sessionBroadcaster: SessionBroadcaster | null = null;
 
 async function start() {
+  initConfigManager();
   const app = createApp();
 
   // Initialize SessionBroadcaster and attach to app.locals

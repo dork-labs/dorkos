@@ -19,10 +19,15 @@
     "./constants": {
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
+    },
+    "./config-schema": {
+      "types": "./src/config-schema.ts",
+      "default": "./dist/config-schema.js"
     }
   },
   "scripts": {
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {

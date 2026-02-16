@@ -196,6 +196,65 @@ All four plugins run in this order during `vite build` in `apps/obsidian-plugin/
 3. `fixDirnamePolyfill()` -- replaces `import.meta.url` polyfills after write
 4. `patchElectronCompat()` -- prepends spawn/setMaxListeners patches after write
 
+## Configuration System
+
+DorkOS uses a persistent JSON config file at `~/.dork/config.json` for user preferences. The config system spans three layers: schema, service, and CLI.
+
+### Config File
+
+Location: `~/.dork/config.json` (created automatically on first run). Format:
+
+```json
+{
+  "version": 1,
+  "server": { "port": 4242, "cwd": null },
+  "tunnel": { "enabled": false, "domain": null, "authtoken": null, "auth": null },
+  "ui": { "theme": "system" }
+}
+```
+
+### Schema (`packages/shared/src/config-schema.ts`)
+
+`UserConfigSchema` (Zod) defines all config fields with defaults and constraints. Exports:
+
+- `UserConfig` type (inferred from schema)
+- `USER_CONFIG_DEFAULTS` (parsed defaults for `conf` constructor)
+- `SENSITIVE_CONFIG_KEYS` (fields that trigger warnings: `tunnel.authtoken`, `tunnel.auth`)
+
+### ConfigManager Service (`apps/server/src/services/config-manager.ts`)
+
+Singleton service wrapping the `conf` library for atomic JSON I/O. Key behaviors:
+
+- **Initialization**: `initConfigManager(dorkHome?)` creates the singleton. Called at server startup and in CLI subcommands.
+- **Validation**: Uses Ajv (via `conf`) for write-time validation and Zod for explicit `validate()` calls.
+- **Corrupt config recovery**: If `conf` constructor throws, backs up the corrupt file to `config.json.bak` and recreates with defaults.
+- **First-run detection**: `isFirstRun` flag based on whether config file existed before construction.
+- **Sensitive field warnings**: `setDot()` returns `{ warning }` for keys in `SENSITIVE_CONFIG_KEYS`.
+
+### Precedence Chain
+
+When the CLI starts the server, config values are resolved in this order (highest priority first):
+
+```
+CLI flags (--port, --tunnel, --dir)
+  > Environment variables (DORKOS_PORT, TUNNEL_ENABLED, etc.)
+    > Config file (~/.dork/config.json)
+      > Built-in defaults (from UserConfigSchema)
+```
+
+The CLI reads from `ConfigManager` and sets environment variables before importing the server, so the server always reads from `process.env`.
+
+### REST API Integration
+
+`PATCH /api/config` accepts partial config objects, deep-merges with current config, validates via `UserConfigSchema.safeParse()`, and persists via `ConfigManager`. Returns warnings for sensitive fields.
+
+### CLI Subcommands
+
+- `dorkos config` / `config list` / `config get <key>` / `config set <key> <value>` / `config reset [key]` / `config edit` / `config path` / `config validate`
+- `dorkos init` -- Interactive setup wizard (uses `@inquirer/prompts`). Supports `--yes` for non-interactive defaults.
+
+Both subcommands initialize `ConfigManager` independently and exit before starting the server.
+
 ## Build Configuration
 
 ### Standalone Web (`apps/client/vite.config.ts`)

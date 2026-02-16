@@ -522,3 +522,51 @@ export const SessionLockedErrorSchema = z
   .openapi('SessionLockedError');
 
 export type SessionLockedError = z.infer<typeof SessionLockedErrorSchema>;
+
+// === Config PATCH Schemas ===
+
+export const ConfigPatchRequestSchema = z
+  .object({
+    server: z
+      .object({
+        port: z.number().int().min(1024).max(65535).optional(),
+        cwd: z.string().nullable().optional(),
+      })
+      .optional(),
+    tunnel: z
+      .object({
+        enabled: z.boolean().optional(),
+        domain: z.string().nullable().optional(),
+        authtoken: z.string().nullable().optional(),
+        auth: z.string().nullable().optional(),
+      })
+      .optional(),
+    ui: z
+      .object({
+        theme: z.enum(['light', 'dark', 'system']).optional(),
+      })
+      .optional(),
+  })
+  .openapi('ConfigPatchRequest');
+
+export type ConfigPatchRequest = z.infer<typeof ConfigPatchRequestSchema>;
+
+export const ConfigPatchResponseSchema = z
+  .object({
+    success: z.boolean(),
+    config: z.object({
+      version: z.literal(1),
+      server: z.object({ port: z.number(), cwd: z.string().nullable() }),
+      tunnel: z.object({
+        enabled: z.boolean(),
+        domain: z.string().nullable(),
+        authtoken: z.string().nullable(),
+        auth: z.string().nullable(),
+      }),
+      ui: z.object({ theme: z.enum(['light', 'dark', 'system']) }),
+    }),
+    warnings: z.array(z.string()).optional(),
+  })
+  .openapi('ConfigPatchResponse');
+
+export type ConfigPatchResponse = z.infer<typeof ConfigPatchResponseSchema>;

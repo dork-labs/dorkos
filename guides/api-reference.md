@@ -95,6 +95,63 @@ Fetch message history for a session.
 - `304` - Not Modified (when `If-None-Match` matches current `ETag`)
 - `404` - Session not found
 
+### GET /api/config
+
+Returns server runtime information (version, port, uptime, working directory, tunnel status, Claude CLI path).
+
+**Responses:**
+
+- `200` - Server config JSON
+
+### PATCH /api/config
+
+Update user configuration. Accepts a partial config object that is deep-merged with the current `~/.dork/config.json`. The merged result is validated against `UserConfigSchema` before persisting.
+
+**Request body:** Partial JSON object matching the `UserConfig` shape. Only include fields you want to change.
+
+```json
+{
+  "server": { "port": 8080 },
+  "ui": { "theme": "dark" }
+}
+```
+
+**Responses:**
+
+- `200` - Success. Returns the full updated config and optional warnings for sensitive fields:
+
+```json
+{
+  "success": true,
+  "config": {
+    "version": 1,
+    "server": { "port": 8080, "cwd": null },
+    "tunnel": { "enabled": false, "domain": null, "authtoken": null, "auth": null },
+    "ui": { "theme": "dark" }
+  },
+  "warnings": ["'tunnel.authtoken' contains sensitive data. Consider using environment variables instead."]
+}
+```
+
+The `warnings` field is only present when the patch includes keys listed in `SENSITIVE_CONFIG_KEYS`.
+
+- `400` - Validation failed. Returned when the merged config does not pass Zod validation:
+
+```json
+{
+  "error": "Validation failed",
+  "details": ["server.port: Expected number, received string"]
+}
+```
+
+- `400` - Non-object body:
+
+```json
+{
+  "error": "Request body must be a JSON object"
+}
+```
+
 ## Validation Errors
 
 Invalid requests return HTTP 400 with a structured error body:
