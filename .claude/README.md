@@ -40,7 +40,7 @@ Slash commands are triggered explicitly by typing `/command`. They're expanded p
 | `spec/`      | create, decompose, execute, feedback, doc-update, migrate, tasks-sync     | Specification workflow (uses built-in task tools with `[slug] [P#]` subject convention) |
 | `git/`       | commit, push                                                              | Version control with validation                                                         |
 | `debug/`     | browser, types, test, api, data, logs, rubber-duck, performance           | Systematic debugging                                                                    |
-| `docs/`      | reconcile                                                                 | Documentation drift detection                                                           |
+| `docs/`      | reconcile, status                                                         | Documentation drift detection, health dashboard                                         |
 | `roadmap/`   | show, add, open, validate, analyze, prioritize, enrich, next, work, clear | Product roadmap management                                                              |
 | `adr/`       | create, list, from-spec                                                   | Architecture Decision Records                                                           |
 | `system/`    | ask, update, review, learn, release                                       | Harness maintenance                                                                     |
@@ -162,9 +162,10 @@ Skills often reference these guides for detailed patterns while keeping SKILL.md
 
 **Keeping guides up to date:**
 
-- `/docs:reconcile` — Check for documentation drift against recent commits
+- `/docs:status` — Health dashboard showing guide freshness, TODO stubs, overall score
+- `/docs:reconcile` — Check for documentation drift against recent commits (covers both contributing/ guides and docs/ MDX)
 - `/spec:execute` — Suggests doc review when implementation touches guide areas
-- `check-docs-changed` hook — Session-end reminder for affected guides
+- `check-docs-changed` hook — Session-end reminder for affected guides and external docs; blocks if INDEX.md is missing
 
 ## Architecture
 

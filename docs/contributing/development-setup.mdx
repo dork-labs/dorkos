@@ -5,10 +5,82 @@ description: Set up a local development environment for DorkOS
 
 # Development Setup
 
-{/* TODO: Write full content */}
+Get DorkOS running locally for development.
 
-- Prerequisites (Node.js 20+, npm 10+, Claude API key)
-- Cloning and installing dependencies
-- Running development servers
-- Running tests
-- Useful development commands
+## Prerequisites
+
+- **Node.js 20+**
+- **npm 10+**
+- **A Claude API key** from [console.anthropic.com](https://console.anthropic.com/)
+
+## Installation
+
+```bash
+git clone https://github.com/dork-labs/dorkos.git
+cd dorkos
+npm install
+```
+
+## Environment Setup
+
+Copy the example environment file and add your API key:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set `ANTHROPIC_API_KEY=your-key-here`.
+
+## Running Development Servers
+
+```bash
+npm run dev
+```
+
+This starts both the Express server (port 4242) and the Vite dev server (port 3000). Open http://localhost:3000 in your browser.
+
+### Running Individual Apps
+
+```bash
+# Server only
+dotenv -- turbo dev --filter=@dorkos/server
+
+# Client only
+dotenv -- turbo dev --filter=@dorkos/client
+```
+
+**Important**: Use `npm run` scripts or prefix with `dotenv --` to ensure `.env` is loaded.
+
+## Common Commands
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start all dev servers |
+| `npm test` | Run all tests (Vitest) |
+| `npm test -- --run` | Single test run (no watch) |
+| `npm run build` | Build all packages |
+| `npm run typecheck` | Type-check all packages |
+| `npm run lint` | ESLint across all packages |
+| `npm run lint -- --fix` | Auto-fix ESLint issues |
+| `npm run format` | Prettier format all files |
+
+## Running Specific Tests
+
+```bash
+npx vitest run apps/server/src/services/__tests__/transcript-reader.test.ts
+```
+
+## Monorepo Structure
+
+DorkOS is a Turborepo monorepo with four apps and four shared packages:
+
+| Directory | Package | Description |
+|---|---|---|
+| `apps/client` | `@dorkos/client` | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui) |
+| `apps/server` | `@dorkos/server` | Express API server |
+| `apps/web` | `@dorkos/web` | Marketing site & docs (Next.js 16, Fumadocs) |
+| `apps/obsidian-plugin` | `@dorkos/obsidian-plugin` | Obsidian sidebar plugin |
+| `packages/cli` | `dorkos` | Publishable npm CLI |
+| `packages/shared` | `@dorkos/shared` | Zod schemas, shared types |
+| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets |
+| `packages/test-utils` | `@dorkos/test-utils` | Mock factories, test helpers |

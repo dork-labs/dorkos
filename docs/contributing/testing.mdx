@@ -5,10 +5,86 @@ description: Testing patterns and conventions for DorkOS
 
 # Testing
 
-{/* TODO: Write full content */}
+DorkOS uses Vitest for all testing, with React Testing Library for component tests.
 
-- Vitest configuration and workspace setup
-- Writing component tests with mock Transport
-- Writing service tests with mocked fs/promises
-- Test file structure and naming conventions
-- Running and debugging tests
+## Running Tests
+
+```bash
+npm test                                    # Run all tests (watch mode)
+npm test -- --run                           # Single run (no watch)
+npx vitest run path/to/test.ts              # Run a specific test file
+```
+
+## Test File Structure
+
+Tests live alongside source code in `__tests__/` directories:
+
+```
+apps/server/src/services/__tests__/transcript-reader.test.ts
+apps/client/src/layers/features/chat/__tests__/ChatPanel.test.tsx
+```
+
+## Component Tests
+
+Component tests require the jsdom environment directive and a mock Transport:
+
+```typescript
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { TransportProvider } from '@/layers/shared/model';
+import { createMockTransport } from '@dorkos/test-utils';
+
+const mockTransport = createMockTransport();
+
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <TransportProvider transport={mockTransport}>
+      {children}
+    </TransportProvider>
+  );
+}
+
+describe('MyComponent', () => {
+  it('renders expected content', () => {
+    render(<MyComponent />, { wrapper: Wrapper });
+    expect(screen.getByText('Expected')).toBeInTheDocument();
+  });
+});
+```
+
+## Service Tests
+
+Server tests mock Node.js modules like `fs/promises`:
+
+```typescript
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('fs/promises');
+
+describe('TranscriptReader', () => {
+  it('returns session when found', async () => {
+    vi.mocked(readFile).mockResolvedValue(Buffer.from(mockJsonl));
+    const result = await transcriptReader.getSession('test-id');
+    expect(result).toEqual(expect.objectContaining({ id: 'test-id' }));
+  });
+});
+```
+
+## Key Conventions
+
+- **Component tests** need `@vitest-environment jsdom` directive
+- **Always provide** a mock Transport via `createMockTransport()` from `@dorkos/test-utils`
+- **Wrap components** in context providers (TransportProvider, QueryClientProvider)
+- **Use** `@testing-library/jest-dom` matchers for DOM assertions
+- **Mock browser APIs** (matchMedia, etc.) in `beforeAll` when needed
+
+## Test Utilities
+
+The `@dorkos/test-utils` package provides:
+
+- `createMockTransport()` — Creates a fully mocked Transport object
+- Mock factories for sessions, messages, and other domain objects

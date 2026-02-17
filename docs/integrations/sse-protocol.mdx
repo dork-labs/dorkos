@@ -5,10 +5,122 @@ description: Server-Sent Events streaming protocol reference
 
 # SSE Protocol
 
-{/* TODO: Write full content */}
+DorkOS uses Server-Sent Events (SSE) for two purposes: real-time message streaming and cross-client session synchronization.
 
-- SSE event types: text_delta, tool_call_start, tool_call_delta, tool_call_end, tool_result, approval_required, question_prompt, error, done
-- Message format and wire protocol
-- Session sync events (sync_connected, sync_update)
-- Connection lifecycle and reconnection
-- Client implementation guide
+## Message Streaming
+
+When a client sends a message, the server responds with an SSE stream:
+
+```
+POST /api/sessions/:id/messages
+Content-Type: application/json
+
+{ "content": "Hello, Claude", "cwd": "/path/to/project" }
+```
+
+Response (Content-Type: text/event-stream):
+
+```
+data: {"type":"text_delta","delta":"Hello"}
+
+data: {"type":"text_delta","delta":"! How can"}
+
+data: {"type":"text_delta","delta":" I help?"}
+
+data: {"type":"done"}
+```
+
+## Event Types
+
+### Text Events
+
+| Type | Fields | Description |
+|---|---|---|
+| `text_delta` | `delta` | Incremental text chunk for the assistant message |
+
+### Tool Events
+
+| Type | Fields | Description |
+|---|---|---|
+| `tool_call_start` | `toolCallId`, `toolName` | Tool invocation begins |
+| `tool_call_delta` | `toolCallId`, `delta` | Incremental tool input/output |
+| `tool_call_end` | `toolCallId` | Tool invocation completes |
+| `tool_result` | `toolCallId`, `result` | Tool execution result |
+
+### Interactive Events
+
+| Type | Fields | Description |
+|---|---|---|
+| `approval_required` | `toolCallId`, `toolName`, `input` | Tool needs user approval before executing |
+| `question_prompt` | `toolCallId`, `questions` | Claude is asking the user a question with options |
+
+### Control Events
+
+| Type | Fields | Description |
+|---|---|---|
+| `error` | `error` | Error occurred during execution |
+| `done` | - | Message stream complete |
+| `session_status` | `status` | Session state changed |
+| `task_update` | `tasks` | Task list updated |
+
+## Responding to Interactive Events
+
+### Tool Approval
+
+When `approval_required` is received, the client must approve or deny:
+
+```bash
+# Approve
+POST /api/sessions/:id/approve
+Content-Type: application/json
+{ "toolCallId": "tc_123" }
+
+# Deny
+POST /api/sessions/:id/deny
+Content-Type: application/json
+{ "toolCallId": "tc_123" }
+```
+
+### Question Response
+
+When `question_prompt` is received:
+
+```bash
+POST /api/sessions/:id/submit-answers
+Content-Type: application/json
+{ "toolCallId": "tc_123", "answers": { "0": "option_a" } }
+```
+
+## Session Sync Protocol
+
+Clients can subscribe to real-time session changes via a persistent SSE connection:
+
+```
+GET /api/sessions/:id/stream
+```
+
+### Sync Events
+
+| Event | Data | Description |
+|---|---|---|
+| `sync_connected` | `{ sessionId }` | Sent on initial connection |
+| `sync_update` | `{ sessionId, timestamp }` | New content written to session JSONL file |
+
+When a `sync_update` is received, clients should re-fetch message history. The `GET /api/sessions/:id/messages` endpoint supports ETag caching (`If-None-Match` / `304`) for efficient polling.
+
+## Session Locking
+
+The `POST /api/sessions/:id/messages` endpoint uses session locking to prevent concurrent writes:
+
+- Clients send an `X-Client-Id` header
+- If a session is locked by another client, the server returns `409` with `{ error: "Session locked", code: "SESSION_LOCKED", lockedBy, lockedAt }`
+- Locks auto-expire after 5 minutes
+- Locks are released when SSE connections close
+
+## Connection Lifecycle
+
+1. Client opens SSE connection via `POST /api/sessions/:id/messages`
+2. Server streams events as they arrive from the Claude Agent SDK
+3. Client processes each event and updates its UI
+4. On `done` event, the stream ends
+5. For ongoing sync, client opens `GET /api/sessions/:id/stream`

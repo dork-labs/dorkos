@@ -968,8 +968,8 @@ User input → ObsidianApp → useChatSession.handleSubmit()
 | `apps/obsidian-plugin/src/views/CopilotView.tsx`      | ItemView — creates services, mounts React          |
 | `apps/obsidian-plugin/src/components/ObsidianApp.tsx` | Plugin-specific App (auto-session, compact layout) |
 | `packages/shared/src/transport.ts`                    | Transport interface definition                     |
-| `apps/client/src/lib/direct-transport.ts`             | In-process transport wrapping services             |
-| `apps/client/src/contexts/TransportContext.tsx`       | React Context for DI                               |
+| `apps/client/src/layers/shared/lib/direct-transport.ts`     | In-process transport wrapping services             |
+| `apps/client/src/layers/shared/model/TransportContext.tsx`  | React Context for DI                               |
 | `apps/obsidian-plugin/vite.config.ts`                 | Plugin build config                                |
 
 ### Path Resolution

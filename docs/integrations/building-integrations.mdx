@@ -5,10 +5,125 @@ description: Create custom clients using the DorkOS Transport interface
 
 # Building Integrations
 
-{/* TODO: Write full content */}
+DorkOS uses a hexagonal (ports & adapters) architecture centered on the **Transport** interface. You can build custom clients by implementing this interface or by using the REST/SSE API directly.
 
-- The Transport interface abstraction
-- HttpTransport for REST/SSE communication
-- DirectTransport for in-process usage
-- Creating a custom Transport adapter
-- React context injection with TransportProvider
+## The Transport Interface
+
+The Transport interface (`packages/shared/src/transport.ts`) defines all client-server communication:
+
+```typescript
+interface Transport {
+  createSession(opts)        → Session
+  listSessions(cwd?)         → Session[]
+  getSession(id)             → Session
+  getMessages(sessionId)     → { messages: HistoryMessage[] }
+  sendMessage(id, content, onEvent, signal, cwd?) → void
+  approveTool(sessionId, toolCallId)  → { ok: boolean }
+  denyTool(sessionId, toolCallId)     → { ok: boolean }
+  getCommands(refresh?)      → CommandRegistry
+  health()                   → { status, version, uptime }
+}
+```
+
+## Built-in Implementations
+
+### HttpTransport (Standalone Web)
+
+Communicates with the Express server over HTTP and SSE:
+
+- Standard `fetch()` for CRUD operations
+- Server-Sent Events for streaming in `sendMessage()`
+- Parses SSE events into `StreamEvent` objects
+
+### DirectTransport (Obsidian Plugin)
+
+Calls service instances directly in the same process:
+
+- No HTTP, no port binding, no network serialization
+- Iterates `AsyncGenerator<StreamEvent>` from the Agent SDK
+- Lower latency, ideal for embedded contexts
+
+## Building a Custom Client
+
+### Option 1: REST/SSE API
+
+Use the REST API directly for any language or platform:
+
+```bash
+# List sessions
+GET /api/sessions
+
+# Create a session
+POST /api/sessions
+Content-Type: application/json
+{ "cwd": "/path/to/project" }
+
+# Send a message (returns SSE stream)
+POST /api/sessions/:id/messages
+Content-Type: application/json
+{ "content": "Hello", "cwd": "/path/to/project" }
+
+# Approve a tool call
+POST /api/sessions/:id/approve
+Content-Type: application/json
+{ "toolCallId": "tc_123" }
+```
+
+### Option 2: Custom Transport
+
+Implement the Transport interface for deeper integration:
+
+```typescript
+import type { Transport } from '@dorkos/shared/transport';
+
+class MyCustomTransport implements Transport {
+  async listSessions() {
+    // Your implementation
+  }
+
+  async sendMessage(sessionId, content, onEvent, signal, cwd) {
+    // Connect to your backend
+    // Call onEvent() for each StreamEvent
+  }
+
+  // ... implement remaining methods
+}
+```
+
+### Option 3: React Integration
+
+If building a React app, inject your Transport via context:
+
+```typescript
+import { TransportProvider } from '@dorkos/shared';
+
+const transport = new MyCustomTransport();
+
+function App() {
+  return (
+    <TransportProvider transport={transport}>
+      <YourApp />
+    </TransportProvider>
+  );
+}
+```
+
+## StreamEvent Types
+
+Events emitted during message streaming:
+
+| Event | Description |
+|---|---|
+| `text_delta` | Incremental text for assistant messages |
+| `tool_call_start` | Tool invocation begins |
+| `tool_call_delta` | Incremental tool input/output |
+| `tool_call_end` | Tool invocation completes |
+| `tool_result` | Tool execution result |
+| `approval_required` | Tool needs user approval |
+| `question_prompt` | Claude is asking the user a question |
+| `error` | Error occurred during execution |
+| `done` | Message stream complete |
+| `session_status` | Session state changed |
+| `task_update` | Task list updated |
+
+See the [SSE Protocol](/docs/integrations/sse-protocol) guide for wire format details.

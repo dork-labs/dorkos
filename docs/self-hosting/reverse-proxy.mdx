@@ -5,10 +5,88 @@ description: Configure nginx or Caddy as a reverse proxy for DorkOS
 
 # Reverse Proxy
 
-{/* TODO: Write full content */}
+DorkOS uses Server-Sent Events (SSE) for real-time streaming. Reverse proxy configuration must account for SSE's long-lived connections and disable response buffering.
 
-- nginx configuration example
-- Caddy configuration example
-- SSE proxy considerations (buffering, timeouts)
-- HTTPS/TLS setup
-- WebSocket-like keep-alive for long-running connections
+## Caddy (Recommended)
+
+Caddy automatically handles HTTPS certificates and has good SSE support out of the box.
+
+```
+dorkos.example.com {
+    reverse_proxy localhost:4242 {
+        flush_interval -1
+    }
+}
+```
+
+The `flush_interval -1` setting disables response buffering, which is required for SSE streams to work correctly.
+
+## nginx
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name dorkos.example.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://localhost:4242;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE support: disable buffering and set long timeouts
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+
+        # Required for SSE
+        proxy_set_header Connection '';
+        chunked_transfer_encoding off;
+    }
+}
+```
+
+### Key SSE Settings
+
+| Setting | Value | Why |
+|---|---|---|
+| `proxy_buffering off` | Disables response buffering | SSE events must be sent immediately |
+| `proxy_cache off` | Disables caching | SSE streams should never be cached |
+| `proxy_read_timeout 86400s` | 24-hour timeout | SSE connections are long-lived |
+| `Connection ''` | Empty connection header | Prevents premature connection close |
+| `chunked_transfer_encoding off` | Disables chunked encoding | SSE uses its own framing |
+
+## Common Issues
+
+### SSE events arrive in batches instead of real-time
+
+**Cause**: Response buffering is enabled in the reverse proxy.
+**Fix**: Ensure `proxy_buffering off` (nginx) or `flush_interval -1` (Caddy).
+
+### Connection drops after 60 seconds
+
+**Cause**: Default proxy timeout is too short for SSE.
+**Fix**: Increase `proxy_read_timeout` to at least 3600s (1 hour).
+
+### 502 Bad Gateway on long requests
+
+**Cause**: The upstream timeout is shorter than the Claude response time.
+**Fix**: Increase both `proxy_read_timeout` and `proxy_send_timeout`.
+
+## HTTPS with Let's Encrypt
+
+### Caddy (automatic)
+
+Caddy handles Let's Encrypt automatically. Just point your domain and Caddy will obtain and renew certificates.
+
+### nginx + certbot
+
+```bash
+sudo certbot --nginx -d dorkos.example.com
+```

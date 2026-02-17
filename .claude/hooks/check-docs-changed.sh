@@ -14,9 +14,11 @@ NC='\033[0m' # No Color
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
 INDEX_FILE="$PROJECT_ROOT/contributing/INDEX.md"
 
-# Check if INDEX.md exists
+# Check if INDEX.md exists — this is the lynchpin for doc drift detection
 if [ ! -f "$INDEX_FILE" ]; then
-  exit 0  # Silently exit if no index file
+  echo "ERROR: contributing/INDEX.md is missing. This file is required for documentation drift detection." >&2
+  echo "Create it with the Guide Coverage Map and Maintenance Tracking tables." >&2
+  exit 2  # Exit 2 = block session end, Claude auto-fixes
 fi
 
 # Get files changed since the session started
@@ -54,6 +56,22 @@ MAPPINGS=(
   "autonomous-roadmap-execution.md:.claude/commands/roadmap/"
 )
 
+# External docs (MDX) mappings
+# Format: "docs-path:pattern1|pattern2"
+DOCS_MAPPINGS=(
+  "docs/getting-started/configuration.mdx:config-manager|config-schema|packages/cli/"
+  "docs/integrations/sse-protocol.mdx:apps/server/src/routes/sessions|stream-adapter|session-broadcaster"
+  "docs/integrations/building-integrations.mdx:transport.ts|direct-transport|http-transport"
+  "docs/self-hosting/deployment.mdx:packages/cli/|config-manager"
+  "docs/self-hosting/reverse-proxy.mdx:apps/server/src/routes/sessions|stream-adapter"
+  "docs/contributing/architecture.mdx:apps/server/src/services/|transport.ts|apps/obsidian-plugin/"
+  "docs/contributing/testing.mdx:packages/test-utils/|vitest"
+  "docs/contributing/development-setup.mdx:package.json|turbo.json|apps/"
+  "docs/guides/cli-usage.mdx:packages/cli/"
+  "docs/guides/tunnel-setup.mdx:tunnel-manager"
+  "docs/guides/slash-commands.mdx:command-registry|.claude/commands/"
+)
+
 # Track affected guides
 declare -a AFFECTED_GUIDES
 
@@ -78,16 +96,47 @@ while IFS= read -r file; do
   done
 done <<< "$ALL_CHANGED"
 
-# If any guides are affected, show reminder
-if [ ${#AFFECTED_GUIDES[@]} -gt 0 ]; then
+# Track affected external docs
+declare -a AFFECTED_DOCS
+
+# Check each changed file against docs patterns
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+
+  for mapping in "${DOCS_MAPPINGS[@]}"; do
+    doc="${mapping%%:*}"
+    patterns="${mapping#*:}"
+
+    for pattern in $(echo "$patterns" | tr '|' ' '); do
+      if echo "$file" | grep -qE "$pattern"; then
+        if [[ ! " ${AFFECTED_DOCS[*]} " =~ " ${doc} " ]]; then
+          AFFECTED_DOCS+=("$doc")
+        fi
+        break
+      fi
+    done
+  done
+done <<< "$ALL_CHANGED"
+
+# If any guides or docs are affected, show reminder
+if [ ${#AFFECTED_GUIDES[@]} -gt 0 ] || [ ${#AFFECTED_DOCS[@]} -gt 0 ]; then
   echo ""
   echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${YELLOW}📚 Documentation Reminder${NC}"
   echo ""
-  echo "   Changes during this session touched areas covered by:"
-  for guide in "${AFFECTED_GUIDES[@]}"; do
-    echo "   • $guide"
-  done
+  if [ ${#AFFECTED_GUIDES[@]} -gt 0 ]; then
+    echo "   Contributing guides potentially affected:"
+    for guide in "${AFFECTED_GUIDES[@]}"; do
+      echo "   • contributing/$guide"
+    done
+  fi
+  if [ ${#AFFECTED_DOCS[@]} -gt 0 ]; then
+    if [ ${#AFFECTED_GUIDES[@]} -gt 0 ]; then echo ""; fi
+    echo "   External docs potentially affected:"
+    for doc in "${AFFECTED_DOCS[@]}"; do
+      echo "   • $doc"
+    done
+  fi
   echo ""
   echo "   Consider running: /docs:reconcile"
   echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

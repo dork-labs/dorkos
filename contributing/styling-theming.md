@@ -27,7 +27,7 @@ This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI compo
 | Need custom component styling              | Pass `className` prop                                | Override defaults without editing source   |
 | Need dark mode variant                     | Use `dark:` prefix (`dark:bg-black`)                 | Class-based, automatic toggle              |
 | Need responsive design                     | Use breakpoint prefixes (`md:grid-cols-2`)           | Mobile-first, standard breakpoints         |
-| Need animation                             | Use Motion library (see 07-animations.md)            | Performance, accessibility, spring physics |
+| Need animation                             | Use Motion library (see animations.md)               | Performance, accessibility, spring physics |
 | Need complex state-dependent styles        | Use `cn()` with conditionals                         | Readable, maintainable                     |
 | Need one-off styles not in design system   | Avoid if possible, or use arbitrary values sparingly | Prefer extending theme                     |
 

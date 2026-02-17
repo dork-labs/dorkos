@@ -5,10 +5,76 @@ description: Discover and use slash commands in DorkOS
 
 # Slash Commands
 
-{/* TODO: Write full content */}
+DorkOS discovers slash commands from your project's `.claude/commands/` directory and makes them available through a command palette in the chat UI.
 
-- What slash commands are and how they work
-- The `.claude/commands/` directory structure
-- YAML frontmatter format for commands
-- Using slash commands in the DorkOS chat UI
-- Creating your own custom commands
+## Using Commands
+
+1. Type `/` in the chat input to open the command palette
+2. Search or browse available commands
+3. Select a command to insert it into the chat
+4. Optionally add arguments after the command name
+
+## Command Discovery
+
+DorkOS scans `.claude/commands/` recursively. Directory nesting creates namespaced commands:
+
+```
+.claude/commands/
+├── docs/
+│   ├── reconcile.md     → /docs:reconcile
+│   └── status.md        → /docs:status
+├── spec/
+│   ├── create.md        → /spec:create
+│   └── execute.md       → /spec:execute
+└── commit.md            → /commit
+```
+
+## Command Format
+
+Commands are Markdown files with optional YAML frontmatter:
+
+```markdown
+---
+description: Check developer guides for documentation drift
+argument-hint: '[guide-name | --all]'
+allowed-tools: Read, Grep, Glob, Bash
+category: documentation
+---
+
+# Documentation Reconciliation
+
+[Instructions for Claude Code to follow...]
+```
+
+### Frontmatter Fields
+
+| Field | Description | Required |
+|---|---|---|
+| `description` | Short description shown in the palette | No |
+| `argument-hint` | Placeholder text for command arguments | No |
+| `allowed-tools` | Comma-separated list of allowed tools | No |
+| `category` | Grouping category in the palette | No |
+
+## Creating Custom Commands
+
+1. Create a Markdown file in `.claude/commands/`
+2. Add frontmatter with at least a `description`
+3. Write instructions that Claude Code will follow
+4. Refresh the command list (or restart DorkOS)
+
+## Refreshing Commands
+
+The command registry caches results for performance. To refresh:
+
+- Click the refresh button in the command palette
+- Or call the API with `?refresh=true`
+
+## API
+
+```bash
+# List all discovered commands
+curl http://localhost:4242/api/commands
+
+# Force refresh the command cache
+curl http://localhost:4242/api/commands?refresh=true
+```

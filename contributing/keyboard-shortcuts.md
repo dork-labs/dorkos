@@ -45,7 +45,7 @@ The chat textarea is `disabled={isLoading}` during streaming. Interactive tools 
 
 ## Hook: `useInteractiveShortcuts`
 
-**Location:** `apps/client/src/hooks/use-interactive-shortcuts.ts`
+**Location:** `apps/client/src/layers/features/chat/model/use-interactive-shortcuts.ts`
 
 The hook attaches a global `keydown` listener only when `activeInteraction` is non-null (i.e., a tool is waiting for user input). It removes the listener when the interaction is resolved.
 
@@ -228,7 +228,7 @@ Both use amber coloring (`text-amber-500` icon, `text-amber-600` text) to match 
 
 ## `Kbd` Component
 
-**Location:** `apps/client/src/components/ui/kbd.tsx`
+**Location:** `apps/client/src/layers/shared/ui/kbd.tsx`
 
 A presentational component that renders keyboard shortcut hints.
 

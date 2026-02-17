@@ -5,10 +5,89 @@ description: Command-line options and workflows for the dorkos CLI
 
 # CLI Usage
 
-{/* TODO: Write full content */}
+The `dorkos` CLI is a standalone npm package that bundles the server and client into a single command. Install it globally and run it from any project directory.
 
-- Running the `dorkos` command
-- Available command-line flags (`--port`, `--dir`, `--tunnel`)
-- Environment variable configuration
-- Config directory (`~/.dork/`)
-- Common workflows and examples
+## Installation
+
+```bash
+npm install -g dorkos
+```
+
+## Quick Start
+
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+dorkos
+```
+
+The server starts on port 4242 and opens your browser automatically.
+
+## Command-Line Flags
+
+| Flag | Short | Description | Default |
+|---|---|---|---|
+| `--port <number>` | `-p` | Port for the server | `4242` |
+| `--dir <path>` | `-d` | Default working directory | Current directory |
+| `--boundary <path>` | `-b` | Directory boundary (restricts file access) | Home directory |
+| `--tunnel` | `-t` | Enable ngrok tunnel for remote access | `false` |
+
+### Examples
+
+```bash
+# Start on a custom port
+dorkos --port 8080
+
+# Start with a specific project directory
+dorkos --dir /path/to/my/project
+
+# Enable tunnel for remote access
+dorkos --tunnel
+```
+
+## Subcommands
+
+### `dorkos config`
+
+Manage persistent configuration stored at `~/.dork/config.json`.
+
+```bash
+dorkos config          # Show current config
+dorkos config --reset  # Reset to defaults
+```
+
+### `dorkos init`
+
+Interactive setup wizard for first-time configuration.
+
+```bash
+dorkos init
+```
+
+## Config Directory
+
+On first run, DorkOS creates `~/.dork/` for persistent storage:
+
+```
+~/.dork/
+└── config.json    # User configuration
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Claude API key (required) | - |
+| `DORKOS_PORT` | Server port | `4242` |
+| `DORKOS_DEFAULT_CWD` | Default working directory | Current directory |
+| `DORKOS_BOUNDARY` | Directory boundary | Home directory |
+| `TUNNEL_ENABLED` | Enable ngrok tunnel | `false` |
+| `NGROK_AUTHTOKEN` | ngrok auth token (for tunnels) | - |
+
+## Config Precedence
+
+Configuration is resolved in this order (highest priority first):
+
+1. CLI flags (`--port`, `--dir`, etc.)
+2. Environment variables (`DORKOS_PORT`, etc.)
+3. Config file (`~/.dork/config.json`)
+4. Built-in defaults

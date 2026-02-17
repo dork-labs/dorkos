@@ -21,6 +21,7 @@ dorkos/
 ├── apps/
 │   ├── client/           # React 19 + Vite 6 + Tailwind 4
 │   ├── server/           # Express + TypeScript
+│   ├── web/              # Marketing site & docs (Next.js 16, Fumadocs)
 │   └── obsidian-plugin/  # Obsidian plugin (Vite lib build)
 ├── packages/
 │   ├── cli/              # Publishable npm CLI package
@@ -130,7 +131,7 @@ Seven route groups handle REST/SSE endpoints:
 
 ### Services
 
-Nine services provide the core business logic:
+Sixteen services provide the core business logic:
 
 - **`agent-manager.ts`** — Manages Claude Agent SDK sessions, calls `query()` with streaming
 - **`transcript-reader.ts`** — Reads SDK JSONL transcript files (single source of truth for session data)
@@ -141,6 +142,13 @@ Nine services provide the core business logic:
 - **`file-lister.ts`** — Lists files in directories
 - **`git-status.ts`** — Provides git status information
 - **`tunnel-manager.ts`** — Optional ngrok tunnel lifecycle
+- **`config-manager.ts`** — Persistent user config at `~/.dork/config.json`
+- **`session-lock.ts`** — Prevents concurrent writes to sessions
+- **`interactive-handlers.ts`** — Handles tool approval and question responses
+- **`transcript-parser.ts`** — Parses JSONL transcript content
+- **`task-reader.ts`** — Reads task data from sessions
+- **`build-task-event.ts`** — Constructs task update events
+- **`update-checker.ts`** — Checks for new DorkOS versions
 
 ### Session Storage: SDK JSONL Transcripts
 
@@ -315,6 +323,6 @@ This pattern provides type safety and explicit test setup without global mocks.
 
 For more detailed documentation, see:
 
-- [API Reference](/docs/api-reference) — OpenAPI spec, Zod schemas, endpoints
-- [Interactive Tools](/docs/interactive-tools) — Tool approval flows, AskUserQuestion, TaskList
-- [Design System](/docs/design-system) — Color palette, typography, spacing, motion specs
+- [API Reference](/docs/api) — OpenAPI spec, Zod schemas, endpoints
+- [SSE Protocol](/docs/integrations/sse-protocol) — Real-time streaming and session sync
+- [Building Integrations](/docs/integrations/building-integrations) — Transport interface for custom clients

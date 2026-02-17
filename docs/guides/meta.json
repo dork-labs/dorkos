@@ -1,8 +1,11 @@
 {
   "title": "Guides",
   "pages": [
+    "cli-usage",
     "obsidian-plugin",
     "tool-approval",
-    "keyboard-shortcuts"
+    "slash-commands",
+    "keyboard-shortcuts",
+    "tunnel-setup"
   ]
 }

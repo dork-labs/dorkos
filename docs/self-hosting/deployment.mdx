@@ -5,10 +5,105 @@ description: Deploy DorkOS in production
 
 # Deployment
 
-{/* TODO: Write full content */}
+DorkOS can be deployed as a standalone server using the `dorkos` npm package.
 
-- Building for production (`npm run build`)
-- Running the production server (`npm start`)
-- Environment variable configuration
-- systemd service example
-- Docker deployment (future)
+## Quick Deploy
+
+```bash
+npm install -g dorkos
+export ANTHROPIC_API_KEY=your-key-here
+dorkos --port 4242
+```
+
+## Production Setup
+
+### 1. Install
+
+```bash
+npm install -g dorkos
+```
+
+### 2. Configure
+
+Set environment variables or use the config file:
+
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+export DORKOS_PORT=4242
+export DORKOS_DEFAULT_CWD=/path/to/projects
+export DORKOS_BOUNDARY=/path/to/boundary
+```
+
+Or configure interactively:
+
+```bash
+dorkos init
+```
+
+### 3. Run
+
+```bash
+dorkos
+```
+
+The server serves both the API (Express) and the client (built React SPA) from a single port.
+
+## systemd Service
+
+Create `/etc/systemd/system/dorkos.service`:
+
+```ini
+[Unit]
+Description=DorkOS - Web UI for Claude Code
+After=network.target
+
+[Service]
+Type=simple
+User=dorkos
+Environment=ANTHROPIC_API_KEY=your-key-here
+Environment=DORKOS_PORT=4242
+Environment=DORKOS_DEFAULT_CWD=/home/dorkos/projects
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/dorkos
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl enable dorkos
+sudo systemctl start dorkos
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Claude API key (required) | - |
+| `DORKOS_PORT` | Server port | `4242` |
+| `DORKOS_DEFAULT_CWD` | Default working directory | Current directory |
+| `DORKOS_BOUNDARY` | Directory boundary for file access | Home directory |
+| `NODE_ENV` | Set to `production` for production mode | `development` |
+
+## Directory Boundary
+
+The `DORKOS_BOUNDARY` setting restricts file access to a specific directory tree. All `cwd`, `path`, and `dir` parameters are validated against this boundary, returning 403 for paths outside it.
+
+Default: user's home directory.
+
+## Health Check
+
+Verify the server is running:
+
+```bash
+curl http://localhost:4242/api/health
+# { "status": "ok", "version": "0.2.0", "uptime": 12345 }
+```
+
+## Reverse Proxy
+
+For HTTPS and domain routing, see the [Reverse Proxy](/docs/self-hosting/reverse-proxy) guide.

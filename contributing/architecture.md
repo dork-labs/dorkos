@@ -68,7 +68,7 @@ DirectTransport({ agentManager, transcriptReader, commandRegistry, vaultRoot: re
 
 ## Transport Implementations
 
-### HttpTransport (`apps/client/src/lib/http-transport.ts`)
+### HttpTransport (`apps/client/src/layers/shared/lib/http-transport.ts`)
 
 Communicates with the Express server over HTTP and SSE:
 
@@ -77,7 +77,7 @@ Communicates with the Express server over HTTP and SSE:
 - Parses `text/event-stream` lines into `StreamEvent` objects
 - Constructor takes `baseUrl` (defaults to `/api`)
 
-### DirectTransport (`apps/client/src/lib/direct-transport.ts`)
+### DirectTransport (`apps/client/src/layers/shared/lib/direct-transport.ts`)
 
 Calls service instances directly in the same process:
 

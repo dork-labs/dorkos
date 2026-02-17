@@ -455,8 +455,8 @@ Use instead of plain `Dialog` when the dialog content needs full-screen treatmen
 | ------------------------ | ------------------------------------------- |
 | CSS variables & Tailwind | `apps/client/src/index.css`                 |
 | shadcn config            | `apps/client/components.json`               |
-| Component library        | `apps/client/src/components/ui/`            |
-| Chat components          | `apps/client/src/components/chat/`          |
-| Session components       | `apps/client/src/components/sessions/`      |
-| App state                | `apps/client/src/stores/app-store.ts`       |
-| Chat state               | `apps/client/src/hooks/use-chat-session.ts` |
+| Component library        | `apps/client/src/layers/shared/ui/`                          |
+| Chat components          | `apps/client/src/layers/features/chat/`                      |
+| Session components       | `apps/client/src/layers/features/session-list/`              |
+| App state                | `apps/client/src/layers/shared/model/app-store.ts`           |
+| Chat state               | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |

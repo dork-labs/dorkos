@@ -2,188 +2,139 @@
 
 ## Overview
 
-This guide covers state management patterns using Zustand for complex client state and TanStack Query for server state. Use the decision matrix below to choose the right tool based on state type and synchronization needs.
+This guide covers state management patterns in DorkOS. Zustand manages complex client-side UI state, TanStack Query manages server state via the Transport abstraction, and nuqs synchronizes URL parameters for session/directory state in standalone mode.
 
 ## Key Files
 
-| Concept            | Location                                          |
-| ------------------ | ------------------------------------------------- |
-| Store definitions  | `src/stores/*.ts` (e.g., `cart-store.ts`)         |
-| Query client setup | `src/layers/shared/lib/query-client.ts`           |
-| Client providers   | `src/app/providers.tsx`                           |
-| Store types        | `src/stores/*.ts` (colocated with implementation) |
+| Concept              | Location                                                          |
+| -------------------- | ----------------------------------------------------------------- |
+| App store (Zustand)  | `apps/client/src/layers/shared/model/app-store.ts`                |
+| TransportContext     | `apps/client/src/layers/shared/model/TransportContext.tsx`        |
+| Session entity hooks | `apps/client/src/layers/entities/session/`                        |
+| Command entity hooks | `apps/client/src/layers/entities/command/`                        |
+| Chat feature hooks   | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
+| URL state (nuqs)     | `apps/client/src/layers/entities/session/model/use-session-id.ts` |
+| Theme hook           | `apps/client/src/layers/shared/model/use-theme.ts`               |
 
 ## When to Use What
 
-| State Type           | Tool            | Example                             | Why                                                        |
-| -------------------- | --------------- | ----------------------------------- | ---------------------------------------------------------- |
-| Server state         | TanStack Query  | User data from API                  | Handles caching, revalidation, background refetching       |
-| Complex client state | Zustand         | Shopping cart, multi-step form      | Persist to localStorage, global access, middleware support |
-| Simple UI state      | React useState  | Modal open/close, toggle visibility | Scoped to component, no persistence needed                 |
-| URL state            | Next.js router  | Filters, pagination, tabs           | Shareable links, browser history                           |
-| Form state           | React Hook Form | Form inputs, validation             | Optimized for forms, integrates with Zod                   |
+| State Type               | Tool            | Example                                     | Why                                                        |
+| ------------------------ | --------------- | ------------------------------------------- | ---------------------------------------------------------- |
+| Server state             | TanStack Query  | Sessions, messages, commands                | Handles caching, revalidation, background refetching       |
+| Complex client state     | Zustand         | Sidebar open/closed, active panel           | Global access, no prop drilling, middleware support         |
+| Simple UI state          | React useState  | Modal open/close, toggle visibility         | Scoped to component, no persistence needed                 |
+| URL state (standalone)   | nuqs            | `?session=` ID, `?dir=` working directory   | Shareable links, browser history, bookmarkable             |
+| URL state (Obsidian)     | Zustand         | Session ID, working directory               | No URL bar in Obsidian; Zustand replaces nuqs              |
 
 ## Core Patterns
 
-### Creating a Zustand Store
+### Zustand Store (App Store)
+
+The central UI store lives at `apps/client/src/layers/shared/model/app-store.ts`:
 
 ```typescript
-// src/stores/cart-store.ts
+// apps/client/src/layers/shared/model/app-store.ts
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
+interface AppState {
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
+  toggleSidebar: () => void;
 }
 
-interface CartState {
-  items: CartItem[];
-  addItem: (item: Omit<CartItem, 'quantity'>) => void;
-  removeItem: (id: string) => void;
-  updateQuantity: (id: string, quantity: number) => void;
-  clearCart: () => void;
-  total: () => number;
-}
-
-export const useCartStore = create<CartState>()(
-  persist(
-    (set, get) => ({
-      items: [],
-
-      addItem: (item) =>
-        set((state) => {
-          const existing = state.items.find((i) => i.id === item.id);
-          if (existing) {
-            return {
-              items: state.items.map((i) =>
-                i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i
-              ),
-            };
-          }
-          return { items: [...state.items, { ...item, quantity: 1 }] };
-        }),
-
-      removeItem: (id) =>
-        set((state) => ({
-          items: state.items.filter((i) => i.id !== id),
-        })),
-
-      updateQuantity: (id, quantity) =>
-        set((state) => ({
-          items: state.items.map((i) => (i.id === id ? { ...i, quantity } : i)),
-        })),
-
-      clearCart: () => set({ items: [] }),
-
-      // Computed values use get() to access current state
-      total: () => get().items.reduce((sum, item) => sum + item.price * item.quantity, 0),
-    }),
-    {
-      name: 'cart-storage', // localStorage key
-    }
-  )
-);
+export const useAppStore = create<AppState>((set) => ({
+  sidebarOpen: true,
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+}));
 ```
 
 ### Using Selectors (Prevent Re-renders)
 
 ```typescript
-'use client'
+import { useAppStore } from '@/layers/shared/model';
 
-import { useCartStore } from '@/stores/cart-store'
+export function Sidebar() {
+  // ✅ Use selectors — only re-renders when this specific value changes
+  const sidebarOpen = useAppStore((state) => state.sidebarOpen);
+  const toggleSidebar = useAppStore((state) => state.toggleSidebar);
 
-export function CartSummary() {
-  // ✅ Use selectors - only re-renders when these specific values change
-  const itemCount = useCartStore((state) => state.items.length)
-  const total = useCartStore((state) => state.total)
-  const clearCart = useCartStore((state) => state.clearCart)
+  if (!sidebarOpen) return null;
 
   return (
-    <div>
-      <p>{itemCount} items</p>
-      <p>Total: ${total()}</p>
-      <button onClick={clearCart}>Clear Cart</button>
-    </div>
-  )
+    <aside>
+      <button onClick={toggleSidebar}>Close</button>
+      {/* sidebar content */}
+    </aside>
+  );
 }
 ```
+
+### Server State with TanStack Query
+
+Server state is managed through entity hooks in the `entities/` FSD layer:
+
+```typescript
+// apps/client/src/layers/entities/session/model/use-sessions.ts
+import { useQuery } from '@tanstack/react-query';
+import { useTransport } from '@/layers/shared/model';
+
+export function useSessions(cwd?: string) {
+  const transport = useTransport();
+
+  return useQuery({
+    queryKey: ['sessions', cwd],
+    queryFn: () => transport.listSessions(cwd),
+    refetchInterval: 30_000,
+  });
+}
+```
+
+### URL State with nuqs (Standalone Mode)
+
+In standalone web mode, `?session=` and `?dir=` persist in the URL via nuqs:
+
+```typescript
+// apps/client/src/layers/entities/session/model/use-session-id.ts
+import { useQueryState } from 'nuqs';
+
+export function useSessionId() {
+  // Syncs session ID to/from URL: ?session=<uuid>
+  const [sessionId, setSessionId] = useQueryState('session');
+  return { sessionId, setSessionId };
+}
+```
+
+In Obsidian embedded mode, the same hooks use Zustand instead of nuqs (no URL bar available). The `?dir=` parameter is omitted when using the server's default directory to keep URLs clean.
 
 ### Combining Zustand with TanStack Query
 
 ```typescript
-'use client'
+import { useQuery } from '@tanstack/react-query';
+import { useAppStore } from '@/layers/shared/model';
+import { useTransport } from '@/layers/shared/model';
 
-import { useQuery } from '@tanstack/react-query'
-import { useCartStore } from '@/stores/cart-store'
+export function SessionSidebar() {
+  const transport = useTransport();
 
-export function ProductList() {
-  // Server state (products from API) - use TanStack Query
-  const { data: products } = useQuery({
-    queryKey: ['products'],
-    queryFn: fetchProducts,
-  })
+  // Server state (sessions from API) — TanStack Query
+  const { data: sessions } = useQuery({
+    queryKey: ['sessions'],
+    queryFn: () => transport.listSessions(),
+  });
 
-  // Client state (shopping cart) - use Zustand
-  const addItem = useCartStore((state) => state.addItem)
+  // Client state (sidebar visibility) — Zustand
+  const sidebarOpen = useAppStore((state) => state.sidebarOpen);
+
+  if (!sidebarOpen) return null;
 
   return (
     <ul>
-      {products?.map((product) => (
-        <li key={product.id}>
-          {product.name}
-          <button onClick={() => addItem(product)}>Add to Cart</button>
-        </li>
+      {sessions?.map((session) => (
+        <li key={session.id}>{session.title}</li>
       ))}
     </ul>
-  )
-}
-```
-
-### Persisting State to localStorage
-
-```typescript
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
-export const usePreferencesStore = create()(
-  persist(
-    (set) => ({
-      theme: 'light' as 'light' | 'dark',
-      language: 'en',
-      setTheme: (theme: 'light' | 'dark') => set({ theme }),
-      setLanguage: (language: string) => set({ language }),
-    }),
-    {
-      name: 'preferences-storage', // localStorage key
-      partialize: (state) => ({
-        // Optional: only persist some fields
-        theme: state.theme,
-        language: state.language,
-        // Omit functions from persistence
-      }),
-    }
-  )
-);
-```
-
-### Accessing Store Outside Components
-
-```typescript
-// src/stores/cart-store.ts
-export const useCartStore = create<CartState>()(/* ... */);
-
-// Export the store itself for non-React usage
-export const cartStore = useCartStore.getState;
-
-// Usage in utility functions
-export function processCheckout() {
-  const items = cartStore().items;
-  const total = cartStore().total();
-
-  // Process checkout...
+  );
 }
 ```
 
@@ -191,93 +142,76 @@ export function processCheckout() {
 
 ```typescript
 // ❌ NEVER use Zustand for server state
-export const useUserStore = create((set) => ({
-  user: null,
-  fetchUser: async () => {
-    const response = await fetch('/api/user');
-    const user = await response.json();
-    set({ user }); // Stale data, no cache invalidation, no background refetch
+export const useSessionStore = create((set) => ({
+  sessions: [],
+  fetchSessions: async () => {
+    const sessions = await transport.listSessions();
+    set({ sessions }); // Stale data, no cache invalidation, no background refetch
   },
 }));
 
 // ✅ Use TanStack Query for server state
-export function useUser() {
+export function useSessions() {
+  const transport = useTransport();
   return useQuery({
-    queryKey: ['user'],
-    queryFn: async () => {
-      const response = await fetch('/api/user');
-      return response.json();
-    },
-    staleTime: 5 * 60 * 1000, // Automatic refetching, caching, deduplication
+    queryKey: ['sessions'],
+    queryFn: () => transport.listSessions(),
   });
 }
 ```
 
 ```typescript
 // ❌ Don't destructure the entire store (causes re-renders on ANY state change)
-const { items, addItem, removeItem, clearCart } = useCartStore();
+const { sidebarOpen, setSidebarOpen, toggleSidebar } = useAppStore();
 
-// ✅ Use selectors for each value (only re-renders when that specific value changes)
-const items = useCartStore((state) => state.items);
-const addItem = useCartStore((state) => state.addItem);
-const removeItem = useCartStore((state) => state.removeItem);
-const clearCart = useCartStore((state) => state.clearCart);
+// ✅ Use selectors for each value
+const sidebarOpen = useAppStore((state) => state.sidebarOpen);
+const toggleSidebar = useAppStore((state) => state.toggleSidebar);
 ```
 
 ```typescript
 // ❌ Don't store derived state
-export const useCartStore = create((set, get) => ({
+export const useAppStore = create((set, get) => ({
   items: [],
-  total: 0, // This will get out of sync!
+  count: 0, // Gets out of sync!
   addItem: (item) =>
     set((state) => ({
       items: [...state.items, item],
-      total: state.total + item.price, // Manual calculation prone to bugs
+      count: state.count + 1, // Manual tracking, bug-prone
     })),
 }));
 
 // ✅ Compute derived values on demand
-export const useCartStore = create((set, get) => ({
+export const useAppStore = create((set, get) => ({
   items: [],
-  total: () => get().items.reduce((sum, item) => sum + item.price, 0),
+  getCount: () => get().items.length,
 }));
 ```
 
 ```typescript
-// ❌ Don't use Zustand for URL-synchronized state
+// ❌ Don't use Zustand for URL-synchronized state in standalone mode
 export const useFilterStore = create((set) => ({
-  search: '',
-  category: null,
-  setSearch: (search) => set({ search }),
-  setCategory: (category) => set({ category }),
+  sessionId: null,
+  setSessionId: (id) => set({ sessionId: id }),
 }));
 
-// ✅ Use Next.js router for URL-synchronized state (shareable, bookmarkable)
-('use client');
+// ✅ Use nuqs for URL-synchronized state (shareable, bookmarkable)
+import { useQueryState } from 'nuqs';
 
-import { useRouter, useSearchParams } from 'next/navigation';
-
-export function ProductFilters() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const search = searchParams.get('search') || '';
-  const category = searchParams.get('category') || null;
-
-  const setSearch = (value: string) => {
-    const params = new URLSearchParams(searchParams);
-    params.set('search', value);
-    router.push(`?${params.toString()}`);
-  };
-
-  // ...
+export function useSessionId() {
+  const [sessionId, setSessionId] = useQueryState('session');
+  return { sessionId, setSessionId };
 }
 ```
 
-## Step-by-Step: Creating a New Store
+## Adding a New Store
 
-1. **Create the store file**: `src/stores/[name]-store.ts`
+1. **Determine if you need a store**: Check the decision matrix above. Most state should be TanStack Query (server) or useState (local UI).
+
+2. **Create the store** in `apps/client/src/layers/shared/model/`:
 
    ```typescript
+   // apps/client/src/layers/shared/model/my-store.ts
    import { create } from 'zustand';
 
    interface MyState {
@@ -291,71 +225,15 @@ export function ProductFilters() {
    }));
    ```
 
-2. **Add persistence (optional)**: Wrap with `persist` middleware
+3. **Export from barrel**: Add to `apps/client/src/layers/shared/model/index.ts`
+
+4. **Use in components**: Import from the barrel
 
    ```typescript
-   import { create } from 'zustand';
-   import { persist } from 'zustand/middleware';
-
-   export const useMyStore = create<MyState>()(
-     persist(
-       (set) => ({
-         value: '',
-         setValue: (value) => set({ value }),
-       }),
-       {
-         name: 'my-storage',
-       }
-     )
-   );
+   import { useMyStore } from '@/layers/shared/model';
    ```
-
-3. **Use in components**: Import and use selectors
-
-   ```typescript
-   'use client'
-
-   import { useMyStore } from '@/stores/my-store'
-
-   export function MyComponent() {
-     const value = useMyStore((state) => state.value)
-     const setValue = useMyStore((state) => state.setValue)
-
-     return <input value={value} onChange={(e) => setValue(e.target.value)} />
-   }
-   ```
-
-4. **Verify**: Check localStorage (if using persist) in browser DevTools → Application → Local Storage
 
 ## Troubleshooting
-
-### Hydration mismatch with persisted state
-
-**Cause**: Server-rendered component uses default state, but client hydrates with persisted localStorage value.
-
-**Fix**: Use a hydration-safe pattern:
-
-```typescript
-'use client'
-
-import { useEffect, useState } from 'react'
-import { useMyStore } from '@/stores/my-store'
-
-export function MyComponent() {
-  const [isClient, setIsClient] = useState(false)
-  const value = useMyStore((state) => state.value)
-
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
-
-  if (!isClient) {
-    return <div>Loading...</div>  // Show placeholder during SSR
-  }
-
-  return <div>{value}</div>
-}
-```
 
 ### Store updates not triggering re-renders
 
@@ -364,50 +242,12 @@ export function MyComponent() {
 ```typescript
 // ❌ Direct mutation doesn't trigger re-renders
 addItem: (item) => {
-  get().items.push(item); // Mutates array in place
+  get().items.push(item); // Mutates in place
 };
-```
 
-**Fix**: Always use `set()` with new references:
-
-```typescript
-// ✅ Create new array reference
+// ✅ Create new reference
 addItem: (item) =>
-  set((state) => ({
-    items: [...state.items, item],
-  }));
-```
-
-### Persist middleware not saving to localStorage
-
-**Cause**: One of:
-
-1. Using `create(...)` instead of `create()(...)`
-2. Missing `name` option in persist config
-3. localStorage not available (SSR)
-
-**Fix**:
-
-```typescript
-// ❌ Wrong syntax
-export const useStore = create(
-  persist(
-    (set) => ({
-      /* ... */
-    }),
-    { name: 'storage' }
-  )
-);
-
-// ✅ Correct syntax with double invocation
-export const useStore = create()(
-  persist(
-    (set) => ({
-      /* ... */
-    }),
-    { name: 'storage' }
-  )
-);
+  set((state) => ({ items: [...state.items, item] }));
 ```
 
 ### Component re-renders on every store update
@@ -416,39 +256,32 @@ export const useStore = create()(
 
 ```typescript
 // ❌ Re-renders on ANY store change
-const store = useCartStore();
-const itemCount = store.items.length;
+const store = useAppStore();
+
+// ✅ Only re-renders when sidebarOpen changes
+const sidebarOpen = useAppStore((state) => state.sidebarOpen);
 ```
 
-**Fix**: Use specific selectors:
+### URL state not persisting after navigation
 
-```typescript
-// ✅ Only re-renders when items.length changes
-const itemCount = useCartStore((state) => state.items.length);
-```
+**Cause**: Using Zustand instead of nuqs for URL-synced state in standalone mode.
+**Fix**: Use `useQueryState` from nuqs for state that should persist in the URL.
 
 ### "Cannot use store outside React components"
 
-**Cause**: Trying to call `useCartStore()` in a non-React function.
-
-**Fix**: Export and use `getState()` for non-React usage:
+**Cause**: Trying to call `useAppStore()` in a non-React function.
+**Fix**: Use `getState()` for non-React usage:
 
 ```typescript
-// src/stores/cart-store.ts
-export const useCartStore = create<CartState>()(/* ... */);
-export const cartStore = useCartStore.getState; // Export store getter
+import { useAppStore } from '@/layers/shared/model';
 
-// src/lib/analytics.ts
-import { cartStore } from '@/stores/cart-store';
-
-export function trackCheckout() {
-  const items = cartStore().items; // Access state outside React
-  analytics.track('checkout', { items });
-}
+// Non-React usage
+const currentState = useAppStore.getState();
 ```
 
 ## References
 
+- [Data Fetching Guide](./data-fetching.md) - TanStack Query patterns and Transport abstraction
+- [Architecture Guide](./architecture.md) - Transport interface, dependency injection
 - [Zustand Documentation](https://docs.pmnd.rs/zustand/getting-started/introduction)
-- [TanStack Query Guide](./05-data-fetching.md) - Server state management patterns
-- [Forms Guide](./04-forms-validation.md) - React Hook Form for form state
+- [nuqs Documentation](https://nuqs.47ng.com/) - Type-safe URL query state for React

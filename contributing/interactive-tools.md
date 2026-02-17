@@ -415,7 +415,7 @@ router.post('/:id/my-new-result', async (req, res) => {
 Add a case to `handleStreamEvent`:
 
 ```typescript
-// apps/client/src/hooks/use-chat-session.ts
+// apps/client/src/layers/features/chat/model/use-chat-session.ts
 case 'my_new_interactive': {
   const event = data as MyNewInteractiveEvent;
   currentToolCallsRef.current.push({
@@ -435,7 +435,7 @@ You may need to extend `ToolCallState` to hold your tool's specific data fields,
 
 ### Step 6: Build UI component
 
-Create a component in `apps/client/src/components/chat/` that:
+Create a component in `apps/client/src/layers/features/chat/ui/` that:
 
 - Accepts `sessionId`, `toolCallId`, and your event-specific data as props
 - Renders the interactive UI (form, buttons, picker, etc.)
@@ -449,7 +449,7 @@ Follow the patterns in `QuestionPrompt.tsx` and `ToolApproval.tsx`.
 Add a condition in `MessageItem.tsx` to render your component:
 
 ```typescript
-// apps/client/src/components/chat/MessageItem.tsx
+// apps/client/src/layers/features/chat/ui/MessageItem.tsx
 if (tc.interactiveType === 'my_new_type') {
   return <MyNewInteractive key={tc.toolCallId} sessionId={sessionId} toolCallId={tc.toolCallId} /* ... */ />;
 }

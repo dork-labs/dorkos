@@ -53,3 +53,37 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `styling-theming.md` | 2026-02-17 | Claude | Fixed path references |
 | `parallel-execution.md` | 2026-02-17 | Claude | Current |
 | `autonomous-roadmap-execution.md` | 2026-02-17 | Claude | Current |
+
+## External Docs Coverage
+
+Maps `docs/` MDX files (Fumadocs content for the marketing site) to the source code areas they document. Used by `check-docs-changed.sh` to remind about external docs drift.
+
+| MDX File | Description | Source Patterns |
+|---|---|---|
+| `docs/getting-started/configuration.mdx` | User-facing config guide | `config-manager\|config-schema\|packages/cli/` |
+| `docs/integrations/sse-protocol.mdx` | SSE wire format reference | `apps/server/src/routes/sessions\|stream-adapter\|session-broadcaster` |
+| `docs/integrations/building-integrations.mdx` | Transport interface for custom clients | `transport.ts\|direct-transport\|http-transport` |
+| `docs/self-hosting/deployment.mdx` | Production deployment guide | `packages/cli/\|config-manager` |
+| `docs/self-hosting/reverse-proxy.mdx` | Reverse proxy configuration | `apps/server/src/routes/sessions\|stream-adapter` |
+| `docs/contributing/architecture.mdx` | External architecture overview | `apps/server/src/services/\|transport.ts\|apps/obsidian-plugin/` |
+| `docs/contributing/testing.mdx` | External testing guide | `packages/test-utils/\|vitest` |
+| `docs/contributing/development-setup.mdx` | Dev environment setup | `package.json\|turbo.json\|apps/` |
+| `docs/guides/cli-usage.mdx` | CLI usage guide | `packages/cli/` |
+| `docs/guides/tunnel-setup.mdx` | Tunnel/ngrok setup | `tunnel-manager` |
+| `docs/guides/slash-commands.mdx` | Slash command authoring | `command-registry\|.claude/commands/` |
+
+### External Docs Maintenance
+
+| MDX File | Last Reviewed | Reviewer | Notes |
+|---|---|---|---|
+| `docs/getting-started/configuration.mdx` | 2026-02-17 | Claude | Pre-existing content |
+| `docs/integrations/sse-protocol.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/integrations/building-integrations.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/self-hosting/deployment.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/self-hosting/reverse-proxy.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/contributing/architecture.mdx` | 2026-02-17 | Claude | Fixed service count + links |
+| `docs/contributing/testing.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/contributing/development-setup.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/guides/cli-usage.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/guides/tunnel-setup.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/guides/slash-commands.mdx` | 2026-02-17 | Claude | Written from scratch |

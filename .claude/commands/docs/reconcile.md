@@ -130,6 +130,19 @@ declare -A GUIDE_PATTERNS=(
   ["styling-theming.md"]="index.css|apps/client/src/layers/shared/ui/|tailwind"
   ["parallel-execution.md"]=".claude/agents/|\.claude/commands/"
   ["autonomous-roadmap-execution.md"]=".claude/commands/roadmap/"
+
+  # External docs (MDX) — from contributing/INDEX.md External Docs Coverage table
+  ["docs/getting-started/configuration.mdx"]="config-manager|config-schema|packages/cli/"
+  ["docs/integrations/sse-protocol.mdx"]="apps/server/src/routes/sessions|stream-adapter|session-broadcaster"
+  ["docs/integrations/building-integrations.mdx"]="transport.ts|direct-transport|http-transport"
+  ["docs/self-hosting/deployment.mdx"]="packages/cli/|config-manager"
+  ["docs/self-hosting/reverse-proxy.mdx"]="apps/server/src/routes/sessions|stream-adapter"
+  ["docs/contributing/architecture.mdx"]="apps/server/src/services/|transport.ts|apps/obsidian-plugin/"
+  ["docs/contributing/testing.mdx"]="packages/test-utils/|vitest"
+  ["docs/contributing/development-setup.mdx"]="package.json|turbo.json|apps/"
+  ["docs/guides/cli-usage.mdx"]="packages/cli/"
+  ["docs/guides/tunnel-setup.mdx"]="tunnel-manager"
+  ["docs/guides/slash-commands.mdx"]="command-registry|.claude/commands/"
 )
 
 # For each file, find matching guides
@@ -185,37 +198,37 @@ Period: [date range if applicable]
 
 🔴 HIGH PRIORITY (likely needs updates)
 
-  03-database-prisma.md
+  data-fetching.md
   Last reviewed: 2024-12-01
   Relevant changes: 5 commits
 
   Commits:
-  • abc1234 - Add new DAL query pattern for pagination
-  • def5678 - Update Prisma schema with new relation
-  • ghi9012 - Change transaction handling approach
+  • abc1234 - Add new entity hook for file listing
+  • def5678 - Update Transport interface with new method
+  • ghi9012 - Change SSE event handling approach
 
   Potentially affected sections:
-  • Query patterns (new pagination approach)
-  • Schema conventions (new relation type)
-  • Transaction handling (approach changed)
+  • Entity hooks (new data fetching hook)
+  • Transport interface (new method added)
+  • SSE streaming (event handling changed)
 
 ───────────────────────────────────────────────────────────────
 
 🟡 MEDIUM PRIORITY (may need review)
 
-  05-data-fetching.md
+  state-management.md
   Last reviewed: 2024-12-15
   Relevant changes: 2 commits
 
   Commits:
-  • jkl3456 - Add new mutation hook helper
-  • mno7890 - Update query key factory
+  • jkl3456 - Add new Zustand store slice
+  • mno7890 - Update URL state parameter handling
 
 ───────────────────────────────────────────────────────────────
 
 🟢 LOW PRIORITY (minor changes)
 
-  08-styling-theming.md
+  styling-theming.md
   Last reviewed: 2024-12-20
   Relevant changes: 1 commit
 
@@ -269,32 +282,33 @@ For each high-priority guide:
 
 ````
 ═══════════════════════════════════════════════════════════════
-            DETAILED REVIEW: 03-database-prisma.md
+            DETAILED REVIEW: data-fetching.md
 ═══════════════════════════════════════════════════════════════
 
-## Section: Query Patterns (line 45-89)
+## Section: Entity Hooks (line 34-60)
 
 Current documentation:
-  "Use findUnique for single record lookups..."
+  "Entity hooks wrap TanStack Query with Transport calls..."
 
 Code shows:
-  Commit abc1234 introduced cursor-based pagination
-  using findMany with cursor parameter
+  Commit abc1234 added a new useFiles entity hook
+  with staleTime and file path filtering
 
 🔧 SUGGESTED UPDATE:
-  Add section on cursor-based pagination:
+  Add useFiles to the entity hooks section:
 
-  ### Cursor-Based Pagination
+  ### File Entity Hook
 
-  For large datasets, use cursor-based pagination:
+  The file browser uses a dedicated entity hook:
 
   ```typescript
-  const results = await prisma.post.findMany({
-    take: 10,
-    skip: 1,
-    cursor: { id: lastId },
-    orderBy: { id: 'asc' }
-  })
+  export function useFiles(dir: string) {
+    const transport = useTransport();
+    return useQuery({
+      queryKey: ['files', dir],
+      queryFn: () => transport.listFiles(dir),
+    });
+  }
 ````
 
 ───────────────────────────────────────────────────────────────
