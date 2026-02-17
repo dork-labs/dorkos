@@ -23,9 +23,9 @@ const steps: Step[] = [
   },
   {
     number: '03',
-    command: 'Full Claude Code in your browser.',
+    command: 'Your agents are running.',
     description:
-      'Tool approvals, session history, slash commands. JSONL transcripts stored at ~/.claude/projects/. Always local.',
+      'Tool approvals, session history, slash commands. Autonomous execution with full control.',
   },
 ]
 

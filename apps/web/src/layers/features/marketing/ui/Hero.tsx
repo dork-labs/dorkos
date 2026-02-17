@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import { PulseAnimation } from './PulseAnimation'
 
 interface HeroProps {
   label?: string
@@ -17,7 +18,7 @@ export function Hero({
   ctaHref,
 }: HeroProps) {
   return (
-    <section className="relative min-h-screen flex flex-col items-center justify-center px-6">
+    <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24">
       {/* Graph paper background - small + large grid with vertical fade */}
       <div
         className="absolute inset-0 pointer-events-none"
@@ -49,19 +50,19 @@ export function Hero({
           {label}
         </p>
 
-        {/* Headline - single line, brand-orange */}
+        {/* Headline — increased lineHeight to 1.0 to prevent ascender clipping */}
         <h1
-          className="font-bold text-brand-orange mb-10 tracking-[-0.04em]"
+          className="font-bold text-brand-orange mb-10 tracking-[-0.04em] overflow-visible"
           style={{
             fontSize: 'clamp(48px, 8vw, 96px)',
-            lineHeight: 0.9,
+            lineHeight: 1.0,
           }}
         >
           {headline}
         </h1>
 
         {/* Subhead - one paragraph, no line breaks */}
-        <p className="text-warm-gray text-lg font-light leading-[1.7] max-w-[500px] mx-auto mb-8">
+        <p className="text-warm-gray text-lg font-light leading-[1.7] max-w-[540px] mx-auto mb-8">
           {subhead}
         </p>
 
@@ -82,15 +83,18 @@ export function Hero({
             href="/docs/getting-started/quickstart"
             className="inline-flex items-center font-mono text-2xs tracking-[0.1em] text-warm-gray-light hover:text-brand-orange transition-smooth"
           >
-            Read the docs &rarr;
+            Watch it work &rarr;
           </Link>
         </div>
 
+        {/* Heartbeat pulse line */}
+        <PulseAnimation />
+
         {/* Product screenshot */}
-        <div className="mt-16 max-w-4xl mx-auto">
+        <div className="mt-12 max-w-4xl mx-auto">
           <Image
             src="/images/dorkos-screenshot.png"
-            alt="DorkOS chat interface showing tool approval flow"
+            alt="DorkOS console with an active autonomous session"
             width={1280}
             height={800}
             className="rounded-lg shadow-elevated border border-[var(--border-warm)]"

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 39,
+  "nextNumber": 40,
   "specs": [
     {
       "number": 1,
@@ -267,6 +267,13 @@
       "title": "Update Homepage Based on Brand Foundation",
       "created": "2026-02-17",
       "status": "specified"
+    },
+    {
+      "number": 39,
+      "slug": "tunnel-toggle-ui",
+      "title": "Tunnel Toggle UI",
+      "created": "2026-02-17",
+      "status": "ideation"
     }
   ]
 }

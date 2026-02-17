@@ -3,26 +3,26 @@ import type { PhilosophyItem } from './types'
 export const philosophyItems: PhilosophyItem[] = [
   {
     number: '01',
-    title: 'Your Machine',
+    title: 'Autonomous',
     description:
-      'Your AI runs on your hardware. Your sessions stay local. No cloud dependency.',
+      'AI that works without you. The Heartbeat keeps shipping.',
   },
   {
     number: '02',
     title: 'Open Source',
     description:
-      'MIT licensed. Read every line of code that touches your AI sessions.',
+      'MIT licensed. Every line of code, inspectable.',
   },
   {
     number: '03',
-    title: 'Power Users',
+    title: 'Honest',
     description:
-      'Built for developers who ship. Not a toy. Not a wrapper. A runtime.',
+      'We tell you exactly what runs where. No magic. No black boxes.',
   },
   {
     number: '04',
-    title: 'Autonomy',
+    title: 'Extensible',
     description:
-      'Full control is the default. Unrestricted permissions by design.',
+      'Modules, channels, and a knowledge vault. Build on top.',
   },
 ]

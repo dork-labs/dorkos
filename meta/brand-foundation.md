@@ -2,21 +2,21 @@
 
 ## 1. Executive Summary
 
-**DorkOS** is a professional-grade AI operating layer for developers, founders, and serious builders.
+**DorkOS** is an autonomous agent operating system for developers, founders, and serious builders.
 
-It transforms Claude Code into a remotely accessible, autonomous, extensible AI infrastructure that runs on your machine — not someone else's cloud.
+It transforms Claude Code into an autonomous agent system — with a heartbeat that works while you sleep, a knowledge vault that remembers everything, and agents that talk to each other.
 
 DorkOS is:
 
 - Open source
 - Developer-first
-- Privacy-respecting
+- Radically honest
 - Modular
 - Extremely powerful
 
 It is not a toy.
 It is not a chatbot wrapper.
-It is a professional AI runtime for people who build.
+It is an autonomous agent operating system for people who build.
 
 ---
 
@@ -24,11 +24,11 @@ It is a professional AI runtime for people who build.
 
 ### Category
 
-Professional AI Runtime / AI Operating Layer
+Autonomous Agent Operating System
 
 ### Positioning Statement
 
-DorkOS is the AI operating layer for serious builders — giving developers full remote access, autonomy, and control over their own Claude-powered infrastructure.
+DorkOS is the operating system for autonomous AI agents — giving developers a heartbeat, a knowledge vault, and full control over their Claude-powered infrastructure.
 
 ### Target Audience
 
@@ -52,17 +52,17 @@ This is not built for casual users.
 
 ## 3. Big Idea
 
-You don't use AI. You own it.
+Your AI never sleeps.
 
 DorkOS turns Claude Code into:
 
-- Your remote co-founder
-- Your autonomous engineering assistant
-- Your personal life infrastructure
-- Your private AI runtime
+- Your autonomous engineering team
+- Your always-running agent system
+- Your persistent knowledge infrastructure
+- Your extensible AI operating layer
 
-Your machine.
-Your models.
+Your agents.
+Your heartbeat.
 Your rules.
 
 ---
@@ -83,6 +83,8 @@ DorkOS is modular and open source. Each module can run independently or together
 
 This is the engine.
 
+**Status: Available**
+
 #### 4.2 DorkOS Console (Web UI)
 
 - Browser-based interface
@@ -91,6 +93,8 @@ This is the engine.
 - Multi-project support
 
 This makes DorkOS location-independent.
+
+**Status: Available**
 
 ### On the roadmap
 
@@ -104,6 +108,8 @@ This makes DorkOS location-independent.
 
 This is what makes DorkOS alive.
 
+**Status: Coming Soon**
+
 #### 4.4 DorkOS Channels (Integration Layer)
 
 - SMS
@@ -113,6 +119,8 @@ This is what makes DorkOS alive.
 - External integrations
 
 Enables AI to communicate outward.
+
+**Status: Coming Soon**
 
 #### 4.5 DorkOS Vault (Knowledge Layer)
 
@@ -132,14 +140,17 @@ Acts as:
 
 This powers Life Infrastructure workflows.
 
+**Status: Coming Soon**
+
 ---
 
 ## 5. We Believe
 
-- Your AI should run on your machine
+- Your AI should work autonomously on your behalf
 - Power tools deserve power users
 - Open source is infrastructure, not charity
 - Autonomy is a feature, not a risk
+- Honesty builds trust — we tell you exactly what runs where
 
 DorkOS is:
 
@@ -147,12 +158,15 @@ DorkOS is:
 - Performance-focused
 - Developer-centric
 - Built for serious work
+- Radically transparent
 
 ---
 
 ## 6. What DorkOS Is Not
 
-DorkOS is not a hosted service. Not a model aggregator. Not a chat widget. It's infrastructure you run, own, and control.
+DorkOS is not a hosted service. Not a model aggregator. Not a chat widget. It's an autonomous agent system you run, configure, and control.
+
+**Honesty note:** Claude Code uses Anthropic's API for inference. Your code context is sent to their servers. DorkOS doesn't change that and won't pretend it does. What DorkOS controls: the agent runs on your machine, sessions are stored locally, tools execute in your shell, and the orchestration layer is entirely yours.
 
 ---
 
@@ -162,15 +176,17 @@ Confident.
 Minimal.
 Technical.
 Sharp.
+Honest.
 Not corporate.
 
 Avoid hype language.
 
 Use language like:
 
-- Runtime
-- Infrastructure
-- Autonomy
+- Autonomous
+- Heartbeat
+- Orchestration
+- Agents
 - Permissions
 - Control
 - Operator
@@ -180,10 +196,11 @@ Use language like:
 
 | Don't say | Say |
 |---|---|
-| "Easy-to-use AI assistant" | "AI runtime for your machine" |
+| "Easy-to-use AI assistant" | "Autonomous agent operating system" |
 | "Get started in minutes!" | "Install. Configure. Run." |
 | "We help developers..." | "Built for developers who ship." |
-| "Powerful AI features" | "Full Claude Code access. Remotely." |
+| "Powerful AI features" | "Agents that work while you sleep." |
+| "No cloud dependency" | "Intelligence from Anthropic. Everything else is yours." |
 
 ---
 
@@ -212,16 +229,16 @@ DorkOS should feel like:
 
 ## 9. Taglines
 
-**Primary:** Own Your AI
+**Primary:** Your AI Never Sleeps.
 
 **Messaging bank** (secondary/contextual use):
 
-- Run Your Own Intelligence
-- AI Infrastructure for Builders
-- Your Machine. Your Models. Your Control.
-- The Professional AI Runtime
+- Deploy Your AI Workforce
+- The Operating System for AI Agents
+- Agents That Work While You Sleep
+- Your Heartbeat. Your Vault. Your Rules.
 - Not a Chatbot. A System.
-- AI That Works For You — Not The Other Way Around
+- Intelligence from Anthropic. Everything Else Is Yours.
 
 ---
 
@@ -229,22 +246,20 @@ DorkOS should feel like:
 
 ### Hero Section
 
-> **Own Your AI**
+> **Your AI Never Sleeps.**
 >
-> DorkOS gives you remote access to Claude Code from any browser. One npm install. Runs on your machine. No cloud. No middleman.
+> DorkOS is an open-source operating system for autonomous AI agents. Built on Claude Code. Powered by a heartbeat. Connected through a knowledge vault.
 >
 > `npm install -g dorkos`
 
 ### Sections
 
-1. Why DorkOS
-2. How It Works
-3. Architecture Overview
-4. For Developers
-5. Autonomous Mode (Pulse)
-6. Open Source & Security
-7. Installation
-8. Documentation
+1. The System (Architecture Overview)
+2. What This Unlocks (Use Cases)
+3. How It Works
+4. Honest by Design (Transparency)
+5. About
+6. Contact
 
 ---
 
@@ -269,7 +284,7 @@ Position DorkOS as a movement, not just a tool.
 
 DorkOS becomes:
 
-- The default professional AI runtime
+- The default autonomous agent operating system
 - The backbone of autonomous software development
 - The operating layer for AI-native companies
 - A distributed network of privately-run AI infrastructure
@@ -286,5 +301,6 @@ It is for developers who:
 - Want control
 - Want full capability
 - Want serious AI infrastructure
+- Want honest tools
 
 It is a tool for operators.

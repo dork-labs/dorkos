@@ -23,7 +23,7 @@ export function AboutSection({
       </span>
 
       <p className="text-charcoal text-[32px] font-medium tracking-[-0.02em] leading-[1.3] max-w-3xl mx-auto mb-6">
-        DorkOS is open source infrastructure for Claude Code{' '}
+        DorkOS is an autonomous agent operating system{' '}
         <Link
           href={bylineHref}
           target="_blank"

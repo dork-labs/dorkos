@@ -2,20 +2,22 @@ import { siteConfig } from '@/config/site'
 import {
   Hero,
   CredibilityBar,
-  ProblemSection,
+  SystemArchitecture,
   HowItWorksSection,
-  ProjectsGrid,
-  NotSection,
+  UseCasesGrid,
+  HonestySection,
   AboutSection,
   ContactSection,
   MarketingNav,
   MarketingHeader,
   MarketingFooter,
-  projects,
+  systemModules,
+  useCases,
   philosophyItems,
 } from '@/layers/features/marketing'
 
 const navLinks = [
+  { label: 'system', href: '#system' },
   { label: 'features', href: '#features' },
   { label: 'about', href: '#about' },
   { label: 'contact', href: '#contact' },
@@ -51,24 +53,24 @@ export default function HomePage() {
       <main>
         <Hero
           label="Open Source"
-          headline="Own Your AI."
-          subhead="Remote access to Claude Code from any browser. One npm install. Runs on your machine. No cloud. No middleman."
+          headline="Your AI Never Sleeps."
+          subhead="DorkOS is an open-source operating system for autonomous AI agents. Built on Claude Code. Powered by a heartbeat. Connected through a knowledge vault."
           ctaText="npm install -g dorkos"
           ctaHref={siteConfig.npm}
         />
 
         <CredibilityBar />
 
-        <ProblemSection />
+        <SystemArchitecture modules={systemModules} />
+
+        <UseCasesGrid useCases={useCases} />
 
         <HowItWorksSection />
 
-        <ProjectsGrid projects={projects} />
-
-        <NotSection />
+        <HonestySection />
 
         <AboutSection
-          description="DorkOS exists because Claude Code deserved a browser interface. Built on the Agent SDK, it reads the same JSONL session files as the CLI. No separate backend. No data duplication. One source of truth."
+          description="DorkOS turns Claude Code into an autonomous agent system. Built on the Agent SDK, it reads the same JSONL session files as the CLI. The intelligence comes from Anthropic. Everything else — orchestration, heartbeat, vault, permissions — is yours."
           philosophyItems={philosophyItems}
         />
 

@@ -13,10 +13,18 @@ export { ContactSection } from './ui/ContactSection'
 export { MarketingNav } from './ui/MarketingNav'
 export { MarketingHeader } from './ui/MarketingHeader'
 export { MarketingFooter } from './ui/MarketingFooter'
+export { SystemArchitecture } from './ui/SystemArchitecture'
+export { UseCasesGrid } from './ui/UseCasesGrid'
+export { HonestySection } from './ui/HonestySection'
+export { PulseAnimation } from './ui/PulseAnimation'
 
 // Data
 export { projects } from './lib/projects'
 export { philosophyItems } from './lib/philosophy'
+export { systemModules } from './lib/modules'
+export { useCases } from './lib/use-cases'
 
 // Types
 export type { Project, PhilosophyItem, NavLink } from './lib/types'
+export type { SystemModule } from './lib/modules'
+export type { UseCase } from './lib/use-cases'
