@@ -21,13 +21,13 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | ------------ | ----- | -------------------------------------------------------------------------- |
 | Commands     | 51    | `.claude/commands/`                                                        |
 | Agents       | 5     | `.claude/agents/`                                                          |
-| Skills       | 10    | `.claude/skills/`                                                          |
+| Skills       | 11    | `.claude/skills/`                                                          |
 | Rules        | 8     | `.claude/rules/`                                                           |
 | Claude Hooks | 9     | `.claude/hooks/`, configured in `.claude/settings.json`                    |
 | Git Hooks    | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers  | 3     | `.mcp.json`                                                                |
 | ADRs         | 5     | `decisions/`                                                               |
-| Guides       | 13    | `guides/`                                                                  |
+| Guides       | 14    | `guides/`                                                                  |
 
 ## Component Types
 
@@ -94,6 +94,7 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 | `orchestrating-parallel-work`  | Parallel agent execution, batch scheduling      | Coordinating multiple concurrent tasks, optimizing task ordering   |
 | `writing-changelogs`           | Human-friendly changelog entries, release notes | Populating changelog, preparing releases                           |
 | `organizing-fsd-architecture`  | Feature-Sliced Design layer placement, imports  | Structuring client code, creating features, reviewing architecture |
+| `executing-specs`              | Parallel spec implementation, incremental persistence | Orchestrating `/spec:execute` with batch result tracking           |
 | `writing-adrs`                 | Architecture Decision Records, decision signals | Creating ADRs, extracting decisions from specs, ADR quality        |
 
 ### Rules (Path-Triggered)
@@ -146,6 +147,7 @@ All documentation lives in `guides/`:
 | `architecture.md`                    | Hexagonal architecture, Transport interface, Electron compatibility |
 | `design-system.md`                   | Color palette, typography, spacing, motion specs                    |
 | `api-reference.md`                   | OpenAPI spec, Scalar docs UI, Zod schema patterns                   |
+| `configuration.md`                  | Config file system, settings reference, CLI commands, precedence    |
 | `interactive-tools.md`               | Tool approval, AskUserQuestion, TaskList flows                      |
 | `keyboard-shortcuts.md`              | Keyboard shortcuts and hotkeys                                      |
 | `obsidian-plugin-development.md`     | Plugin lifecycle, Vite build, Electron quirks                       |
@@ -249,10 +251,11 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   ├── product-manager.md
 │   └── research-expert.md
 │
-├── skills/                # Reusable expertise (9 total)
+├── skills/                # Reusable expertise (11 total)
 │   ├── clarifying-requirements/
 │   ├── debugging-systematically/
 │   ├── designing-frontend/
+│   ├── executing-specs/
 │   ├── styling-with-tailwind-shadcn/
 │   ├── managing-roadmap-moscow/
 │   ├── organizing-fsd-architecture/

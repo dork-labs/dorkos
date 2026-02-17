@@ -131,7 +131,7 @@ for batch_num, batch in enumerate(batches):
   print(f"Batch {batch_num + 1} complete")
 ```
 
-**Real example**: `/spec:execute` groups tasks by blockedBy dependencies.
+**Real example**: `/spec:execute` (via the `executing-specs` skill) groups tasks by blockedBy dependencies.
 
 ### Pattern 3: Analysis Then Implementation
 
@@ -223,5 +223,5 @@ print("📊 Synthesizing results...")
 For detailed patterns and examples, see:
 
 - `guides/11-parallel-execution.md` — Complete guide
-- `.claude/commands/spec/execute.md` — Batch execution example
+- `.claude/skills/executing-specs/SKILL.md` — Batch execution example
 - `.claude/commands/ideate.md` — Parallel research example

@@ -8,7 +8,7 @@ This guide covers when and how to use parallel agent execution patterns in Claud
 
 | Concept                   | Location                                      |
 | ------------------------- | --------------------------------------------- |
-| Parallel batch execution  | `.claude/commands/spec/execute.md`            |
+| Parallel batch execution  | `.claude/skills/executing-specs/SKILL.md`     |
 | Parallel research pattern | `.claude/commands/ideate.md`                  |
 | Task tool reference       | Built-in Claude Code tool                     |
 | Orchestration skill       | `.claude/skills/orchestrating-parallel-work/` |
