@@ -298,7 +298,7 @@ Use focus-visible, not focus:
 
 ## Design System: Calm Tech
 
-Follow the Calm Tech design language (see `guides/design-system.md`):
+Follow the Calm Tech design language (see `contributing/design-system.md`):
 
 | Element             | Specification       |
 | ------------------- | ------------------- |

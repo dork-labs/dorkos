@@ -9,7 +9,7 @@
 
    Adjust --mobile-scale to change how much bigger things are on mobile.
    Per-category overrides: --mobile-scale-text, --mobile-scale-icon, --mobile-scale-interactive
-   See guides/design-system.md for details.
+   See contributing/design-system.md for details.
    ============================================ */
 
 :root {

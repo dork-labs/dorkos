@@ -607,7 +607,7 @@ build: {
 | `fixDirnamePolyfill()`  | writeBundle | Replaces Vite's `import.meta.url` polyfill with `__dirname`/`__filename`  |
 | `patchElectronCompat()` | writeBundle | Monkey-patches `spawn()` and `setMaxListeners()` for Electron AbortSignal |
 
-See `guides/architecture.md` > "Electron Compatibility Layer" for details on why each plugin exists.
+See `contributing/architecture.md` > "Electron Compatibility Layer" for details on why each plugin exists.
 
 ### Package Scripts
 

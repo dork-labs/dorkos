@@ -316,7 +316,7 @@ You are exploring a codebase to map relevant areas for a new task.
 ### 1. Scan Repository Structure
 
 Search for:
-- Developer guides in `guides/`
+- Developer guides in `contributing/`
 - Architecture docs in the root directory
 - README files
 - Related spec files in `specs/`
@@ -357,7 +357,7 @@ Return in this format:
 
 ### Pre-reading Log
 
-- `guides/05-data-fetching.md`: Explains TanStack Query patterns used in this project
+- `contributing/05-data-fetching.md`: Explains TanStack Query patterns used in this project
 - `src/layers/entities/user/api/queries.ts`: Current user data fetching implementation
   [Continue for all relevant files...]
 

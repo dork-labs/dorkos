@@ -356,7 +356,7 @@ Breakpoints: `sm` (640px), `md` (768px), `lg` (1024px), `xl` (1280px), `2xl` (15
 ## References
 
 - `designing-frontend` skill — Design thinking, hierarchy, component decisions
-- `guides/design-system.md` — Full design language documentation
-- `guides/08-styling-theming.md` — Practical styling patterns
-- `guides/07-animations.md` — Animation patterns
+- `contributing/design-system.md` — Full design language documentation
+- `contributing/08-styling-theming.md` — Practical styling patterns
+- `contributing/07-animations.md` — Animation patterns
 - `src/app/globals.css` — Implemented tokens and utilities

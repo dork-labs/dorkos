@@ -201,7 +201,7 @@ Before implementation, verify:
 
 ## References
 
-- `guides/design-system.md` — Full design specifications
+- `contributing/design-system.md` — Full design specifications
 - `styling-with-tailwind-shadcn` skill — Implementation patterns
-- `guides/08-styling-theming.md` — Styling patterns
-- `guides/07-animations.md` — Animation patterns
+- `contributing/08-styling-theming.md` — Styling patterns
+- `contributing/07-animations.md` — Animation patterns

@@ -40,13 +40,13 @@ The server starts on port 4242 and opens your browser automatically.
 
 ## Documentation
 
-Full documentation is available in the [`guides/`](guides/) directory:
+Full documentation is available in the [`contributing/`](contributing/) directory:
 
-- [Architecture Overview](guides/architecture.md) - Hexagonal architecture, Transport interface, module layout
-- [API Reference](guides/api-reference.md) - OpenAPI spec, endpoints, SSE streaming protocol
-- [Design System](guides/design-system.md) - Color palette, typography, spacing, motion specs
-- [Obsidian Plugin Development](guides/obsidian-plugin-development.md) - Plugin architecture and development guide
-- [Interactive Tools](guides/interactive-tools.md) - Tool approval flows and interactive patterns
+- [Architecture Overview](contributing/architecture.md) - Hexagonal architecture, Transport interface, module layout
+- [API Reference](contributing/api-reference.md) - OpenAPI spec, endpoints, SSE streaming protocol
+- [Design System](contributing/design-system.md) - Color palette, typography, spacing, motion specs
+- [Obsidian Plugin Development](contributing/obsidian-plugin-development.md) - Plugin architecture and development guide
+- [Interactive Tools](contributing/interactive-tools.md) - Tool approval flows and interactive patterns
 
 See [CLAUDE.md](CLAUDE.md) for comprehensive technical documentation.
 

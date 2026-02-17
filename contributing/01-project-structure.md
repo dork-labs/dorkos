@@ -322,5 +322,5 @@ Use the layer decision tree in the `organizing-fsd-architecture` skill.
 ## References
 
 - [Feature-Sliced Design Documentation](https://feature-sliced.design/)
-- `guides/architecture.md` — Hexagonal architecture, Transport interface
+- `contributing/architecture.md` — Hexagonal architecture, Transport interface
 - `.claude/skills/organizing-fsd-architecture/` — Layer placement skill

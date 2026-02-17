@@ -27,7 +27,7 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | Git Hooks    | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers  | 3     | `.mcp.json`                                                                |
 | ADRs         | 5     | `decisions/`                                                               |
-| Guides       | 14    | `guides/`                                                                  |
+| Guides       | 14    | `contributing/`                                                                  |
 
 ## Component Types
 
@@ -90,7 +90,7 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 | `designing-frontend`           | Calm Tech design language, UI decisions         | Planning UI, reviewing designs, hierarchy decisions                |
 | `styling-with-tailwind-shadcn` | Tailwind CSS v4, Shadcn UI implementation       | Writing styles, building components, theming                       |
 | `managing-roadmap-moscow`      | MoSCoW prioritization, roadmap utilities        | Product planning, prioritization decisions                         |
-| `writing-developer-guides`     | Developer guide structure for AI agents         | Creating/updating files in guides/                                 |
+| `writing-developer-guides`     | Developer guide structure for AI agents         | Creating/updating files in contributing/                                 |
 | `orchestrating-parallel-work`  | Parallel agent execution, batch scheduling      | Coordinating multiple concurrent tasks, optimizing task ordering   |
 | `writing-changelogs`           | Human-friendly changelog entries, release notes | Populating changelog, preparing releases                           |
 | `organizing-fsd-architecture`  | Feature-Sliced Design layer placement, imports  | Structuring client code, creating features, reviewing architecture |
@@ -139,7 +139,7 @@ External tools available via Model Context Protocol.
 
 ### Guides
 
-All documentation lives in `guides/`:
+All documentation lives in `contributing/`:
 
 | Guide                                | Content                                                             |
 | ------------------------------------ | ------------------------------------------------------------------- |
@@ -355,7 +355,7 @@ Use `/tasks` to see running background agents and their status.
 
 ### Reference
 
-See `guides/11-parallel-execution.md` for complete patterns and decision framework.
+See `contributing/11-parallel-execution.md` for complete patterns and decision framework.
 
 ## Maintaining the Harness
 
@@ -480,7 +480,7 @@ CLAUDE.md is the **primary source of truth** for project context. This README do
 
 ### With Developer Guides
 
-Developer guides in `guides/` provide detailed patterns. Skills often reference these guides for comprehensive documentation while keeping SKILL.md concise.
+Developer guides in `contributing/` provide detailed patterns. Skills often reference these guides for comprehensive documentation while keeping SKILL.md concise.
 
 ### With Roadmap
 

@@ -35,7 +35,7 @@ Search these sources to find the relevant process:
 
 **Developer guides**:
 
-- Check `guides/` for detailed implementation patterns and best practices
+- Check `contributing/` for detailed implementation patterns and best practices
 
 **Path-specific rules**:
 
@@ -221,7 +221,7 @@ Reference these when answering:
 | "push to remote"         | `/git:push`                         | `git push`                                                          |
 | "create a branch"        | Direct prompt: "Create branch X"    | `git checkout -b`                                                   |
 | "run database migration" | `/db:migrate`                       | `pnpm prisma migrate deploy`                                        |
-| "scaffold a feature"     | Direct prompt: "Create feature X"   | Create FSD directory structure per `guides/01-project-structure.md` |
+| "scaffold a feature"     | Direct prompt: "Create feature X"   | Create FSD directory structure per `contributing/01-project-structure.md` |
 | "review recent work"     | `/review-recent-work`               | Manual code inspection                                              |
 | "manage roadmap"         | `/roadmap [subcommand]`             | Edit `roadmap/roadmap.json`                                         |
 | "git status"             | Direct prompt: "Show git status"    | `git status && git diff`                                            |
@@ -302,7 +302,7 @@ When explaining processes, clarify the invocation model:
 ## Important Notes
 
 - Always check CLAUDE.md first - it's the authoritative source for project conventions
-- Developer guides in `guides/` contain detailed patterns
+- Developer guides in `contributing/` contain detailed patterns
 - If a slash command exists, prefer that over a raw prompt
 - For database schema changes, remind users about the migration-first workflow
 - For code changes, remind about the prohibition on `any` types

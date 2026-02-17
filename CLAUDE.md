@@ -63,7 +63,7 @@ Run a single test file: `npx vitest run apps/server/src/services/__tests__/trans
 
 ## Architecture
 
-DorkOS uses a **hexagonal architecture** with a `Transport` interface (`packages/shared/src/transport.ts`) that decouples the React client from its backend. Two adapters exist: `HttpTransport` (standalone web, HTTP/SSE to Express) and `DirectTransport` (Obsidian plugin, in-process services). Transport is injected via React Context (`TransportContext`). See `guides/architecture.md` for full details.
+DorkOS uses a **hexagonal architecture** with a `Transport` interface (`packages/shared/src/transport.ts`) that decouples the React client from its backend. Two adapters exist: `HttpTransport` (standalone web, HTTP/SSE to Express) and `DirectTransport` (Obsidian plugin, in-process services). Transport is injected via React Context (`TransportContext`). See `contributing/architecture.md` for full details.
 
 ### Server (`apps/server/src/`)
 
@@ -127,7 +127,7 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gra
 - **Barrel Exports**: Every FSD module has an `index.ts` barrel. Import from barrels only (e.g., `import { ChatPanel } from '@/layers/features/chat'`), never from internal paths.
 - **Markdown Rendering**: Assistant messages are rendered as rich markdown via the `streamdown` library (Vercel). `StreamingText` wraps the `<Streamdown>` component with `github-light`/`github-dark` Shiki themes and shows a blinking cursor during active streaming. User messages remain plain text. The `@source` directive in `index.css` ensures Streamdown's Tailwind classes are included in the CSS output.
 - **Animations**: `motion` (motion.dev) for UI animations. `App.tsx` wraps the app in `<MotionConfig reducedMotion="user">` to respect `prefers-reduced-motion`. Used for: message entrance animations (new messages only, not history), tool card expand/collapse, command palette enter/exit, sidebar width toggle, button micro-interactions. Tests mock `motion/react` to render plain elements.
-- **Design System**: Color palette, typography, spacing (8pt grid), and motion specs are documented in `guides/design-system.md`.
+- **Design System**: Color palette, typography, spacing (8pt grid), and motion specs are documented in `contributing/design-system.md`.
 
 ### Shared (`packages/shared/src/`)
 
@@ -181,7 +181,7 @@ Both paths are used by `CommandRegistryService` to find `.claude/commands/` and 
 
 ### Obsidian Plugin Build
 
-The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plugins (in `apps/obsidian-plugin/build-plugins/`) that post-process `main.js` for Electron compatibility: `copyManifest`, `safeRequires`, `fixDirnamePolyfill`, `patchElectronCompat`. Output goes to `apps/obsidian-plugin/dist/`. See `guides/architecture.md` > "Electron Compatibility Layer" for details.
+The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plugins (in `apps/obsidian-plugin/build-plugins/`) that post-process `main.js` for Electron compatibility: `copyManifest`, `safeRequires`, `fixDirnamePolyfill`, `patchElectronCompat`. Output goes to `apps/obsidian-plugin/dist/`. See `contributing/architecture.md` > "Electron Compatibility Layer" for details.
 
 ### CLI Package (`packages/cli`)
 
@@ -191,23 +191,23 @@ CLI subcommands: `dorkos config` (manage config), `dorkos init` (interactive set
 
 ## Guides
 
-Detailed documentation lives in `guides/`:
+Detailed documentation lives in `contributing/`:
 
 | Guide                                                                                    | Contents                                                                                                                                                            |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`guides/architecture.md`](guides/architecture.md)                                       | Hexagonal architecture, Transport interface, dependency injection, Electron compatibility layer, build plugins, data flow diagrams, module layout, testing patterns |
-| [`guides/design-system.md`](guides/design-system.md)                                     | Color palette, typography, spacing (8pt grid), motion specs, component conventions                                                                                  |
-| [`guides/obsidian-plugin-development.md`](guides/obsidian-plugin-development.md)         | Plugin lifecycle, ItemView pattern, React mounting, active file tracking, drag-and-drop, Vite build config, Electron quirks, debugging, common issues               |
-| [`guides/api-reference.md`](guides/api-reference.md)                                     | OpenAPI spec, Scalar docs UI, Zod schema patterns, adding endpoints, SSE streaming, validation errors                                                               |
-| [`guides/configuration.md`](guides/configuration.md)                                     | Config file system, settings reference, CLI commands, precedence rules, REST API, error recovery                                                                    |
-| [`guides/interactive-tools.md`](guides/interactive-tools.md)                             | Tool approval, AskUserQuestion, TaskList interactive flows                                                                                                          |
-| [`guides/keyboard-shortcuts.md`](guides/keyboard-shortcuts.md)                           | Keyboard shortcuts and hotkeys                                                                                                                                      |
-| [`guides/05-data-fetching.md`](guides/05-data-fetching.md)                               | TanStack Query patterns, mutations                                                                                                                                  |
-| [`guides/06-state-management.md`](guides/06-state-management.md)                         | Zustand vs TanStack Query decision guide                                                                                                                            |
-| [`guides/07-animations.md`](guides/07-animations.md)                                     | Motion library patterns                                                                                                                                             |
-| [`guides/08-styling-theming.md`](guides/08-styling-theming.md)                           | Tailwind v4, dark mode, Shadcn                                                                                                                                      |
-| [`guides/11-parallel-execution.md`](guides/11-parallel-execution.md)                     | Parallel agent execution patterns, batching, context savings                                                                                                        |
-| [`guides/13-autonomous-roadmap-execution.md`](guides/13-autonomous-roadmap-execution.md) | Autonomous workflow, `/roadmap:work`                                                                                                                                |
+| [`contributing/architecture.md`](contributing/architecture.md)                                       | Hexagonal architecture, Transport interface, dependency injection, Electron compatibility layer, build plugins, data flow diagrams, module layout, testing patterns |
+| [`contributing/design-system.md`](contributing/design-system.md)                                     | Color palette, typography, spacing (8pt grid), motion specs, component conventions                                                                                  |
+| [`contributing/obsidian-plugin-development.md`](contributing/obsidian-plugin-development.md)         | Plugin lifecycle, ItemView pattern, React mounting, active file tracking, drag-and-drop, Vite build config, Electron quirks, debugging, common issues               |
+| [`contributing/api-reference.md`](contributing/api-reference.md)                                     | OpenAPI spec, Scalar docs UI, Zod schema patterns, adding endpoints, SSE streaming, validation errors                                                               |
+| [`contributing/configuration.md`](contributing/configuration.md)                                     | Config file system, settings reference, CLI commands, precedence rules, REST API, error recovery                                                                    |
+| [`contributing/interactive-tools.md`](contributing/interactive-tools.md)                             | Tool approval, AskUserQuestion, TaskList interactive flows                                                                                                          |
+| [`contributing/keyboard-shortcuts.md`](contributing/keyboard-shortcuts.md)                           | Keyboard shortcuts and hotkeys                                                                                                                                      |
+| [`contributing/05-data-fetching.md`](contributing/05-data-fetching.md)                               | TanStack Query patterns, mutations                                                                                                                                  |
+| [`contributing/06-state-management.md`](contributing/06-state-management.md)                         | Zustand vs TanStack Query decision guide                                                                                                                            |
+| [`contributing/07-animations.md`](contributing/07-animations.md)                                     | Motion library patterns                                                                                                                                             |
+| [`contributing/08-styling-theming.md`](contributing/08-styling-theming.md)                           | Tailwind v4, dark mode, Shadcn                                                                                                                                      |
+| [`contributing/11-parallel-execution.md`](contributing/11-parallel-execution.md)                     | Parallel agent execution patterns, batching, context savings                                                                                                        |
+| [`contributing/13-autonomous-roadmap-execution.md`](contributing/13-autonomous-roadmap-execution.md) | Autonomous workflow, `/roadmap:work`                                                                                                                                |
 
 ## Documentation
 
@@ -215,14 +215,14 @@ Two documentation systems exist side-by-side:
 
 | Directory | Audience | Format | Purpose |
 |---|---|---|---|
-| `guides/` | Internal devs & Claude Code agents | Markdown | Deep implementation details, code patterns, FSD layers |
+| `contributing/` | Internal devs & Claude Code agents | Markdown | Deep implementation details, code patterns, FSD layers |
 | `docs/` | External users & integrators | MDX (Fumadocs) | Task-oriented guides, API reference, getting started |
 
 The `docs/` directory contains MDX content structured for [Fumadocs](https://fumadocs.dev) consumption. A separate Next.js marketing site (future) will consume `docs/` at build time via git submodule and render it at `docs.dorkos.ai`. The `docs/api/openapi.json` is generated by `npm run docs:export-api` and gitignored.
 
 ## Testing
 
-Tests use Vitest with `vi.mock()` for Node modules. A shared `vitest.workspace.ts` at the repo root configures test projects for each app. Server tests mock `fs/promises` for transcript reading. Client tests use React Testing Library with jsdom and inject mock `Transport` objects via `TransportProvider` wrappers (see `guides/architecture.md` for the pattern). Shared test utilities (mock factories, helpers) live in `packages/test-utils/`.
+Tests use Vitest with `vi.mock()` for Node modules. A shared `vitest.workspace.ts` at the repo root configures test projects for each app. Server tests mock `fs/promises` for transcript reading. Client tests use React Testing Library with jsdom and inject mock `Transport` objects via `TransportProvider` wrappers (see `contributing/architecture.md` for the pattern). Shared test utilities (mock factories, helpers) live in `packages/test-utils/`.
 
 Tests live alongside source in `__tests__/` directories within each app and package (e.g., `apps/server/src/services/__tests__/transcript-reader.test.ts`).
 

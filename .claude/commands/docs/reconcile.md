@@ -62,7 +62,7 @@ fi
 
 ### Phase 2: Load Guide Mapping
 
-Read `guides/INDEX.md` to get:
+Read `contributing/INDEX.md` to get:
 
 - Pattern-to-guide mappings
 - Last reviewed dates
@@ -70,7 +70,7 @@ Read `guides/INDEX.md` to get:
 
 ```bash
 # Read the INDEX.md file
-INDEX_FILE="guides/INDEX.md"
+INDEX_FILE="contributing/INDEX.md"
 
 # Extract guide info into structured data
 # Parse the YAML section for pattern mappings
@@ -303,7 +303,7 @@ Update the Maintenance Tracking table in INDEX.md:
 
 ```bash
 # For each guide marked as reviewed
-sed -i '' "s/| $GUIDE |.*|/| $GUIDE | $(date +%Y-%m-%d) | Claude | Reconciled via /docs:reconcile |/" guides/INDEX.md
+sed -i '' "s/| $GUIDE |.*|/| $GUIDE | $(date +%Y-%m-%d) | Claude | Reconciled via /docs:reconcile |/" contributing/INDEX.md
 ````
 
 ## Smart Mode Algorithm

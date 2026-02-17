@@ -7,6 +7,35 @@ Last Decompose: 2026-02-16
 
 ---
 
+## Phase 0: Directory Rename
+
+### Task 0.1: Rename guides/ to contributing/
+
+**Objective**: Rename the `guides/` directory to `contributing/` to make the target audience self-documenting.
+
+**Implementation**:
+- Rename `guides/` → `contributing/` (git mv to preserve history)
+- Update all references across the codebase:
+  - `CLAUDE.md` — guides table, monorepo structure diagram, all `guides/` paths
+  - `.claude/rules/` — any rules referencing `guides/` paths
+  - `.claude/skills/` — any skills referencing `guides/` paths (e.g., `writing-developer-guides`, `organizing-fsd-architecture`)
+  - `apps/client/`, `apps/server/` — any import comments or documentation references
+  - `specs/` — other spec files that reference `guides/`
+  - Root `package.json` or config files with `guides/` paths
+- Verify no broken references remain: `grep -r "guides/" --include="*.md" --include="*.ts" --include="*.json"`
+
+**Acceptance Criteria**:
+- `guides/` directory no longer exists
+- `contributing/` directory contains all former `guides/` files
+- All references across the codebase updated
+- Git history preserved via `git mv`
+- Build (`npm run build`) and tests (`npm test`) still pass
+- No remaining references to `guides/` that should point to `contributing/` (note: `docs/guides/` is a separate Fumadocs section and should NOT be renamed)
+
+**Dependencies**: None — this is a prerequisite for all other tasks
+
+---
+
 ## Phase 1: OSS Files (Core)
 
 ### Task 1.1: Create LICENSE file (MIT)
@@ -91,8 +120,8 @@ Last Decompose: 2026-02-16
   3. **Getting Started**: Fork, clone, `npm install`, `cp .env.example .env`, add API key, `npm run dev`
   4. **Monorepo Structure**: Brief table of `apps/` (client, server, obsidian-plugin) and `packages/` (cli, shared, typescript-config, test-utils) with one-line descriptions
   5. **Development Commands**: Table of `npm run dev`, `npm test`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format`
-  6. **Architecture**: Brief mention of hexagonal architecture with Transport interface; link to `guides/architecture.md` for deep dive
-  7. **Client Architecture (FSD)**: Brief mention of Feature-Sliced Design layers; link to `guides/01-project-structure.md`
+  6. **Architecture**: Brief mention of hexagonal architecture with Transport interface; link to `contributing/architecture.md` for deep dive
+  7. **Client Architecture (FSD)**: Brief mention of Feature-Sliced Design layers; link to `contributing/01-project-structure.md`
   8. **Testing**: Vitest, tests in `__tests__/` dirs, `npm test` to run all, `npx vitest run <file>` for single file
   9. **Code Style**: ESLint + Prettier enforced; run `npm run lint` and `npm run format` before committing
   10. **Pull Request Process**: Fork, create feature branch, make changes, ensure tests pass and linting is clean, open PR with description
@@ -617,13 +646,13 @@ Files to create:
 
 ## Phase 4: Content Migration (Incremental)
 
-### Task 4.1: Adapt guides/keyboard-shortcuts.md to docs/guides/keyboard-shortcuts.mdx
+### Task 4.1: Adapt contributing/keyboard-shortcuts.md to docs/contributing/keyboard-shortcuts.mdx
 
 **Objective**: Adapt the internal keyboard shortcuts guide into a user-facing docs page.
 
 **Implementation**:
-- Read `guides/keyboard-shortcuts.md` for source content
-- Create `docs/guides/keyboard-shortcuts.mdx` with:
+- Read `contributing/keyboard-shortcuts.md` for source content
+- Create `docs/contributing/keyboard-shortcuts.mdx` with:
   - Frontmatter: `title: "Keyboard Shortcuts"`, `description: "Navigate DorkOS efficiently with keyboard shortcuts"`
   - Rewrite for end users (not Claude Code agents)
   - Organize shortcuts by category (navigation, chat, session management)
@@ -632,7 +661,7 @@ Files to create:
   - Keep the content practical and task-oriented
 
 **Acceptance Criteria**:
-- `docs/guides/keyboard-shortcuts.mdx` exists with valid frontmatter
+- `docs/contributing/keyboard-shortcuts.mdx` exists with valid frontmatter
 - Content is rewritten for end users
 - No internal file paths or implementation details
 - All shortcuts from the source guide are included
@@ -641,12 +670,12 @@ Files to create:
 
 ---
 
-### Task 4.2: Adapt guides/interactive-tools.md to docs/guides/tool-approval.mdx
+### Task 4.2: Adapt contributing/interactive-tools.md to docs/guides/tool-approval.mdx
 
 **Objective**: Adapt the internal interactive tools guide into a user-facing tool approval docs page.
 
 **Implementation**:
-- Read `guides/interactive-tools.md` for source content
+- Read `contributing/interactive-tools.md` for source content
 - Create `docs/guides/tool-approval.mdx` with:
   - Frontmatter: `title: "Tool Approval"`, `description: "Understanding how tool approval works in DorkOS"`
   - Explain the concept: Claude Code tools require user approval before executing
@@ -666,12 +695,12 @@ Files to create:
 
 ---
 
-### Task 4.3: Adapt guides/obsidian-plugin-development.md to docs/guides/obsidian-plugin.mdx
+### Task 4.3: Adapt contributing/obsidian-plugin-development.md to docs/guides/obsidian-plugin.mdx
 
 **Objective**: Adapt the internal Obsidian plugin development guide into a user-facing setup guide.
 
 **Implementation**:
-- Read `guides/obsidian-plugin-development.md` for source content
+- Read `contributing/obsidian-plugin-development.md` for source content
 - Create `docs/guides/obsidian-plugin.mdx` with:
   - Frontmatter: `title: "Obsidian Plugin"`, `description: "Use DorkOS inside Obsidian as a sidebar plugin"`
   - Focus on **setup and usage**, not development internals
@@ -692,12 +721,12 @@ Files to create:
 
 ---
 
-### Task 4.4: Adapt guides/architecture.md to docs/contributing/architecture.mdx
+### Task 4.4: Adapt contributing/architecture.md to docs/contributing/architecture.mdx
 
 **Objective**: Adapt the internal architecture guide into a simplified contributor-facing architecture overview.
 
 **Implementation**:
-- Read `guides/architecture.md` for source content
+- Read `contributing/architecture.md` for source content
 - Create `docs/contributing/architecture.mdx` with:
   - Frontmatter: `title: "Architecture"`, `description: "High-level architecture overview for DorkOS contributors"`
   - Simplified version of the architecture for contributors (not agents)
@@ -729,12 +758,12 @@ Files to create:
 **Implementation**:
 - Edit `/CLAUDE.md` to add a brief section about the `docs/` directory:
   - Add to the monorepo structure diagram: `docs/` directory with description
-  - Add a note in the appropriate section explaining that `docs/` contains user-facing MDX content structured for Fumadocs, while `guides/` remains the internal developer documentation
+  - Add a note in the appropriate section explaining that `docs/` contains user-facing MDX content structured for Fumadocs, while `contributing/` remains the internal developer documentation
   - Add `npm run docs:export-api` to the Commands section
 
 **Acceptance Criteria**:
 - CLAUDE.md references `docs/` directory
-- Distinction between `docs/` (external) and `guides/` (internal) is clear
+- Distinction between `docs/` (external) and `contributing/` (internal) is clear
 - `docs:export-api` command is documented
 
 **Dependencies**: All Phase 1-3 tasks
@@ -744,14 +773,17 @@ Files to create:
 ## Dependency Graph
 
 ```
-Phase 1 (all can run in parallel except 1.2 depends on 1.1):
+Phase 0 (must complete first):
+  0.1 Rename guides/ → contributing/
+
+Phase 1 (all can run in parallel except 1.2 depends on 1.1; all depend on 0.1):
   1.1 LICENSE
   1.2 README.md  [depends on: 1.1]
   1.3 CHANGELOG.md
   1.4 CONTRIBUTING.md
   1.5 packages/cli/README.md
 
-Phase 2 (2.1 first, then rest in parallel):
+Phase 2 (2.1 first, then rest in parallel; all depend on 0.1):
   2.1 Scaffold docs/ structure
   2.2 docs/index.mdx  [depends on: 2.1]
   2.3 getting-started/ section  [depends on: 2.1]
@@ -763,26 +795,26 @@ Phase 3 (sequential):
   3.3 Export initial JSON  [depends on: 3.2]
   3.4 Add test  [depends on: 3.1]
 
-Phase 4 (all depend on 2.1, can run in parallel):
-  4.1 keyboard-shortcuts.mdx  [depends on: 2.1]
-  4.2 tool-approval.mdx  [depends on: 2.1]
-  4.3 obsidian-plugin.mdx  [depends on: 2.1]
-  4.4 architecture.mdx  [depends on: 2.1]
+Phase 4 (all depend on 0.1 and 2.1, can run in parallel):
+  4.1 keyboard-shortcuts.mdx  [depends on: 0.1, 2.1]
+  4.2 tool-approval.mdx  [depends on: 0.1, 2.1]
+  4.3 obsidian-plugin.mdx  [depends on: 0.1, 2.1]
+  4.4 architecture.mdx  [depends on: 0.1, 2.1]
 
 Post-Implementation:
-  5.1 Update CLAUDE.md  [depends on: all Phase 1-3 tasks]
+  5.1 Update CLAUDE.md  [depends on: all Phase 0-3 tasks]
 ```
 
 ## Parallel Execution Opportunities
 
+- **Phase 0**: Task 0.1 must complete before all other phases (prerequisite rename).
 - **Phase 1**: Tasks 1.1, 1.3, 1.4, 1.5 can all run in parallel. Task 1.2 waits for 1.1.
 - **Phase 2**: After 2.1, tasks 2.2, 2.3, 2.4 can all run in parallel.
 - **Phase 3**: Tasks 3.1 and 3.4 can run together once 2.1 is done. 3.2 needs 3.1. 3.3 needs 3.2.
-- **Phase 4**: All four tasks (4.1-4.4) can run in parallel after 2.1.
-- **Cross-phase**: Phase 1 and Phase 2 can run in parallel (no dependencies between them).
+- **Phase 4**: All four tasks (4.1-4.4) can run in parallel after 0.1 and 2.1.
+- **Cross-phase**: Phase 1 and Phase 2 can run in parallel (no dependencies between them, both only depend on 0.1).
 
 ## Critical Path
 
-1.1 -> 1.2 (shortest)
-2.1 -> 3.1 -> 3.2 -> 3.3 (longest chain in Phases 2-3)
+0.1 -> 2.1 -> 3.1 -> 3.2 -> 3.3 (longest chain)
 All Phases -> 5.1

@@ -208,5 +208,5 @@ grep -r "from '@/layers/" apps/client/src/layers/shared/ --include="*.ts" | grep
 
 ## References
 
-- `guides/01-project-structure.md` — Full FSD patterns, directory layout, adding features
-- `guides/architecture.md` — Hexagonal architecture, Transport interface
+- `contributing/01-project-structure.md` — Full FSD patterns, directory layout, adding features
+- `contributing/architecture.md` — Hexagonal architecture, Transport interface

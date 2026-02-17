@@ -256,7 +256,7 @@ Key details:
 
 ## Adding Shortcuts for a New Interactive Tool
 
-If you add a new interactive tool (see `guides/interactive-tools.md` for the full pattern), extend the keyboard shortcut system:
+If you add a new interactive tool (see `contributing/interactive-tools.md` for the full pattern), extend the keyboard shortcut system:
 
 1. **Add a new type** to `activeInteraction.type` (currently `'approval' | 'question'`).
 2. **Add a new branch** in the `useInteractiveShortcuts` handler for your type's key bindings.

@@ -50,7 +50,7 @@
         "guides": {
           "type": "object",
           "properties": {
-            "path": { "type": "string", "default": "guides/" },
+            "path": { "type": "string", "default": "contributing/" },
             "strategy": { "enum": ["replace", "merge"], "default": "replace" }
           }
         },

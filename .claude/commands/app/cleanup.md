@@ -443,4 +443,4 @@ pnpm install
 
 - Knip is configured in `knip.config.ts`
 - The boilerplate intentionally keeps Shadcn UI components as a library
-- FSD layer structure (shared, entities, features, widgets) documented in `guides/01-project-structure.md`
+- FSD layer structure (shared, entities, features, widgets) documented in `contributing/01-project-structure.md`

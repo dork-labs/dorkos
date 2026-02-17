@@ -24,7 +24,7 @@ Analyze the spec to identify:
 Use the Glob tool to find all markdown files in:
 
 - Root directory: `*.md`
-- Developer guides: `guides/*.md`
+- Developer guides: `contributing/*.md`
 
 ## Step 3: Launch Parallel Documentation Expert Agents
 
@@ -91,8 +91,8 @@ If the file requires no updates, respond with: "[FILENAME]: No updates required.
 - Agent 1: Review README.md
 - Agent 2: Review CLAUDE.md
 - Agent 3: Review TESTING.md
-- Agent 4: Review guides/system-overview.md
-- Agent 5: Review guides/cli-pipeline-executor.md
+- Agent 4: Review contributing/system-overview.md
+- Agent 5: Review contributing/cli-pipeline-executor.md
 - ... (one agent per file)
 
 ## Step 4: Consolidate Results

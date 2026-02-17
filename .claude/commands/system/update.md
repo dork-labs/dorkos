@@ -26,7 +26,7 @@ Add new processes, update existing ones, or improve the Claude Code workflow bas
 | **Rules**            | `/.claude/rules/[topic].md`               | Path-specific guidelines that apply to certain file types (path-triggered) |
 | **Hooks**            | `/.claude/settings.json`                  | Automated validation/actions (via ClaudeKit, event-triggered)              |
 | **ADRs**             | `/decisions/NNNN-slug.md`                 | Architecture decisions with context, rationale, consequences               |
-| **Developer Guides** | `/guides/[name].md`                       | Detailed patterns and conventions (see `writing-developer-guides` skill)   |
+| **Developer Guides** | `/contributing/[name].md`                       | Detailed patterns and conventions (see `writing-developer-guides` skill)   |
 | **Memory**           | `/CLAUDE.md`                              | Core instructions, high-level documentation                                |
 | **Harness README**   | `/.claude/README.md`                      | Harness structure, component inventory, maintenance guides                 |
 
@@ -386,12 +386,12 @@ These rules apply to [description of what files/patterns].
 
 **Developer Guide Template:**
 
-For developer guides in `/guides/`, apply the `writing-developer-guides` skill which provides:
+For developer guides in `/contributing/`, apply the `writing-developer-guides` skill which provides:
 - Optimal structure for AI agent consumption
 - Required sections (Overview, Key Files, Decision Matrix, Core Patterns, Anti-Patterns, Troubleshooting)
 - Complete template in `.claude/skills/writing-developer-guides/reference.md`
 
-After creating/updating a guide, update `guides/INDEX.md` with:
+After creating/updating a guide, update `contributing/INDEX.md` with:
 - Entry in Guide Coverage Map table
 - Pattern matching rules (file patterns + keywords)
 - Maintenance tracking date
@@ -636,7 +636,7 @@ Understanding HOW each component is invoked is critical for choosing the right f
 | ---------------------- | -------------------------------- |
 | Specification workflow | `spec/`                          |
 | Git operations         | `git/`                           |
-| Developer guides       | `guides/`                        |
+| Developer guides       | `contributing/`                        |
 | Checkpoints            | `checkpoint/`                    |
 | System/meta            | `system/`                        |
 | Code analysis          | `dev/`                           |

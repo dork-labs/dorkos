@@ -222,6 +222,6 @@ print("📊 Synthesizing results...")
 
 For detailed patterns and examples, see:
 
-- `guides/11-parallel-execution.md` — Complete guide
+- `contributing/11-parallel-execution.md` — Complete guide
 - `.claude/skills/executing-specs/SKILL.md` — Batch execution example
 - `.claude/commands/ideate.md` — Parallel research example

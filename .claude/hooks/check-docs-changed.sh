@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 # Get the project root (where this script is run from)
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
-INDEX_FILE="$PROJECT_ROOT/guides/INDEX.md"
+INDEX_FILE="$PROJECT_ROOT/contributing/INDEX.md"
 
 # Check if INDEX.md exists
 if [ ! -f "$INDEX_FILE" ]; then
@@ -34,7 +34,7 @@ if [ -z "$ALL_CHANGED" ]; then
 fi
 
 # Pattern mappings (simplified from INDEX.md)
-# NOTE: These patterns are duplicated from guides/INDEX.md for performance.
+# NOTE: These patterns are duplicated from contributing/INDEX.md for performance.
 # If INDEX.md patterns change significantly, update these mappings to match.
 # Format: "guide:pattern1|pattern2|pattern3"
 MAPPINGS=(

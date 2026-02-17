@@ -29,7 +29,7 @@ Review Claude Code processes (commands, agents, hooks, configuration) for clarit
 | **Rules**               | `/.claude/rules/*.md`         | Path patterns, content relevance, no overlaps           |
 | **Hooks**               | `/.claude/settings.json`      | Hook configuration, lifecycle events                    |
 | **ADRs**                | `/decisions/*.md`             | Frontmatter, active voice, consequences, manifest sync  |
-| **Developer Guides**    | `/guides/*.md`                | Patterns, best practices                                |
+| **Developer Guides**    | `/contributing/*.md`                | Patterns, best practices                                |
 | **UI Documentation**    | `apps/client/src/**/*.tsx`    | Stats accuracy, component lists, content currency       |
 
 ## Order of Operations
@@ -252,7 +252,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 
 - [ ] **7.2** Scan for Skill extraction candidates in these locations:
 
-**Developer Guides** (`guides/*.md`):
+**Developer Guides** (`contributing/*.md`):
 
 - Step-by-step procedures that teach expertise
 - Best practices sections that guide behavior
@@ -312,7 +312,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 
   | Source          | Proposed Skill Name | Why Extract?                                   |
   | --------------- | ------------------- | ---------------------------------------------- |
-  | `guides/xyz.md` | `reviewing-xyz`     | Reusable expertise, auto-activation beneficial |
+  | `contributing/xyz.md` | `reviewing-xyz`     | Reusable expertise, auto-activation beneficial |
 
   ### Medium-Priority Candidates (Consider Converting)
 

@@ -75,7 +75,7 @@ DorkOS uses a **hexagonal architecture** with a `Transport` interface that decou
 - **`HttpTransport`** — Standalone web (HTTP/SSE to Express)
 - **`DirectTransport`** — Obsidian plugin (in-process services)
 
-Transport is injected via React Context (`TransportContext`). For deeper details, see [guides/architecture.md](guides/architecture.md).
+Transport is injected via React Context (`TransportContext`). For deeper details, see [contributing/architecture.md](contributing/architecture.md).
 
 ## Client Architecture
 
@@ -95,7 +95,7 @@ shared ← entities ← features ← widgets ← app
 
 **Import rules**: Always import from barrel exports (e.g., `import { ChatPanel } from '@/layers/features/chat'`), never from internal paths.
 
-For details, see [guides/01-project-structure.md](guides/01-project-structure.md) and [.claude/rules/fsd-layers.md](.claude/rules/fsd-layers.md).
+For details, see [contributing/01-project-structure.md](contributing/01-project-structure.md) and [.claude/rules/fsd-layers.md](.claude/rules/fsd-layers.md).
 
 ## Testing
 
@@ -206,7 +206,7 @@ feat: add session export functionality
 When adding features, update relevant documentation:
 
 - **CLAUDE.md** — Project overview, architecture updates
-- **guides/** — Detailed guides (architecture, design system, etc.)
+- **contributing/** — Detailed guides (architecture, design system, etc.)
 - **.claude/rules/** — Development rules and conventions
 - **API docs** — Update Zod schemas in `packages/shared/src/schemas.ts` (auto-generates OpenAPI spec)
 
@@ -221,7 +221,7 @@ We are committed to providing a welcoming and inclusive experience for all contr
 
 ## Need Help?
 
-- **Documentation**: Start with [CLAUDE.md](CLAUDE.md) and [guides/](guides/)
+- **Documentation**: Start with [CLAUDE.md](CLAUDE.md) and [contributing/](contributing/)
 - **Issues**: Check existing issues or open a new one
 - **Discussions**: Start a discussion for questions or ideas
 

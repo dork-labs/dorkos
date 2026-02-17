@@ -14,6 +14,19 @@ Establish the documentation infrastructure for DorkOS as an open-source npm pack
 
 The docs content lives in this repo alongside the code it documents. A separate Next.js marketing site (future, out of scope) will consume `docs/` at build time via git submodule and render it at `docs.dorkos.ai` using Fumadocs.
 
+### Documentation Directory Convention
+
+The repo uses two documentation directories with distinct audiences:
+
+| Directory | Audience | Format | Purpose |
+|---|---|---|---|
+| `contributing/` | Maintainers & Claude Code agents | Markdown | Deep implementation details, code patterns, FSD layers, internal workflows |
+| `docs/` | External users & integrators | MDX (Fumadocs) | Task-oriented guides, API reference, getting started, contributor onboarding |
+
+The `contributing/` directory (formerly `guides/`) contains internal developer documentation optimized for people (and AI agents) actively working on the DorkOS codebase. The `docs/` directory contains user-facing content published to `docs.dorkos.ai`.
+
+Note: `docs/contributing/` is a subsection of the Fumadocs site (simplified contributor onboarding for external contributors), while root-level `contributing/` contains deep internal documentation. These serve different audiences at different depths.
+
 ## Background / Problem Statement
 
 DorkOS is preparing for open-source release as an npm package (`dorkos`). The current documentation situation has several gaps:
@@ -23,7 +36,7 @@ DorkOS is preparing for open-source release as an npm package (`dorkos`). The cu
 3. **No CONTRIBUTING.md** — No contributor onboarding guide despite being open-source
 4. **No CLI README** — `packages/cli/README.md` is missing; this is what npm displays on the package page
 5. **No LICENSE file** — MIT is declared in package.json but no root LICENSE file exists
-6. **Internal-only docs** — 13 detailed guides in `guides/` but written for internal development (Claude Code agents), not external users
+6. **Internal-only docs** — 13 detailed guides in `contributing/` (formerly `guides/`) but written for internal development (Claude Code agents), not external users
 7. **No docs publishing pipeline** — API docs exist via Scalar UI at `/api/docs` but only on running instances; no static public docs site
 
 ## Goals
@@ -34,7 +47,7 @@ DorkOS is preparing for open-source release as an npm package (`dorkos`). The cu
 - Create CONTRIBUTING.md with contributor onboarding
 - Create `packages/cli/README.md` for the npm package page
 - Add root LICENSE file (MIT)
-- Define the content architecture that maps existing `guides/` to user-facing docs
+- Define the content architecture that maps existing `contributing/` (formerly `guides/`) to user-facing docs
 - Establish the OpenAPI-to-docs pipeline so API reference can be published statically
 - Add a `scripts/generate-api-docs.ts` that exports the OpenAPI spec to a JSON file for future Fumadocs consumption
 
@@ -42,9 +55,9 @@ DorkOS is preparing for open-source release as an npm package (`dorkos`). The cu
 
 - Building the Next.js marketing site (separate repo, future work)
 - Setting up Fumadocs, Vercel deployment, or the docs.dorkos.ai subdomain
-- Writing all docs content from scratch — this spec creates the structure and key files; content will be adapted from existing `guides/` incrementally
+- Writing all docs content from scratch — this spec creates the structure and key files; content will be adapted from existing `contributing/` incrementally
 - Versioned documentation (latest-only for now; versioning deferred to post-1.0)
-- Removing or replacing the existing `guides/` directory (it continues to serve as internal dev docs and Claude Code agent context)
+- Removing or replacing the existing `contributing/` directory (it continues to serve as internal dev docs and Claude Code agent context)
 - Search integration, i18n, or analytics for the docs site
 
 ## Technical Dependencies
@@ -75,11 +88,11 @@ docs/
 ├── guides/
 │   ├── meta.json
 │   ├── cli-usage.mdx              # CLI commands and options
-│   ├── obsidian-plugin.mdx        # Obsidian plugin setup (adapted from guides/)
+│   ├── obsidian-plugin.mdx        # Obsidian plugin setup (adapted from contributing/)
 │   ├── tunnel-setup.mdx           # ngrok tunnel configuration
-│   ├── tool-approval.mdx          # Tool approval flows (adapted from guides/)
+│   ├── tool-approval.mdx          # Tool approval flows (adapted from contributing/)
 │   ├── slash-commands.mdx         # Slash command usage
-│   └── keyboard-shortcuts.mdx     # Shortcuts reference (adapted from guides/)
+│   └── keyboard-shortcuts.mdx     # Shortcuts reference (adapted from contributing/)
 ├── integrations/
 │   ├── meta.json
 │   ├── building-integrations.mdx  # Transport interface, custom clients
@@ -94,7 +107,7 @@ docs/
 └── contributing/
     ├── meta.json
     ├── development-setup.mdx      # Dev environment setup
-    ├── architecture.mdx           # Architecture overview (adapted from guides/)
+    ├── architecture.mdx           # Architecture overview (adapted from contributing/)
     └── testing.mdx                # Testing patterns
 ```
 
@@ -152,21 +165,23 @@ description: Install DorkOS via npm and start your first session
 
 Only `title` is required. `description` is recommended for SEO. No custom fields needed for v1.
 
-### 4. Content Strategy: guides/ vs docs/
+### 4. Content Strategy: contributing/ vs docs/
 
-| `guides/` (internal) | `docs/` (external) |
+| `contributing/` (internal) | `docs/` (external) |
 |---|---|
-| Written for Claude Code agents and contributors | Written for end users and integrators |
+| Written for Claude Code agents and maintainers | Written for end users and integrators |
 | Deep implementation details, code patterns | Task-oriented, outcome-focused |
 | References internal file paths and FSD layers | References public APIs and CLI commands |
 | Stays in repo, not published | Published to docs.dorkos.ai |
 
-Some `guides/` content will be adapted into `docs/`:
-- `guides/architecture.md` → `docs/contributing/architecture.mdx` (simplified)
-- `guides/interactive-tools.md` → `docs/guides/tool-approval.mdx` (user-facing)
-- `guides/keyboard-shortcuts.md` → `docs/guides/keyboard-shortcuts.mdx` (direct adaptation)
-- `guides/obsidian-plugin-development.md` → `docs/guides/obsidian-plugin.mdx` (setup only, not dev internals)
-- `guides/api-reference.md` → Replaced by auto-generated API docs
+The directory name `contributing/` (formerly `guides/`) makes the audience self-documenting: this content is for people contributing to DorkOS development.
+
+Some `contributing/` content will be adapted into `docs/`:
+- `contributing/architecture.md` → `docs/contributing/architecture.mdx` (simplified)
+- `contributing/interactive-tools.md` → `docs/guides/tool-approval.mdx` (user-facing)
+- `contributing/keyboard-shortcuts.md` → `docs/guides/keyboard-shortcuts.mdx` (direct adaptation)
+- `contributing/obsidian-plugin-development.md` → `docs/guides/obsidian-plugin.mdx` (setup only, not dev internals)
+- `contributing/api-reference.md` → Replaced by auto-generated API docs
 
 ### 5. OpenAPI Spec Export
 
@@ -242,7 +257,7 @@ Covers:
 - Fork + clone + install workflow
 - Monorepo structure overview (apps, packages)
 - Running dev servers, tests, linting
-- FSD architecture rules (link to `guides/01-project-structure.md`)
+- FSD architecture rules (link to `contributing/01-project-structure.md`)
 - PR process and commit conventions
 - Link to Code of Conduct (future)
 
@@ -275,7 +290,7 @@ MIT license text with `Copyright (c) 2025 Dork Labs` at the root of the repo.
 1. Finds repo on GitHub → reads root `README.md`
 2. Wants to contribute → reads `CONTRIBUTING.md`
 3. Sets up dev environment → follows dev setup guide
-4. Explores architecture → `docs/contributing/architecture.mdx` or `guides/` for deeper internals
+4. Explores architecture → `docs/contributing/architecture.mdx` or `contributing/` for deeper internals
 
 ## Testing Strategy
 
@@ -345,11 +360,11 @@ Scaffold the `docs/` directory:
 
 ### Phase 4: Content Migration (Incremental)
 
-Adapt existing `guides/` content into user-facing `docs/` pages:
-- `guides/keyboard-shortcuts.md` → `docs/guides/keyboard-shortcuts.mdx`
-- `guides/interactive-tools.md` → `docs/guides/tool-approval.mdx`
-- `guides/obsidian-plugin-development.md` → `docs/guides/obsidian-plugin.mdx`
-- `guides/architecture.md` → `docs/contributing/architecture.mdx`
+Adapt existing `contributing/` content into user-facing `docs/` pages:
+- `contributing/keyboard-shortcuts.md` → `docs/guides/keyboard-shortcuts.mdx`
+- `contributing/interactive-tools.md` → `docs/guides/tool-approval.mdx`
+- `contributing/obsidian-plugin-development.md` → `docs/guides/obsidian-plugin.mdx`
+- `contributing/architecture.md` → `docs/contributing/architecture.mdx`
 
 This phase is incremental and can be done over multiple PRs.
 
@@ -359,7 +374,7 @@ This phase is incremental and can be done over multiple PRs.
 2. **Code of Conduct**: Should we adopt a standard CoC (e.g., Contributor Covenant) now or defer?
 3. **Marketing site repo name**: Will it be `dork-labs/dorkos-web`, `dork-labs/website`, or something else? Affects submodule setup docs.
 4. **Copyright holder**: Is it "Dork Labs" or another entity for the LICENSE file?
-5. **Existing guides/ cleanup**: Some guides are heavily agent-focused (e.g., `13-autonomous-roadmap-execution.md`). Should these be excluded from the public repo entirely, or are they fine as internal docs?
+5. **Existing contributing/ cleanup**: Some files in `contributing/` are heavily agent-focused (e.g., `13-autonomous-roadmap-execution.md`). Should these be excluded from the public repo entirely, or are they fine as internal docs?
 
 ## References
 
@@ -367,6 +382,6 @@ This phase is incremental and can be done over multiple PRs.
 - [Keep a Changelog](https://keepachangelog.com/)
 - [Fumadocs OpenAPI integration](https://fumadocs.dev/docs/integrations/openapi)
 - [Scalar API documentation](https://github.com/scalar/scalar)
-- Existing internal docs: `guides/`, `CLAUDE.md`, `guides/api-reference.md`
+- Existing internal docs: `contributing/`, `CLAUDE.md`, `contributing/api-reference.md`
 - npm package: [npmjs.com/package/dorkos](https://www.npmjs.com/package/dorkos)
 - GitHub: [github.com/dork-labs/dorkos](https://github.com/dork-labs/dorkos)
