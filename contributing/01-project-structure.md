@@ -11,6 +11,7 @@ dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client — React 19 SPA with FSD layers
 │   ├── server/           # @dorkos/server — Express API (flat services)
+│   ├── web/              # @dorkos/web — Marketing site & docs (Next.js 16, Fumadocs)
 │   └── obsidian-plugin/  # @dorkos/obsidian-plugin — Obsidian plugin
 ├── packages/
 │   ├── cli/              # dorkos — Publishable npm CLI

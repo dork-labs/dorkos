@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 9 / 11
+**Status:** Complete
+**Tasks Completed:** 11 / 11
 
 ## Tasks Completed
 
@@ -22,6 +22,8 @@
 - Task #6: [P2] Create docs route group with layout and catch-all page
 - Task #10: [P4] Create sitemap and SEO pages
 - Task #7: [P3] Wire fumadocs-openapi for interactive API reference
+- Task #11: [P5] Configure and deploy to Vercel via CLI
+- Task #12: [P6] Update project documentation for apps/web
 
 ## Files Modified/Created
 
@@ -58,6 +60,12 @@
 - `apps/web/src/app/(public)/*/page.tsx` — Legal pages updated with DorkOS branding
 - `docs/` — 9 MDX files fixed (HTML comments → MDX comments)
 - `docs/api/api/` — 14 generated OpenAPI MDX files
+- `docs/api/openapi.json` — Committed for Vercel builds (previously gitignored)
+- `apps/web/vercel.json` — turbo-ignore for smart rebuild skipping
+- `CLAUDE.md` — Updated monorepo structure, commands, documentation section
+- `README.md` — Added marketing site mention and docs link
+- `contributing/01-project-structure.md` — Added apps/web to monorepo layout
+- `.gitignore` — Removed openapi.json exclusion
 
 **Test files:**
 
@@ -71,4 +79,8 @@ _(None yet)_
 
 ### Session 1
 
-_(Implementation in progress)_
+- Vercel Root Directory must be blank (repo root), not `apps/web` — monorepo build command needs access to root `package.json` and `turbo.json`
+- `docs/api/openapi.json` must be committed to git — fumadocs-openapi needs it at Next.js build time for prerendering API reference pages
+- `generate:api-docs` script gracefully skips if openapi.json is missing (CI safety)
+- 9 MDX files in `docs/` had HTML comments (`<!-- -->`) that are invalid in MDX — converted to `{/* */}`
+- Logo assets still reference `dorkian-logo.svg` filenames — requires separate asset replacement task

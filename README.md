@@ -33,6 +33,7 @@ The server starts on port 4242 and opens your browser automatically.
 - Slash command discovery from `.claude/commands/`
 - Real-time SSE streaming responses
 - Cross-client session sync (CLI, web, Obsidian)
+- Marketing website and documentation site ([dorkos.ai](https://dorkos.ai))
 - Obsidian plugin with sidebar integration
 - ngrok tunnel support for remote access
 - Interactive API documentation at `/api/docs` (OpenAPI 3.1)
@@ -40,7 +41,7 @@ The server starts on port 4242 and opens your browser automatically.
 
 ## Documentation
 
-Full documentation is available in the [`contributing/`](contributing/) directory:
+Full documentation is available at [dorkos.ai/docs](https://dorkos.ai/docs) and in the [`contributing/`](contributing/) directory:
 
 - [Architecture Overview](contributing/architecture.md) - Hexagonal architecture, Transport interface, module layout
 - [API Reference](contributing/api-reference.md) - OpenAPI spec, endpoints, SSE streaming protocol
