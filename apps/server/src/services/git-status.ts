@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 import { GIT } from '../config/constants.js';
+import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 
 /**
  * Git repository status via `git status --porcelain=v1`.
@@ -19,6 +20,15 @@ const execFileAsync = promisify(execFile);
  * @param cwd - Directory to check (must be inside a git repo)
  */
 export async function getGitStatus(cwd: string): Promise<GitStatusResponse | GitStatusError> {
+  try {
+    await validateBoundary(cwd);
+  } catch (err) {
+    if (err instanceof BoundaryError) {
+      return { error: 'not_git_repo' as const };
+    }
+    throw err;
+  }
+
   try {
     const { stdout } = await execFileAsync('git', ['status', '--porcelain=v1', '--branch'], {
       cwd,

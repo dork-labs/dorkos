@@ -62,7 +62,7 @@ describe('ConfigManager', () => {
 
   it('sets top-level config section', () => {
     const configManager = initConfigManager(testDir);
-    configManager.set('server', { port: 5000, cwd: '/test' });
+    configManager.set('server', { port: 5000, cwd: '/test', boundary: null });
 
     expect(configManager.get('server').port).toBe(5000);
     expect(configManager.get('server').cwd).toBe('/test');

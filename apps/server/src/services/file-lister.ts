@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 import { FILE_LIMITS, FILE_LISTING } from '../config/constants.js';
+import { validateBoundary } from '../lib/boundary.js';
 
 /**
  * File listing service for the client file browser.
@@ -18,6 +19,8 @@ class FileListService {
   private cache = new Map<string, { files: string[]; timestamp: number }>();
 
   async listFiles(cwd: string): Promise<{ files: string[]; truncated: boolean; total: number }> {
+    await validateBoundary(cwd);
+
     const cached = this.cache.get(cwd);
     if (cached && Date.now() - cached.timestamp < FILE_LISTING.CACHE_TTL_MS) {
       return {

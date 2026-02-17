@@ -2,6 +2,19 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { Response } from 'express';
 import type { TranscriptReader } from '../transcript-reader.js';
 
+vi.mock('../../lib/logger.js', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    withTag: vi.fn().mockReturnThis(),
+  },
+  initLogger: vi.fn(),
+}));
+
 // Mock chokidar before importing SessionBroadcaster
 const mockWatcher = {
   on: vi.fn(),
@@ -348,7 +361,7 @@ describe('SessionBroadcaster', () => {
 
     it('handles client write errors gracefully', async () => {
       const sessionId = 'session-123';
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { logger } = await import('../../lib/logger.js');
 
       vi.mocked(mockTranscriptReader.readFromOffset)
         .mockResolvedValueOnce({ content: '', newOffset: 100 })
@@ -371,12 +384,10 @@ describe('SessionBroadcaster', () => {
       await new Promise((resolve) => setTimeout(resolve, 150));
 
       // Should log error but not throw
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to write to client'),
         expect.any(Error)
       );
-
-      consoleErrorSpy.mockRestore();
     });
   });
 

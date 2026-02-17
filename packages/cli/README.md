@@ -37,6 +37,7 @@ The server starts on port 4242 and opens your browser automatically. You'll see 
 |---|---|---|
 | `DORKOS_PORT` | `4242` | Server port |
 | `DORKOS_DEFAULT_CWD` | Current directory | Default working directory for sessions |
+| `DORKOS_BOUNDARY` | Home directory | Directory boundary root (restricts filesystem access) |
 
 ### Tunnel Configuration
 

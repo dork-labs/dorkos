@@ -12,6 +12,7 @@ import {
   SubmitAnswersRequestSchema,
   ListSessionsQuerySchema,
 } from '@dorkos/shared/schemas';
+import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const vaultRoot = path.resolve(__dirname, '../../../../');
@@ -27,6 +28,18 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid request', details: parsed.error.format() });
   }
   const { permissionMode = 'default', cwd } = parsed.data;
+
+  // Validate cwd against boundary if provided
+  if (cwd) {
+    try {
+      await validateBoundary(cwd);
+    } catch (err: unknown) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: err.message, code: err.code });
+      }
+      throw err;
+    }
+  }
 
   // Use SDK's query() with a no-op prompt to establish the session.
   // The SDK will create the JSONL file and assign a session ID.
@@ -52,6 +65,18 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid query', details: parsed.error.format() });
   }
   const { limit, cwd } = parsed.data;
+
+  if (cwd) {
+    try {
+      await validateBoundary(cwd);
+    } catch (err: unknown) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: err.message, code: err.code });
+      }
+      throw err;
+    }
+  }
+
   const projectDir = cwd || vaultRoot;
   const sessions = await transcriptReader.listSessions(projectDir);
   res.json(sessions.slice(0, limit));
@@ -59,15 +84,41 @@ router.get('/', async (req, res) => {
 
 // GET /api/sessions/:id - Get session details
 router.get('/:id', async (req, res) => {
-  const cwd = (req.query.cwd as string) || vaultRoot;
-  const session = await transcriptReader.getSession(cwd, req.params.id);
+  const cwd = (req.query.cwd as string) || undefined;
+
+  if (cwd) {
+    try {
+      await validateBoundary(cwd);
+    } catch (err: unknown) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: err.message, code: err.code });
+      }
+      throw err;
+    }
+  }
+
+  const projectDir = cwd || vaultRoot;
+  const session = await transcriptReader.getSession(projectDir, req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
   res.json(session);
 });
 
 // GET /api/sessions/:id/tasks - Get task state from SDK transcript
 router.get('/:id/tasks', async (req, res) => {
-  const cwd = (req.query.cwd as string) || vaultRoot;
+  const cwdParam = (req.query.cwd as string) || undefined;
+
+  if (cwdParam) {
+    try {
+      await validateBoundary(cwdParam);
+    } catch (err: unknown) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: err.message, code: err.code });
+      }
+      throw err;
+    }
+  }
+
+  const cwd = cwdParam || vaultRoot;
 
   const etag = await transcriptReader.getTranscriptETag(cwd, req.params.id);
   if (etag) {
@@ -87,7 +138,20 @@ router.get('/:id/tasks', async (req, res) => {
 
 // GET /api/sessions/:id/messages - Get message history from SDK transcript
 router.get('/:id/messages', async (req, res) => {
-  const cwd = (req.query.cwd as string) || vaultRoot;
+  const cwdParam = (req.query.cwd as string) || undefined;
+
+  if (cwdParam) {
+    try {
+      await validateBoundary(cwdParam);
+    } catch (err: unknown) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: err.message, code: err.code });
+      }
+      throw err;
+    }
+  }
+
+  const cwd = cwdParam || vaultRoot;
 
   const etag = await transcriptReader.getTranscriptETag(cwd, req.params.id);
   if (etag) {

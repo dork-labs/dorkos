@@ -17,7 +17,7 @@ import type { UserConfig } from '@dorkos/shared/config-schema';
 
 const MOCK_CONFIG: UserConfig = {
   version: 1,
-  server: { port: 4242, cwd: null },
+  server: { port: 4242, cwd: null, boundary: null },
   tunnel: { enabled: false, domain: null, authtoken: null, auth: null },
   ui: { theme: 'system' },
 };

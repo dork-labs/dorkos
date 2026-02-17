@@ -47,6 +47,7 @@ dorkos config path
 | ----------------- | ------------------------------ | --------- | ------------------------------------------ |
 | `server.port`     | integer (1024--65535)          | `4242`    | Port the Express server listens on         |
 | `server.cwd`      | string \| null                 | `null`    | Default working directory for sessions     |
+| `server.boundary` | string \| null                 | `null`    | Directory boundary root (`null` = home directory) |
 | `tunnel.enabled`  | boolean                        | `false`   | Enable ngrok tunnel on startup             |
 | `tunnel.domain`   | string \| null                 | `null`    | Custom ngrok domain                        |
 | `tunnel.authtoken`| string \| null                 | `null`    | ngrok auth token (sensitive)               |
@@ -82,6 +83,21 @@ dorkos config set server.cwd null
 
 Equivalent CLI flag: `--dir` / `-d`
 Equivalent env var: `DORKOS_DEFAULT_CWD`
+
+### server.boundary
+
+The directory boundary restricts all filesystem operations to a specific root directory. When `null` (default), the boundary is the user's home directory (`~/`). All API endpoints that accept `cwd`, `path`, or `dir` parameters validate against this boundary and return 403 if the path is outside it.
+
+At startup, the server logs a warning if:
+- The boundary is set above the home directory
+- `server.cwd` is outside the configured boundary (falls back to boundary root)
+
+```bash
+dorkos config set server.boundary /home/user/projects
+```
+
+Equivalent CLI flag: `--boundary` / `-b`
+Equivalent env var: `DORKOS_BOUNDARY`
 
 ### tunnel.enabled
 
@@ -179,6 +195,15 @@ tunnel.enabled: true     # config.json (wins if no env var)
 false                    # Built-in default (fallback)
 ```
 
+**Boundary resolution:**
+
+```
+--boundary /path        # CLI flag (wins if provided)
+DORKOS_BOUNDARY=...     # Env var (wins if no CLI flag)
+server.boundary: /path  # config.json (wins if no env var)
+os.homedir()            # Home directory (fallback)
+```
+
 **Tunnel credentials** (authtoken, auth, domain) use a simpler chain: the environment variable takes priority over config.json. There are no CLI flags for these.
 
 ### Examples
@@ -216,6 +241,7 @@ DorkOS Configuration (~/.dork/config.json)
 
   server.port          4242           (default)
   server.cwd           —              (default)
+  server.boundary      —              (default)
   tunnel.enabled       false          (default)
   tunnel.domain        —              (default)
   tunnel.authtoken     —              (default)
@@ -261,7 +287,8 @@ $ dorkos config list
   "version": 1,
   "server": {
     "port": 4242,
-    "cwd": null
+    "cwd": null,
+    "boundary": null
   },
   "tunnel": {
     "enabled": false,
@@ -366,7 +393,7 @@ Content-Type: application/json
   "success": true,
   "config": {
     "version": 1,
-    "server": { "port": 8080, "cwd": null },
+    "server": { "port": 8080, "cwd": null, "boundary": null },
     "tunnel": { "enabled": false, "domain": null, "authtoken": null, "auth": null },
     "ui": { "theme": "dark" }
   }

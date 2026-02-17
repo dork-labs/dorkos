@@ -17,6 +17,7 @@ const { values, positionals } = parseArgs({
     port: { type: 'string', short: 'p' },
     tunnel: { type: 'boolean', short: 't', default: false },
     dir: { type: 'string', short: 'd' },
+    boundary: { type: 'string', short: 'b' },
     help: { type: 'boolean', short: 'h' },
     version: { type: 'boolean', short: 'v' },
     yes: { type: 'boolean', short: 'y', default: false },
@@ -43,11 +44,12 @@ Commands:
   init --yes           Accept all defaults
 
 Options:
-  -p, --port <port>  Port to listen on (default: ${DEFAULT_PORT})
-  -t, --tunnel       Enable ngrok tunnel
-  -d, --dir <path>   Working directory (default: current directory)
-  -h, --help         Show this help message
-  -v, --version      Show version number
+  -p, --port <port>      Port to listen on (default: ${DEFAULT_PORT})
+  -t, --tunnel           Enable ngrok tunnel
+  -d, --dir <path>       Working directory (default: current directory)
+  -b, --boundary <path>  Directory boundary (default: home directory)
+  -h, --help             Show this help message
+  -v, --version          Show version number
 
 Environment:
   NGROK_AUTHTOKEN    ngrok auth token (required for --tunnel)
@@ -148,10 +150,42 @@ if (cliDir) {
   process.env.DORKOS_DEFAULT_CWD = configCwd ? path.resolve(configCwd) : process.cwd();
 }
 
+// Boundary: CLI flag > env var > config > os.homedir()
+const cliBoundary = values.boundary;
+if (cliBoundary) {
+  process.env.DORKOS_BOUNDARY = path.resolve(cliBoundary);
+} else if (!process.env.DORKOS_BOUNDARY) {
+  const configBoundary = cfgMgr.getDot('server.boundary') as string | null;
+  if (configBoundary) {
+    process.env.DORKOS_BOUNDARY = path.resolve(configBoundary);
+  }
+  // If still not set, server will default to os.homedir() in initBoundary()
+}
+
+// Warn if boundary is above home directory
+const boundaryVal = process.env.DORKOS_BOUNDARY;
+const home = os.homedir();
+if (boundaryVal && !boundaryVal.startsWith(home + path.sep) && boundaryVal !== home) {
+  console.warn(
+    `[Warning] Directory boundary "${boundaryVal}" is above home directory "${home}". ` +
+      `This grants access to system directories.`
+  );
+}
+
+// Validate default CWD is within boundary
+const effectiveBoundary = process.env.DORKOS_BOUNDARY || home;
 const resolvedDir = process.env.DORKOS_DEFAULT_CWD!;
+if (resolvedDir !== effectiveBoundary && !resolvedDir.startsWith(effectiveBoundary + path.sep)) {
+  console.warn(
+    `[Warning] Default CWD "${resolvedDir}" is outside boundary "${effectiveBoundary}". ` +
+      `Falling back to boundary root.`
+  );
+  process.env.DORKOS_DEFAULT_CWD = effectiveBoundary;
+}
 
 // Load .env from user's cwd (project-local, optional)
-const envPath = path.join(resolvedDir, '.env');
+// Re-read env var in case CWD was overridden by boundary fallback above
+const envPath = path.join(process.env.DORKOS_DEFAULT_CWD!, '.env');
 if (fs.existsSync(envPath)) {
   const dotenv = await import('dotenv');
   dotenv.config({ path: envPath });

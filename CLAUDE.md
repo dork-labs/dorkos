@@ -67,7 +67,7 @@ DorkOS uses a **hexagonal architecture** with a `Transport` interface (`packages
 
 ### Server (`apps/server/src/`)
 
-Express server on port `DORKOS_PORT` (default 4242). Seven route groups:
+Express server on port `DORKOS_PORT` (default 4242). All endpoints that accept `cwd`, `path`, or `dir` parameters enforce directory boundary validation via `lib/boundary.ts`, returning 403 for paths outside the configured boundary (default: home directory). Seven route groups:
 
 - **`routes/sessions.ts`** - Session listing (from SDK transcripts), session creation, SSE message streaming, message history, tool approve/deny endpoints
 - **`routes/commands.ts`** - Slash command listing via `CommandRegistryService`, which scans `.claude/commands/` using gray-matter frontmatter parsing
@@ -185,9 +185,9 @@ The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plug
 
 ### CLI Package (`packages/cli`)
 
-The `dorkos` npm package bundles the server + client into a standalone CLI tool. Published to npm as `dorkos` (unscoped). Install via `npm install -g dorkos`, run via `dorkos`. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The version is injected at build time via esbuild's `define` config (reads from `packages/cli/package.json`). The CLI creates `~/.dork/` on startup for config storage and sets `DORK_HOME` env var. It also sets `DORKOS_PORT`, `CLIENT_DIST_PATH`, `DORKOS_DEFAULT_CWD`, `TUNNEL_ENABLED`, and `NODE_ENV` before dynamically importing the bundled server.
+The `dorkos` npm package bundles the server + client into a standalone CLI tool. Published to npm as `dorkos` (unscoped). Install via `npm install -g dorkos`, run via `dorkos`. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The version is injected at build time via esbuild's `define` config (reads from `packages/cli/package.json`). The CLI creates `~/.dork/` on startup for config storage and sets `DORK_HOME` env var. It also sets `DORKOS_PORT`, `CLIENT_DIST_PATH`, `DORKOS_DEFAULT_CWD`, `DORKOS_BOUNDARY`, `TUNNEL_ENABLED`, and `NODE_ENV` before dynamically importing the bundled server.
 
-CLI subcommands: `dorkos config` (manage config), `dorkos init` (interactive setup wizard). Config precedence: CLI flags > environment variables > `~/.dork/config.json` > built-in defaults.
+CLI subcommands: `dorkos config` (manage config), `dorkos init` (interactive setup wizard). CLI flags include `--port`/`-p`, `--dir`/`-d`, `--boundary`/`-b`, and `--tunnel`/`-t`. Config precedence: CLI flags > environment variables > `~/.dork/config.json` > built-in defaults.
 
 ## Guides
 

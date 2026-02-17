@@ -1,0 +1,85 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn(async (p: string) => p),
+  getBoundary: vi.fn(() => '/mock/home'),
+  initBoundary: vi.fn().mockResolvedValue('/mock/home'),
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+  BoundaryError: class BoundaryError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.name = 'BoundaryError';
+      this.code = code;
+    }
+  },
+}));
+
+vi.mock('../../services/file-lister.js', () => ({
+  fileLister: {
+    listFiles: vi.fn().mockResolvedValue({ files: [] }),
+  },
+}));
+
+// Must also mock services imported by other routes in createApp
+vi.mock('../../services/transcript-reader.js', () => ({
+  transcriptReader: {
+    listSessions: vi.fn(),
+    getSession: vi.fn(),
+    readTranscript: vi.fn(),
+    listTranscripts: vi.fn(),
+  },
+}));
+
+vi.mock('../../services/agent-manager.js', () => ({
+  agentManager: {
+    ensureSession: vi.fn(),
+    sendMessage: vi.fn(),
+    approveTool: vi.fn(),
+    hasSession: vi.fn(),
+    checkSessionHealth: vi.fn(),
+    getSdkSessionId: vi.fn(),
+  },
+}));
+
+vi.mock('../../services/tunnel-manager.js', () => ({
+  tunnelManager: {
+    status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
+  },
+}));
+
+import request from 'supertest';
+import { createApp } from '../../app.js';
+import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+
+const app = createApp();
+
+describe('Files Routes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('boundary enforcement', () => {
+    it('GET /api/files rejects cwd outside boundary with 403', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(app).get('/api/files').query({ cwd: '/etc/shadow' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+
+    it('GET /api/files rejects null byte paths with 403', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
+      );
+
+      const res = await request(app).get('/api/files').query({ cwd: '/home/user\0' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('NULL_BYTE');
+    });
+  });
+});

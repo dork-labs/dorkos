@@ -9,6 +9,19 @@ vi.mock('fs/promises', () => ({
     readFile: vi.fn(),
   },
 }));
+vi.mock('../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
+  getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
+  initBoundary: vi.fn().mockResolvedValue('/mock/boundary'),
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+  BoundaryError: class BoundaryError extends Error {
+    code: string;
+    constructor(msg: string, code: string) {
+      super(msg);
+      this.code = code;
+    }
+  },
+}));
 
 import fs from 'fs/promises';
 

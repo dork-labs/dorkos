@@ -3,6 +3,7 @@ import { CommandRegistryService } from '../services/command-registry.js';
 import { CommandsQuerySchema } from '@dorkos/shared/schemas';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultRoot = process.env.DORKOS_DEFAULT_CWD ?? path.resolve(__dirname, '../../../../');
@@ -27,9 +28,20 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid query', details: parsed.error.format() });
   }
   const refresh = parsed.data.refresh === 'true';
-  const registry = getRegistry(parsed.data.cwd);
-  const commands = await registry.getCommands(refresh);
-  res.json(commands);
+  try {
+    let validatedCwd: string | undefined;
+    if (parsed.data.cwd) {
+      validatedCwd = await validateBoundary(parsed.data.cwd);
+    }
+    const registry = getRegistry(validatedCwd);
+    const commands = await registry.getCommands(refresh);
+    res.json(commands);
+  } catch (err) {
+    if (err instanceof BoundaryError) {
+      return res.status(403).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
 });
 
 export default router;

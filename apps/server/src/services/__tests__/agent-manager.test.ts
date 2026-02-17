@@ -4,6 +4,31 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
+vi.mock('../../lib/logger.js', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    withTag: vi.fn().mockReturnThis(),
+  },
+  initLogger: vi.fn(),
+}));
+vi.mock('../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
+  getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
+  initBoundary: vi.fn().mockResolvedValue('/mock/boundary'),
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+  BoundaryError: class BoundaryError extends Error {
+    code: string;
+    constructor(msg: string, code: string) {
+      super(msg);
+      this.code = code;
+    }
+  },
+}));
 
 describe('AgentManager', () => {
   let agentManager: typeof import('../../services/agent-manager.js').agentManager;

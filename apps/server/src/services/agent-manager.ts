@@ -19,6 +19,8 @@ import {
   type PendingInteraction,
 } from './interactive-handlers.js';
 import { buildTaskEvent, TASK_TOOL_NAMES } from './build-task-event.js';
+import { validateBoundary } from '../lib/boundary.js';
+import { logger } from '../lib/logger.js';
 
 // Re-export for backward compatibility
 export { buildTaskEvent } from './build-task-event.js';
@@ -128,8 +130,16 @@ export class AgentManager {
     session.lastActivity = Date.now();
     session.eventQueue = [];
 
+    const effectiveCwd = session.cwd ?? this.cwd;
+    try {
+      await validateBoundary(effectiveCwd);
+    } catch {
+      yield { type: 'error', data: { message: `Directory boundary violation: ${effectiveCwd}` } };
+      return;
+    }
+
     const sdkOptions: Options = {
-      cwd: session.cwd ?? this.cwd,
+      cwd: effectiveCwd,
       includePartialMessages: true,
       settingSources: ['project', 'user'],
       ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
@@ -139,9 +149,12 @@ export class AgentManager {
       sdkOptions.resume = session.sdkSessionId;
     }
 
-    console.log(
-      `[sendMessage] session=${sessionId} permissionMode=${session.permissionMode} hasStarted=${session.hasStarted} resume=${session.hasStarted ? session.sdkSessionId : 'N/A'}`
-    );
+    logger.debug('[sendMessage]', {
+      session: sessionId,
+      permissionMode: session.permissionMode,
+      hasStarted: session.hasStarted,
+      resume: session.hasStarted ? session.sdkSessionId : 'N/A',
+    });
 
     switch (session.permissionMode) {
       case 'bypassPermissions':
@@ -173,22 +186,27 @@ export class AgentManager {
       }
     ): Promise<PermissionResult> => {
       if (toolName === 'AskUserQuestion') {
-        console.log(
-          `[canUseTool] ${toolName} → routing to question handler (toolUseID=${context.toolUseID})`
-        );
+        logger.debug('[canUseTool] routing to question handler', {
+          toolName,
+          toolUseID: context.toolUseID,
+        });
         return handleAskUserQuestion(session, context.toolUseID, input);
       }
 
       if (session.permissionMode === 'default') {
-        console.log(
-          `[canUseTool] ${toolName} → requesting approval (permissionMode=default, toolUseID=${context.toolUseID})`
-        );
+        logger.debug('[canUseTool] requesting approval', {
+          toolName,
+          permissionMode: 'default',
+          toolUseID: context.toolUseID,
+        });
         return handleToolApproval(session, context.toolUseID, toolName, input);
       }
 
-      console.log(
-        `[canUseTool] ${toolName} → auto-allow (permissionMode=${session.permissionMode}, toolUseID=${context.toolUseID})`
-      );
+      logger.debug('[canUseTool] auto-allow', {
+        toolName,
+        permissionMode: session.permissionMode,
+        toolUseID: context.toolUseID,
+      });
       return { behavior: 'allow', updatedInput: input };
     };
 
@@ -427,16 +445,19 @@ export class AgentManager {
       session = this.sessions.get(sessionId)!;
     }
     if (opts.permissionMode) {
-      console.log(
-        `[updateSession] ${sessionId} permissionMode: ${session.permissionMode} → ${opts.permissionMode}`
-      );
+      logger.debug('[updateSession] permissionMode change', {
+        sessionId,
+        from: session.permissionMode,
+        to: opts.permissionMode,
+      });
       session.permissionMode = opts.permissionMode;
       if (session.activeQuery) {
-        console.log(
-          `[updateSession] ${sessionId} calling setPermissionMode(${opts.permissionMode}) on active query`
-        );
+        logger.debug('[updateSession] calling setPermissionMode on active query', {
+          sessionId,
+          permissionMode: opts.permissionMode,
+        });
         session.activeQuery.setPermissionMode(opts.permissionMode).catch((err) => {
-          console.error(`[updateSession] setPermissionMode failed:`, err);
+          logger.error('[updateSession] setPermissionMode failed', { sessionId, err });
         });
       }
     }
@@ -450,14 +471,17 @@ export class AgentManager {
     const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
     if (!pending || pending.type !== 'approval') {
-      console.log(
-        `[approveTool] ${sessionId} toolCallId=${toolCallId} approved=${approved} → NOT FOUND (session=${!!session}, pending=${!!pending}, type=${pending?.type})`
-      );
+      logger.debug('[approveTool] interaction not found', {
+        sessionId,
+        toolCallId,
+        approved,
+        hasSession: !!session,
+        hasPending: !!pending,
+        pendingType: pending?.type,
+      });
       return false;
     }
-    console.log(
-      `[approveTool] ${sessionId} toolCallId=${toolCallId} approved=${approved} → resolving`
-    );
+    logger.debug('[approveTool] resolving', { sessionId, toolCallId, approved });
     pending.resolve(approved);
     return true;
   }

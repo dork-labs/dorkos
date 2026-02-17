@@ -4,6 +4,8 @@ import { tunnelManager } from './services/tunnel-manager.js';
 import { SessionBroadcaster } from './services/session-broadcaster.js';
 import { transcriptReader } from './services/transcript-reader.js';
 import { initConfigManager } from './services/config-manager.js';
+import { initBoundary } from './lib/boundary.js';
+import { initLogger, logger } from './lib/logger.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { INTERVALS } from './config/constants.js';
 
@@ -13,7 +15,14 @@ const PORT = parseInt(process.env.DORKOS_PORT || String(DEFAULT_PORT), 10);
 let sessionBroadcaster: SessionBroadcaster | null = null;
 
 async function start() {
+  initLogger();
   initConfigManager();
+
+  // Initialize directory boundary (must happen before app creation)
+  const boundaryConfig = process.env.DORKOS_BOUNDARY || undefined;
+  const resolvedBoundary = await initBoundary(boundaryConfig);
+  logger.info(`[Boundary] Directory boundary: ${resolvedBoundary}`);
+
   const app = createApp();
 
   // Initialize SessionBroadcaster and attach to app.locals
@@ -22,7 +31,7 @@ async function start() {
 
   const host = process.env.TUNNEL_ENABLED === 'true' ? '0.0.0.0' : 'localhost';
   app.listen(PORT, host, () => {
-    console.log(`DorkOS server running on http://localhost:${PORT}`);
+    logger.info(`DorkOS server running on http://localhost:${PORT}`);
   });
 
   // Run session health check periodically
@@ -48,39 +57,23 @@ async function start() {
       const hasAuth = !!process.env.TUNNEL_AUTH;
       const isDevPort = tunnelPort !== PORT;
 
-      console.log('');
-      console.log(
-        '\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510'
-      );
-      console.log('\u2502  ngrok tunnel active                            \u2502');
-      console.log('\u2502                                                 \u2502');
-      console.log(`\u2502  URL:  ${url.padEnd(40)} \u2502`);
-      console.log(`\u2502  Port: ${String(tunnelPort).padEnd(40)} \u2502`);
-      console.log(
-        `\u2502  Auth: ${(hasAuth ? 'basic auth enabled' : 'none (open)').padEnd(40)} \u2502`
-      );
-      if (isDevPort) {
-        console.log(`\u2502  Mode: ${('dev (Vite on :' + tunnelPort + ')').padEnd(40)} \u2502`);
-      }
-      console.log('\u2502                                                 \u2502');
-      console.log('\u2502  Free tier: 1GB/month bandwidth, session limits \u2502');
-      console.log(
-        '\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518'
-      );
-      console.log('');
+      logger.info('[Tunnel] ngrok tunnel active', {
+        url,
+        port: tunnelPort,
+        auth: hasAuth ? 'basic auth enabled' : 'none (open)',
+        ...(isDevPort && { mode: `dev (Vite on :${tunnelPort})` }),
+      });
     } catch (err) {
-      console.warn(
-        '[Tunnel] Failed to start ngrok tunnel:',
-        err instanceof Error ? err.message : err
-      );
-      console.warn('[Tunnel] Server continues without tunnel.');
+      logger.warn('[Tunnel] Failed to start ngrok tunnel — server continues without tunnel.', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }
 
 // Graceful shutdown
 function shutdown() {
-  console.log('\nShutting down...');
+  logger.info('Shutting down...');
   if (sessionBroadcaster) {
     sessionBroadcaster.shutdown();
   }

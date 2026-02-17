@@ -26,6 +26,7 @@
     "@scalar/express-api-reference": "^0.8.40",
     "chokidar": "^4.0.3",
     "conf": "^15.1.0",
+    "consola": "^3.4.2",
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "gray-matter": "^4.0.3",

@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import matter from 'gray-matter';
 import type { CommandEntry, CommandRegistry } from '@dorkos/shared/types';
+import { logger } from '../lib/logger.js';
 
 /**
  * Fallback frontmatter parser for when gray-matter's YAML parser fails
@@ -33,6 +34,7 @@ class CommandRegistryService {
   private cache: CommandRegistry | null = null;
   private readonly commandsDir: string;
 
+  /** @param vaultRoot - Must be pre-validated against directory boundary by caller */
   constructor(vaultRoot: string) {
     this.commandsDir = path.join(vaultRoot, '.claude', 'commands');
   }
@@ -83,7 +85,7 @@ class CommandRegistryService {
               filePath: path.relative(process.cwd(), filePath),
             });
           } catch (fileErr) {
-            console.warn(
+            logger.warn(
               `[CommandRegistry] Skipping ${entry.name}/${file}: ${(fileErr as Error).message}`
             );
           }
@@ -91,7 +93,7 @@ class CommandRegistryService {
       }
     } catch (err) {
       // Commands directory might not exist
-      console.warn('[CommandRegistry] Could not read commands directory:', (err as Error).message);
+      logger.warn('[CommandRegistry] Could not read commands directory:', (err as Error).message);
     }
 
     commands.sort((a, b) => a.fullCommand.localeCompare(b.fullCommand));

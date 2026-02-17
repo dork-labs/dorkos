@@ -3,6 +3,7 @@ import { join } from 'path';
 import type { Response } from 'express';
 import type { TranscriptReader } from './transcript-reader.js';
 import { WATCHER } from '../config/constants.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * SessionBroadcaster manages file watching and SSE broadcasting for cross-client session sync.
@@ -140,7 +141,7 @@ export class SessionBroadcaster {
       const timer = setTimeout(() => {
         this.debounceTimers.delete(sessionId);
         this.broadcastUpdate(sessionId, vaultRoot).catch((err) => {
-          console.error(
+          logger.error(
             `[SessionBroadcaster] Failed to broadcast update for session ${sessionId}:`,
             err
           );
@@ -215,14 +216,14 @@ export class SessionBroadcaster {
           client.write(eventData);
         } catch (err) {
           // Client may have disconnected, will be cleaned up on 'close' event
-          console.error(
+          logger.error(
             `[SessionBroadcaster] Failed to write to client for session ${sessionId}:`,
             err
           );
         }
       }
     } catch (err) {
-      console.error(`[SessionBroadcaster] Failed to read offset for session ${sessionId}:`, err);
+      logger.error(`[SessionBroadcaster] Failed to read offset for session ${sessionId}:`, err);
     }
   }
 

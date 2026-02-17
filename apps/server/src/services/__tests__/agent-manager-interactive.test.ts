@@ -4,6 +4,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
+vi.mock('../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
+  getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
+  initBoundary: vi.fn().mockResolvedValue('/mock/boundary'),
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+  BoundaryError: class BoundaryError extends Error {
+    code: string;
+    constructor(msg: string, code: string) {
+      super(msg);
+      this.code = code;
+    }
+  },
+}));
 
 // Mock child_process and fs to prevent resolveClaudeCliPath side effects
 vi.mock('child_process', async (importOriginal) => {
@@ -615,6 +628,9 @@ describe('AgentManager interactive tools', () => {
       // We need to advance: pull from gen which races SDK next + queue
       const pullPromise = gen.next();
 
+      // Flush microtasks so validateBoundary() resolves and query() is called
+      await vi.advanceTimersByTimeAsync(0);
+
       // Now invoke canUseTool as if the SDK called it
       const questions = [
         { header: 'Test', question: 'Pick one?', options: [{ label: 'A' }], multiSelect: false },
@@ -674,6 +690,9 @@ describe('AgentManager interactive tools', () => {
       const gen = manager.sendMessage('sess-1', 'do something');
       const pullPromise = gen.next();
 
+      // Flush microtasks so validateBoundary() resolves and query() is called
+      await vi.advanceTimersByTimeAsync(0);
+
       // Trigger canUseTool for a regular tool (not AskUserQuestion)
       const permissionPromise = canUseToolFn!(
         'Write',
@@ -727,6 +746,9 @@ describe('AgentManager interactive tools', () => {
 
       const gen = manager.sendMessage('sess-1', 'do something');
       const pullPromise = gen.next();
+
+      // Flush microtasks so validateBoundary() resolves and query() is called
+      await vi.advanceTimersByTimeAsync(0);
 
       const permissionPromise = canUseToolFn!(
         'Bash',

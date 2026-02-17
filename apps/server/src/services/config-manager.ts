@@ -9,6 +9,7 @@ import {
   SENSITIVE_CONFIG_KEYS,
 } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
+import { logger } from '../lib/logger.js';
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
@@ -53,8 +54,8 @@ class ConfigManager {
         const backupPath = configPath + '.bak';
         fs.copyFileSync(configPath, backupPath);
         fs.unlinkSync(configPath);
-        console.warn(`Warning: Corrupt config backed up to ${backupPath}`);
-        console.warn('   Creating fresh config with defaults.\n');
+        logger.warn(`Corrupt config backed up to ${backupPath}`);
+        logger.warn('Creating fresh config with defaults.');
       }
       this.store = new Conf<UserConfig>({
         configName: 'config',

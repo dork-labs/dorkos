@@ -1,6 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 
+// Mock boundary before importing app
+vi.mock('../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn(async (p: string) => p),
+  getBoundary: vi.fn(() => '/mock/home'),
+  initBoundary: vi.fn().mockResolvedValue('/mock/home'),
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+  BoundaryError: class BoundaryError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.name = 'BoundaryError';
+      this.code = code;
+    }
+  },
+}));
+
 // Mock services before importing app
 vi.mock('../../services/transcript-reader.js', () => ({
   transcriptReader: {
@@ -47,6 +63,7 @@ import { createApp } from '../../app.js';
 import { transcriptReader } from '../../services/transcript-reader.js';
 import { agentManager } from '../../services/agent-manager.js';
 import { parseSSEResponse } from '@dorkos/test-utils/sse-helpers';
+import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const app = createApp();
 
@@ -393,6 +410,78 @@ describe('Sessions Routes', () => {
         expect.any(String),
         expect.anything()
       );
+    });
+  });
+
+  // ---- Boundary Enforcement ----
+
+  describe('boundary enforcement', () => {
+    it('POST /api/sessions rejects cwd outside boundary with 403', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(app).post('/api/sessions').send({ cwd: '/etc/shadow' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+
+    it('GET /api/sessions rejects cwd outside boundary with 403', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(app).get('/api/sessions').query({ cwd: '/etc/passwd' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+
+    it('GET /api/sessions/:id rejects cwd outside boundary with 403', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(app).get('/api/sessions/s1').query({ cwd: '/etc' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+
+    it('GET /api/sessions/:id/messages rejects cwd outside boundary with 403', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(app).get('/api/sessions/s1/messages').query({ cwd: '/tmp/evil' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+
+    it('GET /api/sessions/:id/tasks rejects cwd outside boundary with 403', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(app).get('/api/sessions/s1/tasks').query({ cwd: '/tmp/evil' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+
+    it('rejects null byte paths with 403 and NULL_BYTE code', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
+      );
+
+      const res = await request(app)
+        .post('/api/sessions')
+        .send({ cwd: '/home/user/project\0/../../etc' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('NULL_BYTE');
     });
   });
 });

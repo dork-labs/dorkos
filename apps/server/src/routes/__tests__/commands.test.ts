@@ -1,5 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn(async (p: string) => p),
+  getBoundary: vi.fn(() => '/mock/home'),
+  initBoundary: vi.fn().mockResolvedValue('/mock/home'),
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+  BoundaryError: class BoundaryError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.name = 'BoundaryError';
+      this.code = code;
+    }
+  },
+}));
+
 vi.mock('../../services/command-registry.js', () => {
   const mockGetCommands = vi.fn();
   const mockInvalidateCache = vi.fn();
@@ -41,6 +56,7 @@ vi.mock('../../services/tunnel-manager.js', () => ({
 
 import request from 'supertest';
 import { createApp } from '../../app.js';
+import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 // Get a reference to the mock function
 const { __mockGetCommands: mockGetCommands } =
@@ -90,6 +106,19 @@ describe('Commands Routes', () => {
       const res = await request(app).get('/api/commands');
       expect(res.status).toBe(200);
       expect(res.body.commands).toEqual([]);
+    });
+  });
+
+  describe('boundary enforcement', () => {
+    it('GET /api/commands rejects cwd outside boundary with 403', async () => {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(app).get('/api/commands').query({ cwd: '/etc/shadow' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
     });
   });
 });

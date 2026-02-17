@@ -12,6 +12,7 @@ import { parseTranscript, extractTextContent, stripSystemTags } from './transcri
 import type { TranscriptLine } from './transcript-parser.js';
 import { parseTasks } from './task-reader.js';
 import { TRANSCRIPT } from '../config/constants.js';
+import { validateBoundary } from '../lib/boundary.js';
 
 export type { HistoryMessage, HistoryToolCall };
 
@@ -42,6 +43,7 @@ export class TranscriptReader {
    * Extracts metadata (title, timestamps, preview) from file content and stats.
    */
   async listSessions(vaultRoot: string): Promise<Session[]> {
+    await validateBoundary(vaultRoot);
     const transcriptsDir = this.getTranscriptsDir(vaultRoot);
 
     let files: string[];
@@ -82,6 +84,7 @@ export class TranscriptReader {
    * Reads both head (for title/timestamps) and tail (for latest model/context).
    */
   async getSession(vaultRoot: string, sessionId: string): Promise<Session | null> {
+    await validateBoundary(vaultRoot);
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
     try {
       const session = await this.extractSessionMeta(filePath, sessionId);
@@ -283,6 +286,7 @@ export class TranscriptReader {
    * Read messages from an SDK session transcript.
    */
   async readTranscript(vaultRoot: string, sessionId: string): Promise<HistoryMessage[]> {
+    await validateBoundary(vaultRoot);
     const transcriptsDir = this.getTranscriptsDir(vaultRoot);
     const filePath = path.join(transcriptsDir, `${sessionId}.jsonl`);
 
@@ -312,6 +316,7 @@ export class TranscriptReader {
 
   /** Get an ETag for a session transcript (mtime + size) for HTTP caching. */
   async getTranscriptETag(vaultRoot: string, sessionId: string): Promise<string | null> {
+    await validateBoundary(vaultRoot);
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
     try {
       const stat = await fs.stat(filePath);
@@ -326,6 +331,7 @@ export class TranscriptReader {
    * Parses TaskCreate/TaskUpdate tool_use blocks and reconstructs final state.
    */
   async readTasks(vaultRoot: string, sessionId: string): Promise<TaskItem[]> {
+    await validateBoundary(vaultRoot);
     const transcriptsDir = this.getTranscriptsDir(vaultRoot);
     const filePath = path.join(transcriptsDir, `${sessionId}.jsonl`);
 
@@ -349,6 +355,7 @@ export class TranscriptReader {
     sessionId: string,
     fromOffset: number
   ): Promise<{ content: string; newOffset: number }> {
+    await validateBoundary(vaultRoot);
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
     const stat = await fs.stat(filePath);
 
