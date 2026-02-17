@@ -355,7 +355,7 @@ Use `/tasks` to see running background agents and their status.
 
 ### Reference
 
-See `contributing/11-parallel-execution.md` for complete patterns and decision framework.
+See `contributing/parallel-execution.md` for complete patterns and decision framework.
 
 ## Maintaining the Harness
 

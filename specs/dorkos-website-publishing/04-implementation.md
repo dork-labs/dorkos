@@ -64,7 +64,7 @@
 - `apps/web/vercel.json` — turbo-ignore for smart rebuild skipping
 - `CLAUDE.md` — Updated monorepo structure, commands, documentation section
 - `README.md` — Added marketing site mention and docs link
-- `contributing/01-project-structure.md` — Added apps/web to monorepo layout
+- `contributing/project-structure.md` — Added apps/web to monorepo layout
 - `.gitignore` — Removed openapi.json exclusion
 
 **Test files:**

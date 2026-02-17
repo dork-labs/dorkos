@@ -29,7 +29,7 @@ The task description contains ALL implementation details including:
 
 ### Step 2: Implement
 - Write the code following project conventions
-- Follow FSD architecture — place code in the correct layer (see `organizing-fsd-architecture` skill and `contributing/01-project-structure.md`)
+- Follow FSD architecture — place code in the correct layer (see `organizing-fsd-architecture` skill and `contributing/project-structure.md`)
 - Add proper error handling
 - Include TypeScript types
 

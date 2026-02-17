@@ -95,7 +95,7 @@ shared ← entities ← features ← widgets ← app
 
 **Import rules**: Always import from barrel exports (e.g., `import { ChatPanel } from '@/layers/features/chat'`), never from internal paths.
 
-For details, see [contributing/01-project-structure.md](contributing/01-project-structure.md) and [.claude/rules/fsd-layers.md](.claude/rules/fsd-layers.md).
+For details, see [contributing/project-structure.md](contributing/project-structure.md) and [.claude/rules/fsd-layers.md](.claude/rules/fsd-layers.md).
 
 ## Testing
 

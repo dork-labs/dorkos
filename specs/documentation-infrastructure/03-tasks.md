@@ -121,7 +121,7 @@ Last Decompose: 2026-02-16
   4. **Monorepo Structure**: Brief table of `apps/` (client, server, obsidian-plugin) and `packages/` (cli, shared, typescript-config, test-utils) with one-line descriptions
   5. **Development Commands**: Table of `npm run dev`, `npm test`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format`
   6. **Architecture**: Brief mention of hexagonal architecture with Transport interface; link to `contributing/architecture.md` for deep dive
-  7. **Client Architecture (FSD)**: Brief mention of Feature-Sliced Design layers; link to `contributing/01-project-structure.md`
+  7. **Client Architecture (FSD)**: Brief mention of Feature-Sliced Design layers; link to `contributing/project-structure.md`
   8. **Testing**: Vitest, tests in `__tests__/` dirs, `npm test` to run all, `npx vitest run <file>` for single file
   9. **Code Style**: ESLint + Prettier enforced; run `npm run lint` and `npm run format` before committing
   10. **Pull Request Process**: Fork, create feature branch, make changes, ensure tests pass and linting is clean, open PR with description

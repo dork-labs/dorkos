@@ -12,7 +12,7 @@ This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI compo
 | Design system spec  | `contributing/design-system.md`                      |
 | Shadcn components   | `src/layers/shared/ui/` (barrel export)        |
 | Base UI primitives  | `src/components/ui/` (installed components)    |
-| Animation patterns  | `contributing/07-animations.md`                      |
+| Animation patterns  | `contributing/animations.md`                         |
 | cn() utility        | `src/layers/shared/lib/utils.ts`               |
 | ThemeProvider       | `src/app/providers.tsx`                        |
 
@@ -567,7 +567,7 @@ export function AccentButton(props) {
 ## References
 
 - **[contributing/design-system.md](./design-system.md)** - Complete Calm Tech design language specification
-- **[contributing/07-animations.md](./07-animations.md)** - Motion library patterns and spring physics
+- **[contributing/animations.md](./animations.md)** - Motion library patterns and spring physics
 - **[src/app/globals.css](../src/app/globals.css)** - Live theme token definitions
 - **[Tailwind CSS v4 Docs](https://tailwindcss.com/docs)** - Official Tailwind CSS documentation
 - **[OKLCH Color Picker](https://oklch.com)** - Interactive OKLCH color space tool

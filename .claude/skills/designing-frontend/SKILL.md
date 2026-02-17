@@ -203,5 +203,5 @@ Before implementation, verify:
 
 - `contributing/design-system.md` — Full design specifications
 - `styling-with-tailwind-shadcn` skill — Implementation patterns
-- `contributing/08-styling-theming.md` — Styling patterns
-- `contributing/07-animations.md` — Animation patterns
+- `contributing/styling-theming.md` — Styling patterns
+- `contributing/animations.md` — Animation patterns

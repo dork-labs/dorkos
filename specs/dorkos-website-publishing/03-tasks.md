@@ -520,6 +520,6 @@ Update the following documentation files:
    │   └── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin
    ```
 
-4. **Update `contributing/01-project-structure.md`:** Add `apps/web` to the monorepo map with a description of its purpose, tech stack, and relationship to the `docs/` directory.
+4. **Update `contributing/project-structure.md`:** Add `apps/web` to the monorepo map with a description of its purpose, tech stack, and relationship to the `docs/` directory.
 
 **Verification:** All documentation files accurately reflect the new `apps/web` workspace.

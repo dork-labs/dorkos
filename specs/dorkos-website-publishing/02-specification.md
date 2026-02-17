@@ -482,7 +482,7 @@ The primary "test" is a successful build. The build pipeline validates:
 
 ### Updated Documentation
 
-- `contributing/01-project-structure.md` — Add `apps/web` to the monorepo map
+- `contributing/project-structure.md` — Add `apps/web` to the monorepo map
 - `specs/manifest.json` — Already updated with spec #35
 
 ## Implementation Phases

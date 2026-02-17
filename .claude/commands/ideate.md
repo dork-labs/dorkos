@@ -357,7 +357,7 @@ Return in this format:
 
 ### Pre-reading Log
 
-- `contributing/05-data-fetching.md`: Explains TanStack Query patterns used in this project
+- `contributing/data-fetching.md`: Explains TanStack Query patterns used in this project
 - `src/layers/entities/user/api/queries.ts`: Current user data fetching implementation
   [Continue for all relevant files...]
 

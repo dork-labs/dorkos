@@ -257,7 +257,7 @@ Covers:
 - Fork + clone + install workflow
 - Monorepo structure overview (apps, packages)
 - Running dev servers, tests, linting
-- FSD architecture rules (link to `contributing/01-project-structure.md`)
+- FSD architecture rules (link to `contributing/project-structure.md`)
 - PR process and commit conventions
 - Link to Code of Conduct (future)
 

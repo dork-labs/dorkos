@@ -461,7 +461,7 @@ Filter to updateable files and present grouped by component:
 
 ### Guides (contributing/)
 
-- [ ] contributing/01-project-structure.md
+- [ ] contributing/project-structure.md
 - [ ] contributing/02-environment-variables.md
       ...
 
@@ -573,7 +573,7 @@ Algorithm:
 
 - .claude/commands/template/check.md
 - .claude/scripts/template-fetch.ts
-- contributing/01-project-structure.md
+- contributing/project-structure.md
   ...
 
 ### Will Merge (2 files)
@@ -1445,7 +1445,7 @@ When `--dry-run` is present, the command operates in **read-only simulation mode
 .claude/commands/template/update.md
 .claude/scripts/template-fetch.ts
 .claude/hooks/pre-tool-use/check-any.md
-contributing/01-project-structure.md
+contributing/project-structure.md
 contributing/02-environment-variables.md
 contributing/03-database-prisma.md
 ... (5 more files)
