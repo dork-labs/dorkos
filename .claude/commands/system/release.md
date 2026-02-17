@@ -129,10 +129,10 @@ Parse the git log output to identify commits not represented in the [Unreleased]
 - Read the current [Unreleased] section from CHANGELOG.md
 - Compare commit messages against existing entries
 - Categorize missing commits by conventional commit type:
-  - `feat:` / `feat(...)` -> Added
-  - `fix:` / `fix(...)` -> Fixed
-  - `refactor:` / `chore:` / `docs:` -> Changed
-  - `BREAKING CHANGE` or `!` after type -> Breaking
+  - feat: / feat(...) -> Added
+  - fix: / fix(...) -> Fixed
+  - refactor: / chore: / docs: -> Changed
+  - BREAKING CHANGE or "!" after type -> Breaking
 
 ### If missing entries exist (changelog is incomplete)
 
