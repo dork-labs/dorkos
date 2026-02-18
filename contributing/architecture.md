@@ -142,9 +142,15 @@ apps/
 
   server/src/
     services/
-      agent-manager.ts      -- Claude Agent SDK wrapper
+      agent-manager.ts      -- Claude Agent SDK session orchestrator
+      agent-types.ts        -- AgentSession/ToolState interfaces
+      sdk-event-mapper.ts   -- SDK message → StreamEvent mapper
+      context-builder.ts    -- Runtime context for systemPrompt
+      interactive-handlers.ts -- Tool approval & question flows
       transcript-reader.ts  -- JSONL session reader
       command-registry.ts   -- Slash command discovery
+    lib/
+      sdk-utils.ts          -- makeUserPrompt(), resolveClaudeCliPath()
     routes/                 -- Express route handlers
     index.ts                -- Express server entry
 ```

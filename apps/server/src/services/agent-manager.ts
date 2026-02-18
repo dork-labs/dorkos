@@ -1,73 +1,19 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
-import { existsSync } from 'fs';
-import {
-  query,
-  type Options,
-  type SDKMessage,
-  type PermissionResult,
-  type Query,
-} from '@anthropic-ai/claude-agent-sdk';
+import { query, type Options, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { Response } from 'express';
 import type { StreamEvent, PermissionMode } from '@dorkos/shared/types';
 import { SESSIONS } from '../config/constants.js';
 import { SessionLockManager } from './session-lock.js';
-import {
-  handleAskUserQuestion,
-  handleToolApproval,
-  type PendingInteraction,
-} from './interactive-handlers.js';
-import { buildTaskEvent, TASK_TOOL_NAMES } from './build-task-event.js';
+import { createCanUseTool } from './interactive-handlers.js';
+import { type AgentSession, createToolState } from './agent-types.js';
+import { mapSdkMessage } from './sdk-event-mapper.js';
+import { makeUserPrompt, resolveClaudeCliPath } from '../lib/sdk-utils.js';
+import { buildSystemPromptAppend } from './context-builder.js';
 import { validateBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 
-// Re-export for backward compatibility
 export { buildTaskEvent } from './build-task-event.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-/**
- * Resolve the Claude Code CLI path for the SDK to spawn.
- *
- * Tries SDK bundled path first, then PATH lookup, then falls back to
- * undefined for SDK default resolution (may fail in Electron).
- */
-export function resolveClaudeCliPath(): string | undefined {
-  // 1. Try the SDK's bundled cli.js (works when running from source / node_modules)
-  try {
-    const sdkCli = require.resolve('@anthropic-ai/claude-agent-sdk/cli.js');
-    if (existsSync(sdkCli)) return sdkCli;
-  } catch {
-    /* not resolvable in bundled context */
-  }
-
-  // 2. Find the globally installed `claude` binary via PATH
-  try {
-    const bin = execFileSync('which', ['claude'], { encoding: 'utf-8' }).trim();
-    if (bin && existsSync(bin)) return bin;
-  } catch {
-    /* not found on PATH */
-  }
-
-  // 3. Let SDK use its default resolution (may fail in Electron)
-  return undefined;
-}
-
-interface AgentSession {
-  sdkSessionId: string;
-  lastActivity: number;
-  permissionMode: PermissionMode;
-  model?: string;
-  cwd?: string;
-  /** True once the first SDK query has been sent (JSONL file exists) */
-  hasStarted: boolean;
-  /** Active SDK query object — used for mid-stream control (setPermissionMode, setModel) */
-  activeQuery?: Query;
-  pendingInteractions: Map<string, PendingInteraction>;
-  eventQueue: StreamEvent[];
-  eventQueueNotify?: () => void;
-}
 
 /**
  * Manages Claude Agent SDK sessions — creation, resumption, streaming, tool approval,
@@ -80,10 +26,20 @@ export class AgentManager {
   private readonly SESSION_TIMEOUT_MS = SESSIONS.TIMEOUT_MS;
   private readonly cwd: string;
   private readonly claudeCliPath: string | undefined;
+  private mcpServers: Record<string, unknown> = {};
 
   constructor(cwd?: string) {
-    this.cwd = cwd ?? process.env.DORKOS_DEFAULT_CWD ?? path.resolve(__dirname, '../../../../');
+    const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    this.cwd = cwd ?? process.env.DORKOS_DEFAULT_CWD ?? path.resolve(thisDir, '../../../../');
     this.claudeCliPath = resolveClaudeCliPath();
+  }
+
+  /**
+   * Register MCP tool servers to be injected into every SDK query() call.
+   * Called once at server startup after singleton services are initialized.
+   */
+  setMcpServers(servers: Record<string, unknown>): void {
+    this.mcpServers = servers;
   }
 
   /**
@@ -138,10 +94,17 @@ export class AgentManager {
       return;
     }
 
+    const systemPromptAppend = await buildSystemPromptAppend(effectiveCwd);
+
     const sdkOptions: Options = {
       cwd: effectiveCwd,
       includePartialMessages: true,
       settingSources: ['project', 'user'],
+      systemPrompt: {
+        type: 'preset',
+        preset: 'claude_code',
+        append: systemPromptAppend,
+      },
       ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
     };
 
@@ -156,94 +119,30 @@ export class AgentManager {
       resume: session.hasStarted ? session.sdkSessionId : 'N/A',
     });
 
-    switch (session.permissionMode) {
-      case 'bypassPermissions':
-        sdkOptions.permissionMode = 'bypassPermissions';
-        sdkOptions.allowDangerouslySkipPermissions = true;
-        break;
-      case 'plan':
-        sdkOptions.permissionMode = 'plan';
-        break;
-      case 'acceptEdits':
-        sdkOptions.permissionMode = 'acceptEdits';
-        break;
-      default:
-        sdkOptions.permissionMode = 'default';
+    sdkOptions.permissionMode = session.permissionMode === 'bypassPermissions'
+      || session.permissionMode === 'plan'
+      || session.permissionMode === 'acceptEdits'
+      ? session.permissionMode : 'default';
+    if (session.permissionMode === 'bypassPermissions') {
+      sdkOptions.allowDangerouslySkipPermissions = true;
     }
 
     if (session.model) {
       (sdkOptions as Record<string, unknown>).model = session.model;
     }
 
-    sdkOptions.canUseTool = async (
-      toolName: string,
-      input: Record<string, unknown>,
-      context: {
-        signal: AbortSignal;
-        toolUseID: string;
-        decisionReason?: string;
-        suggestions?: unknown[];
-      }
-    ): Promise<PermissionResult> => {
-      if (toolName === 'AskUserQuestion') {
-        logger.debug('[canUseTool] routing to question handler', {
-          toolName,
-          toolUseID: context.toolUseID,
-        });
-        return handleAskUserQuestion(session, context.toolUseID, input);
-      }
+    // Inject MCP tool servers (if any registered)
+    if (Object.keys(this.mcpServers).length > 0) {
+      (sdkOptions as Record<string, unknown>).mcpServers = this.mcpServers;
+    }
 
-      if (session.permissionMode === 'default') {
-        logger.debug('[canUseTool] requesting approval', {
-          toolName,
-          permissionMode: 'default',
-          toolUseID: context.toolUseID,
-        });
-        return handleToolApproval(session, context.toolUseID, toolName, input);
-      }
+    sdkOptions.canUseTool = createCanUseTool(session, logger.debug.bind(logger));
 
-      logger.debug('[canUseTool] auto-allow', {
-        toolName,
-        permissionMode: session.permissionMode,
-        toolUseID: context.toolUseID,
-      });
-      return { behavior: 'allow', updatedInput: input };
-    };
-
-    const agentQuery = query({ prompt: content, options: sdkOptions });
+    const agentQuery = query({ prompt: makeUserPrompt(content), options: sdkOptions });
     session.activeQuery = agentQuery;
 
-    let inTool = false;
-    let currentToolName = '';
-    let currentToolId = '';
     let emittedDone = false;
-    let taskToolInput = '';
-
-    const toolState = {
-      get inTool() {
-        return inTool;
-      },
-      get currentToolName() {
-        return currentToolName;
-      },
-      get currentToolId() {
-        return currentToolId;
-      },
-      get taskToolInput() {
-        return taskToolInput;
-      },
-      appendTaskInput: (chunk: string) => {
-        taskToolInput += chunk;
-      },
-      resetTaskInput: () => {
-        taskToolInput = '';
-      },
-      setToolState: (tool: boolean, name: string, id: string) => {
-        inTool = tool;
-        currentToolName = name;
-        currentToolId = id;
-      },
-    };
+    const toolState = createToolState();
 
     try {
       const sdkIterator = agentQuery[Symbol.asyncIterator]();
@@ -275,7 +174,7 @@ export class AgentManager {
         const { result } = winner;
         if (result.done) break;
 
-        for await (const event of this.mapSdkMessage(result.value, session, sessionId, toolState)) {
+        for await (const event of mapSdkMessage(result.value, session, sessionId, toolState)) {
           if (event.type === 'done') emittedDone = true;
           yield event;
         }
@@ -299,139 +198,6 @@ export class AgentManager {
     }
   }
 
-  private async *mapSdkMessage(
-    message: SDKMessage,
-    session: AgentSession,
-    sessionId: string,
-    toolState: {
-      inTool: boolean;
-      currentToolName: string;
-      currentToolId: string;
-      taskToolInput: string;
-      appendTaskInput: (chunk: string) => void;
-      resetTaskInput: () => void;
-      setToolState: (tool: boolean, name: string, id: string) => void;
-    }
-  ): AsyncGenerator<StreamEvent> {
-    if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
-      session.sdkSessionId = message.session_id;
-      session.hasStarted = true;
-      const initModel = (message as Record<string, unknown>).model as string | undefined;
-      if (initModel) {
-        yield {
-          type: 'session_status',
-          data: { sessionId, model: initModel },
-        };
-      }
-      return;
-    }
-
-    if (message.type === 'stream_event') {
-      const event = (message as { event: Record<string, unknown> }).event;
-      const eventType = event.type as string;
-
-      if (eventType === 'content_block_start') {
-        const contentBlock = event.content_block as Record<string, unknown> | undefined;
-        if (contentBlock?.type === 'tool_use') {
-          toolState.resetTaskInput();
-          toolState.setToolState(true, contentBlock.name as string, contentBlock.id as string);
-          yield {
-            type: 'tool_call_start',
-            data: {
-              toolCallId: contentBlock.id as string,
-              toolName: contentBlock.name as string,
-              status: 'running',
-            },
-          };
-        }
-      } else if (eventType === 'content_block_delta') {
-        const delta = event.delta as Record<string, unknown> | undefined;
-        if (delta?.type === 'text_delta' && !toolState.inTool) {
-          yield { type: 'text_delta', data: { text: delta.text as string } };
-        } else if (delta?.type === 'input_json_delta' && toolState.inTool) {
-          if (TASK_TOOL_NAMES.has(toolState.currentToolName)) {
-            toolState.appendTaskInput(delta.partial_json as string);
-          }
-          yield {
-            type: 'tool_call_delta',
-            data: {
-              toolCallId: toolState.currentToolId,
-              toolName: toolState.currentToolName,
-              input: delta.partial_json as string,
-              status: 'running',
-            },
-          };
-        }
-      } else if (eventType === 'content_block_stop') {
-        if (toolState.inTool) {
-          const wasTaskTool = TASK_TOOL_NAMES.has(toolState.currentToolName);
-          const taskToolName = toolState.currentToolName;
-          yield {
-            type: 'tool_call_end',
-            data: {
-              toolCallId: toolState.currentToolId,
-              toolName: toolState.currentToolName,
-              status: 'complete',
-            },
-          };
-          toolState.setToolState(false, '', '');
-          if (wasTaskTool && toolState.taskToolInput) {
-            try {
-              const input = JSON.parse(toolState.taskToolInput);
-              const taskEvent = buildTaskEvent(taskToolName, input);
-              if (taskEvent) {
-                yield { type: 'task_update', data: taskEvent };
-              }
-            } catch {
-              /* malformed JSON, skip */
-            }
-            toolState.resetTaskInput();
-          }
-        }
-      }
-      return;
-    }
-
-    if (message.type === 'tool_use_summary') {
-      const summary = message as { summary: string; preceding_tool_use_ids: string[] };
-      for (const toolUseId of summary.preceding_tool_use_ids) {
-        yield {
-          type: 'tool_result',
-          data: {
-            toolCallId: toolUseId,
-            toolName: '',
-            result: summary.summary,
-            status: 'complete',
-          },
-        };
-      }
-      return;
-    }
-
-    if (message.type === 'result') {
-      const result = message as Record<string, unknown>;
-      const usage = result.usage as Record<string, unknown> | undefined;
-      const modelUsageMap = result.modelUsage as
-        | Record<string, Record<string, unknown>>
-        | undefined;
-      const firstModelUsage = modelUsageMap ? Object.values(modelUsageMap)[0] : undefined;
-      yield {
-        type: 'session_status',
-        data: {
-          sessionId,
-          model: result.model as string | undefined,
-          costUsd: result.total_cost_usd as number | undefined,
-          contextTokens: usage?.input_tokens as number | undefined,
-          contextMaxTokens: firstModelUsage?.contextWindow as number | undefined,
-        },
-      };
-      yield {
-        type: 'done',
-        data: { sessionId },
-      };
-    }
-  }
-
   updateSession(
     sessionId: string,
     opts: { permissionMode?: PermissionMode; model?: string }
@@ -445,17 +211,9 @@ export class AgentManager {
       session = this.sessions.get(sessionId)!;
     }
     if (opts.permissionMode) {
-      logger.debug('[updateSession] permissionMode change', {
-        sessionId,
-        from: session.permissionMode,
-        to: opts.permissionMode,
-      });
+      logger.debug('[updateSession] permissionMode change', { sessionId, from: session.permissionMode, to: opts.permissionMode });
       session.permissionMode = opts.permissionMode;
       if (session.activeQuery) {
-        logger.debug('[updateSession] calling setPermissionMode on active query', {
-          sessionId,
-          permissionMode: opts.permissionMode,
-        });
         session.activeQuery.setPermissionMode(opts.permissionMode).catch((err) => {
           logger.error('[updateSession] setPermissionMode failed', { sessionId, err });
         });
@@ -470,18 +228,7 @@ export class AgentManager {
   approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean {
     const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
-    if (!pending || pending.type !== 'approval') {
-      logger.debug('[approveTool] interaction not found', {
-        sessionId,
-        toolCallId,
-        approved,
-        hasSession: !!session,
-        hasPending: !!pending,
-        pendingType: pending?.type,
-      });
-      return false;
-    }
-    logger.debug('[approveTool] resolving', { sessionId, toolCallId, approved });
+    if (!pending || pending.type !== 'approval') return false;
     pending.resolve(approved);
     return true;
   }
@@ -509,9 +256,7 @@ export class AgentManager {
     this.lockManager.cleanup(expiredIds);
   }
 
-  /**
-   * Find a session by its map key OR by its sdkSessionId.
-   */
+  /** Find a session by its map key OR by its sdkSessionId. */
   private findSession(sessionId: string): AgentSession | undefined {
     const direct = this.sessions.get(sessionId);
     if (direct) return direct;

@@ -16,6 +16,9 @@ vi.mock('../../lib/logger.js', () => ({
   },
   initLogger: vi.fn(),
 }));
+vi.mock('../context-builder.js', () => ({
+  buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>'),
+}));
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
   getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
@@ -283,6 +286,65 @@ describe('AgentManager', () => {
       const endEvent = events.find((e) => e.type === 'tool_call_end');
       expect(endEvent).toBeDefined();
       expect((endEvent!.data as any).status).toBe('complete');
+    });
+
+    it('passes systemPrompt with claude_code preset to SDK query', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
+        (async function* () {
+          yield {
+            type: 'system',
+            subtype: 'init',
+            session_id: 'sdk-session-sp',
+            tools: [],
+            mcp_servers: [],
+            model: 'test',
+            permissionMode: 'default',
+            slash_commands: [],
+            output_style: 'text',
+            skills: [],
+            plugins: [],
+            cwd: '/test',
+            apiKeySource: 'user',
+            uuid: 'uuid-1',
+          };
+          yield {
+            type: 'result',
+            subtype: 'success',
+            duration_ms: 100,
+            duration_api_ms: 80,
+            is_error: false,
+            num_turns: 1,
+            result: '',
+            stop_reason: 'end_turn',
+            total_cost_usd: 0.001,
+            usage: { input_tokens: 10, output_tokens: 5 },
+            modelUsage: {},
+            permission_denials: [],
+            uuid: 'uuid-2',
+            session_id: 'sdk-session-sp',
+          };
+        })()
+      );
+
+      agentManager.ensureSession('sp-test', { permissionMode: 'default' });
+      const events = [];
+      for await (const event of agentManager.sendMessage('sp-test', 'hello')) {
+        events.push(event);
+      }
+
+      expect(mockedQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            systemPrompt: {
+              type: 'preset',
+              preset: 'claude_code',
+              append: expect.stringContaining('<env>'),
+            },
+          }),
+        })
+      );
     });
 
     it('handles SDK errors gracefully', async () => {

@@ -12,8 +12,11 @@ vi.mock('../../services/tunnel-manager.js', () => ({
   },
 }));
 
-vi.mock('../../services/agent-manager.js', () => ({
+vi.mock('../../lib/sdk-utils.js', () => ({
   resolveClaudeCliPath: () => '/usr/local/bin/claude',
+  makeUserPrompt: vi.fn(),
+}));
+vi.mock('../../services/agent-manager.js', () => ({
   agentManager: {},
 }));
 

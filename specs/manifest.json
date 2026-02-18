@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 41,
+  "nextNumber": 44,
   "specs": [
     {
       "number": 1,
@@ -281,6 +281,27 @@
       "title": "Dynamic Motion Enhancements for Marketing Homepage",
       "created": "2026-02-17",
       "status": "ideation"
+    },
+    {
+      "number": 41,
+      "slug": "dynamic-mcp-tools",
+      "title": "Dynamic MCP Tool Injection Architecture",
+      "created": "2026-02-17",
+      "status": "implemented"
+    },
+    {
+      "number": 42,
+      "slug": "context-builder-agent-refactor",
+      "title": "Context Builder & agent-manager.ts Refactor",
+      "created": "2026-02-18",
+      "status": "implemented"
+    },
+    {
+      "number": 43,
+      "slug": "pulse-scheduler",
+      "title": "DorkOS Pulse (Scheduler)",
+      "created": "2026-02-18",
+      "status": "specified"
     }
   ]
 }

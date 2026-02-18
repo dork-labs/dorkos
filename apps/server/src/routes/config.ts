@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { createRequire } from 'module';
 import { tunnelManager } from '../services/tunnel-manager.js';
-import { resolveClaudeCliPath } from '../services/agent-manager.js';
+import { resolveClaudeCliPath } from '../lib/sdk-utils.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { configManager } from '../services/config-manager.js';
 import { UserConfigSchema, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
@@ -97,7 +97,7 @@ router.get('/', async (_req, res) => {
       connected: tunnel.connected,
       url: tunnel.url,
       authEnabled: !!process.env.TUNNEL_AUTH,
-      tokenConfigured: !!process.env.NGROK_AUTHTOKEN,
+      tokenConfigured: !!(process.env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken),
     },
   });
 });

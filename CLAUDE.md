@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 DorkOS is a web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK. It provides a chat UI for interacting with Claude Code sessions, with tool approval flows and slash command discovery.
 
-The Agent SDK is fully integrated via `agent-manager.ts`, which calls the SDK's `query()` function and maps streaming events to the DorkOS `StreamEvent` types. SDK JSONL transcript files are the single source of truth for all session data.
+The Agent SDK is fully integrated via `agent-manager.ts` (session orchestration), `sdk-event-mapper.ts` (event transformation), and `context-builder.ts` (runtime context injection). The SDK's `query()` function is called with `systemPrompt: { type: 'preset', preset: 'claude_code', append: runtimeContext }` to activate full Claude Code guidelines. SDK JSONL transcript files are the single source of truth for all session data.
 
 ## Monorepo Structure
 
@@ -79,15 +79,19 @@ Express server on port `DORKOS_PORT` (default 4242). All endpoints that accept `
 - **`routes/git.ts`** - Git status and branch information
 - **`routes/tunnel.ts`** - Runtime tunnel control (POST /start and /stop). Resolves auth token from env var or config, delegates to `tunnelManager`, persists enabled state
 
-Sixteen services:
+Twenty services (+ 1 lib utility):
 
-- **`services/agent-manager.ts`** - Manages Claude Agent SDK sessions. Calls `query()` with streaming, maps SDK events (`stream_event`, `tool_use_summary`, `result`) to DorkOS `StreamEvent` types. Tracks active sessions in-memory with 30-minute timeout. All sessions use `resume: sessionId` for SDK continuity. Accepts optional `cwd` constructor param (used by Obsidian plugin). Resolves the Claude Code CLI path dynamically via `resolveClaudeCliPath()` for Electron compatibility.
+- **`services/agent-manager.ts`** - Manages Claude Agent SDK sessions. Calls `query()` with streaming, delegates event mapping to `sdk-event-mapper.ts`. Injects runtime context via `context-builder.ts` into `systemPrompt: { type: 'preset', preset: 'claude_code', append }`. Tracks active sessions in-memory with 30-minute timeout. All sessions use `resume: sessionId` for SDK continuity. Accepts optional `cwd` constructor param (used by Obsidian plugin). Injects MCP tool servers via `setMcpServers()`.
+- **`services/agent-types.ts`** - `AgentSession` and `ToolState` interfaces, plus `createToolState()` factory. Shared by agent-manager, sdk-event-mapper, and interactive-handlers.
+- **`services/sdk-event-mapper.ts`** - Pure async generator `mapSdkMessage()` that transforms SDK messages (`stream_event`, `tool_use_summary`, `result`, `system/init`) into DorkOS `StreamEvent` types.
+- **`services/context-builder.ts`** - `buildSystemPromptAppend(cwd)` — gathers runtime context (env info, git status) and formats as XML blocks (`<env>`, `<git_status>`) for the SDK `systemPrompt.append`. Never throws.
+- **`lib/sdk-utils.ts`** - `makeUserPrompt()` (wraps string as `AsyncIterable<SDKUserMessage>`) and `resolveClaudeCliPath()` (Claude CLI path resolution for Electron compatibility).
 - **`services/transcript-reader.ts`** - Single source of truth for session data. Reads SDK JSONL transcript files from `~/.claude/projects/{slug}/`. Provides `listSessions()` (scans directory, extracts metadata), `getSession()` (single session metadata), and `readTranscript()` (full message history). Extracts titles from first user message, permission mode from init message, timestamps from file stats.
 - **`services/transcript-parser.ts`** - Parses SDK JSONL transcript lines into structured `HistoryMessage` objects. Handles content blocks (text, tool_use, tool_result), question prompts, and model metadata extraction.
 - **`services/session-broadcaster.ts`** - Manages cross-client session synchronization. Watches JSONL transcript files via chokidar for changes (including CLI writes). Maintains SSE connections with passive clients via `registerClient()`. Broadcasts `sync_update` events when files change. Debounces rapid writes (100ms). Uses incremental byte-offset reading via `transcriptReader.readFromOffset()`. Graceful shutdown closes all watchers and connections.
 - **`services/session-lock.ts`** - Manages session write locks to prevent concurrent writes from multiple clients. Locks auto-expire after configurable TTL and are released when SSE connections close.
 - **`services/stream-adapter.ts`** - SSE helpers (`initSSEStream`, `sendSSEEvent`, `endSSEStream`) that format `StreamEvent` objects as SSE wire protocol.
-- **`services/interactive-handlers.ts`** - Handles tool approval and AskUserQuestion flows. Manages pending interactions with timeout/resolve/reject lifecycle. Used by session routes for approve/deny/answer endpoints.
+- **`services/interactive-handlers.ts`** - Handles tool approval and AskUserQuestion flows. Exports `createCanUseTool()` factory for SDK `canUseTool` callback. Manages pending interactions with timeout/resolve/reject lifecycle.
 - **`services/build-task-event.ts`** - Builds `TaskUpdateEvent` objects from TaskCreate/TaskUpdate tool call inputs. Used by the streaming pipeline to emit task progress events.
 - **`services/task-reader.ts`** - Parses task state from JSONL transcript lines. Reconstructs final `TaskItem` state from TaskCreate/TaskUpdate tool_use blocks.
 - **`services/command-registry.ts`** - Scans `.claude/commands/` for slash commands. Parses YAML frontmatter via gray-matter. Caches results; supports `forceRefresh`. Used by `routes/commands.ts`.
@@ -96,6 +100,7 @@ Sixteen services:
 - **`services/git-status.ts`** - Provides git status information (branch, changed files).
 - **`services/tunnel-manager.ts`** - Opt-in ngrok tunnel lifecycle. Singleton that wraps `@ngrok/ngrok` SDK with dynamic import (zero cost when disabled). Configured via env vars: `TUNNEL_ENABLED`, `NGROK_AUTHTOKEN`, `TUNNEL_PORT`, `TUNNEL_AUTH`, `TUNNEL_DOMAIN`. Started after Express binds in `index.ts`; tunnel failure is non-blocking. Exposes `status` getter consumed by `health.ts` and `routes/tunnel.ts`. Graceful shutdown via SIGINT/SIGTERM.
 - **`services/config-manager.ts`** - Manages persistent user config at `~/.dork/config.json`. Uses `conf` for atomic JSON I/O with Ajv validation. Singleton initialized via `initConfigManager()` at server startup and in CLI subcommands. Handles first-run detection, corrupt config recovery (backup + recreate), and sensitive field warnings.
+- **`services/mcp-tool-server.ts`** - In-process MCP tool server for Claude Agent SDK. Uses `createSdkMcpServer()` and `tool()` from the SDK to register tools that agents can call. Three PoC tools: `ping` (connectivity check), `get_server_info` (server metadata), `get_session_count` (transcript session count). Factory function `createDorkOsToolServer(deps)` accepts `McpToolDeps` (transcriptReader, defaultCwd) for dependency injection. Created once at startup in `index.ts` and injected into AgentManager.
 - **`services/update-checker.ts`** - Server-side npm registry check with in-memory cache (1-hour TTL). Fetches latest version from npm for update notifications. Used by config route to populate `latestVersion` in server config.
 
 ### Session Architecture

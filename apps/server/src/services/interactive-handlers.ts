@@ -59,6 +59,34 @@ export function handleAskUserQuestion(
   });
 }
 
+/**
+ * Create the `canUseTool` callback for an SDK query.
+ *
+ * Routes AskUserQuestion to the question handler, tool approvals based on
+ * permissionMode, and auto-allows everything else.
+ */
+export function createCanUseTool(
+  session: InteractiveSession & { permissionMode: string },
+  logFn: (msg: string, data: Record<string, unknown>) => void
+): (
+  toolName: string,
+  input: Record<string, unknown>,
+  context: { signal: AbortSignal; toolUseID: string; decisionReason?: string; suggestions?: unknown[] }
+) => Promise<PermissionResult> {
+  return async (toolName, input, context) => {
+    if (toolName === 'AskUserQuestion') {
+      logFn('[canUseTool] routing to question handler', { toolName, toolUseID: context.toolUseID });
+      return handleAskUserQuestion(session, context.toolUseID, input);
+    }
+    if (session.permissionMode === 'default') {
+      logFn('[canUseTool] requesting approval', { toolName, permissionMode: 'default', toolUseID: context.toolUseID });
+      return handleToolApproval(session, context.toolUseID, toolName, input);
+    }
+    logFn('[canUseTool] auto-allow', { toolName, permissionMode: session.permissionMode, toolUseID: context.toolUseID });
+    return { behavior: 'allow', updatedInput: input };
+  };
+}
+
 /** Handle tool approval — pause when permissionMode is 'default'. */
 export function handleToolApproval(
   session: InteractiveSession,
