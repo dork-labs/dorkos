@@ -23,6 +23,10 @@
     "./config-schema": {
       "types": "./src/config-schema.ts",
       "default": "./dist/config-schema.js"
+    },
+    "./roadmap-schemas": {
+      "types": "./src/roadmap-schemas.ts",
+      "default": "./dist/roadmap-schemas.js"
     }
   },
   "scripts": {

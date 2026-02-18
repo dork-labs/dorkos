@@ -10,7 +10,7 @@ The Agent SDK is fully integrated via `agent-manager.ts` (session orchestration)
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with four apps and four shared packages:
+This is a Turborepo monorepo with five apps and four shared packages:
 
 ```
 dorkos/
@@ -18,7 +18,8 @@ dorkos/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
 │   ├── server/           # @dorkos/server - Express API (tsc, NodeNext)
 │   ├── web/              # @dorkos/web - Marketing site & docs (Next.js 16, Fumadocs)
-│   └── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
+│   ├── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
+│   └── roadmap/          # @dorkos/roadmap - Roadmap manager (Express + React 19 SPA)
 ├── packages/
 │   ├── cli/              # dorkos - Publishable npm CLI (esbuild bundle)
 │   ├── shared/           # @dorkos/shared - Zod schemas, types (JIT .ts exports)
@@ -39,6 +40,7 @@ dorkos/
 npm run dev            # Start both Express server and Vite dev server (loads .env)
 dotenv -- turbo dev --filter=@dorkos/server   # Express server only (loads .env)
 dotenv -- turbo dev --filter=@dorkos/client   # Vite dev server only (loads .env)
+dotenv -- turbo dev --filter=@dorkos/roadmap  # Roadmap app (Express :4243 + Vite)
 npm test               # Vitest across client + server (loads .env)
 npm test -- --run      # Vitest single run
 npm run build          # Build all apps (client Vite + server tsc + web Next.js + obsidian plugin)
@@ -206,6 +208,20 @@ The plugin build (`apps/obsidian-plugin/vite.config.ts`) includes four Vite plug
 The `dorkos` npm package bundles the server + client into a standalone CLI tool. Published to npm as `dorkos` (unscoped). Install via `npm install -g dorkos`, run via `dorkos`. Build pipeline (`packages/cli/scripts/build.ts`) uses esbuild in 3 steps: (1) Vite builds client to static assets, (2) esbuild bundles server + `@dorkos/shared` into single ESM file (externalizing node_modules), (3) esbuild compiles CLI entry point. Output: `dist/bin/cli.js` (entry with shebang), `dist/server/index.js` (bundled server), `dist/client/` (React SPA). The version is injected at build time via esbuild's `define` config (reads from `packages/cli/package.json`). The CLI creates `~/.dork/` on startup for config storage and sets `DORK_HOME` env var. It also sets `DORKOS_PORT`, `CLIENT_DIST_PATH`, `DORKOS_DEFAULT_CWD`, `DORKOS_BOUNDARY`, `TUNNEL_ENABLED`, and `NODE_ENV` before dynamically importing the bundled server.
 
 CLI subcommands: `dorkos config` (manage config), `dorkos init` (interactive setup wizard). CLI flags include `--port`/`-p`, `--dir`/`-d`, `--boundary`/`-b`, `--tunnel`/`-t`, and `--pulse`/`--no-pulse`. Config precedence: CLI flags > environment variables > `~/.dork/config.json` > built-in defaults.
+
+### Roadmap App (`apps/roadmap/`)
+
+Standalone roadmap management tool. Express server on port `ROADMAP_PORT` (default 4243) + React 19 SPA with FSD architecture. Does NOT use the Transport interface — it is an independent app with its own API. Uses lowdb for JSON file persistence (`roadmap.json` is the source of truth). Environment variables: `ROADMAP_PORT` (default 4243), `ROADMAP_PROJECT_ROOT` (default `process.cwd()`).
+
+API endpoints (all under `/api/roadmap/`):
+
+- **`GET/POST /items`** - List all items, create new item
+- **`GET/PATCH/DELETE /items/:id`** - Get, update, delete single item
+- **`POST /items/reorder`** - Reorder items
+- **`GET /meta`** - Project metadata with health stats
+- **`GET /files/*`** - Serve spec files (restricted to `specs/` directory)
+
+Client views: Table (TanStack Table), Kanban (@hello-pangea/dnd), MoSCoW Grid, Gantt (custom). No auth, single-user tool. Python utility scripts in `roadmap/scripts/` still work alongside the API.
 
 ## Guides
 

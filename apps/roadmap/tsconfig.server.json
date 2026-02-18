@@ -1,0 +1,9 @@
+{
+  "extends": "@dorkos/typescript-config/node.json",
+  "compilerOptions": {
+    "outDir": "dist/server",
+    "rootDir": "src/server"
+  },
+  "include": ["src/server/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

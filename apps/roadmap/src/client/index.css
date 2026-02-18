@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* ============================================
+   Calm Tech Design System — Color Tokens
+   ============================================
+   Tailwind v4 @theme maps CSS custom properties
+   to utility classes: bg-background, text-foreground,
+   bg-card, text-muted-foreground, border-border, etc.
+   ============================================ */
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-ring: hsl(var(--ring));
+}
+
+/* Light theme (default) — neutral grays + blue accent */
+:root {
+  --background: 0 0% 98%;
+  --foreground: 0 0% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 9%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 32%;
+  --border: 0 0% 83%;
+  --input: 0 0% 83%;
+  --accent: 0 0% 94%;
+  --accent-foreground: 0 0% 9%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --ring: 217 91% 60%;
+}
+
+/* Dark theme — inverted grays + same blue accent */
+.dark {
+  --background: 0 0% 7%;
+  --foreground: 0 0% 93%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 93%;
+  --muted: 0 0% 14%;
+  --muted-foreground: 0 0% 60%;
+  --border: 0 0% 22%;
+  --input: 0 0% 22%;
+  --accent: 0 0% 16%;
+  --accent-foreground: 0 0% 93%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --destructive: 0 63% 31%;
+  --ring: 213 94% 68%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}

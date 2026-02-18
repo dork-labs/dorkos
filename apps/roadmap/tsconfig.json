@@ -1,0 +1,10 @@
+{
+  "extends": "@dorkos/typescript-config/react.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/client/*"]
+    }
+  },
+  "include": ["src/client/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

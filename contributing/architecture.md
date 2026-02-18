@@ -261,6 +261,31 @@ The CLI reads from `ConfigManager` and sets environment variables before importi
 
 Both subcommands initialize `ConfigManager` independently and exit before starting the server.
 
+## Roadmap App (`apps/roadmap/`)
+
+Standalone roadmap management tool that is **separate from the main DorkOS architecture**. It does NOT use the Transport interface, DirectTransport, or any shared DorkOS services. It is an independent Express + React app.
+
+### Server
+
+Express server on port 4243 (`ROADMAP_PORT` env var). Three route groups mounted at `/api/roadmap/`:
+
+- **`routes/items.ts`** - CRUD for roadmap items (list, get, create, update, delete, reorder) with Zod validation
+- **`routes/meta.ts`** - Project metadata and health statistics
+- **`routes/files.ts`** - Serves spec files, restricted to `specs/` directory to prevent path traversal
+
+Data persistence via `RoadmapStore` (lowdb JSON adapter). Reads/writes `roadmap.json` — the same file used by the Python utility scripts in `roadmap/scripts/`.
+
+### Client
+
+React 19 SPA with Vite 6, Tailwind CSS 4, and FSD architecture (`src/client/layers/`). Four views:
+
+- **Table View** - TanStack Table with sorting, filtering, and column controls
+- **Kanban View** - Drag-and-drop columns by time horizon (`@hello-pangea/dnd`)
+- **MoSCoW Grid** - Cards grouped by MoSCoW priority category
+- **Gantt View** - Custom timeline visualization
+
+State management: Zustand for UI state, TanStack Query for server state. No auth — designed as a single-user local tool.
+
 ## Build Configuration
 
 ### Standalone Web (`apps/client/vite.config.ts`)
