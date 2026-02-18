@@ -578,6 +578,88 @@ Validate → Parse → Questions remain?
 
 Create a comprehensive summary for the user that reflects the specification's final state after all questions have been resolved.
 
+### Step 7.0: Auto-Extract Draft ADRs
+
+Automatically extract architectural decisions from the spec as draft ADRs. This runs silently with no user interaction.
+
+#### 7.0.1: Check for Existing Extractions
+
+Read `decisions/manifest.json`. Check if any entries have `"extractedFrom": "{slug}"`. If entries already exist, skip extraction entirely and set `autoExtractedCount = 0` with note "Draft ADRs already extracted for this spec."
+
+#### 7.0.2: Read Spec Documents
+
+Read both:
+1. `specs/{slug}/01-ideation.md`
+2. `specs/{slug}/02-specification.md`
+
+#### 7.0.3: Scan for Decision Signals
+
+Identify decision candidates by scanning for these signals (from the `writing-adrs` skill):
+
+| Signal | Pattern |
+|--------|---------|
+| Technology choices | "We chose X", "Using X instead of Y", library/framework selections |
+| Pattern adoption | Architectural patterns, design systems, data flow approaches |
+| Trade-off resolutions | "We decided to...", "The recommended approach is..." |
+| Rejected alternatives | "We considered X but...", "Option A vs Option B" |
+| Deliberate exclusions | "We will not...", "Out of scope because..." |
+
+For each candidate, extract:
+- **Title**: Short imperative form (e.g., "Use SSE for Server-to-Client Streaming")
+- **Context**: 2-5 sentences from the spec's problem/research sections
+- **Decision**: 2-5 sentences from the spec's design/recommendation sections
+- **Consequences**: Positive and negative trade-offs from the spec
+
+#### 7.0.4: Write Draft ADRs
+
+For each candidate decision:
+
+1. Read `decisions/manifest.json` for current `nextNumber`
+2. Create ADR file at `decisions/NNNN-{kebab-slug}.md` using the standard template:
+
+```
+---
+number: NNNN
+title: [Title]
+status: draft
+created: [today's date]
+spec: {slug}
+superseded-by: null
+---
+
+# NNNN. [Title]
+
+## Status
+
+Draft (auto-extracted from spec: {slug})
+
+## Context
+
+[2-5 sentences extracted from spec]
+
+## Decision
+
+[2-5 sentences extracted from spec]
+
+## Consequences
+
+### Positive
+
+- [From spec trade-off analysis]
+
+### Negative
+
+- [From spec trade-off analysis]
+```
+
+3. Update `decisions/manifest.json`: increment `nextNumber`, add entry with `"status": "draft"`, `"extractedFrom": "{slug}"`, and `"specSlug": "{slug}"`
+
+Repeat for all candidates, incrementing the number each time.
+
+#### 7.0.5: Record Extraction Count
+
+Set `autoExtractedCount` to the number of draft ADRs created. This will be displayed in the Step 7 summary.
+
 #### 7.1: Build Summary Header
 
 Construct the summary header with current specification status:
@@ -749,7 +831,7 @@ If no remaining decisions:
 ### Recommended Next Steps
 
 1. [ ] Review the specification at specs/{slug}/02-specification.md
-2. [ ] Consider extracting ADRs: `/adr:from-spec {slug}`
+2. [x] Auto-extracted {autoExtractedCount} draft ADRs (run `/adr:curate` to promote significant ones)
 3. [ ] Run /spec:decompose specs/{slug}/02-specification.md
 4. [ ] Implement with: /spec:execute specs/{slug}/02-specification.md
 5. [ ] Track progress with: TaskList() → filter by "[{slug}]"
