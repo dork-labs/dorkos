@@ -485,11 +485,44 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 [previous releases...]
 ```
 
+### 5.5b: Scaffold Blog Post
+
+Create a blog post for this release at `blog/dorkos-X-Y-Z.mdx` (replace dots with hyphens in the version). Use the changelog content and release theme to populate it:
+
+```markdown
+---
+title: DorkOS X.Y.Z
+description: [Theme sentence from CHANGELOG.md blockquote, or generated 1-sentence summary]
+date: [today's date YYYY-MM-DD]
+author: DorkOS Team
+category: release
+tags: [release, plus 2-3 relevant tags from the changes]
+---
+
+[Theme paragraph — 1-2 sentences describing the release focus]
+
+## Highlights
+
+[2-3 most significant changes with brief explanations]
+
+## All Changes
+
+[Copy from CHANGELOG.md version section — same content as GitHub Release]
+
+## Install / Update
+
+\`\`\`
+npm install -g dorkos@X.Y.Z
+\`\`\`
+```
+
+The user can edit this post before the release commit. Add the blog post file to the git staging in Phase 5.6.
+
 ### 5.6: Commit and Tag
 
 ```bash
 # Stage all version-related changes
-git add VERSION CHANGELOG.md docs/changelog.mdx packages/cli/package.json package.json package-lock.json
+git add VERSION CHANGELOG.md docs/changelog.mdx packages/cli/package.json package.json package-lock.json blog/
 
 # Commit (use HEREDOC for message)
 git commit -m "$(cat <<'EOF'
@@ -550,25 +583,28 @@ options:
     description: "Tag is pushed, but no GitHub Release created"
 ```
 
-If yes, generate **narrative release notes** (not just a copy of the changelog):
+If yes, generate **narrative release notes** with a fresh theme and highlights, but copy "All Changes" verbatim from CHANGELOG.md:
+
+#### Source for "All Changes"
+
+Read the released version section from `CHANGELOG.md` (the `## [0.2.0]` section just created in Phase 5.4). Copy the bullet entries under each subsection (`### Added`, `### Changed`, `### Fixed`, etc.) **exactly as written** — do NOT rewrite, regenerate, or summarize them. The changelog entries were already reviewed and approved earlier in this process.
 
 #### Release Notes Template
 
 ```markdown
 ## What's New in v0.2.0
 
-[1-2 sentence theme describing the focus of this release]
+[1-2 sentence theme describing the focus of this release — generate fresh]
 
 ### Highlights
 
-[emoji] **[Feature Name]** - [One sentence explaining the benefit and how to use it]
+[emoji] **[Feature Name]** - [One sentence explaining the benefit and how to use it — generate fresh, 2-3 highlights for most significant changes]
 
-[emoji] **[Feature Name]** - [One sentence explaining the benefit and how to use it]
+[emoji] **[Feature Name]** - [One sentence explaining the benefit and how to use it — generate fresh]
 
 ### All Changes
 
-- [User-friendly bullet list]
-- [Include references when available: (#123) or (abc1234)]
+[COPY verbatim from CHANGELOG.md — do NOT regenerate or rewrite these entries]
 
 ### Install / Update
 
@@ -579,19 +615,15 @@ npm update -g dorkos
 **Full Changelog**: https://github.com/dork-labs/dorkos/compare/v[prev]...v[new]
 ```
 
+**Important**: The Theme and Highlights sections above are written fresh (narrative, engaging). The "All Changes" section is copied directly from CHANGELOG.md without modification.
+
 #### Pre-Release Checklist
-
-Before publishing, verify each entry:
-
-- [ ] Starts with imperative verb (Add, Fix, Change, Remove, Improve)
-- [ ] Describes user benefit, not just implementation detail
-- [ ] Uses plain language (no unexplained jargon)
-- [ ] Includes reference link when applicable
 
 For the overall release:
 
 - [ ] Has a theme sentence summarizing the release focus
 - [ ] 2-3 highlights for significant changes
+- [ ] "All Changes" is copied verbatim from CHANGELOG.md (not regenerated)
 - [ ] Link to full changelog
 - [ ] Install/update instructions included
 

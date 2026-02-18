@@ -1,3 +1,8 @@
+---
+title: Automatic ADR Extraction & Curation
+description: Implementation plan for automatic architectural decision capture from specs.
+---
+
 # Automatic ADR Extraction & Curation — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

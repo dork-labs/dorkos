@@ -75,6 +75,26 @@ Not everything belongs in the changelog. Skip:
 
 **Exception**: Include if it affects how users interact with the system.
 
+## Theme Blockquote (Optional)
+
+Add a single-line blockquote below version headings to provide a theme/summary for the release:
+
+```markdown
+## [0.3.0] - 2026-02-20
+
+> DorkOS 0.3.0 adds a scheduler and dynamic MCP tools.
+
+### Added
+- ...
+```
+
+This theme line feeds:
+- Blog post descriptions
+- GitHub Release "What's New" opening paragraph
+- Quick reference for users scanning the changelog
+
+The blockquote is optional and backward-compatible. Older versions without it work fine.
+
 ## Changelog Categories
 
 Use these standard categories in order:

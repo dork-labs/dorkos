@@ -21,6 +21,7 @@ const navLinks = [
   { label: 'features', href: '#features' },
   { label: 'about', href: '#about' },
   { label: 'contact', href: '#contact' },
+  { label: 'blog', href: '/blog' },
   { label: 'docs', href: '/docs' },
 ]
 
@@ -56,6 +57,7 @@ export default function HomePage() {
           subhead="DorkOS is an open-source operating system for autonomous AI agents. Built on Claude Code. Powered by a heartbeat. Connected through an agent mesh."
           ctaText="npm install -g dorkos"
           ctaHref={siteConfig.npm}
+          githubHref={siteConfig.github}
         />
 
         <CredibilityBar />

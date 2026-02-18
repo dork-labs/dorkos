@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 44,
+  "nextNumber": 46,
   "specs": [
     {
       "number": 1,
@@ -302,6 +302,20 @@
       "title": "DorkOS Pulse (Scheduler)",
       "created": "2026-02-18",
       "status": "specified"
+    },
+    {
+      "number": 44,
+      "slug": "world-class-release-notes",
+      "title": "World-Class Release Notes & Blog Infrastructure",
+      "created": "2026-02-18",
+      "status": "implemented"
+    },
+    {
+      "number": 45,
+      "slug": "roadmap-standalone-app",
+      "title": "Roadmap Standalone App",
+      "created": "2026-02-18",
+      "status": "ideation"
     }
   ]
 }
