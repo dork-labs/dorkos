@@ -12,7 +12,7 @@ interface SystemArchitectureProps {
 const nodes = [
   { x: 100, y: 50, label: 'Console' },
   { x: 300, y: 50, label: 'Core' },
-  { x: 500, y: 50, label: 'Vault' },
+  { x: 500, y: 50, label: 'Wing' },
   { x: 100, y: 160, label: 'Pulse' },
   { x: 300, y: 160, label: 'Mesh' },
   { x: 500, y: 160, label: 'Channels' },
@@ -58,7 +58,7 @@ export function SystemArchitecture({ modules }: SystemArchitectureProps) {
             className="text-warm-gray text-base leading-[1.7] text-center max-w-xl mx-auto mb-16"
           >
             DorkOS isn&apos;t a chat UI. It&apos;s an autonomous agent system with
-            a heartbeat, a knowledge vault, and an agent mesh.
+            a heartbeat, a life layer, and an agent mesh.
           </motion.p>
         </motion.div>
 

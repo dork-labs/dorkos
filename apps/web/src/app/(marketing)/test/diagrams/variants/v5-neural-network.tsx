@@ -17,7 +17,7 @@ const NEURON_POSITIONS: Record<string, { cx: number; cy: number }> = {
   core:     { cx: 450, cy:  88 },
   console:  { cx: 192, cy: 205 },
   pulse:    { cx: 708, cy: 198 },
-  vault:    { cx: 148, cy: 378 },
+  wing:    { cx: 148, cy: 378 },
   mesh:     { cx: 452, cy: 408 },
   channels: { cx: 754, cy: 365 },
 }
@@ -120,9 +120,9 @@ const DENDRITES: DendriteConnection[] = [
     pulseDur: '3.5s',
     hasPulse: false,
   },
-  // Console → Vault
+  // Console → Wing
   {
-    id: 'd-console-vault',
+    id: 'd-console-wing',
     d: 'M 182,226 C 170,278 152,320 150,358',
     delay: 0.4,
     pulseDur: '3.6s',
@@ -176,9 +176,9 @@ const DENDRITES: DendriteConnection[] = [
     pulseDur: '4.2s',
     hasPulse: false,
   },
-  // r3 → Vault
+  // r3 → Wing
   {
-    id: 'd-r3-vault',
+    id: 'd-r3-wing',
     d: 'M 252,302 C 220,332 178,358 155,372',
     delay: 0.7,
     pulseDur: '3.8s',
@@ -224,17 +224,17 @@ const DENDRITES: DendriteConnection[] = [
     pulseDur: '4.4s',
     hasPulse: false,
   },
-  // Vault → r7
+  // Wing → r7
   {
-    id: 'd-vault-r7',
+    id: 'd-wing-r7',
     d: 'M 148,398 C 160,424 178,462 182,488',
     delay: 0.9,
     pulseDur: '4.0s',
     hasPulse: false,
   },
-  // Vault → r9
+  // Wing → r9
   {
-    id: 'd-vault-r9',
+    id: 'd-wing-r9',
     d: 'M 165,388 C 230,410 310,438 380,462',
     delay: 0.92,
     pulseDur: '3.8s',
@@ -280,9 +280,9 @@ const DENDRITES: DendriteConnection[] = [
     pulseDur: '4.6s',
     hasPulse: true,
   },
-  // Vault → Mesh
+  // Wing → Mesh
   {
-    id: 'd-vault-mesh',
+    id: 'd-wing-mesh',
     d: 'M 168,378 C 258,384 358,396 428,406',
     delay: 0.88,
     pulseDur: '3.0s',
@@ -330,7 +330,7 @@ const LABEL_OFFSETS: Record<string, { dx: number; dy: number; anchor: 'middle' |
   core:     { dx:   0, dy: -38, anchor: 'middle' },
   console:  { dx: -34, dy:   0, anchor: 'end'    },
   pulse:    { dx:  34, dy:   0, anchor: 'start'  },
-  vault:    { dx: -34, dy:   0, anchor: 'end'    },
+  wing:    { dx: -34, dy:   0, anchor: 'end'    },
   mesh:     { dx:   0, dy:  42, anchor: 'middle' },
   channels: { dx:  34, dy:   0, anchor: 'start'  },
 }

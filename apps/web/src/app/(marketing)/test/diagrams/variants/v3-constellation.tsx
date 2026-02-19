@@ -20,13 +20,13 @@ const ORANGE_DIM = 'rgba(232, 93, 4, 0.35)'
 // Layout inspired loosely by the Scorpius constellation — Core is the bright
 // alpha star at center-left, arms sweep outward in an asymmetric arc.
 //
-// Module order: core, console, pulse, vault, channels, mesh
+// Module order: core, console, pulse, wing, channels, mesh
 
 const STAR_POSITIONS: Record<string, { x: number; y: number }> = {
   core:     { x: 370, y: 240 },  // dominant center — brightest star
   console:  { x: 175, y: 155 },  // upper-left — close companion
   pulse:    { x: 580, y: 145 },  // upper-right
-  vault:    { x: 640, y: 330 },  // right midfield
+  wing:    { x: 640, y: 330 },  // right midfield
   mesh:     { x: 195, y: 355 },  // lower-left
   channels: { x: 490, y: 420 },  // lower-right sweep
 }
@@ -39,7 +39,7 @@ const LABEL_OFFSETS: Record<
   core:     { dx:   0, dy: -34, anchor: 'middle' },
   console:  { dx: -22, dy: -22, anchor: 'end'    },
   pulse:    { dx:  22, dy: -22, anchor: 'start'  },
-  vault:    { dx:  28, dy:   4, anchor: 'start'  },
+  wing:    { dx:  28, dy:   4, anchor: 'start'  },
   mesh:     { dx: -28, dy:   4, anchor: 'end'    },
   channels: { dx:   0, dy:  30, anchor: 'middle' },
 }
@@ -48,12 +48,12 @@ const LABEL_OFFSETS: Record<
 const EDGES: Array<[string, string]> = [
   ['core', 'console'],
   ['core', 'pulse'],
-  ['core', 'vault'],
+  ['core', 'wing'],
   ['core', 'mesh'],
   ['core', 'channels'],
   ['console', 'pulse'],
   ['mesh', 'channels'],
-  ['pulse', 'vault'],
+  ['pulse', 'wing'],
 ]
 
 // ─── Seeded Background Stars ──────────────────────────────────────────────────
@@ -329,7 +329,7 @@ export function DiagramV3({ modules }: { modules: SystemModule[] }) {
           <StarGlowDef id="star-glow-core"     color={ORANGE} />
           <StarGlowDef id="star-glow-console"  color={ORANGE} />
           <StarGlowDef id="star-glow-pulse"    color={ORANGE} />
-          <StarGlowDef id="star-glow-vault"    color={ORANGE} />
+          <StarGlowDef id="star-glow-wing"    color={ORANGE} />
           <StarGlowDef id="star-glow-channels" color={ORANGE} />
           <StarGlowDef id="star-glow-mesh"     color={ORANGE} />
 

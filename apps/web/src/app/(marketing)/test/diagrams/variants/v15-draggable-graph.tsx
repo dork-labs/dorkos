@@ -22,7 +22,7 @@ const NODE_R = 32
 const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
   core:     { x: 450, y: 195 },
   console:  { x: 175, y:  80 },
-  vault:    { x: 725, y:  80 },
+  wing:    { x: 725, y:  80 },
   pulse:    { x: 175, y: 330 },
   mesh:     { x: 450, y: 345 },
   channels: { x: 725, y: 330 },
@@ -38,7 +38,7 @@ interface ConnectionDef {
 
 const CONNECTIONS: ConnectionDef[] = [
   { id: 'core-console',  from: 'core',  to: 'console'  },
-  { id: 'core-vault',    from: 'core',  to: 'vault'    },
+  { id: 'core-wing',    from: 'core',  to: 'wing'    },
   { id: 'core-pulse',    from: 'core',  to: 'pulse'    },
   { id: 'core-mesh',     from: 'core',  to: 'mesh',    spine: true },
   { id: 'mesh-channels', from: 'mesh',  to: 'channels' },
@@ -773,7 +773,7 @@ export function DiagramV15({ modules }: { modules: SystemModule[] }) {
 
   // ── Entrance stagger order ─────────────────────────────────────────────────
 
-  const nodeOrder: Record<string, number> = { core: 0, console: 1, vault: 2, pulse: 3, mesh: 4, channels: 5 }
+  const nodeOrder: Record<string, number> = { core: 0, console: 1, wing: 2, pulse: 3, mesh: 4, channels: 5 }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 

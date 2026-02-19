@@ -46,7 +46,7 @@ export function HonestySection() {
 
         <motion.p variants={REVEAL} className="text-warm-gray text-lg leading-[1.7]">
           The agent runs on your machine. Sessions are stored locally. Tools
-          execute in your shell. The orchestration, the heartbeat, the vault —
+          execute in your shell. The orchestration, the heartbeat, the wing —
           that&apos;s all yours. We believe in honest tools for serious builders.
         </motion.p>
       </motion.div>

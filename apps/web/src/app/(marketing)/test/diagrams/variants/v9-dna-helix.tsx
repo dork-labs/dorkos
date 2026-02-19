@@ -49,12 +49,12 @@ const RUNG_COLOR = 'rgba(139,90,43,0.22)'
 
 // ─── Module layout ─────────────────────────────────────────────────────────────
 //
-// Left strand  (orange) — user-facing: Console, Core, Vault  (top → bottom)
+// Left strand  (orange) — user-facing: Console, Core, Wing  (top → bottom)
 // Right strand (blue)   — autonomous:  Pulse,   Mesh, Channels (top → bottom)
 //
 // Each triplet: [moduleId, rungIndex]
 
-const LEFT_IDS = ['console', 'core', 'vault'] as const
+const LEFT_IDS = ['console', 'core', 'wing'] as const
 const RIGHT_IDS = ['pulse', 'mesh', 'channels'] as const
 
 // ─── SVG path builders ─────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ function buildLeftStrand(): string {
   //   CROSS_Y[0]: (CX, CROSS_Y[0])        — crossing (behind right strand)
   //   RUNG_Y[1]: (CX + AMP, RUNG_Y[1])   — right extreme — NOTE: strand swings right here
   //   CROSS_Y[1]: (CX, CROSS_Y[1])        — crossing (in front of right strand)
-  //   RUNG_Y[2]: (CX - AMP, RUNG_Y[2])   — left extreme (Vault node)
+  //   RUNG_Y[2]: (CX - AMP, RUNG_Y[2])   — left extreme (Wing node)
 
   const x0 = CX - AMP
   const x2 = CX + AMP
@@ -326,7 +326,7 @@ function NucleotideParticle({
  * DiagramV9 — DNA Helix architecture visualization.
  *
  * Renders DorkOS modules as base pairs on a double helix structure.
- * Left strand (orange) = user-facing layer: Console, Core, Vault.
+ * Left strand (orange) = user-facing layer: Console, Core, Wing.
  * Right strand (blue) = autonomous layer: Pulse, Mesh, Channels.
  * Paired modules are connected by horizontal rungs.
  */

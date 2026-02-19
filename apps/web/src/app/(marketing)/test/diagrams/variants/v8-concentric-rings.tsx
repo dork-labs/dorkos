@@ -36,7 +36,7 @@ interface ModuleLayout {
 const MODULE_LAYOUT: ModuleLayout[] = [
   // Core is always at center, not on any ring
   { id: 'console', ring: 0, angleDeg: -60 },
-  { id: 'vault', ring: 1, angleDeg: 210 },
+  { id: 'wing', ring: 1, angleDeg: 210 },
   { id: 'pulse', ring: 1, angleDeg: 30 },
   { id: 'mesh', ring: 2, angleDeg: -120 },
   { id: 'channels', ring: 2, angleDeg: 70 },

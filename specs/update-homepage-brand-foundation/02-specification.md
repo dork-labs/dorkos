@@ -509,7 +509,7 @@ No automated tests currently exist for marketing components. This spec does not 
 
 - Dynamic GitHub star count / npm downloads (future enhancement)
 - Testimonials section (skip until real quotes available)
-- Multi-page site structure (revisit when Pulse/Channels/Vault ship)
+- Multi-page site structure (revisit when Pulse/Channels/Wing ship)
 - Blog or changelog system
 - A/B testing
 - New color palette or visual design language

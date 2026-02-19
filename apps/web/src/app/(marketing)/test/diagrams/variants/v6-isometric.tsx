@@ -121,8 +121,8 @@ const BLOCK_CONFIGS: BlockConfig[] = [
   { id: 'core', col: 2, row: 1, blockHeight: 90, order: 0 },
   // Console — medium, left of core
   { id: 'console', col: 0, row: 1, blockHeight: 60, order: 1 },
-  // Vault — medium, right of core
-  { id: 'vault', col: 4, row: 1, blockHeight: 60, order: 2 },
+  // Wing — medium, right of core
+  { id: 'wing', col: 4, row: 1, blockHeight: 60, order: 2 },
   // Pulse — shorter, forward-left
   { id: 'pulse', col: 0, row: 3, blockHeight: 38, order: 3 },
   // Mesh — shorter, forward-center
@@ -165,14 +165,14 @@ function pipePath(
 const PIPE_DEFINITIONS = [
   // Core ↔ Console (top row)
   { from: 'console', to: 'core' },
-  // Core ↔ Vault (top row)
-  { from: 'core', to: 'vault' },
+  // Core ↔ Wing (top row)
+  { from: 'core', to: 'wing' },
   // Console ↔ Pulse (front column)
   { from: 'console', to: 'pulse' },
   // Core ↔ Mesh (front column)
   { from: 'core', to: 'mesh' },
-  // Vault ↔ Channels (front column)
-  { from: 'vault', to: 'channels' },
+  // Wing ↔ Channels (front column)
+  { from: 'wing', to: 'channels' },
 ]
 
 // ---------------------------------------------------------------------------

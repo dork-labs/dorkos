@@ -14,7 +14,7 @@ const VB_H = 560
 const STATIONS = {
   core:     { x: 450, y: 280 },
   console:  { x: 150, y: 155 },
-  vault:    { x: 150, y: 405 },
+  wing:    { x: 150, y: 405 },
   pulse:    { x: 750, y: 155 },
   mesh:     { x: 750, y: 405 },
   channels: { x: 450, y: 490 },
@@ -46,9 +46,9 @@ const METRO_LINES: MetroLine[] = [
     name: 'User-Facing',
     color: 'var(--color-brand-orange)',
     strokeWidth: 6,
-    // Console → H-right → elbow → Core → H-left → V-down → H-left → Vault
+    // Console → H-right → elbow → Core → H-left → V-down → H-left → Wing
     path: 'M 150 155 H 310 L 450 280 H 280 V 405 H 150',
-    stations: ['console', 'core', 'vault'],
+    stations: ['console', 'core', 'wing'],
     trainDur: '8s',
     trainBegin: '3.0s',
   },

@@ -24,7 +24,7 @@ const NODE_POS: Record<string, { x: number; y: number }> = {
   core:     { x: 450, y: 240 },   // gravitational center
   console:  { x: 222, y: 188 },   // heavy link — pulled close, upper-left
   mesh:     { x: 672, y: 192 },   // heavy link — pulled close, upper-right
-  vault:    { x: 248, y: 388 },   // medium link — mid-left
+  wing:    { x: 248, y: 388 },   // medium link — mid-left
   pulse:    { x: 652, y: 376 },   // medium link — mid-right
   channels: { x: 480, y: 468 },   // light link (from mesh) — lower center
 }
@@ -34,7 +34,7 @@ const LABEL_OFFSETS: Record<string, { dx: number; dy: number; anchor: 'middle' |
   core:     { dx:   0, dy: -50, anchor: 'middle' },
   console:  { dx: -20, dy: -44, anchor: 'end'    },
   mesh:     { dx:  20, dy: -44, anchor: 'start'  },
-  vault:    { dx: -20, dy:  44, anchor: 'end'    },
+  wing:    { dx: -20, dy:  44, anchor: 'end'    },
   pulse:    { dx:  20, dy:  44, anchor: 'start'  },
   channels: { dx:   0, dy:  42, anchor: 'middle' },
 }
@@ -53,7 +53,7 @@ interface ConnectionDef {
 const CONNECTIONS: ConnectionDef[] = [
   { from: 'core', to: 'console',  weight: 'heavy',  bidir: true  },
   { from: 'core', to: 'mesh',     weight: 'heavy',  bidir: true  },
-  { from: 'core', to: 'vault',    weight: 'medium', bidir: true  },
+  { from: 'core', to: 'wing',    weight: 'medium', bidir: true  },
   { from: 'core', to: 'pulse',    weight: 'medium', bidir: true  },
   { from: 'mesh', to: 'channels', weight: 'light',  bidir: false },
   { from: 'mesh', to: 'pulse',    weight: 'light',  bidir: false },

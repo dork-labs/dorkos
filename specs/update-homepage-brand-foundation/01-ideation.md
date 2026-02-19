@@ -310,4 +310,4 @@ The email reveal mechanism is distinctive and well-executed. No changes needed.
 | 3 | Social proof / testimonials | **Skip for now** — No testimonials section until we have real, curated developer quotes. None > fake. |
 | 4 | Footer version | **Show real npm version** — Display actual version (e.g., "v0.2.0"). Ogilvy: specificity is believability. |
 | 5 | Problem section tone | **Direct "you" address** — "Every AI coding interface you've used..." Makes the reader the protagonist. |
-| 6 | Site structure | **Single page** — One scrolling page. DorkOS is one product with one install. Go multi-page when Pulse/Channels/Vault ship. |
+| 6 | Site structure | **Single page** — One scrolling page. DorkOS is one product with one install. Go multi-page when Pulse/Channels/Wing ship. |

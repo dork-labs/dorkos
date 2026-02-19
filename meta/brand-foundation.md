@@ -4,7 +4,7 @@
 
 **DorkOS** is an autonomous agent operating system for developers, founders, and serious builders.
 
-It transforms Claude Code into an autonomous agent system — with a heartbeat that works while you sleep, a knowledge vault that remembers everything, and a mesh that lets agents discover and talk to each other.
+It transforms Claude Code into an autonomous agent system — with a heartbeat that works while you sleep, a life layer that keeps you in context, and a mesh that lets agents discover and talk to each other.
 
 DorkOS is:
 
@@ -28,7 +28,7 @@ Autonomous Agent Operating System
 
 ### Positioning Statement
 
-DorkOS is the operating system for autonomous AI agents — giving developers a heartbeat, a knowledge vault, an agent mesh, and full control over their Claude-powered infrastructure.
+DorkOS is the operating system for autonomous AI agents — giving developers a heartbeat, a life layer, an agent mesh, and full control over their Claude-powered infrastructure.
 
 ### Target Audience
 
@@ -123,23 +123,23 @@ Enables AI to communicate outward.
 
 **Status: Coming Soon**
 
-#### 4.5 DorkOS Vault (Knowledge Layer)
+#### 4.5 DorkOS Wing (Life Layer)
 
-Structured knowledge layer built on Obsidian.
+Your personal life layer. Wing is the always-on AI companion that lives beside you — remembering what matters, helping you plan, keeping you accountable, and coordinating across every part of your life.
 
-- Projects
-- People
-- Memory
-- Strategic planning
-- Life systems
+- Memory system
+- Life coach
+- Project planner
+- Journal & knowledge base
+- Chief of staff
 
 Acts as:
 
-- Long-term memory
-- Instruction layer
-- Context repository
+- Persistent context layer for all agents
+- Long-term memory and commitment tracker
+- Life coordination intelligence
 
-This powers Life Infrastructure workflows.
+Wing is supportive, steady, and proactive. Not just storage — presence.
 
 **Status: Coming Soon**
 

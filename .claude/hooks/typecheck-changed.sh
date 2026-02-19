@@ -13,6 +13,12 @@ fi
 
 echo "📘 Type-checking $FILE_PATH" >&2
 
+# Convert absolute path to relative (strip repo root prefix)
+REPO_ROOT=$(git rev-parse --show-toplevel)
+if [[ "$FILE_PATH" == "$REPO_ROOT/"* ]]; then
+  FILE_PATH="${FILE_PATH#$REPO_ROOT/}"
+fi
+
 # Detect which workspace the file belongs to and run tsc from there
 if [[ "$FILE_PATH" =~ ^apps/server/ ]]; then
   WORKSPACE_DIR="apps/server"
@@ -22,6 +28,8 @@ elif [[ "$FILE_PATH" =~ ^apps/obsidian-plugin/ ]]; then
   WORKSPACE_DIR="apps/obsidian-plugin"
 elif [[ "$FILE_PATH" =~ ^apps/web/ ]]; then
   WORKSPACE_DIR="apps/web"
+elif [[ "$FILE_PATH" =~ ^apps/roadmap/ ]]; then
+  WORKSPACE_DIR="apps/roadmap"
 elif [[ "$FILE_PATH" =~ ^packages/shared/ ]]; then
   WORKSPACE_DIR="packages/shared"
 elif [[ "$FILE_PATH" =~ ^packages/test-utils/ ]]; then

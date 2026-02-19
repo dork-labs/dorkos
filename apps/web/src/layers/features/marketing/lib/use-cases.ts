@@ -18,10 +18,10 @@ export const useCases: UseCase[] = [
       'The Mesh turns folders into agents with their own rules and memory. They discover each other, share context, and coordinate — your scheduling agent talks to your finance agent talks to your purchasing agent.',
   },
   {
-    id: 'brain-that-remembers',
-    title: 'A brain that remembers everything',
+    id: 'life-layer',
+    title: 'Your life, always in context',
     description:
-      'The Vault gives your agents persistent memory, context, and strategic awareness through Obsidian.',
+      'Wing is your personal life layer — a memory system, life coach, and chief of staff that gives agents persistent context about your goals, commitments, and priorities.',
   },
   {
     id: 'access-from-anywhere',

@@ -30,7 +30,7 @@ const CARD_LAYOUT: Record<string, CardLayout> = {
   core:     { top: '33%',  left: '37%',  width: 172, height: 132 },
   console:  { top: '5%',   left: '7%',   width: 152, height: 118 },
   mesh:     { top: '7%',   left: '66%',  width: 152, height: 118 },
-  vault:    { top: '63%',  left: '5%',   width: 152, height: 118 },
+  wing:    { top: '63%',  left: '5%',   width: 152, height: 118 },
   pulse:    { top: '65%',  left: '65%',  width: 152, height: 118 },
   channels: { top: '69%',  left: '34%',  width: 152, height: 118 },
 }
@@ -47,11 +47,11 @@ interface BeamDef {
 const BEAMS: BeamDef[] = [
   { from: 'core',    to: 'console',  dur: 2.2 },
   { from: 'core',    to: 'mesh',     dur: 2.5 },
-  { from: 'core',    to: 'vault',    dur: 2.8 },
+  { from: 'core',    to: 'wing',    dur: 2.8 },
   { from: 'core',    to: 'pulse',    dur: 2.4 },
   { from: 'core',    to: 'channels', dur: 2.0 },
   { from: 'mesh',    to: 'pulse',    dur: 3.1 },
-  { from: 'console', to: 'vault',    dur: 3.4 },
+  { from: 'console', to: 'wing',    dur: 3.4 },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

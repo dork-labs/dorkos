@@ -43,7 +43,7 @@ export const MODULE_POSITIONS: Record<string, { nx: number; ny: number }> = {
   core:     { nx: 0.38, ny: 0.38 },   // center-left — primary anchor
   mesh:     { nx: 0.62, ny: 0.38 },   // center-right — network hub
   console:  { nx: 0.17, ny: 0.27 },   // upper-left
-  vault:    { nx: 0.17, ny: 0.65 },   // lower-left
+  wing:    { nx: 0.17, ny: 0.65 },   // lower-left
   pulse:    { nx: 0.83, ny: 0.27 },   // upper-right
   channels: { nx: 0.83, ny: 0.65 },   // lower-right
 }
@@ -51,7 +51,7 @@ export const MODULE_POSITIONS: Record<string, { nx: number; ny: number }> = {
 /** Connections between modules */
 export const CONNECTIONS: Array<[string, string]> = [
   ['core',    'console'],
-  ['core',    'vault'],
+  ['core',    'wing'],
   ['core',    'mesh'],
   ['mesh',    'pulse'],
   ['mesh',    'channels'],

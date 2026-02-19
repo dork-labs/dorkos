@@ -16,7 +16,7 @@ interface ActivityFeedHeroProps {
   githubHref?: string
 }
 
-type ModuleId = 'core' | 'pulse' | 'vault' | 'mesh' | 'channels' | 'agent'
+type ModuleId = 'core' | 'pulse' | 'wing' | 'mesh' | 'channels' | 'agent'
 
 interface FeedEntry {
   /** Unique key — never reused. */
@@ -39,7 +39,7 @@ const FEED_INTERVAL_MS = 2400
 const MODULE_COLORS: Record<ModuleId, string> = {
   core: '#E85D04',
   pulse: '#F07D2A',
-  vault: '#228B22',
+  wing: '#228B22',
   mesh: '#4A90A4',
   channels: '#8B7BA4',
   agent: '#7A756A',
@@ -49,7 +49,7 @@ const MODULE_COLORS: Record<ModuleId, string> = {
 const MODULE_LABELS: Record<ModuleId, string> = {
   core: 'Core',
   pulse: 'Pulse',
-  vault: 'Vault',
+  wing: 'Wing',
   mesh: 'Mesh',
   channels: 'Channels',
   agent: 'Agent',
@@ -61,7 +61,7 @@ const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
   { module: 'agent', text: 'Agent committed 3 files to feature/auth-flow' },
   { module: 'pulse', text: 'Pulse executed roadmap step 4 of 12' },
   { module: 'agent', text: 'Agent reviewed PR #47 — approved with suggestions' },
-  { module: 'vault', text: 'Vault updated project memory with new patterns' },
+  { module: 'wing', text: 'Wing updated your context with new project patterns' },
   { module: 'agent', text: 'Agent deployed v2.1.3 to staging' },
   { module: 'mesh', text: 'Mesh coordinated 3 agents on billing refactor' },
   { module: 'agent', text: 'Agent wrote 14 unit tests — all passing' },
@@ -71,15 +71,15 @@ const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
   // Business & money
   { module: 'channels', text: 'Channels sent deployment notification to Slack' },
   { module: 'agent', text: 'Agent drafted Q2 investor update — ready for review' },
-  { module: 'channels', text: 'Channels replied to 6 support emails with context from Vault' },
+  { module: 'channels', text: 'Channels replied to 6 support emails with context from Wing' },
   { module: 'agent', text: 'Agent found $2,400/yr in unused AWS resources — PR open to delete' },
-  { module: 'vault', text: 'Vault compiled competitive analysis from 14 sources' },
+  { module: 'wing', text: 'Wing compiled competitive analysis from 14 sources' },
   { module: 'pulse', text: 'Pulse generated monthly revenue report — MRR up 23%' },
   // Life automation
   { module: 'channels', text: 'Channels ordered anniversary flowers — delivery confirmed for Friday' },
   { module: 'agent', text: 'Agent booked dentist appointment for Thursday 2pm' },
   { module: 'channels', text: 'Channels negotiated internet bill down $40/mo — new rate locked in' },
-  { module: 'vault', text: 'Vault organized 2,847 photos by date, location, and who\u2019s in them' },
+  { module: 'wing', text: 'Wing organized 2,847 photos by date, location, and who\u2019s in them' },
   { module: 'agent', text: 'Agent meal-prepped grocery list for the week — ordered via Instacart' },
   { module: 'pulse', text: 'Pulse filed your quarterly taxes 3 days before the deadline' },
   // Ambitious / funny
@@ -87,7 +87,7 @@ const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
   { module: 'agent', text: 'Agent wrote a passive income bot — estimated $300/mo on autopilot' },
   { module: 'pulse', text: 'Pulse started next iteration cycle' },
   { module: 'channels', text: 'Channels sent "thinking of you" text to mom — she loved it' },
-  { module: 'vault', text: 'Vault memorized your entire codebase — ask me anything' },
+  { module: 'wing', text: 'Wing has your full context — ask me anything' },
   { module: 'mesh', text: 'Mesh coordinating world domination — ETA 47 minutes' },
   { module: 'agent', text: 'Agent applied to 30 jobs on your behalf — 4 interviews booked' },
   { module: 'pulse', text: 'Pulse optimized your portfolio — up 12% since last rebalance' },

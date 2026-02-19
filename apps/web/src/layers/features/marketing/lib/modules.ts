@@ -32,11 +32,11 @@ export const systemModules: SystemModule[] = [
     status: 'coming-soon',
   },
   {
-    id: 'vault',
-    name: 'Vault',
-    label: 'Knowledge',
+    id: 'wing',
+    name: 'Wing',
+    label: 'Life Layer',
     description:
-      'Structured knowledge layer built on Obsidian. Projects, people, memory, strategic planning.',
+      'Your always-on AI companion. Remembers what matters, helps you plan, keeps you accountable, and gives AI agents persistent context about your goals and life.',
     status: 'coming-soon',
   },
   {

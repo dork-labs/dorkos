@@ -15,7 +15,7 @@ const MAX_TILT    = 15 // degrees
 const GRID_POS: Record<string, [number, number]> = {
   console:  [0, 0],
   core:     [0, 1],
-  vault:    [0, 2],
+  wing:    [0, 2],
   pulse:    [1, 0],
   mesh:     [1, 1],
   channels: [1, 2],
@@ -24,7 +24,7 @@ const GRID_POS: Record<string, [number, number]> = {
 /** Directed edges for tracing beams. */
 const CONNECTIONS: [string, string][] = [
   ['core', 'console'],
-  ['core', 'vault'],
+  ['core', 'wing'],
   ['core', 'pulse'],
   ['core', 'mesh'],
   ['core', 'channels'],
@@ -527,7 +527,7 @@ export function DiagramV11({ modules }: { modules: SystemModule[] }) {
     setExpandedId((prev) => (prev === id ? null : id))
   }, [])
 
-  // Sort modules into 3×2 grid order: [console, core, vault, pulse, mesh, channels]
+  // Sort modules into 3×2 grid order: [console, core, wing, pulse, mesh, channels]
   const sorted = [...modules].sort((a, b) => {
     const [ar, ac] = GRID_POS[a.id] ?? [99, 99]
     const [br, bc] = GRID_POS[b.id] ?? [99, 99]

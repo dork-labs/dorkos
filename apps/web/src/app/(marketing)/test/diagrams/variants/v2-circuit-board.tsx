@@ -22,7 +22,7 @@ const BUS_H = 64
 const POS = {
   core:     { x: VB_W / 2,      y: 185 },
   console:  { x: 155,           y: 185 },
-  vault:    { x: VB_W - 155,    y: 185 },
+  wing:    { x: VB_W - 155,    y: 185 },
   pulse:    { x: 185,           y: 395 },
   mesh:     { x: VB_W / 2,      y: 395 },
   channels: { x: VB_W - 185,    y: 395 },
@@ -66,10 +66,10 @@ const TRACES = [
     delay: 0,
     dur: 2.2,
   },
-  // Core ─── horizontal ──► Vault (right pin of Core to left pin of Vault)
+  // Core ─── horizontal ──► Wing (right pin of Core to left pin of Wing)
   {
-    id: 'core-vault',
-    d: `M ${POS.core.x + CORE_W / 2} ${POS.core.y} L ${POS.vault.x - SIDE_W / 2} ${POS.vault.y}`,
+    id: 'core-wing',
+    d: `M ${POS.core.x + CORE_W / 2} ${POS.core.y} L ${POS.wing.x - SIDE_W / 2} ${POS.wing.y}`,
     delay: 0.2,
     dur: 2.4,
   },
@@ -264,9 +264,9 @@ const SOLDER_JOINTS = [
   // Console–Core horizontal trace endpoints
   { cx: POS.console.x + SIDE_W / 2,    cy: POS.console.y },
   { cx: POS.core.x - CORE_W / 2,       cy: POS.core.y },
-  // Core–Vault horizontal trace endpoints
+  // Core–Wing horizontal trace endpoints
   { cx: POS.core.x + CORE_W / 2,       cy: POS.core.y },
-  { cx: POS.vault.x - SIDE_W / 2,      cy: POS.vault.y },
+  { cx: POS.wing.x - SIDE_W / 2,      cy: POS.wing.y },
   // Core–Mesh vertical trace: bottom of Core, top of Mesh
   { cx: POS.core.x,                    cy: POS.core.y + CORE_H / 2 },
   { cx: POS.mesh.x,                    cy: POS.mesh.y - BUS_H / 2 },
@@ -484,16 +484,16 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
           status={byId['console']?.status ?? 'available'}
         />
 
-        {/* Vault — right flank */}
+        {/* Wing — right flank */}
         <Chip
-          id="vault"
-          cx={POS.vault.x}
-          cy={POS.vault.y}
+          id="wing"
+          cx={POS.wing.x}
+          cy={POS.wing.y}
           w={SIDE_W}
           h={SIDE_H}
-          name={byId['vault']?.name ?? 'Vault'}
-          label={byId['vault']?.label ?? 'Knowledge'}
-          status={byId['vault']?.status ?? 'coming-soon'}
+          name={byId['wing']?.name ?? 'Wing'}
+          label={byId['wing']?.label ?? 'Knowledge'}
+          status={byId['wing']?.status ?? 'coming-soon'}
         />
 
         {/* Lower bus — Pulse, Mesh, Channels */}
@@ -533,7 +533,7 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
         {([
           { label: 'U1', cx: POS.core.x,     cy: POS.core.y + CORE_H / 2 + 12 },
           { label: 'U2', cx: POS.console.x,  cy: POS.console.y + SIDE_H / 2 + 12 },
-          { label: 'U3', cx: POS.vault.x,    cy: POS.vault.y + SIDE_H / 2 + 12 },
+          { label: 'U3', cx: POS.wing.x,    cy: POS.wing.y + SIDE_H / 2 + 12 },
           { label: 'U4', cx: POS.pulse.x,    cy: POS.pulse.y + BUS_H / 2 + 11 },
           { label: 'U5', cx: POS.mesh.x,     cy: POS.mesh.y + BUS_H / 2 + 11 },
           { label: 'U6', cx: POS.channels.x, cy: POS.channels.y + BUS_H / 2 + 11 },

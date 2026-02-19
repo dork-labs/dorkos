@@ -23,6 +23,6 @@ export const philosophyItems: PhilosophyItem[] = [
     number: '04',
     title: 'Extensible',
     description:
-      'Six modules, an agent mesh, and a knowledge vault. Build on top.',
+      'Six modules, an agent mesh, and a life layer. Build on top.',
   },
 ]

@@ -71,7 +71,7 @@ export default function HomePage() {
         <HonestySection />
 
         <AboutSection
-          description="DorkOS turns Claude Code into an autonomous agent system. Built on the Agent SDK, it reads the same JSONL session files as the CLI. The intelligence comes from Anthropic. Everything else — orchestration, heartbeat, mesh, vault, permissions — is yours."
+          description="DorkOS turns Claude Code into an autonomous agent system. Built on the Agent SDK, it reads the same JSONL session files as the CLI. The intelligence comes from Anthropic. Everything else — orchestration, heartbeat, mesh, wing, permissions — is yours."
           philosophyItems={philosophyItems}
         />
 
