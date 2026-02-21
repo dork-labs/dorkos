@@ -23,7 +23,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: Number(process.env.VITE_PORT) || 4241,
     allowedHosts: ['.ngrok-free.app'],
     ...(process.env.TUNNEL_ENABLED === 'true' && { hmr: { clientPort: 443 } }),
     watch: {
