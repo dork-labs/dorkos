@@ -65,6 +65,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setShowTaskCelebrations,
     enableNotificationSound,
     setEnableNotificationSound,
+    enablePulseNotifications,
+    setEnablePulseNotifications,
     showStatusBarSound,
     setShowStatusBarSound,
     showStatusBarTunnel,
@@ -223,6 +225,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <Switch
                     checked={enableNotificationSound}
                     onCheckedChange={setEnableNotificationSound}
+                  />
+                </SettingRow>
+
+                <SettingRow
+                  label="Pulse run notifications"
+                  description="Show a toast when a scheduled Pulse run completes"
+                >
+                  <Switch
+                    checked={enablePulseNotifications}
+                    onCheckedChange={setEnablePulseNotifications}
                   />
                 </SettingRow>
 

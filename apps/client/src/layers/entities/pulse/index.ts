@@ -12,3 +12,4 @@ export {
   useTriggerSchedule,
 } from './model/use-schedules';
 export { useRuns, useRun, useCancelRun, useActiveRunCount } from './model/use-runs';
+export { useCompletedRunBadge } from './model/use-completed-run-badge';

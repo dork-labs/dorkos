@@ -20,6 +20,15 @@ vi.mock('cronstrue', () => ({
   },
 }));
 
+vi.mock('motion/react', () => ({
+  motion: {
+    div: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
+      <div {...props}>{children}</div>
+    ),
+  },
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+}));
+
 function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
     listSessions: vi.fn().mockResolvedValue([]),
@@ -159,7 +168,7 @@ describe('CreateScheduleDialog', () => {
     });
     expect(screen.getByDisplayValue('Review open PRs')).toBeTruthy();
     expect(screen.getByDisplayValue('0 9 * * 1-5')).toBeTruthy();
-    expect(screen.getByDisplayValue('/projects/app')).toBeTruthy();
+    expect(screen.getByText('/projects/app')).toBeTruthy();
     // maxRuntime: 300_000ms = 5 minutes
     expect(screen.getByDisplayValue('5')).toBeTruthy();
   });

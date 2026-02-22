@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useTransport,
@@ -7,7 +7,7 @@ import {
   useTheme,
   type Theme,
 } from '@/layers/shared/model';
-import { cn, groupSessionsByTime, TIMING } from '@/layers/shared/lib';
+import { cn, groupSessionsByTime, TIMING, updateTabBadge } from '@/layers/shared/lib';
 import {
   PathBreadcrumb,
   HoverCard,
@@ -18,14 +18,15 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
+  DirectoryPicker,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
 } from '@/layers/shared/ui';
-import { usePulseEnabled, useActiveRunCount } from '@/layers/entities/pulse';
+import { usePulseEnabled, useActiveRunCount, useCompletedRunBadge } from '@/layers/entities/pulse';
+import { toast } from 'sonner';
 import { useSessionId, useDirectoryState } from '@/layers/entities/session';
 import { SessionItem } from './SessionItem';
-import { DirectoryPicker } from './DirectoryPicker';
 import {
   Plus,
   PanelLeftClose,
@@ -54,9 +55,11 @@ export function SessionSidebar() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pulseOpen, setPulseOpen] = useState(false);
-  const [selectedCwd] = useDirectoryState();
+  const [selectedCwd, setSelectedCwd] = useDirectoryState();
   const pulseEnabled = usePulseEnabled();
   const { data: activeRunCount = 0 } = useActiveRunCount(pulseEnabled);
+  const { unviewedCount, clearBadge } = useCompletedRunBadge(pulseEnabled);
+  const enablePulseNotifications = useAppStore((s) => s.enablePulseNotifications);
   const { theme, setTheme } = useTheme();
   const ThemeIcon = { light: Sun, dark: Moon, system: Monitor }[theme];
   const cycleTheme = useCallback(() => {
@@ -96,6 +99,47 @@ export function SessionSidebar() {
     },
     [isMobile, setActiveSession, setSidebarOpen]
   );
+
+  // Clear completion badge when Pulse panel opens
+  useEffect(() => {
+    if (pulseOpen) clearBadge();
+  }, [pulseOpen, clearBadge]);
+
+  // Toast on new run completions
+  const prevUnviewedRef = useRef(0);
+  useEffect(() => {
+    if (!enablePulseNotifications) return;
+    if (unviewedCount > prevUnviewedRef.current) {
+      toast('Pulse run completed', {
+        description: 'A scheduled run has finished.',
+        duration: 6000,
+        action: {
+          label: 'View history',
+          onClick: () => setPulseOpen(true),
+        },
+      });
+    }
+    prevUnviewedRef.current = unviewedCount;
+  }, [unviewedCount, enablePulseNotifications, setPulseOpen]);
+
+  // Tab title badge for background tab awareness
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        updateTabBadge(unviewedCount);
+      } else {
+        updateTabBadge(0);
+      }
+    };
+    if (document.hidden && unviewedCount > 0) {
+      updateTabBadge(unviewedCount);
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      updateTabBadge(0);
+    };
+  }, [unviewedCount]);
 
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
 
@@ -215,6 +259,9 @@ export function SessionSidebar() {
                 {activeRunCount > 0 && (
                   <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-green-500 animate-pulse" />
                 )}
+                {activeRunCount === 0 && unviewedCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-500" />
+                )}
               </button>
             </TooltipTrigger>
             {!pulseEnabled && (
@@ -243,7 +290,12 @@ export function SessionSidebar() {
           )}
         </div>
       </div>
-      <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} />
+      <DirectoryPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={(path) => setSelectedCwd(path)}
+        initialPath={selectedCwd}
+      />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <ResponsiveDialog open={pulseOpen} onOpenChange={setPulseOpen}>
         <ResponsiveDialogContent className="max-w-2xl gap-0 p-0">

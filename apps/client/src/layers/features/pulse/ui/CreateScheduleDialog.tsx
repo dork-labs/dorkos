@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import cronstrue from 'cronstrue';
-import { ChevronRight } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ChevronRight, FolderOpen } from 'lucide-react';
 import { useCreateSchedule, useUpdateSchedule } from '@/layers/entities/pulse';
 import {
   ResponsiveDialog,
@@ -9,11 +10,13 @@ import {
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
   ResponsiveDialogFooter,
+  DirectoryPicker,
   Label,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { PulseSchedule } from '@dorkos/shared/types';
 import { CronPresets } from './CronPresets';
+import { CronVisualBuilder } from './CronVisualBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 
 interface Props {
@@ -78,6 +81,8 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
   const updateSchedule = useUpdateSchedule();
 
   const [form, setForm] = useState<FormState>(() => buildInitialState(editSchedule));
+  const [customBuilderOpen, setCustomBuilderOpen] = useState(false);
+  const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
 
   // Reset form when dialog opens or switches between create/edit
   useEffect(() => {
@@ -160,6 +165,38 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
             <div className="space-y-2">
               <Label htmlFor="schedule-cron">Schedule *</Label>
               <CronPresets value={form.cron} onChange={(cron) => updateField('cron', cron)} />
+
+              <button
+                type="button"
+                onClick={() => setCustomBuilderOpen((o) => !o)}
+                className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronRight className={cn(
+                  'size-3 transition-transform',
+                  customBuilderOpen && 'rotate-90'
+                )} />
+                Custom schedule
+              </button>
+
+              <AnimatePresence initial={false}>
+                {customBuilderOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                    className="overflow-hidden"
+                  >
+                    <div className="pt-2">
+                      <CronVisualBuilder
+                        value={form.cron}
+                        onChange={(cron) => updateField('cron', cron)}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <input
                 id="schedule-cron"
                 className="border-input focus-visible:ring-ring w-full rounded-md border bg-transparent px-3 py-2 font-mono text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
@@ -187,13 +224,24 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="schedule-cwd">Working Directory</Label>
-                  <input
-                    id="schedule-cwd"
-                    className="border-input focus-visible:ring-ring w-full rounded-md border bg-transparent px-3 py-2 font-mono text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-                    value={form.cwd}
-                    onChange={(e) => updateField('cwd', e.target.value)}
-                    placeholder="~/projects/myapp"
-                  />
+                  <div className="flex gap-2">
+                    <div
+                      className={cn(
+                        'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
+                        form.cwd ? 'text-foreground' : 'text-muted-foreground'
+                      )}
+                    >
+                      {form.cwd || 'Default (server working directory)'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCwdPickerOpen(true)}
+                      className="rounded-md border px-2 py-2 text-sm hover:bg-accent transition-colors"
+                      aria-label="Browse directories"
+                    >
+                      <FolderOpen className="size-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -276,6 +324,11 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
           </button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
+      <DirectoryPicker
+        open={cwdPickerOpen}
+        onOpenChange={setCwdPickerOpen}
+        onSelect={(path) => updateField('cwd', path)}
+      />
     </ResponsiveDialog>
   );
 }

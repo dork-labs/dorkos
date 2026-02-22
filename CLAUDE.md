@@ -125,18 +125,18 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gra
 
 | Layer                    | Modules                                                            | Purpose                     |
 | ------------------------ | ------------------------------------------------------------------ | --------------------------- |
-| `shared/ui/`             | 17 shadcn primitives (Badge, Command, Dialog, Select, Tabs, Tooltip, Toaster, etc.) | Reusable UI primitives      |
+| `shared/ui/`             | 17 shadcn primitives (Badge, Command, Dialog, Select, Tabs, Tooltip, Toaster, etc.), DirectoryPicker | Reusable UI primitives      |
 | `shared/model/`          | TransportContext, app-store, 8 hooks (useTheme, useIsMobile, etc.) | Hooks, stores, context      |
 | `shared/lib/`            | cn, Transports, font-config, favicon-utils, celebrations, etc.     | Domain-agnostic utilities   |
 | `entities/session/`      | useSessionId, useSessions, useDirectoryState, useDefaultCwd        | Session domain hooks        |
 | `entities/command/`      | useCommands                                                        | Command domain hook         |
-| `entities/pulse/`        | usePulseEnabled, useSchedules, useRuns, useActiveRunCount, useCancelRun | Pulse scheduler domain hooks|
+| `entities/pulse/`        | usePulseEnabled, useSchedules, useRuns, useActiveRunCount, useCancelRun, useCompletedRunBadge | Pulse scheduler domain hooks|
 | `features/chat/`         | ChatPanel, MessageList, MessageItem, ToolCallCard, useChatSession  | Chat interface              |
-| `features/session-list/` | SessionSidebar, SessionItem, DirectoryPicker                       | Session management          |
+| `features/session-list/` | SessionSidebar, SessionItem                                        | Session management          |
 | `features/commands/`     | CommandPalette                                                     | Slash command palette       |
 | `features/settings/`     | SettingsDialog                                                     | Settings UI                 |
 | `features/files/`        | FilePalette, useFiles                                              | File browser                |
-| `features/pulse/`        | PulsePanel, ScheduleRow, CreateScheduleDialog, RunHistoryPanel, CronPresets, TimezoneCombobox | Pulse scheduler UI          |
+| `features/pulse/`        | PulsePanel, ScheduleRow, CreateScheduleDialog, RunHistoryPanel, CronPresets, CronVisualBuilder, TimezoneCombobox | Pulse scheduler UI          |
 | `features/status/`       | StatusLine, GitStatusItem, ModelItem, etc.                         | Status bar                  |
 | `widgets/app-layout/`    | PermissionBanner                                                   | App-level layout components |
 

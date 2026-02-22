@@ -82,5 +82,6 @@ export {
 export { Separator } from './separator';
 export { Switch } from './switch';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
+export { DirectoryPicker } from './DirectoryPicker';
 export { Toaster } from './sonner';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';

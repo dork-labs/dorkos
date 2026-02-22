@@ -18,6 +18,7 @@ export {
   generateDimmedFavicon,
   generatePulseFrames,
   setFavicon,
+  updateTabBadge,
 } from './favicon-utils';
 export { playNotificationSound } from './notification-sound';
 export {

@@ -2,14 +2,13 @@ import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, type RecentCwd } from '@/layers/shared/model';
 import { formatRelativeTime, shortenHomePath, STORAGE_KEYS } from '@/layers/shared/lib';
+import { PathBreadcrumb } from './path-breadcrumb';
 import {
-  PathBreadcrumb,
   ResponsiveDialog,
   ResponsiveDialogContent,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
-} from '@/layers/shared/ui';
-import { useDirectoryState } from '@/layers/entities/session';
+} from './responsive-dialog';
 import { Folder, FolderOpen, Eye, EyeOff, Clock, Loader2 } from 'lucide-react';
 
 type PickerView = 'browse' | 'recent';
@@ -31,15 +30,18 @@ function getInitialView(recentCwds: RecentCwd[], selectedCwd: string | null): Pi
 interface DirectoryPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Callback invoked when a directory is selected. */
+  onSelect: (path: string) => void;
+  /** Initial path to browse from. Falls back to home directory when omitted. */
+  initialPath?: string | null;
 }
 
-export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
+export function DirectoryPicker({ open, onOpenChange, onSelect, initialPath }: DirectoryPickerProps) {
   const transport = useTransport();
-  const [selectedCwd, setSelectedCwd] = useDirectoryState();
   const { recentCwds } = useAppStore();
-  const [currentPath, setCurrentPath] = useState(selectedCwd || '');
+  const [currentPath, setCurrentPath] = useState(initialPath || '');
   const [showHidden, setShowHidden] = useState(false);
-  const [view, setView] = useState<PickerView>(() => getInitialView(recentCwds, selectedCwd));
+  const [view, setView] = useState<PickerView>(() => getInitialView(recentCwds, initialPath ?? null));
 
   const onClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
@@ -53,10 +55,10 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
   // eslint-disable-next-line react-hooks/preserve-manual-memoization -- Semantic clarity
   const handleSelect = useCallback(() => {
     if (data?.path) {
-      setSelectedCwd(data.path);
+      onSelect(data.path);
       onClose();
     }
-  }, [data?.path, setSelectedCwd, onClose]);
+  }, [data?.path, onSelect, onClose]);
 
   const handleViewChange = useCallback((v: PickerView) => {
     setView(v);
@@ -75,10 +77,10 @@ export function DirectoryPicker({ open, onOpenChange }: DirectoryPickerProps) {
 
   const handleRecentSelect = useCallback(
     (dirPath: string) => {
-      setSelectedCwd(dirPath);
+      onSelect(dirPath);
       onClose();
     },
-    [setSelectedCwd, onClose]
+    [onSelect, onClose]
   );
 
   const toggleBtn = (active: boolean, position: 'left' | 'right') =>

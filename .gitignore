@@ -32,3 +32,4 @@ coverage/
 .scratch/
 .temp
 roadmap/specs
+.vercel

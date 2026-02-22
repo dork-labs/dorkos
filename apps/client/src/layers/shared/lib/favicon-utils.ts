@@ -132,3 +132,10 @@ export function setFavicon(dataUrl: string): void {
   }
   link.href = dataUrl;
 }
+
+const DEFAULT_TITLE = 'DorkOS';
+
+/** Update the document title with a badge count prefix for background tab notifications. */
+export function updateTabBadge(count: number): void {
+  document.title = count > 0 ? `(${count}) ${DEFAULT_TITLE}` : DEFAULT_TITLE;
+}

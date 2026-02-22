@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 8,
+  "nextNumber": 10,
   "decisions": [
     {
       "number": 1,
@@ -59,6 +59,24 @@
       "created": "2026-02-21",
       "extractedFrom": "pulse-ui-overhaul",
       "specSlug": "pulse-ui-overhaul"
+    },
+    {
+      "number": 8,
+      "slug": "promote-shared-components-for-cross-feature-reuse",
+      "title": "Promote Components to shared/ for Cross-Feature Reuse",
+      "status": "draft",
+      "created": "2026-02-21",
+      "extractedFrom": "pulse-v2-enhancements",
+      "specSlug": "pulse-v2-enhancements"
+    },
+    {
+      "number": 9,
+      "slug": "calm-tech-notification-layers",
+      "title": "Use Calm Tech Layered Notifications for Background Tasks",
+      "status": "draft",
+      "created": "2026-02-21",
+      "extractedFrom": "pulse-v2-enhancements",
+      "specSlug": "pulse-v2-enhancements"
     }
   ]
 }

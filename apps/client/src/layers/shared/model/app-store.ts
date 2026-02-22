@@ -83,6 +83,8 @@ interface AppState {
   setShowTaskCelebrations: (v: boolean) => void;
   enableNotificationSound: boolean;
   setEnableNotificationSound: (v: boolean) => void;
+  enablePulseNotifications: boolean;
+  setEnablePulseNotifications: (v: boolean) => void;
   showStatusBarSound: boolean;
   setShowStatusBarSound: (v: boolean) => void;
   showStatusBarVersion: boolean;
@@ -124,6 +126,7 @@ const BOOL_KEYS = {
   showStatusBarGit: 'dorkos-show-status-bar-git',
   showTaskCelebrations: 'dorkos-show-task-celebrations',
   enableNotificationSound: 'dorkos-enable-notification-sound',
+  enablePulseNotifications: 'dorkos-enable-pulse-notifications',
   showStatusBarSound: 'dorkos-show-status-bar-sound',
   showStatusBarVersion: 'dorkos-show-status-bar-version',
   showStatusBarTunnel: 'dorkos-show-status-bar-tunnel',
@@ -144,6 +147,7 @@ const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
   showStatusBarGit: true,
   showTaskCelebrations: true,
   enableNotificationSound: true,
+  enablePulseNotifications: true,
   showStatusBarSound: true,
   showStatusBarVersion: true,
   showStatusBarTunnel: true,
@@ -247,6 +251,11 @@ export const useAppStore = create<AppState>()(
       setEnableNotificationSound: (v) => {
         writeBool(BOOL_KEYS.enableNotificationSound, v);
         set({ enableNotificationSound: v });
+      },
+      enablePulseNotifications: readBool(BOOL_KEYS.enablePulseNotifications, true),
+      setEnablePulseNotifications: (v) => {
+        writeBool(BOOL_KEYS.enablePulseNotifications, v);
+        set({ enablePulseNotifications: v });
       },
       showStatusBarSound: readBool(BOOL_KEYS.showStatusBarSound, true),
       setShowStatusBarSound: (v) => {

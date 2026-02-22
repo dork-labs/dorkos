@@ -51,6 +51,22 @@ vi.mock('@/layers/entities/pulse/model/use-pulse-config', () => ({
   usePulseEnabled: () => true,
 }));
 
+// Mock useCompletedRunBadge
+const mockClearBadge = vi.fn();
+vi.mock('@/layers/entities/pulse/model/use-completed-run-badge', () => ({
+  useCompletedRunBadge: () => ({ unviewedCount: 0, clearBadge: mockClearBadge }),
+}));
+
+// Mock sonner
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), { error: vi.fn() }),
+}));
+
+// Mock updateTabBadge
+vi.mock('@/layers/shared/lib/favicon-utils', () => ({
+  updateTabBadge: vi.fn(),
+}));
+
 // Mock session-utils to avoid time-dependent behavior
 vi.mock('@/layers/shared/lib/session-utils', () => ({
   groupSessionsByTime: (sessions: Session[]) => {
