@@ -53,22 +53,16 @@ The issue queue IS the orchestration layer. This means:
 
 ### The Loop
 
-```
-         Signals                 Triage                Hypothesize
-    +--------------+       +---------------+       +----------------+
-    | PostHog      |       | Agent picks   |       | Agent forms    |
-    | User feedback| ----> | up signal,    | ----> | hypothesis     |
-    | Error logs   |       | accepts or    |       | from signal    |
-    | Git events   |       | declines      |       | + context      |
-    +--------------+       +---------------+       +----------------+
-                                                          |
-    +--------------+       +---------------+       +------v---------+
-    | Outcomes     |       | Agent writes  |       | Agent breaks   |
-    | feed back in | <---- | code, creates | <---- | hypothesis     |
-    | as new       |       | PRs, ships    |       | into tasks     |
-    | signals      |       |               |       |                |
-    +--------------+       +---------------+       +----------------+
-         Monitor                Execute                  Plan
+```mermaid
+graph LR
+    Signals["<b>Signals</b><br/>PostHog · User feedback<br/>Error logs · Git events"]
+    Triage["<b>Triage</b><br/>Agent picks up signal,<br/>accepts or declines"]
+    Hypothesize["<b>Hypothesize</b><br/>Agent forms hypothesis<br/>from signal + context"]
+    Plan["<b>Plan</b><br/>Agent breaks hypothesis<br/>into tasks"]
+    Execute["<b>Execute</b><br/>Agent writes code,<br/>creates PRs, ships"]
+    Monitor["<b>Monitor</b><br/>Outcomes feed back in<br/>as new signals"]
+
+    Signals --> Triage --> Hypothesize --> Plan --> Execute --> Monitor --> Signals
 ```
 
 ### A Concrete Example

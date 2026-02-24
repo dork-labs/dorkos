@@ -113,18 +113,16 @@ This is what makes DorkOS alive.
 
 **Status: Coming Soon**
 
-#### 4.4 DorkOS Relay (Communications)
+#### 4.4 DorkOS Relay (Message Bus)
 
-Outbound agent communication. Relay lets agents reach the outside world.
+The universal message bus. Relay handles all messaging in DorkOS — agent-to-agent, human-to-agent, and external communication. One message format, one delivery system, one audit trail.
 
-- SMS
-- Email
-- Telegram
-- Slack
-- Twitter
-- Webhooks
+- Hierarchical subjects with NATS-style wildcards
+- Persistent Messages (Maildir + SQLite) and ephemeral Signals (typing, presence, receipts)
+- Budget envelopes that prevent runaway loops
+- Plugin adapter model for external channels (Telegram, Slack, email, webhooks)
 
-Enables AI to communicate outward on your behalf.
+Relay is kernel IPC for agents.
 
 **Status: Coming Soon**
 
@@ -150,12 +148,12 @@ Wing is supportive, steady, and proactive. Not just storage — presence.
 
 #### 4.6 DorkOS Mesh (Agent Network)
 
-The nervous system. Turns isolated Claude instances into a coordinated network.
+Agent discovery and network topology. Mesh turns isolated agents into a discoverable, governed network.
 
-- Folders as agents: each project is its own agent with its own rules, hooks, skills, and memories
-- Agent directory: a registry that makes agents aware of each other
-- Agent-to-agent communication: structured message passing between agents
-- Cross-domain coordination: your scheduling agent notifies your relationship agent about a birthday; your relationship agent asks your finance agent for a budget; your finance agent tells your purchasing agent to buy a gift
+- Every project is an agent: `.dork/agent.json` manifests with `.claude/` fallback for zero-config discovery
+- Agent registry: makes agents aware of each other's capabilities and addresses
+- Network topology with namespace isolation (default-allow within project, default-deny across)
+- Access control rules authored by Mesh, enforced by Relay
 
 The Mesh is what makes DorkOS an operating system, not just a runtime. Without it, you have isolated agents. With it, you have a workforce.
 
@@ -169,7 +167,7 @@ DorkOS's Pulse scheduler polls Loop for the next priority task. Loop returns pre
 
 See the [Loop Litepaper](../research/loop-litepaper.md) for the full vision.
 
-**Status: In Development**
+**Status: [Live](https://www.looped.me/)**
 
 ---
 

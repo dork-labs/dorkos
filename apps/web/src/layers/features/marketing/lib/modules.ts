@@ -5,6 +5,8 @@ export interface SystemModule {
   description: string
   status: 'available' | 'coming-soon'
   group: 'platform' | 'engine-capability' | 'extension'
+  /** External URL for modules with their own website (opens in new tab). */
+  url?: string
 }
 
 export const systemModules: SystemModule[] = [
@@ -38,9 +40,9 @@ export const systemModules: SystemModule[] = [
   {
     id: 'relay',
     name: 'Relay',
-    label: 'Communications',
+    label: 'Message Bus',
     description:
-      'Outbound agent communication. SMS, email, Telegram, Slack — agents that reach the outside world.',
+      'The universal message bus. One format for agent-to-agent, human-to-agent, and external communication — with budget envelopes that prevent runaway loops.',
     status: 'coming-soon',
     group: 'engine-capability',
   },
@@ -49,7 +51,7 @@ export const systemModules: SystemModule[] = [
     name: 'Mesh',
     label: 'Agent Network',
     description:
-      'The nervous system. Agents discover each other, share context, and coordinate across projects.',
+      'Agent discovery and network topology. Every project is an agent — Mesh finds them, builds the registry, and writes the access control rules that Relay enforces.',
     status: 'coming-soon',
     group: 'engine-capability',
   },
@@ -68,7 +70,8 @@ export const systemModules: SystemModule[] = [
     label: 'Improvement Engine',
     description:
       'Closes the feedback loop. Turns signals into hypotheses, hypotheses into tasks, and outcomes into the next iteration. Your system gets better while you sleep.',
-    status: 'coming-soon',
+    status: 'available',
     group: 'extension',
+    url: 'https://www.looped.me/',
   },
 ]

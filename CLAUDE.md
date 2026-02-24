@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Vision & Background
+
+DorkOS is an OS-layer for AI agents — providing the scheduling, memory, communication, and coordination infrastructure that agents themselves don't provide. See [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md) for the full vision, design principles, and roadmap.
+
 ## What This Is
 
 DorkOS is a web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK. It provides a chat UI for interacting with Claude Code sessions, with tool approval flows and slash command discovery.

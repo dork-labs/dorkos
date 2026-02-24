@@ -35,8 +35,8 @@ DorkOS gives agents:
 
 - **A heartbeat** — scheduled execution that runs while you're asleep
 - **A memory** — persistent context that survives across sessions
-- **A voice** — a universal message bus for agents, humans, and external services
-- **A network** — agent discovery, network topology, and access control
+- **A voice** — outbound communication via SMS, email, Telegram, Slack
+- **A network** — agent-to-agent discovery and coordination
 - **An interface** — a browser-based command center for human oversight
 
 The intelligence comes from the agents. Everything else comes from DorkOS.
@@ -57,13 +57,11 @@ Codex, OpenCode, and others are on the roadmap. The positioning is deliberate: b
 
 ## The Architecture
 
-DorkOS is a platform, a set of composable modules, and an extension ecosystem.
-
-The **platform** — Engine and Console — is the foundation: a runtime for AI agents and a browser-based command center. The **modules** — Pulse, Relay, and Mesh — are independent packages that add scheduling, messaging, and agent networking. Each is a separate npm package, usable on its own or composed together. The **extensions** — Wing and Loop — integrate from outside to provide persistent memory and autonomous improvement.
+DorkOS is seven modules. Each can run independently. Together, they form an operating layer.
 
 ### Engine — The Runtime
 
-Engine is the foundation. It connects your AI agents via adapters, exposes a secure REST + SSE API, manages sessions, and composes the modules (Pulse, Relay, Mesh) into a unified server.
+Engine is the foundation. It connects your AI agents via adapters, exposes a secure REST + SSE API, manages sessions, and serves as the host for Pulse, Relay, and Mesh.
 
 Engine runs locally on your machine. Sessions are stored as JSONL transcript files — the same format Claude Code uses natively. This means every session is visible regardless of how it was started: from DorkOS, from the CLI, from an Obsidian plugin. One source of truth.
 
@@ -108,40 +106,34 @@ When integrated with Loop (see below), Pulse polls for the next priority task an
 
 **Status: Coming Soon**
 
-### Relay — The Universal Message Bus
+### Relay — Communications
 
-Relay is kernel IPC for agents. It handles all messaging in DorkOS — agent-to-agent, human-to-agent, external-to-agent, and system dispatches. One message format, one delivery system, one audit trail.
+Relay is outbound communication. It lets agents reach the outside world — sending deployment notifications to Slack, replying to support emails, texting your mom, or posting updates to Telegram.
 
-Without Relay, agents are trapped inside your terminal. They can write code and create PRs, but they can't tell anyone about it and they can't coordinate with each other. Relay gives agents a voice and a network.
+Without Relay, agents are trapped inside your terminal. They can write code and create PRs, but they can't tell anyone about it. Relay gives agents a voice.
 
-- Hierarchical subjects with NATS-style wildcards for point-to-point and pub/sub
-- Two modes: persistent Messages (Maildir + SQLite) and ephemeral Signals (typing, presence, receipts)
-- Budget envelopes that prevent runaway loops — hop counts, ancestor chains, TTL, call budgets
-- Plugin adapter model for external channels (Telegram, Slack, email, webhooks)
-- At-most-once delivery with dead letter queue for failed messages
-
-See the [Relay Litepaper](./modules/relay-litepaper.md) for the full vision.
+- SMS, email, Telegram, Slack, Twitter
+- Webhook support for custom integrations
+- Context-aware communication (agents use Wing context when composing messages)
 
 **Status: Coming Soon**
 
-### Mesh — Agent Discovery and Network Topology
+### Mesh — Agent Network
 
-Mesh turns isolated agents into a discoverable, governed network.
+Mesh is the nervous system. It turns isolated agents into a coordinated workforce.
 
-The core idea: every project is an agent. Each project directory has its own rules, hooks, skills, and memories. Mesh scans for `.dork/agent.json` manifests (with `.claude/` fallback for zero-config discovery), builds a registry of known agents, and configures Relay's routing and access control for the agent network.
+The core idea: every project is an agent. Each project directory has its own rules, hooks, skills, and memories (via CLAUDE.md, .claude/commands, and .claude/settings). Mesh makes these project-agents aware of each other through a registry, enabling structured message passing and cross-domain coordination.
 
-A concrete example: your scheduling agent detects a birthday next week. It queries Mesh for an agent with budgeting capabilities. Mesh returns the finance agent's identity and Relay address. The scheduling agent sends a message through Relay. The finance agent approves $50, discovers the purchasing agent through Mesh, and routes the order through Relay. Four agents, four domains, one coordinated action — no human in the loop.
+A concrete example: your scheduling agent detects a birthday next week. It messages your relationship agent, which queries your finance agent for a gift budget. The finance agent approves $50 and tells the purchasing agent to order flowers. Four agents, four domains, one coordinated action — no human in the loop.
 
-- Filesystem-based discovery with `.dork/agent.json` manifests and `.claude/` fallback
-- Agent-agnostic: `.dork/` configuration works with any runtime, not just Claude Code
-- Network topology with namespace isolation (default-allow within project, default-deny across)
-- Access control rules authored by Mesh, enforced by Relay
-
-See the [Mesh Litepaper](./modules/mesh-litepaper.md) for the full vision.
+- Project-as-agent model with per-project rules and memory
+- Agent directory and discovery
+- Structured inter-agent communication
+- Cross-domain coordination protocols
 
 **Status: Coming Soon**
 
-### Wing — Life Layer (Extension)
+### Wing — Life Layer
 
 Wing is the always-on AI companion. It provides persistent context about your goals, commitments, priorities, and life — making every agent interaction informed by who you are and what you're working toward.
 
@@ -154,39 +146,46 @@ Wing isn't just storage. It's presence. It remembers what matters, helps you pla
 
 **Status: Coming Soon**
 
-### Loop — The Improvement Layer (Extension)
+### Loop — The Improvement Layer
 
-Loop is a companion product by Dork Labs that extends DorkOS with autonomous improvement. It closes the feedback loop — collecting signals from the real world (analytics, error logs, user feedback), forming hypotheses, dispatching tasks to agents, and measuring outcomes.
+Loop is a companion product by Dork Labs. It closes the feedback loop — collecting signals from the real world (analytics, error logs, user feedback), forming hypotheses, dispatching tasks to agents, and measuring outcomes.
 
-Loop is a standalone product — a fully deterministic data system with zero AI built in. No LLM calls. No embeddings. No model dependencies. Loop stores human-authored instruction templates and, when an agent asks "what should I work on next?", returns the highest-priority unblocked item with detailed instructions.
+Loop is not part of DorkOS. It's a separate, fully deterministic data system with zero AI built in. No LLM calls. No embeddings. No model dependencies. Loop stores human-authored instruction templates and, when an agent asks "what should I work on next?", returns the highest-priority unblocked item with detailed instructions.
 
 DorkOS integrates with Loop through Pulse: on a scheduled cadence, Pulse polls Loop's dispatch endpoint, receives the next priority task, and executes it as an agent session. The agent reports results back to Loop. Outcomes feed in as new signals. The system improves itself.
 
-See the [Loop Litepaper](../research/loop-litepaper.md) for the full vision.
+See the [Loop Litepaper](./loop-litepaper.md) for the full vision.
 
-**Status: [Live](https://www.looped.me/)**
+**Status: In Development**
 
 ---
 
 ## How the Pieces Interact
 
-```mermaid
-graph TD
-    Console["<b>CONSOLE</b><br/>Browser UI · Chat · Approvals · Monitoring"]
-
-    subgraph Engine["<b>ENGINE</b> — Agent Adapters · REST API · Session Management · Tunnel"]
-        Pulse["<b>PULSE</b><br/>Schedule · Execute · Track"]
-        Mesh["<b>MESH</b><br/>Discover · Topology · Policy"]
-        Relay["<b>RELAY</b><br/>Messages · Signals · Deliver"]
-        Pulse -- dispatch --> Relay
-        Mesh -- configure --> Relay
-    end
-
-    Loop["<b>LOOP</b><br/>Signals · Hypotheses · Dispatch"]
-    Wing["<b>WING</b><br/>Memory · Context · Goals"]
-
-    Console -- HTTP/SSE --> Engine
-    Pulse -- poll --> Loop
+```
+  ┌─────────────────────────────────────────────────────────────┐
+  │                        CONSOLE                               │
+  │         Browser UI · Chat · Approvals · Monitoring           │
+  └───────────────────────────┬─────────────────────────────────┘
+                              │ HTTP/SSE
+  ┌───────────────────────────v─────────────────────────────────┐
+  │                         ENGINE                               │
+  │   Agent Adapters · REST API · Session Management · Tunnel    │
+  │                                                              │
+  │   ┌──────────┐    ┌──────────┐    ┌──────────┐             │
+  │   │  PULSE   │    │   MESH   │    │  RELAY   │             │
+  │   │ Schedule │    │ Discover │    │  Send    │             │
+  │   │ Execute  │    │ Route    │    │  Notify  │             │
+  │   │ Track    │    │ Coord.   │    │  Reply   │             │
+  │   └────┬─────┘    └──────────┘    └──────────┘             │
+  └────────│────────────────────────────────────────────────────┘
+           │ poll
+  ┌────────v─────┐         ┌───────────────┐
+  │    LOOP      │         │     WING      │
+  │  Signals     │         │  Memory       │
+  │  Hypotheses  │         │  Context      │
+  │  Dispatch    │         │  Goals        │
+  └──────────────┘         └───────────────┘
 ```
 
 **A concrete workflow — autonomous roadmap execution:**
@@ -196,8 +195,8 @@ graph TD
 3. **Engine** creates an isolated agent session. The agent adapter connects to Claude Code.
 4. **Wing** injects context: "The user prefers Tailwind CSS, uses shadcn/ui components, and the design system specifies `bg-neutral-950` as the dark background."
 5. The agent writes the code, creates a PR, and writes tests.
-6. **Relay** delivers a notification to `relay.human.slack.channel.deploys` via the Slack adapter: "Dark mode toggle shipped — PR #312 ready for review."
-7. **Relay** routes an inter-agent message to the monitoring agent (discovered by **Mesh**) to watch bounce rate metrics for 72 hours.
+6. **Relay** sends a Slack notification: "Dark mode toggle shipped — PR #312 ready for review."
+7. **Mesh** notifies the monitoring agent to watch bounce rate metrics for 72 hours.
 8. 72 hours later, the monitoring agent reports results back to **Loop**. The hypothesis is validated (or not). The loop continues.
 
 No human intervened. The system scheduled, executed, communicated, coordinated, and measured — autonomously.
@@ -216,7 +215,7 @@ DorkOS doesn't hide what it is. The agents use cloud APIs for inference. Your co
 
 ### Autonomous by Default
 
-DorkOS is built for agents that work without human intervention. Pulse doesn't wait for permission to execute. Relay doesn't ask before delivering messages. Mesh doesn't require approval to discover agents. The system is designed to be autonomous, with humans providing oversight and direction rather than micromanaging every action.
+DorkOS is built for agents that work without human intervention. Pulse doesn't wait for permission to execute. Mesh doesn't ask before routing messages. Relay doesn't require approval for every notification. The system is designed to be autonomous, with humans providing oversight and direction rather than micromanaging every action.
 
 ### Agent-Agnostic
 
@@ -239,17 +238,6 @@ DorkOS installs via npm. Configures via JSON. Extends via slash commands and MCP
 **Not an LLM.** DorkOS doesn't do inference. It doesn't have weights. It doesn't generate text. It orchestrates agents that do all of that.
 
 **Not an agent wrapper.** The most common misconception. DorkOS doesn't just "wrap" Claude Code with a UI. It provides the infrastructure layer that makes agents autonomous — the same way an operating system provides the infrastructure layer that makes applications useful. Remove the OS, and applications can still compute. But they can't schedule, communicate, coordinate, or persist. That's what DorkOS provides.
-
----
-
-## Changes from v1 → v2 (February 2026)
-
-- **Relay**: Reframed from "outbound communication" to "universal message bus" — Relay now handles all messaging (agent↔agent, human↔agent, external↔agent), not just outbound notifications
-- **Mesh**: Narrowed from "structured message passing + discovery" to "agent discovery + network topology + access control" — messaging responsibilities moved to Relay
-- **Architecture diagram**: Relay shown as foundation layer beneath Mesh and Pulse (was shown as a peer)
-- **Workflow example**: Updated to reflect Relay as transport for both external notifications and inter-agent messages
-- **Module litepapers**: Added links to standalone [Relay](./modules/relay-litepaper.md) and [Mesh](./modules/mesh-litepaper.md) litepapers in `meta/modules/`
-- **Architecture taxonomy**: Replaced flat "seven modules" with three-tier framing — platform (Engine, Console), composable modules (Pulse, Relay, Mesh as independent npm packages), and extensions (Wing, Loop)
 
 ---
 

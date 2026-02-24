@@ -28,7 +28,7 @@ const connections = [
 
 const GROUP_LABELS: Record<string, string> = {
   platform: 'The Platform',
-  'engine-capability': 'Built into Engine',
+  'engine-capability': 'Composable Modules',
   extension: 'Extensions',
 }
 
@@ -70,7 +70,7 @@ export function SystemArchitecture({ modules }: SystemArchitectureProps) {
             variants={REVEAL}
             className="text-charcoal text-[28px] md:text-[32px] font-medium tracking-[-0.02em] leading-[1.3] text-center max-w-2xl mx-auto mb-6"
           >
-            Seven modules. One operating layer.
+            Platform. Modules. Extensions.
           </motion.p>
 
           <motion.p
@@ -174,6 +174,12 @@ export function SystemArchitecture({ modules }: SystemArchitectureProps) {
   )
 }
 
+/** Resolve display label for a module's status badge. */
+function getStatusLabel(mod: SystemModule): string {
+  if (mod.url) return 'Live'
+  return mod.status === 'available' ? 'Available' : 'Coming Soon'
+}
+
 /** Module card with spotlight cursor-tracking and spring lift hover. */
 function ModuleCard({ mod }: { mod: SystemModule }) {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -190,15 +196,8 @@ function ModuleCard({ mod }: { mod: SystemModule }) {
     })
   }, [])
 
-  return (
-    <motion.div
-      ref={cardRef}
-      variants={REVEAL}
-      whileHover={{ y: -4 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-      onMouseMove={handleMouseMove}
-      className="relative bg-cream-white rounded-lg p-6 border border-[var(--border-warm)] group overflow-hidden"
-    >
+  const inner = (
+    <>
       {/* Spotlight overlay - desktop only */}
       <div
         className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none hidden [@media(hover:hover)]:block"
@@ -218,7 +217,7 @@ function ModuleCard({ mod }: { mod: SystemModule }) {
                 : 'bg-warm-gray-light/10 text-warm-gray-light'
             }`}
           >
-            {mod.status === 'available' ? 'Available' : 'Coming Soon'}
+            {getStatusLabel(mod)}
           </span>
         </div>
         <p className="font-mono text-3xs text-warm-gray-light tracking-[0.05em] uppercase mb-2">
@@ -226,6 +225,25 @@ function ModuleCard({ mod }: { mod: SystemModule }) {
         </p>
         <p className="text-warm-gray text-sm leading-relaxed">{mod.description}</p>
       </div>
+    </>
+  )
+
+  return (
+    <motion.div
+      ref={cardRef}
+      variants={REVEAL}
+      whileHover={{ y: -4 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      onMouseMove={handleMouseMove}
+      className="relative bg-cream-white rounded-lg p-6 border border-[var(--border-warm)] group overflow-hidden"
+    >
+      {mod.url ? (
+        <a href={mod.url} target="_blank" rel="noopener noreferrer" className="block">
+          {inner}
+        </a>
+      ) : (
+        inner
+      )}
     </motion.div>
   )
 }
