@@ -8,3 +8,4 @@ export { useRelayMessages, useSendRelayMessage } from './model/use-relay-message
 export { useRelayEndpoints } from './model/use-relay-endpoints';
 export { useRelayMetrics } from './model/use-relay-metrics';
 export { useRelayEventStream } from './model/use-relay-event-stream';
+export { useRelayAdapters, useToggleAdapter } from './model/use-relay-adapters';

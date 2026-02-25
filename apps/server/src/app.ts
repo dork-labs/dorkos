@@ -11,7 +11,7 @@ import configRoutes from './routes/config.js';
 import fileRoutes from './routes/files.js';
 import gitRoutes from './routes/git.js';
 import tunnelRoutes from './routes/tunnel.js';
-import { generateOpenAPISpec } from './services/openapi-registry.js';
+import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
 

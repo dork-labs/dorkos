@@ -19,7 +19,7 @@ import type {
   UpdateScheduleRequest,
   ListRunsQuery,
 } from '@dorkos/shared/types';
-import type { Transport } from '@dorkos/shared/transport';
+import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
 
 async function fetchJSON<T>(baseUrl: string, url: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${baseUrl}${url}`, {
@@ -379,5 +379,17 @@ export class HttpTransport implements Transport {
 
   getRelayMetrics(): Promise<unknown> {
     return fetchJSON(this.baseUrl, '/relay/metrics');
+  }
+
+  // --- Relay Adapters ---
+
+  listRelayAdapters(): Promise<AdapterListItem[]> {
+    return fetchJSON(this.baseUrl, '/relay/adapters');
+  }
+
+  toggleRelayAdapter(id: string, enabled: boolean): Promise<{ ok: boolean }> {
+    return fetchJSON(this.baseUrl, `/relay/adapters/${id}/${enabled ? 'enable' : 'disable'}`, {
+      method: 'POST',
+    });
   }
 }

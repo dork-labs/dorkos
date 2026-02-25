@@ -1,7 +1,9 @@
+import crypto from 'node:crypto';
 import { vi } from 'vitest';
 import type { Session, StreamEvent, CommandEntry, PulseSchedule, PulseRun } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoadmapItem, RoadmapMeta } from '@dorkos/shared/roadmap-schemas';
+import type { RelayAdapter, AdapterStatus } from '@dorkos/relay';
 
 export function createMockSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -140,6 +142,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     unregisterRelayEndpoint: vi.fn().mockResolvedValue({ success: true }),
     readRelayInbox: vi.fn().mockResolvedValue({ messages: [] }),
     getRelayMetrics: vi.fn().mockResolvedValue({ totalMessages: 0, byStatus: {}, bySubject: [] }),
+    // Relay Adapters
+    listRelayAdapters: vi.fn().mockResolvedValue([]),
+    toggleRelayAdapter: vi.fn().mockResolvedValue({ ok: true }),
     ...overrides,
   };
 }
@@ -155,6 +160,53 @@ export function createMockRoadmapMeta(overrides: Partial<RoadmapMeta> = {}): Roa
       next: { label: 'Next', description: 'Next sprint' },
       later: { label: 'Later', description: 'Future work' },
     },
+    ...overrides,
+  };
+}
+
+/**
+ * Generate a valid HMAC-SHA256 signature for webhook testing.
+ *
+ * Produces headers that `WebhookAdapter.handleInbound()` will accept, using
+ * the same Stripe-style format: `{timestamp}.{body}`.
+ *
+ * @param body - The raw request body string to sign
+ * @param secret - The HMAC secret to sign with
+ * @param timestamp - Optional Unix timestamp in seconds (defaults to now)
+ * @returns Object with `signature`, `timestamp`, and `nonce` header values
+ */
+export function signPayload(
+  body: string,
+  secret: string,
+  timestamp?: number,
+): { signature: string; timestamp: string; nonce: string } {
+  const ts = String(timestamp ?? Math.floor(Date.now() / 1000));
+  const nonce = crypto.randomUUID();
+  const message = `${ts}.${body}`;
+  const signature = crypto.createHmac('sha256', secret).update(message).digest('hex');
+  return { signature, timestamp: ts, nonce };
+}
+
+/**
+ * Create a mock RelayAdapter with all methods stubbed via vi.fn().
+ *
+ * @param overrides - Partial overrides for adapter properties and methods
+ */
+export function createMockAdapter(overrides: Partial<RelayAdapter> = {}): RelayAdapter {
+  const defaultStatus: AdapterStatus = {
+    state: 'connected',
+    messageCount: { inbound: 0, outbound: 0 },
+    errorCount: 0,
+  };
+
+  return {
+    id: 'mock-adapter',
+    subjectPrefix: 'relay.test.mock',
+    displayName: 'Mock Adapter',
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+    deliver: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn().mockReturnValue(defaultStatus),
     ...overrides,
   };
 }

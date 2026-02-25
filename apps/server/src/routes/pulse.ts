@@ -9,8 +9,8 @@ import {
   UpdateScheduleRequestSchema,
   ListRunsQuerySchema,
 } from '@dorkos/shared/schemas';
-import type { PulseStore } from '../services/pulse-store.js';
-import type { SchedulerService } from '../services/scheduler-service.js';
+import type { PulseStore } from '../services/pulse/pulse-store.js';
+import type { SchedulerService } from '../services/pulse/scheduler-service.js';
 import { isWithinBoundary } from '../lib/boundary.js';
 
 /**

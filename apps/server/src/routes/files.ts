@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { fileLister } from '../services/file-lister.js';
+import { fileLister } from '../services/core/file-lister.js';
 import { FileListQuerySchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 

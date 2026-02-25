@@ -151,10 +151,150 @@ export interface RelayOptions {
   defaultCallBudget?: number;
   /** Optional reliability configuration. Omit to use built-in defaults for all subsystems. */
   reliability?: ReliabilityConfig;
+  /**
+   * Optional adapter registry for external channel adapters.
+   * Typed as unknown to avoid circular dependency; cast to AdapterRegistry at call sites.
+   */
+  adapterRegistry?: AdapterRegistryLike;
 }
 
 export interface PublishOptions {
   from: string;
   replyTo?: string;
   budget?: Partial<RelayBudget>;
+}
+
+// === External Adapters ===
+
+/**
+ * Minimal publish result shape for adapter → relay communication.
+ *
+ * Mirrors PublishResult from relay-core.ts without creating a circular import.
+ */
+export interface PublishResultLike {
+  messageId: string;
+  deliveredTo: number;
+  rejected?: Array<{
+    endpointHash: string;
+    reason: 'backpressure' | 'circuit_open' | 'rate_limited' | 'budget_exceeded';
+  }>;
+  mailboxPressure?: Record<string, number>;
+}
+
+/**
+ * Minimal interface for adapter → relay communication.
+ *
+ * Avoids circular dependency between types.ts and relay-core.ts.
+ * RelayCore implements this interface.
+ */
+export interface RelayPublisher {
+  publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResultLike>;
+  onSignal(pattern: string, handler: SignalHandler): Unsubscribe;
+}
+
+/**
+ * Minimal interface for AdapterRegistry used in RelayOptions.
+ *
+ * Avoids circular dependency between types.ts and adapter-registry.ts.
+ */
+export interface AdapterRegistryLike {
+  setRelay(relay: RelayPublisher): void;
+  deliver(subject: string, envelope: RelayEnvelope): Promise<boolean>;
+  shutdown(): Promise<void>;
+}
+
+/**
+ * Plugin interface for external channel adapters.
+ *
+ * Each adapter bridges an external communication channel (Telegram, webhooks, etc.)
+ * into the Relay subject hierarchy.
+ */
+export interface RelayAdapter {
+  /** Unique identifier (e.g., 'telegram', 'webhook-github') */
+  readonly id: string;
+
+  /** Subject prefix this adapter handles (e.g., 'relay.human.telegram') */
+  readonly subjectPrefix: string;
+
+  /** Human-readable display name */
+  readonly displayName: string;
+
+  /**
+   * Start the adapter — connect to external service, register Relay endpoints.
+   *
+   * Called by AdapterRegistry on startup or hot-reload.
+   * Must be idempotent (safe to call if already started).
+   *
+   * @param relay - The RelayPublisher to publish inbound messages to
+   */
+  start(relay: RelayPublisher): Promise<void>;
+
+  /**
+   * Stop the adapter — disconnect from external service, unregister endpoints.
+   *
+   * Must drain in-flight messages before resolving.
+   * Must be idempotent (safe to call if already stopped).
+   */
+  stop(): Promise<void>;
+
+  /**
+   * Deliver a Relay message to the external channel.
+   *
+   * Called by RelayCore when a published message matches this adapter's subjectPrefix.
+   *
+   * @param subject - The target subject
+   * @param envelope - The relay envelope to deliver
+   */
+  deliver(subject: string, envelope: RelayEnvelope): Promise<void>;
+
+  /** Current adapter status */
+  getStatus(): AdapterStatus;
+}
+
+/** Current status of an external channel adapter. */
+export interface AdapterStatus {
+  state: 'connected' | 'disconnected' | 'error' | 'starting' | 'stopping';
+  messageCount: { inbound: number; outbound: number };
+  errorCount: number;
+  lastError?: string;
+  lastErrorAt?: string;
+  startedAt?: string;
+}
+
+/** Persisted configuration for a single adapter instance. */
+export interface AdapterConfig {
+  id: string;
+  type: 'telegram' | 'webhook';
+  enabled: boolean;
+  config: TelegramAdapterConfig | WebhookAdapterConfig;
+}
+
+/** Configuration for the Telegram Bot API adapter. */
+export interface TelegramAdapterConfig {
+  token: string;
+  mode: 'polling' | 'webhook';
+  webhookUrl?: string;
+  webhookPort?: number;
+}
+
+/** Configuration for the generic webhook adapter. */
+export interface WebhookAdapterConfig {
+  /** Inbound webhook configuration */
+  inbound: {
+    /** Subject to publish inbound messages to */
+    subject: string;
+    /** HMAC-SHA256 secret for signature verification */
+    secret: string;
+    /** Previous secret for rotation (optional, 24h transition window) */
+    previousSecret?: string;
+  };
+  /** Outbound delivery configuration */
+  outbound: {
+    /** URL to POST messages to */
+    url: string;
+    /** HMAC-SHA256 secret for signing outbound requests */
+    secret: string;
+    /** Custom headers to include */
+    headers?: Record<string, string>;
+  };
 }

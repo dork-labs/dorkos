@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./services/agent-manager": "./src/services/agent-manager.ts",
-    "./services/transcript-reader": "./src/services/transcript-reader.ts",
-    "./services/command-registry": "./src/services/command-registry.ts"
+    "./services/agent-manager": "./src/services/core/agent-manager.ts",
+    "./services/transcript-reader": "./src/services/session/transcript-reader.ts",
+    "./services/command-registry": "./src/services/core/command-registry.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

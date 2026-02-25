@@ -80,3 +80,22 @@ export type {
   BackpressureConfig,
   ReliabilityConfig,
 } from './types.js';
+
+// Adapter types
+export type {
+  RelayPublisher,
+  RelayAdapter,
+  AdapterStatus,
+  AdapterConfig,
+  TelegramAdapterConfig,
+  WebhookAdapterConfig,
+  AdapterRegistryLike,
+  PublishResultLike,
+} from './types.js';
+
+// Adapter registry
+export { AdapterRegistry } from './adapter-registry.js';
+
+// Adapter implementations
+export { TelegramAdapter } from './adapters/telegram-adapter.js';
+export { WebhookAdapter, verifySignature } from './adapters/webhook-adapter.js';

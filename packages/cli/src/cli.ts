@@ -89,7 +89,7 @@ process.env.DORK_HOME = DORK_HOME;
 const subcommand = positionals[0];
 
 if (subcommand === 'config') {
-  const { initConfigManager } = await import('../server/services/config-manager.js');
+  const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const cfgMgr = initConfigManager(DORK_HOME);
   const { handleConfigCommand } = await import('./config-commands.js');
   handleConfigCommand(cfgMgr, positionals.slice(1));
@@ -97,7 +97,7 @@ if (subcommand === 'config') {
 }
 
 if (subcommand === 'init') {
-  const { initConfigManager } = await import('../server/services/config-manager.js');
+  const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const cfgMgr = initConfigManager(DORK_HOME);
   const { runInitWizard } = await import('./init-wizard.js');
   await runInitWizard({ yes: values.yes!, dorkHome: DORK_HOME, store: cfgMgr });
@@ -108,7 +108,7 @@ if (subcommand === 'init') {
 checkClaude();
 
 // Initialize config manager for precedence merge
-const { initConfigManager } = await import('../server/services/config-manager.js');
+const { initConfigManager } = await import('../server/services/core/config-manager.js');
 const cfgMgr = initConfigManager(DORK_HOME);
 
 if (cfgMgr.isFirstRun) {

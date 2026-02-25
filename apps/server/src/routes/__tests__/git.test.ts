@@ -15,12 +15,12 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
-vi.mock('../../services/git-status.js', () => ({
+vi.mock('../../services/core/git-status.js', () => ({
   getGitStatus: vi.fn().mockResolvedValue({ branch: 'main', files: [] }),
 }));
 
 // Must also mock services imported by other routes in createApp
-vi.mock('../../services/transcript-reader.js', () => ({
+vi.mock('../../services/session/transcript-reader.js', () => ({
   transcriptReader: {
     listSessions: vi.fn(),
     getSession: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('../../services/transcript-reader.js', () => ({
   },
 }));
 
-vi.mock('../../services/agent-manager.js', () => ({
+vi.mock('../../services/core/agent-manager.js', () => ({
   agentManager: {
     ensureSession: vi.fn(),
     sendMessage: vi.fn(),
@@ -40,7 +40,7 @@ vi.mock('../../services/agent-manager.js', () => ({
   },
 }));
 
-vi.mock('../../services/tunnel-manager.js', () => ({
+vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
   },

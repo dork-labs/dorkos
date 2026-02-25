@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 19,
+  "nextNumber": 23,
   "decisions": [
     {
       "number": 1,
@@ -158,6 +158,42 @@
       "created": "2026-02-24",
       "extractedFrom": "relay-server-client-integration",
       "specSlug": "relay-server-client-integration"
+    },
+    {
+      "number": 19,
+      "slug": "use-grammy-for-telegram-adapter",
+      "title": "Use grammY for Telegram Bot Integration",
+      "status": "draft",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-external-adapters",
+      "specSlug": "relay-external-adapters"
+    },
+    {
+      "number": 20,
+      "slug": "adapter-registry-with-promise-allsettled",
+      "title": "Use Adapter Registry Pattern with Promise.allSettled for Error Isolation",
+      "status": "draft",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-external-adapters",
+      "specSlug": "relay-external-adapters"
+    },
+    {
+      "number": 21,
+      "slug": "restructure-server-services-into-domain-folders",
+      "title": "Restructure Server Services into Domain Folders",
+      "status": "draft",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-external-adapters",
+      "specSlug": "relay-external-adapters"
+    },
+    {
+      "number": 22,
+      "slug": "stripe-style-hmac-webhook-security",
+      "title": "Use Stripe-Style HMAC-SHA256 for Webhook Security",
+      "status": "draft",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-external-adapters",
+      "specSlug": "relay-external-adapters"
     }
   ]
 }

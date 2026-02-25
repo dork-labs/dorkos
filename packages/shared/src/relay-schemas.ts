@@ -226,3 +226,90 @@ export const EndpointRegistrationSchema = z
   .openapi('EndpointRegistration');
 
 export type EndpointRegistration = z.infer<typeof EndpointRegistrationSchema>;
+
+// === Adapter Configuration Schemas ===
+
+export const AdapterTypeSchema = z.enum(['telegram', 'webhook']).openapi('AdapterType');
+
+export type AdapterType = z.infer<typeof AdapterTypeSchema>;
+
+export const TelegramAdapterConfigSchema = z
+  .object({
+    token: z.string().min(1),
+    mode: z.enum(['polling', 'webhook']).default('polling'),
+    webhookUrl: z.string().url().optional(),
+    webhookPort: z.number().int().positive().optional(),
+  })
+  .openapi('TelegramAdapterConfig');
+
+export type TelegramAdapterConfigZ = z.infer<typeof TelegramAdapterConfigSchema>;
+
+export const WebhookInboundConfigSchema = z
+  .object({
+    subject: z.string().min(1),
+    secret: z.string().min(16),
+    previousSecret: z.string().optional(),
+  })
+  .openapi('WebhookInboundConfig');
+
+export type WebhookInboundConfig = z.infer<typeof WebhookInboundConfigSchema>;
+
+export const WebhookOutboundConfigSchema = z
+  .object({
+    url: z.string().url(),
+    secret: z.string().min(16),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .openapi('WebhookOutboundConfig');
+
+export type WebhookOutboundConfig = z.infer<typeof WebhookOutboundConfigSchema>;
+
+export const WebhookAdapterConfigSchema = z
+  .object({
+    inbound: WebhookInboundConfigSchema,
+    outbound: WebhookOutboundConfigSchema,
+  })
+  .openapi('WebhookAdapterConfig');
+
+export type WebhookAdapterConfigZ = z.infer<typeof WebhookAdapterConfigSchema>;
+
+export const AdapterConfigSchema = z
+  .object({
+    id: z
+      .string()
+      .min(1)
+      .regex(/^[a-z0-9-]+$/, 'Must be lowercase alphanumeric with hyphens'),
+    type: AdapterTypeSchema,
+    enabled: z.boolean().default(true),
+    config: z.union([TelegramAdapterConfigSchema, WebhookAdapterConfigSchema]),
+  })
+  .openapi('AdapterConfig');
+
+export type AdapterConfigZ = z.infer<typeof AdapterConfigSchema>;
+
+export const AdapterStatusSchema = z
+  .object({
+    id: z.string(),
+    type: AdapterTypeSchema,
+    displayName: z.string(),
+    state: z.enum(['connected', 'disconnected', 'error', 'starting', 'stopping']),
+    messageCount: z.object({
+      inbound: z.number().int().nonnegative(),
+      outbound: z.number().int().nonnegative(),
+    }),
+    errorCount: z.number().int().nonnegative(),
+    lastError: z.string().optional(),
+    lastErrorAt: z.string().datetime().optional(),
+    startedAt: z.string().datetime().optional(),
+  })
+  .openapi('AdapterStatus');
+
+export type AdapterStatusZ = z.infer<typeof AdapterStatusSchema>;
+
+export const AdaptersConfigFileSchema = z
+  .object({
+    adapters: z.array(AdapterConfigSchema),
+  })
+  .openapi('AdaptersConfigFile');
+
+export type AdaptersConfigFile = z.infer<typeof AdaptersConfigFileSchema>;

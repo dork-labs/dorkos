@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getGitStatus } from '../services/git-status.js';
+import { getGitStatus } from '../services/core/git-status.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 
 const router = Router();

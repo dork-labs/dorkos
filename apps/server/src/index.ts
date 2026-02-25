@@ -1,21 +1,22 @@
 import os from 'os';
 import path from 'path';
 import { createApp } from './app.js';
-import { agentManager } from './services/agent-manager.js';
-import { tunnelManager } from './services/tunnel-manager.js';
-import { SessionBroadcaster } from './services/session-broadcaster.js';
-import { transcriptReader } from './services/transcript-reader.js';
-import { initConfigManager, configManager } from './services/config-manager.js';
+import { agentManager } from './services/core/agent-manager.js';
+import { tunnelManager } from './services/core/tunnel-manager.js';
+import { SessionBroadcaster } from './services/session/session-broadcaster.js';
+import { transcriptReader } from './services/session/transcript-reader.js';
+import { initConfigManager, configManager } from './services/core/config-manager.js';
 import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger } from './lib/logger.js';
-import { createDorkOsToolServer } from './services/mcp-tool-server.js';
-import { PulseStore } from './services/pulse-store.js';
-import { SchedulerService } from './services/scheduler-service.js';
+import { createDorkOsToolServer } from './services/core/mcp-tool-server.js';
+import { PulseStore } from './services/pulse/pulse-store.js';
+import { SchedulerService } from './services/pulse/scheduler-service.js';
 import { createPulseRouter } from './routes/pulse.js';
-import { setPulseEnabled } from './services/pulse-state.js';
-import { RelayCore } from '@dorkos/relay';
+import { setPulseEnabled } from './services/pulse/pulse-state.js';
+import { RelayCore, AdapterRegistry } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
-import { setRelayEnabled } from './services/relay-state.js';
+import { setRelayEnabled } from './services/relay/relay-state.js';
+import { AdapterManager } from './services/relay/adapter-manager.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { INTERVALS } from './config/constants.js';
 
@@ -25,6 +26,7 @@ const PORT = parseInt(process.env.DORKOS_PORT || String(DEFAULT_PORT), 10);
 let sessionBroadcaster: SessionBroadcaster | null = null;
 let schedulerService: SchedulerService | null = null;
 let relayCore: RelayCore | undefined;
+let adapterManager: AdapterManager | undefined;
 
 async function start() {
   const logLevel = process.env.DORKOS_LOG_LEVEL
@@ -61,9 +63,16 @@ async function start() {
   if (relayEnabled) {
     const dorkHome = process.env.DORK_HOME || path.join(os.homedir(), '.dork');
     const dataDir = relayConfig?.dataDir ?? path.join(dorkHome, 'relay');
-    relayCore = new RelayCore({ dataDir });
+    const adapterRegistry = new AdapterRegistry();
+    relayCore = new RelayCore({ dataDir, adapterRegistry });
     await relayCore.registerEndpoint('relay.system.console');
     logger.info('[Relay] RelayCore initialized');
+
+    // Initialize adapter lifecycle manager
+    const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
+    adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath);
+    await adapterManager.initialize();
+    logger.info('[Relay] AdapterManager initialized');
   }
 
   // Create MCP tool server and inject into AgentManager
@@ -72,6 +81,7 @@ async function start() {
     defaultCwd: process.env.DORKOS_DEFAULT_CWD ?? process.cwd(),
     ...(pulseStore && { pulseStore }),
     ...(relayCore && { relayCore }),
+    ...(adapterManager && { adapterManager }),
   });
   agentManager.setMcpServers({ dorkos: mcpToolServer });
 
@@ -91,7 +101,7 @@ async function start() {
 
   // Mount Relay routes if enabled
   if (relayEnabled && relayCore) {
-    app.use('/api/relay', createRelayRouter(relayCore));
+    app.use('/api/relay', createRelayRouter(relayCore, adapterManager));
     setRelayEnabled(true);
     logger.info('[Relay] Routes mounted');
   }
@@ -156,6 +166,10 @@ async function shutdown() {
   }
   if (schedulerService) {
     await schedulerService.stop();
+  }
+  // Stop adapters before RelayCore — adapters may need to drain in-flight messages
+  if (adapterManager) {
+    await adapterManager.shutdown();
   }
   if (relayCore) {
     await relayCore.close();

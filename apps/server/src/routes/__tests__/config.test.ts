@@ -6,7 +6,7 @@ import os from 'os';
 import path from 'path';
 
 // Mock tunnel-manager and agent-manager to avoid side effects
-vi.mock('../../services/tunnel-manager.js', () => ({
+vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     status: { enabled: false, connected: false, url: null },
   },
@@ -16,7 +16,7 @@ vi.mock('../../lib/sdk-utils.js', () => ({
   resolveClaudeCliPath: () => '/usr/local/bin/claude',
   makeUserPrompt: vi.fn(),
 }));
-vi.mock('../../services/agent-manager.js', () => ({
+vi.mock('../../services/core/agent-manager.js', () => ({
   agentManager: {},
 }));
 
@@ -33,7 +33,7 @@ describe('PATCH /api/config', () => {
     process.env.DORK_HOME = tmpDir;
 
     // Initialize config manager before importing routes
-    const { initConfigManager } = await import('../../services/config-manager.js');
+    const { initConfigManager } = await import('../../services/core/config-manager.js');
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
@@ -108,7 +108,7 @@ describe('PATCH /api/config', () => {
       .expect(200);
 
     // Re-import to verify persistence
-    const { configManager } = await import('../../services/config-manager.js');
+    const { configManager } = await import('../../services/core/config-manager.js');
     expect(configManager.getDot('ui.theme')).toBe('dark');
   });
 

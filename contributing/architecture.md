@@ -302,6 +302,36 @@ Standard Vite React build. Server compiled separately via `tsc`.
 - CSS extracted to `styles.css` (auto-loaded by Obsidian)
 - **Build plugins**: `copyManifest`, `safeRequires`, `fixDirnamePolyfill`, `patchElectronCompat`
 
+## Relay
+
+The Relay message bus (`packages/relay/src/`) provides inter-agent messaging and external channel integration. It decouples agents from direct communication concerns using a subject-based pub/sub model inspired by NATS JetStream.
+
+### Adapter Registry
+
+The `AdapterRegistry` (in `packages/relay/src/adapter-registry.ts`) manages external channel adapters that bridge external communication platforms into the Relay subject hierarchy. Each adapter implements the `RelayAdapter` interface (`packages/relay/src/types.ts`) with methods for start, stop, deliver, and status reporting.
+
+The `AdapterManager` (in `apps/server/src/services/relay/adapter-manager.ts`) handles server-side lifecycle: config loading from `~/.dork/relay/adapters.json`, chokidar hot-reload with `awaitWriteFinish`, and Express route integration for adapter management endpoints.
+
+**Adapter data flow:**
+
+```
+Inbound:  External message → Adapter.handleInbound() → RelayCore.publish() → Maildir fan-out
+Outbound: RelayCore.publish() → AdapterRegistry.deliver() → Adapter.deliver() → External API
+```
+
+**Built-in adapters:**
+
+| Adapter | Library | Transport | Subject Prefix |
+|---------|---------|-----------|----------------|
+| `TelegramAdapter` | grammY | Long polling / webhook | `relay.human.telegram.*` |
+| `WebhookAdapter` | Native HTTP | HTTP POST + HMAC-SHA256 | `relay.webhook.*` |
+
+**Error isolation:** `Promise.allSettled()` ensures one adapter crashing never affects others.
+
+**Hot-reload:** Start new adapter → register → stop old. If new adapter fails to start, old stays active (zero message gap).
+
+See `contributing/relay-adapters.md` for the full developer guide on creating custom adapters.
+
 ## Testing
 
 All hooks and components use mock `Transport` objects injected via `TransportProvider` in test wrappers:

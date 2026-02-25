@@ -53,7 +53,7 @@ async function buildCLI() {
   });
 
   // 3. Compile CLI entry
-  // The CLI imports ../server/services/config-manager.js which doesn't exist
+  // The CLI imports ../server/services/core/config-manager.js which doesn't exist
   // relative to packages/cli/src/. Redirect it to the actual server source.
   console.log('[3/3] Compiling CLI...');
   await build({
@@ -67,9 +67,13 @@ async function buildCLI() {
     plugins: [{
       name: 'resolve-server-imports',
       setup(build) {
-        build.onResolve({ filter: /\.\.\/server\/services\// }, (args) => ({
-          path: path.join(ROOT, 'apps/server/src/services', path.basename(args.path).replace(/\.js$/, '.ts')),
-        }));
+        build.onResolve({ filter: /\.\.\/server\/services\// }, (args) => {
+          // Extract the relative path after ../server/services/ (e.g., "core/config-manager.js")
+          const match = args.path.match(/\.\.\/server\/services\/(.+)/);
+          if (!match) return undefined;
+          const relativePath = match[1].replace(/\.js$/, '.ts');
+          return { path: path.join(ROOT, 'apps/server/src/services', relativePath) };
+        });
       },
     }],
     define: { __CLI_VERSION__: JSON.stringify(version) },

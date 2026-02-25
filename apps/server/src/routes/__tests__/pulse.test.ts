@@ -5,8 +5,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createPulseRouter } from '../pulse.js';
-import { PulseStore } from '../../services/pulse-store.js';
-import type { SchedulerService } from '../../services/scheduler-service.js';
+import { PulseStore } from '../../services/pulse/pulse-store.js';
+import type { SchedulerService } from '../../services/pulse/scheduler-service.js';
 
 vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),

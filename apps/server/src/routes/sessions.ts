@@ -1,9 +1,9 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Router } from 'express';
-import { agentManager } from '../services/agent-manager.js';
-import { transcriptReader } from '../services/transcript-reader.js';
-import { initSSEStream, sendSSEEvent, endSSEStream } from '../services/stream-adapter.js';
+import { agentManager } from '../services/core/agent-manager.js';
+import { transcriptReader } from '../services/session/transcript-reader.js';
+import { initSSEStream, sendSSEEvent, endSSEStream } from '../services/core/stream-adapter.js';
 import {
   CreateSessionRequestSchema,
   UpdateSessionRequestSchema,

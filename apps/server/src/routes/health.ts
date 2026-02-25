@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createRequire } from 'module';
-import { tunnelManager } from '../services/tunnel-manager.js';
+import { tunnelManager } from '../services/core/tunnel-manager.js';
 
 declare const __CLI_VERSION__: string | undefined;
 

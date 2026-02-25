@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../services/transcript-reader.js', () => ({
+vi.mock('../../services/session/transcript-reader.js', () => ({
   transcriptReader: {
     listSessions: vi.fn(),
     getSession: vi.fn(),
@@ -9,7 +9,7 @@ vi.mock('../../services/transcript-reader.js', () => ({
   },
 }));
 
-vi.mock('../../services/agent-manager.js', () => ({
+vi.mock('../../services/core/agent-manager.js', () => ({
   agentManager: {
     ensureSession: vi.fn(),
     sendMessage: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('../../services/agent-manager.js', () => ({
   },
 }));
 
-vi.mock('../../services/tunnel-manager.js', () => ({
+vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     start: vi.fn(),
     stop: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('../../services/tunnel-manager.js', () => ({
   },
 }));
 
-vi.mock('../../services/config-manager.js', () => ({
+vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: vi.fn(),
     set: vi.fn(),
@@ -37,8 +37,8 @@ vi.mock('../../services/config-manager.js', () => ({
 
 import request from 'supertest';
 import { createApp } from '../../app.js';
-import { tunnelManager } from '../../services/tunnel-manager.js';
-import { configManager } from '../../services/config-manager.js';
+import { tunnelManager } from '../../services/core/tunnel-manager.js';
+import { configManager } from '../../services/core/config-manager.js';
 
 const app = createApp();
 

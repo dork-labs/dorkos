@@ -5,8 +5,8 @@
  */
 import { Router } from 'express';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
-import { tunnelManager } from '../services/tunnel-manager.js';
-import { configManager } from '../services/config-manager.js';
+import { tunnelManager } from '../services/core/tunnel-manager.js';
+import { configManager } from '../services/core/config-manager.js';
 
 /** Default port for the Vite dev server. */
 const DEV_CLIENT_PORT = 3000;

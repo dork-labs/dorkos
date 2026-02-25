@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 53,
+  "nextNumber": 55,
   "specs": [
     {
       "number": 1,
@@ -365,6 +365,20 @@
       "title": "Relay Advanced Reliability",
       "created": "2026-02-24",
       "status": "specified"
+    },
+    {
+      "number": 53,
+      "slug": "relay-external-adapters",
+      "title": "Relay External Adapters",
+      "created": "2026-02-24",
+      "status": "specified"
+    },
+    {
+      "number": 54,
+      "slug": "mesh-core-library",
+      "title": "Mesh Core Library",
+      "created": "2026-02-24",
+      "status": "ideation"
     }
   ]
 }

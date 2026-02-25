@@ -4,3 +4,4 @@
  * @module features/relay
  */
 export { RelayPanel } from './ui/RelayPanel';
+export { AdapterCard } from './ui/AdapterCard';

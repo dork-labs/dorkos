@@ -42,6 +42,7 @@ import type {
   Unsubscribe,
   EndpointInfo,
   RelayMetrics,
+  AdapterRegistryLike,
 } from './types.js';
 import type { DeadLetterEntry, ListDeadOptions } from './dead-letter-queue.js';
 
@@ -142,6 +143,7 @@ export class RelayCore {
   private readonly configPath: string;
   private configWatcher: FSWatcher | null = null;
   private closed = false;
+  private readonly adapterRegistry?: AdapterRegistryLike;
 
   constructor(options?: RelayOptions) {
     const dataDir = options?.dataDir ?? DEFAULT_DATA_DIR;
@@ -180,6 +182,12 @@ export class RelayCore {
     this.configPath = path.join(dataDir, 'config.json');
     this.loadReliabilityConfig();
     this.startConfigWatcher();
+
+    // Wire adapter registry — set this as the RelayPublisher for inbound messages
+    if (options?.adapterRegistry) {
+      this.adapterRegistry = options.adapterRegistry;
+      this.adapterRegistry.setRelay(this);
+    }
   }
 
   // --- Publish ---
@@ -292,6 +300,19 @@ export class RelayCore {
       }
       if (result.pressure !== undefined) {
         mailboxPressure[endpoint.hash] = result.pressure;
+      }
+    }
+
+    // 7. Deliver to matching external adapter (after Maildir endpoints)
+    if (this.adapterRegistry) {
+      try {
+        const adapterDelivered = await this.adapterRegistry.deliver(subject, envelope);
+        if (adapterDelivered) {
+          deliveredTo++;
+        }
+      } catch (err) {
+        // Adapter delivery failure is non-fatal — log but don't fail the overall publish
+        console.warn('RelayCore: adapter delivery failed:', err instanceof Error ? err.message : err);
       }
     }
 
@@ -528,6 +549,11 @@ export class RelayCore {
 
     // Clear signal subscriptions
     this.signalEmitter.removeAllSubscriptions();
+
+    // Shut down adapter registry (graceful stop of all external adapters)
+    if (this.adapterRegistry) {
+      await this.adapterRegistry.shutdown();
+    }
 
     // Close SQLite (WAL checkpoint)
     this.sqliteIndex.close();

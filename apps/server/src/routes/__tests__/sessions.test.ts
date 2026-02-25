@@ -18,7 +18,7 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 // Mock services before importing app
-vi.mock('../../services/transcript-reader.js', () => ({
+vi.mock('../../services/session/transcript-reader.js', () => ({
   transcriptReader: {
     listSessions: vi.fn(),
     getSession: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock('../../services/transcript-reader.js', () => ({
   },
 }));
 
-vi.mock('../../services/agent-manager.js', () => ({
+vi.mock('../../services/core/agent-manager.js', () => ({
   agentManager: {
     ensureSession: vi.fn(),
     sendMessage: vi.fn(),
@@ -43,13 +43,13 @@ vi.mock('../../services/agent-manager.js', () => ({
   },
 }));
 
-vi.mock('../../services/tunnel-manager.js', () => ({
+vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
   },
 }));
 
-vi.mock('../../services/session-broadcaster.js', () => ({
+vi.mock('../../services/session/session-broadcaster.js', () => ({
   SessionBroadcaster: vi.fn().mockImplementation(() => ({
     registerClient: vi.fn(),
     deregisterClient: vi.fn(),
@@ -60,8 +60,8 @@ vi.mock('../../services/session-broadcaster.js', () => ({
 // Dynamically import after mocks are set up
 import request from 'supertest';
 import { createApp } from '../../app.js';
-import { transcriptReader } from '../../services/transcript-reader.js';
-import { agentManager } from '../../services/agent-manager.js';
+import { transcriptReader } from '../../services/session/transcript-reader.js';
+import { agentManager } from '../../services/core/agent-manager.js';
 import { parseSSEResponse } from '@dorkos/test-utils/sse-helpers';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 

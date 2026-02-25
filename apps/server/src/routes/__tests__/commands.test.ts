@@ -15,7 +15,7 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
-vi.mock('../../services/command-registry.js', () => {
+vi.mock('../../services/core/command-registry.js', () => {
   const mockGetCommands = vi.fn();
   const mockInvalidateCache = vi.fn();
   return {
@@ -28,7 +28,7 @@ vi.mock('../../services/command-registry.js', () => {
 });
 
 // Must also mock transcript-reader and agent-manager since createApp imports session routes
-vi.mock('../../services/transcript-reader.js', () => ({
+vi.mock('../../services/session/transcript-reader.js', () => ({
   transcriptReader: {
     listSessions: vi.fn(),
     getSession: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock('../../services/transcript-reader.js', () => ({
   },
 }));
 
-vi.mock('../../services/agent-manager.js', () => ({
+vi.mock('../../services/core/agent-manager.js', () => ({
   agentManager: {
     ensureSession: vi.fn(),
     sendMessage: vi.fn(),
@@ -48,7 +48,7 @@ vi.mock('../../services/agent-manager.js', () => ({
   },
 }));
 
-vi.mock('../../services/tunnel-manager.js', () => ({
+vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
   },
@@ -60,7 +60,7 @@ import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 // Get a reference to the mock function
 const { __mockGetCommands: mockGetCommands } =
-  (await import('../../services/command-registry.js')) as any;
+  (await import('../../services/core/command-registry.js')) as any;
 
 const app = createApp();
 

@@ -1,4 +1,4 @@
-import type { Transport } from '@dorkos/shared/transport';
+import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
 import type {
   StreamEvent,
   Session,
@@ -300,5 +300,14 @@ export class DirectTransport implements Transport {
 
   async getRelayMetrics(): Promise<unknown> {
     return { totalMessages: 0, byStatus: {}, bySubject: [] };
+  }
+
+  // Relay adapters are not supported in embedded mode
+  async listRelayAdapters(): Promise<AdapterListItem[]> {
+    return [];
+  }
+
+  async toggleRelayAdapter(_id: string, _enabled: boolean): Promise<{ ok: boolean }> {
+    throw new Error('Relay adapters are not supported in embedded mode');
   }
 }

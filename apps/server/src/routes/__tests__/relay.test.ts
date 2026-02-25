@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createRelayRouter } from '../relay.js';
-import type { RelayCore } from '@dorkos/relay';
+import type { RelayCore, AdapterRegistry, WebhookAdapter } from '@dorkos/relay';
+import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 
 function createMockRelayCore(): RelayCore {
   return {
@@ -286,6 +287,256 @@ describe('Relay routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.totalMessages).toBe(42);
       expect(res.body.byStatus.new).toBe(10);
+    });
+  });
+});
+
+// --- Adapter Route Tests ---
+
+/** Create a mock AdapterManager for route testing. */
+function createMockAdapterManager(): AdapterManager {
+  const mockWebhookAdapter = {
+    id: 'wh-github',
+    subjectPrefix: 'relay.webhook.github',
+    displayName: 'Webhook (wh-github)',
+    start: vi.fn(),
+    stop: vi.fn(),
+    deliver: vi.fn(),
+    getStatus: vi.fn().mockReturnValue({
+      state: 'connected',
+      messageCount: { inbound: 5, outbound: 3 },
+      errorCount: 0,
+    }),
+    handleInbound: vi.fn().mockResolvedValue({ ok: true }),
+  } as unknown as WebhookAdapter;
+
+  const mockRegistry = {
+    get: vi.fn((id: string) => (id === 'wh-github' ? mockWebhookAdapter : undefined)),
+  } as unknown as AdapterRegistry;
+
+  return {
+    listAdapters: vi.fn().mockReturnValue([
+      {
+        config: { id: 'tg-main', type: 'telegram', enabled: true, config: { token: 'x', mode: 'polling' } },
+        status: { state: 'connected', messageCount: { inbound: 10, outbound: 5 }, errorCount: 0 },
+      },
+      {
+        config: {
+          id: 'wh-github',
+          type: 'webhook',
+          enabled: true,
+          config: {
+            inbound: { subject: 'relay.webhook.github', secret: 'a-very-long-secret-16' },
+            outbound: { url: 'https://example.com/hook', secret: 'another-long-secret-16' },
+          },
+        },
+        status: { state: 'connected', messageCount: { inbound: 5, outbound: 3 }, errorCount: 0 },
+      },
+    ]),
+    getAdapter: vi.fn((id: string) => {
+      if (id === 'tg-main') {
+        return {
+          config: { id: 'tg-main', type: 'telegram', enabled: true, config: { token: 'x', mode: 'polling' } },
+          status: { state: 'connected', messageCount: { inbound: 10, outbound: 5 }, errorCount: 0 },
+        };
+      }
+      if (id === 'wh-github') {
+        return {
+          config: {
+            id: 'wh-github',
+            type: 'webhook',
+            enabled: true,
+            config: {
+              inbound: { subject: 'relay.webhook.github', secret: 'a-very-long-secret-16' },
+              outbound: { url: 'https://example.com/hook', secret: 'another-long-secret-16' },
+            },
+          },
+          status: { state: 'connected', messageCount: { inbound: 5, outbound: 3 }, errorCount: 0 },
+        };
+      }
+      return undefined;
+    }),
+    enable: vi.fn().mockResolvedValue(undefined),
+    disable: vi.fn().mockResolvedValue(undefined),
+    reload: vi.fn().mockResolvedValue(undefined),
+    getRegistry: vi.fn().mockReturnValue(mockRegistry),
+    _mockWebhookAdapter: mockWebhookAdapter,
+  } as unknown as AdapterManager & { _mockWebhookAdapter: WebhookAdapter };
+}
+
+describe('Adapter routes', () => {
+  let app: express.Application;
+  let relayCore: ReturnType<typeof createMockRelayCore>;
+  let adapterManager: ReturnType<typeof createMockAdapterManager>;
+
+  beforeEach(() => {
+    relayCore = createMockRelayCore();
+    adapterManager = createMockAdapterManager();
+    app = express();
+    app.use(express.json());
+    app.use(
+      '/api/relay',
+      createRelayRouter(relayCore as unknown as RelayCore, adapterManager as unknown as AdapterManager),
+    );
+    app.use(
+      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        res.status(500).json({ error: err.message });
+      },
+    );
+  });
+
+  describe('GET /api/relay/adapters', () => {
+    it('returns list of adapter statuses', async () => {
+      const res = await request(app).get('/api/relay/adapters');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      expect(res.body[0].config.id).toBe('tg-main');
+      expect(res.body[0].status.state).toBe('connected');
+      expect(res.body[1].config.id).toBe('wh-github');
+    });
+  });
+
+  describe('GET /api/relay/adapters/:id', () => {
+    it('returns single adapter status', async () => {
+      const res = await request(app).get('/api/relay/adapters/tg-main');
+
+      expect(res.status).toBe(200);
+      expect(res.body.config.id).toBe('tg-main');
+      expect(res.body.status.state).toBe('connected');
+    });
+
+    it('returns 404 for unknown adapter', async () => {
+      const res = await request(app).get('/api/relay/adapters/nonexistent');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Adapter not found');
+    });
+  });
+
+  describe('POST /api/relay/adapters/:id/enable', () => {
+    it('enables adapter and returns ok', async () => {
+      const res = await request(app).post('/api/relay/adapters/tg-main/enable');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(vi.mocked(adapterManager.enable)).toHaveBeenCalledWith('tg-main');
+    });
+
+    it('returns 400 when enable fails', async () => {
+      vi.mocked(adapterManager.enable).mockRejectedValue(new Error('Adapter not found: missing'));
+
+      const res = await request(app).post('/api/relay/adapters/missing/enable');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Adapter not found');
+    });
+  });
+
+  describe('POST /api/relay/adapters/:id/disable', () => {
+    it('disables adapter and returns ok', async () => {
+      const res = await request(app).post('/api/relay/adapters/tg-main/disable');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(vi.mocked(adapterManager.disable)).toHaveBeenCalledWith('tg-main');
+    });
+
+    it('returns 400 when disable fails', async () => {
+      vi.mocked(adapterManager.disable).mockRejectedValue(new Error('Adapter not found: missing'));
+
+      const res = await request(app).post('/api/relay/adapters/missing/disable');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Adapter not found');
+    });
+  });
+
+  describe('POST /api/relay/adapters/reload', () => {
+    it('triggers config reload and returns ok', async () => {
+      const res = await request(app).post('/api/relay/adapters/reload');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(vi.mocked(adapterManager.reload)).toHaveBeenCalledOnce();
+    });
+
+    it('returns 500 when reload fails', async () => {
+      vi.mocked(adapterManager.reload).mockRejectedValue(new Error('Config parse error'));
+
+      const res = await request(app).post('/api/relay/adapters/reload');
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toContain('Config parse error');
+    });
+  });
+
+  describe('POST /api/relay/webhooks/:adapterId', () => {
+    it('routes valid webhook to adapter handleInbound and returns 200', async () => {
+      const body = JSON.stringify({ event: 'push', repo: 'test' });
+
+      const res = await request(app)
+        .post('/api/relay/webhooks/wh-github')
+        .set('Content-Type', 'application/json')
+        .set('X-Signature', 'test-sig')
+        .set('X-Timestamp', String(Math.floor(Date.now() / 1000)))
+        .set('X-Nonce', 'test-nonce')
+        .send(body);
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+
+      const mockAdapter = (adapterManager as unknown as { _mockWebhookAdapter: WebhookAdapter })
+        ._mockWebhookAdapter;
+      expect(vi.mocked(mockAdapter as unknown as { handleInbound: ReturnType<typeof vi.fn> }).handleInbound).toHaveBeenCalled();
+    });
+
+    it('returns 404 for unknown webhook adapter', async () => {
+      const res = await request(app)
+        .post('/api/relay/webhooks/unknown')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Webhook adapter not found');
+    });
+
+    it('returns 404 for non-webhook adapter type', async () => {
+      // tg-main is a telegram adapter, not webhook
+      const res = await request(app)
+        .post('/api/relay/webhooks/tg-main')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Webhook adapter not found');
+    });
+
+    it('returns 401 when signature verification fails', async () => {
+      const mockAdapter = (adapterManager as unknown as { _mockWebhookAdapter: WebhookAdapter })
+        ._mockWebhookAdapter;
+      vi.mocked(mockAdapter as unknown as { handleInbound: ReturnType<typeof vi.fn> }).handleInbound
+        .mockResolvedValue({ ok: false, error: 'Invalid signature' });
+
+      const res = await request(app)
+        .post('/api/relay/webhooks/wh-github')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('Invalid signature');
+    });
+  });
+
+  describe('routes without adapterManager', () => {
+    it('adapter routes are not mounted when adapterManager is undefined', async () => {
+      const appNoAdapters = express();
+      appNoAdapters.use(express.json());
+      appNoAdapters.use('/api/relay', createRelayRouter(relayCore as unknown as RelayCore));
+
+      const res = await request(appNoAdapters).get('/api/relay/adapters');
+
+      expect(res.status).toBe(404);
     });
   });
 });

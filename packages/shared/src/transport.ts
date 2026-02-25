@@ -27,6 +27,13 @@ import type {
   UpdateScheduleRequest,
   ListRunsQuery,
 } from './types.js';
+import type { AdapterConfigZ, AdapterStatusZ } from './relay-schemas.js';
+
+/** A single entry in the adapter list — config plus live status. */
+export interface AdapterListItem {
+  config: AdapterConfigZ;
+  status: AdapterStatusZ;
+}
 
 export interface Transport {
   /** Create a new Claude agent session. */
@@ -137,4 +144,11 @@ export interface Transport {
   ): Promise<{ messages: unknown[]; nextCursor?: string }>;
   /** Get relay system metrics. */
   getRelayMetrics(): Promise<unknown>;
+
+  // --- Relay Adapters ---
+
+  /** List all relay adapters with their live status. */
+  listRelayAdapters(): Promise<AdapterListItem[]>;
+  /** Enable or disable a relay adapter by ID. */
+  toggleRelayAdapter(id: string, enabled: boolean): Promise<{ ok: boolean }>;
 }

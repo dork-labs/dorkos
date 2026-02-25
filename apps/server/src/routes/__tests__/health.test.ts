@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock dependencies that createApp imports
-vi.mock('../../services/transcript-reader.js', () => ({
+vi.mock('../../services/session/transcript-reader.js', () => ({
   transcriptReader: {
     listSessions: vi.fn(),
     getSession: vi.fn(),
@@ -10,7 +10,7 @@ vi.mock('../../services/transcript-reader.js', () => ({
   },
 }));
 
-vi.mock('../../services/agent-manager.js', () => ({
+vi.mock('../../services/core/agent-manager.js', () => ({
   agentManager: {
     ensureSession: vi.fn(),
     sendMessage: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock('../../services/agent-manager.js', () => ({
   },
 }));
 
-vi.mock('../../services/tunnel-manager.js', () => ({
+vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
   },
@@ -29,7 +29,7 @@ vi.mock('../../services/tunnel-manager.js', () => ({
 
 import request from 'supertest';
 import { createApp } from '../../app.js';
-import { tunnelManager } from '../../services/tunnel-manager.js';
+import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
 const app = createApp();
 

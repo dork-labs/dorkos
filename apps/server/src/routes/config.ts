@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { createRequire } from 'module';
-import { tunnelManager } from '../services/tunnel-manager.js';
+import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveClaudeCliPath } from '../lib/sdk-utils.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
-import { configManager } from '../services/config-manager.js';
+import { configManager } from '../services/core/config-manager.js';
 import { UserConfigSchema, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
-import { getLatestVersion } from '../services/update-checker.js';
-import { isPulseEnabled } from '../services/pulse-state.js';
-import { isRelayEnabled } from '../services/relay-state.js';
+import { getLatestVersion } from '../services/core/update-checker.js';
+import { isPulseEnabled } from '../services/pulse/pulse-state.js';
+import { isRelayEnabled } from '../services/relay/relay-state.js';
 
 declare const __CLI_VERSION__: string | undefined;
 
