@@ -27,6 +27,7 @@ Implement a specification by orchestrating parallel background agents across dep
 ```
 SPEC_FILE = <the spec path from user arguments>
 SLUG = extract second path segment (e.g., "user-auth" from "specs/user-auth/02-specification.md")
+TASKS_JSON = "specs/<SLUG>/03-tasks.json"
 TASKS_FILE = "specs/<SLUG>/03-tasks.md"
 IMPL_FILE = "specs/<SLUG>/04-implementation.md"
 ```

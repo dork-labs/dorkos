@@ -158,7 +158,7 @@ for phase in plan.phases:
   execute_phase(phase)
 ```
 
-**Real example**: `/spec:decompose` isolates spec reading and task creation.
+**Real example**: `/spec:decompose` isolates spec reading and analysis in a background agent that writes `03-tasks.json` to disk. The main context then reads the JSON and creates all tasks via TaskCreate (since subagents cannot use task management tools).
 
 ## Agent Selection Guide
 

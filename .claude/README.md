@@ -332,7 +332,7 @@ Several commands use parallel background agents for efficiency. This pattern pro
 | ----------------- | ------------------------- | ---------------------------------------------------------- |
 | `/ideate`         | Parallel research         | `Explore` + `research-expert` run simultaneously           |
 | `/spec:execute`   | Dependency-aware batching | Tasks grouped by dependencies, each batch runs in parallel |
-| `/spec:decompose` | Analysis isolation        | Heavy decomposition runs in background agent               |
+| `/spec:decompose` | Analysis + disk output    | Background agent writes `03-tasks.json` to disk; main context creates tasks |
 | `/debug:api`      | Parallel diagnostics      | Component, action, DAL agents investigate simultaneously   |
 | `/debug:browser`  | Parallel diagnostics      | Visual, console, network, accessibility checks in parallel |
 

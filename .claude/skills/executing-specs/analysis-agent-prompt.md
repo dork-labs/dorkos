@@ -11,6 +11,7 @@ You are analyzing a specification execution to build an optimized execution plan
 - **Spec File**: [SPEC_PATH]
 - **Feature Slug**: [SLUG]
 - **Implementation File**: specs/[SLUG]/04-implementation.md
+- **Tasks JSON**: specs/[SLUG]/03-tasks.json
 - **Tasks File**: specs/[SLUG]/03-tasks.md
 
 ## Your Tasks
