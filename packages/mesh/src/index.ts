@@ -29,5 +29,16 @@ export { DenialList } from './denial-list.js';
 // Manifest
 export { readManifest, writeManifest } from './manifest.js';
 
+// Namespace
+export { resolveNamespace, normalizeNamespace, validateNamespace } from './namespace-resolver.js';
+
+// Budget
+export { BudgetMapper } from './budget-mapper.js';
+export type { BudgetCheckResult, BudgetAllowed, BudgetDenied } from './budget-mapper.js';
+
+// Topology
+export { TopologyManager } from './topology.js';
+export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology.js';
+
 // Relay Bridge
 export { RelayBridge } from './relay-bridge.js';

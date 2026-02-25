@@ -171,6 +171,21 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     denyMeshAgent: vi.fn().mockResolvedValue({ success: true }),
     listDeniedMeshAgents: vi.fn().mockResolvedValue({ denied: [] }),
     clearMeshDenial: vi.fn().mockResolvedValue({ success: true }),
+    // Mesh Observability
+    getMeshStatus: vi.fn().mockResolvedValue({
+      totalAgents: 0,
+      activeCount: 0,
+      inactiveCount: 0,
+      staleCount: 0,
+      byRuntime: {},
+      byProject: {},
+    }),
+    getMeshAgentHealth: vi.fn().mockResolvedValue(undefined),
+    sendMeshHeartbeat: vi.fn().mockResolvedValue({ success: true }),
+    // Mesh Topology
+    getMeshTopology: vi.fn().mockResolvedValue({ callerNamespace: '*', namespaces: [], accessRules: [] }),
+    updateMeshAccessRule: vi.fn().mockResolvedValue({ sourceNamespace: '', targetNamespace: '', action: 'allow' }),
+    getMeshAgentAccess: vi.fn().mockResolvedValue({ rules: [] }),
     ...overrides,
   };
 }

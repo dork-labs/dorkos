@@ -2,7 +2,7 @@
 title: "Relay External Adapters"
 spec: 4
 order: 3
-status: in-progress
+status: done
 blockedBy: [2]
 blocks: [5]
 parallelWith: [3]

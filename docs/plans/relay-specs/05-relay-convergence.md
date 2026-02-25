@@ -2,7 +2,7 @@
 title: "Relay Convergence"
 spec: 5
 order: 4
-status: not-started
+status: done
 blockedBy: [3, 4, 6]
 blocks: []
 parallelWith: []

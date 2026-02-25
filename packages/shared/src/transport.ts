@@ -28,7 +28,16 @@ import type {
   ListRunsQuery,
 } from './types.js';
 import type { AdapterConfigZ, AdapterStatusZ, TraceSpan, DeliveryMetrics } from './relay-schemas.js';
-import type { AgentManifest, DiscoveryCandidate, DenialRecord } from './mesh-schemas.js';
+import type {
+  AgentManifest,
+  DiscoveryCandidate,
+  DenialRecord,
+  AgentHealth,
+  MeshStatus,
+  TopologyView,
+  UpdateAccessRuleRequest,
+  CrossNamespaceRule,
+} from './mesh-schemas.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -186,4 +195,22 @@ export interface Transport {
   listDeniedMeshAgents(): Promise<{ denied: DenialRecord[] }>;
   /** Clear a denial record for a previously denied path. */
   clearMeshDenial(path: string): Promise<{ success: boolean }>;
+
+  // --- Mesh Observability ---
+
+  /** Get aggregate mesh health status. */
+  getMeshStatus(): Promise<MeshStatus>;
+  /** Get health details for a single agent. */
+  getMeshAgentHealth(id: string): Promise<AgentHealth>;
+  /** Send a heartbeat for an agent to update its last-seen timestamp. */
+  sendMeshHeartbeat(id: string, event?: string): Promise<{ success: boolean }>;
+
+  // --- Mesh Topology ---
+
+  /** Get the mesh topology view, optionally scoped to a namespace. */
+  getMeshTopology(namespace?: string): Promise<TopologyView>;
+  /** Create or update a cross-namespace access rule. */
+  updateMeshAccessRule(body: UpdateAccessRuleRequest): Promise<CrossNamespaceRule>;
+  /** Get access rules for a specific agent. */
+  getMeshAgentAccess(agentId: string): Promise<{ rules: CrossNamespaceRule[] }>;
 }

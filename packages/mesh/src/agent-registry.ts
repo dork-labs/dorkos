@@ -17,6 +17,10 @@ import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
 export interface AgentRegistryEntry extends AgentManifest {
   /** Absolute path to the agent's project directory. */
   projectPath: string;
+  /** Namespace this agent belongs to (derived from scan root or manifest). */
+  namespace: string;
+  /** The scan root used to derive the namespace. */
+  scanRoot: string;
 }
 
 /** Optional filters for listing agents. */
@@ -38,6 +42,30 @@ interface AgentRow {
   manifest_json: string;
   registered_at: string;
   registered_by: string;
+  namespace: string;
+  scan_root: string;
+}
+
+/** Raw SQLite row for an agent with health columns (snake_case). */
+interface AgentHealthRow extends AgentRow {
+  last_seen_at: string | null;
+  last_seen_event: string | null;
+  health_status: 'active' | 'inactive' | 'stale';
+}
+
+/** An agent entry with computed health status. */
+export interface AgentHealthEntry extends AgentRegistryEntry {
+  lastSeenAt: string | null;
+  lastSeenEvent: string | null;
+  healthStatus: 'active' | 'inactive' | 'stale';
+}
+
+/** Aggregate counts by health status. */
+export interface AggregateStats {
+  totalAgents: number;
+  activeCount: number;
+  inactiveCount: number;
+  staleCount: number;
 }
 
 // === Migrations ===
@@ -57,6 +85,21 @@ const MIGRATIONS = [
   );
   CREATE INDEX IF NOT EXISTS idx_agents_project_path ON agents(project_path);
   CREATE INDEX IF NOT EXISTS idx_agents_runtime ON agents(runtime);`,
+  // Version 2: health tracking columns
+  `ALTER TABLE agents ADD COLUMN last_seen_at TEXT;
+   ALTER TABLE agents ADD COLUMN last_seen_event TEXT;`,
+  // Version 3: budget counters for sliding window rate limiting
+  `CREATE TABLE IF NOT EXISTS budget_counters (
+    agent_id TEXT NOT NULL,
+    bucket_minute INTEGER NOT NULL,
+    call_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (agent_id, bucket_minute)
+  );
+  CREATE INDEX IF NOT EXISTS idx_budget_counters_agent ON budget_counters(agent_id);`,
+  // Version 4: namespace and scan_root columns
+  `ALTER TABLE agents ADD COLUMN namespace TEXT NOT NULL DEFAULT '';
+   ALTER TABLE agents ADD COLUMN scan_root TEXT NOT NULL DEFAULT '';
+   CREATE INDEX IF NOT EXISTS idx_agents_namespace ON agents(namespace);`,
 ];
 
 // === AgentRegistry ===
@@ -79,8 +122,13 @@ export class AgentRegistry {
     getById: Database.Statement;
     getByPath: Database.Statement;
     listAll: Database.Statement;
+    listByNamespace: Database.Statement;
     update: Database.Statement;
     remove: Database.Statement;
+    updateHealth: Database.Statement;
+    getWithHealth: Database.Statement;
+    listWithHealth: Database.Statement;
+    getAggregateStats: Database.Statement;
   };
 
   /**
@@ -100,16 +148,46 @@ export class AgentRegistry {
 
     this.stmts = {
       insert: this.db.prepare(
-        `INSERT INTO agents (id, name, description, project_path, runtime, capabilities_json, manifest_json, registered_at, registered_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agents (id, name, description, project_path, runtime, capabilities_json, manifest_json, registered_at, registered_by, namespace, scan_root)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       getById: this.db.prepare(`SELECT * FROM agents WHERE id = ?`),
       getByPath: this.db.prepare(`SELECT * FROM agents WHERE project_path = ?`),
       listAll: this.db.prepare(`SELECT * FROM agents ORDER BY registered_at DESC`),
+      listByNamespace: this.db.prepare(`SELECT * FROM agents WHERE namespace = ? ORDER BY registered_at DESC`),
       update: this.db.prepare(
         `UPDATE agents SET name = ?, description = ?, runtime = ?, capabilities_json = ?, manifest_json = ? WHERE id = ?`,
       ),
       remove: this.db.prepare(`DELETE FROM agents WHERE id = ?`),
+      updateHealth: this.db.prepare(
+        `UPDATE agents SET last_seen_at = ?, last_seen_event = ? WHERE id = ?`,
+      ),
+      getWithHealth: this.db.prepare(`
+        SELECT *, CASE
+          WHEN last_seen_at IS NULL THEN 'stale'
+          WHEN (julianday('now') - julianday(last_seen_at)) * 86400 < 300 THEN 'active'
+          WHEN (julianday('now') - julianday(last_seen_at)) * 86400 < 1800 THEN 'inactive'
+          ELSE 'stale'
+        END AS health_status
+        FROM agents WHERE id = ?
+      `),
+      listWithHealth: this.db.prepare(`
+        SELECT *, CASE
+          WHEN last_seen_at IS NULL THEN 'stale'
+          WHEN (julianday('now') - julianday(last_seen_at)) * 86400 < 300 THEN 'active'
+          WHEN (julianday('now') - julianday(last_seen_at)) * 86400 < 1800 THEN 'inactive'
+          ELSE 'stale'
+        END AS health_status
+        FROM agents ORDER BY registered_at DESC
+      `),
+      getAggregateStats: this.db.prepare(`
+        SELECT
+          COUNT(*) AS total_agents,
+          SUM(CASE WHEN last_seen_at IS NOT NULL AND (julianday('now') - julianday(last_seen_at)) * 86400 < 300 THEN 1 ELSE 0 END) AS active_count,
+          SUM(CASE WHEN last_seen_at IS NOT NULL AND (julianday('now') - julianday(last_seen_at)) * 86400 BETWEEN 300 AND 1800 THEN 1 ELSE 0 END) AS inactive_count,
+          SUM(CASE WHEN last_seen_at IS NULL OR (julianday('now') - julianday(last_seen_at)) * 86400 > 1800 THEN 1 ELSE 0 END) AS stale_count
+        FROM agents
+      `),
     };
   }
 
@@ -130,6 +208,8 @@ export class AgentRegistry {
       JSON.stringify(agent),
       agent.registeredAt,
       agent.registeredBy,
+      agent.namespace ?? '',
+      agent.scanRoot ?? '',
     );
   }
 
@@ -208,6 +288,67 @@ export class AgentRegistry {
     return result.changes > 0;
   }
 
+  /**
+   * Update health tracking fields for an agent.
+   *
+   * @param id - Agent ULID
+   * @param lastSeenAt - ISO timestamp of last activity
+   * @param lastSeenEvent - Description of the event (e.g., 'heartbeat', 'message_sent')
+   * @returns true if agent was found and updated
+   */
+  updateHealth(id: string, lastSeenAt: string, lastSeenEvent: string): boolean {
+    const result = this.stmts.updateHealth.run(lastSeenAt, lastSeenEvent, id);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get a single agent with computed health status.
+   *
+   * @param id - Agent ULID
+   * @returns The agent entry with health fields, or undefined if not found
+   */
+  getWithHealth(id: string): AgentHealthEntry | undefined {
+    const row = this.stmts.getWithHealth.get(id) as AgentHealthRow | undefined;
+    return row ? this.healthRowToEntry(row) : undefined;
+  }
+
+  /**
+   * List all agents with computed health status.
+   *
+   * @param filters - Optional runtime/capability filters
+   * @returns Array of agents with health status ordered by registration date (newest first)
+   */
+  listWithHealth(filters?: AgentListFilters): AgentHealthEntry[] {
+    const rows = this.stmts.listWithHealth.all() as AgentHealthRow[];
+    const entries = rows.map((row) => this.healthRowToEntry(row));
+    if (!filters) return entries;
+    return entries.filter((entry) => {
+      if (filters.runtime && entry.runtime !== filters.runtime) return false;
+      if (filters.capability && !entry.capabilities.includes(filters.capability)) return false;
+      return true;
+    });
+  }
+
+  /**
+   * Get aggregate health statistics across all agents.
+   *
+   * @returns Counts of total, active, inactive, and stale agents
+   */
+  getAggregateStats(): AggregateStats {
+    const row = this.stmts.getAggregateStats.get() as {
+      total_agents: number;
+      active_count: number;
+      inactive_count: number;
+      stale_count: number;
+    };
+    return {
+      totalAgents: row.total_agents,
+      activeCount: row.active_count,
+      inactiveCount: row.inactive_count,
+      staleCount: row.stale_count,
+    };
+  }
+
   /** Close the database connection. */
   close(): void {
     this.db.close();
@@ -226,11 +367,37 @@ export class AgentRegistry {
     }
   }
 
+  /**
+   * List agents belonging to a specific namespace.
+   *
+   * @param namespace - The namespace to filter by
+   * @returns Array of agent entries in the given namespace
+   */
+  listByNamespace(namespace: string): AgentRegistryEntry[] {
+    const rows = this.stmts.listByNamespace.all(namespace) as AgentRow[];
+    return rows.map((row) => this.rowToEntry(row));
+  }
+
   private rowToEntry(row: AgentRow): AgentRegistryEntry {
     const manifest = JSON.parse(row.manifest_json) as AgentManifest;
     return {
       ...manifest,
       projectPath: row.project_path,
+      namespace: row.namespace ?? '',
+      scanRoot: row.scan_root ?? '',
+    };
+  }
+
+  private healthRowToEntry(row: AgentHealthRow): AgentHealthEntry {
+    const manifest = JSON.parse(row.manifest_json) as AgentManifest;
+    return {
+      ...manifest,
+      projectPath: row.project_path,
+      namespace: row.namespace ?? '',
+      scanRoot: row.scan_root ?? '',
+      lastSeenAt: row.last_seen_at,
+      lastSeenEvent: row.last_seen_event,
+      healthStatus: row.health_status,
     };
   }
 }

@@ -612,6 +612,173 @@ describe('dead letters', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Access rule management
+// ---------------------------------------------------------------------------
+
+describe('access rule management', () => {
+  it('addAccessRule delegates to AccessControl and persists the rule', () => {
+    relay.addAccessRule({
+      from: 'relay.attacker',
+      to: 'relay.agent.secret',
+      action: 'deny',
+      priority: 100,
+    });
+
+    const rules = relay.listAccessRules();
+    expect(rules.length).toBe(1);
+    expect(rules[0]).toEqual({
+      from: 'relay.attacker',
+      to: 'relay.agent.secret',
+      action: 'deny',
+      priority: 100,
+    });
+  });
+
+  it('listAccessRules returns rules sorted by priority (highest first)', () => {
+    relay.addAccessRule({
+      from: 'relay.a',
+      to: 'relay.b',
+      action: 'deny',
+      priority: 10,
+    });
+    relay.addAccessRule({
+      from: 'relay.c',
+      to: 'relay.d',
+      action: 'allow',
+      priority: 50,
+    });
+    relay.addAccessRule({
+      from: 'relay.e',
+      to: 'relay.f',
+      action: 'deny',
+      priority: 30,
+    });
+
+    const rules = relay.listAccessRules();
+    expect(rules.length).toBe(3);
+    expect(rules[0].priority).toBe(50);
+    expect(rules[1].priority).toBe(30);
+    expect(rules[2].priority).toBe(10);
+  });
+
+  it('removeAccessRule removes the matching rule', () => {
+    relay.addAccessRule({
+      from: 'relay.x',
+      to: 'relay.y',
+      action: 'deny',
+      priority: 100,
+    });
+
+    expect(relay.listAccessRules().length).toBe(1);
+
+    relay.removeAccessRule('relay.x', 'relay.y');
+
+    expect(relay.listAccessRules().length).toBe(0);
+  });
+
+  it('removeAccessRule is a no-op when no rule matches', () => {
+    relay.addAccessRule({
+      from: 'relay.a',
+      to: 'relay.b',
+      action: 'deny',
+      priority: 10,
+    });
+
+    relay.removeAccessRule('relay.nonexistent', 'relay.other');
+
+    expect(relay.listAccessRules().length).toBe(1);
+  });
+
+  it('listAccessRules returns a shallow copy (mutations do not affect internal state)', () => {
+    relay.addAccessRule({
+      from: 'relay.a',
+      to: 'relay.b',
+      action: 'deny',
+      priority: 10,
+    });
+
+    const rules = relay.listAccessRules();
+    rules.pop();
+
+    expect(relay.listAccessRules().length).toBe(1);
+  });
+
+  it('addAccessRule throws after close', async () => {
+    await relay.close();
+    expect(() =>
+      relay.addAccessRule({
+        from: 'relay.a',
+        to: 'relay.b',
+        action: 'deny',
+        priority: 10,
+      }),
+    ).toThrow('RelayCore has been closed');
+  });
+
+  it('removeAccessRule throws after close', async () => {
+    await relay.close();
+    expect(() => relay.removeAccessRule('relay.a', 'relay.b')).toThrow(
+      'RelayCore has been closed',
+    );
+  });
+
+  it('listAccessRules throws after close', async () => {
+    await relay.close();
+    expect(() => relay.listAccessRules()).toThrow('RelayCore has been closed');
+  });
+
+  it('added deny rule is enforced by publish', async () => {
+    await relay.registerEndpoint('relay.agent.guarded');
+
+    relay.addAccessRule({
+      from: 'relay.blocked-sender',
+      to: 'relay.agent.guarded',
+      action: 'deny',
+      priority: 100,
+    });
+
+    await expect(
+      relay.publish(
+        'relay.agent.guarded',
+        { data: 'should-be-blocked' },
+        { from: 'relay.blocked-sender' },
+      ),
+    ).rejects.toThrow('Access denied');
+  });
+
+  it('removed deny rule no longer blocks publish', async () => {
+    await relay.registerEndpoint('relay.agent.unblocked');
+
+    relay.addAccessRule({
+      from: 'relay.temp-blocked',
+      to: 'relay.agent.unblocked',
+      action: 'deny',
+      priority: 100,
+    });
+
+    // Should be blocked
+    await expect(
+      relay.publish(
+        'relay.agent.unblocked',
+        { data: 'blocked' },
+        { from: 'relay.temp-blocked' },
+      ),
+    ).rejects.toThrow('Access denied');
+
+    // Remove the rule
+    relay.removeAccessRule('relay.temp-blocked', 'relay.agent.unblocked');
+
+    // Should now succeed
+    const result = await relay.publish(
+      'relay.agent.unblocked',
+      { data: 'allowed' },
+      { from: 'relay.temp-blocked' },
+    );
+    expect(result.deliveredTo).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Index rebuild
 // ---------------------------------------------------------------------------
 

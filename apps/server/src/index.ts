@@ -13,12 +13,11 @@ import { PulseStore } from './services/pulse/pulse-store.js';
 import { SchedulerService } from './services/pulse/scheduler-service.js';
 import { createPulseRouter } from './routes/pulse.js';
 import { setPulseEnabled } from './services/pulse/pulse-state.js';
-import { RelayCore, AdapterRegistry } from '@dorkos/relay';
+import { RelayCore, AdapterRegistry, SignalEmitter } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
 import { setRelayEnabled } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import { TraceStore } from './services/relay/trace-store.js';
-import { MessageReceiver } from './services/relay/message-receiver.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshEnabled } from './services/mesh/mesh-state.js';
@@ -33,7 +32,6 @@ let schedulerService: SchedulerService | null = null;
 let relayCore: RelayCore | undefined;
 let adapterManager: AdapterManager | undefined;
 let traceStore: TraceStore | undefined;
-let messageReceiver: MessageReceiver | undefined;
 let meshCore: MeshCore | undefined;
 
 async function start() {
@@ -76,26 +74,20 @@ async function start() {
     await relayCore.registerEndpoint('relay.system.console');
     logger.info('[Relay] RelayCore initialized');
 
-    // Initialize adapter lifecycle manager
-    const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
-    adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath);
-    await adapterManager.initialize();
-    logger.info('[Relay] AdapterManager initialized');
-
     // Initialize trace store (shares the Relay SQLite database)
     const dbPath = path.join(dataDir, 'index.db');
     traceStore = new TraceStore({ dbPath });
     logger.info('[Relay] TraceStore initialized');
 
-    // Initialize message receiver (bridges Relay -> AgentManager)
-    messageReceiver = new MessageReceiver({
-      relayCore,
+    // Initialize adapter lifecycle manager (includes ClaudeCodeAdapter for agent dispatch)
+    const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
+    adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
       agentManager,
       traceStore,
-      defaultCwd: process.env.DORKOS_DEFAULT_CWD ?? process.cwd(),
+      pulseStore,
     });
-    messageReceiver.start();
-    logger.info('[Relay] MessageReceiver started');
+    await adapterManager.initialize();
+    logger.info('[Relay] AdapterManager initialized');
   }
 
   // Initialize Mesh if enabled
@@ -104,11 +96,25 @@ async function start() {
 
   if (meshEnabled) {
     const dorkHome = process.env.DORK_HOME || path.join(os.homedir(), '.dork');
+
+    // Wire SignalEmitter when both Mesh and Relay are enabled so MeshCore can
+    // broadcast lifecycle signals. When Relay is absent, signalEmitter stays
+    // undefined and MeshCore silently skips signal emission.
+    const meshSignalEmitter = relayCore ? new SignalEmitter() : undefined;
+
     meshCore = new MeshCore({
       dataDir: path.join(dorkHome, 'mesh'),
       relayCore,
+      signalEmitter: meshSignalEmitter,
     });
     logger.info('[Mesh] MeshCore initialized');
+
+    // Subscribe to lifecycle signals for diagnostic logging
+    if (meshSignalEmitter) {
+      meshSignalEmitter.subscribe('mesh.agent.lifecycle.>', (subject, signal) => {
+        logger.info(`[mesh] lifecycle: ${signal.state}`, { subject, data: signal.data });
+      });
+    }
   }
 
   // Create MCP tool server and inject into AgentManager
@@ -218,10 +224,6 @@ async function shutdown() {
   }
   if (schedulerService) {
     await schedulerService.stop();
-  }
-  // Stop message receiver first — prevents new dispatches during shutdown
-  if (messageReceiver) {
-    messageReceiver.stop();
   }
   // Stop adapters before RelayCore — adapters may need to drain in-flight messages
   if (adapterManager) {

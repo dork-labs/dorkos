@@ -2,7 +2,7 @@
 title: "Mesh Core Library"
 spec: 1
 order: 1
-status: not-started
+status: done
 blockedBy: []
 blocks: [2]
 parallelWith: []

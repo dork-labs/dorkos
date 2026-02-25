@@ -2,7 +2,7 @@
 title: "Mesh Observability"
 spec: 4
 order: 3
-status: not-started
+status: in-progress
 blockedBy: [2]
 blocks: []
 parallelWith: [3]

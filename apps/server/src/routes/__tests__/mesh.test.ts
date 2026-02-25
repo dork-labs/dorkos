@@ -17,6 +17,16 @@ function createMockMeshCore() {
     get: vi.fn().mockReturnValue(undefined),
     listDenied: vi.fn().mockReturnValue([]),
     update: vi.fn().mockReturnValue(undefined),
+    getStatus: vi.fn().mockReturnValue({
+      totalAgents: 0,
+      activeCount: 0,
+      inactiveCount: 0,
+      staleCount: 0,
+      byRuntime: {},
+      byProject: {},
+    }),
+    getAgentHealth: vi.fn().mockReturnValue(undefined),
+    updateLastSeen: vi.fn(),
     close: vi.fn(),
   };
 }
@@ -402,6 +412,133 @@ describe('Mesh routes', () => {
 
       expect(res.status).toBe(200);
       expect(meshCore.undeny).toHaveBeenCalledWith(path);
+    });
+  });
+
+  // --- GET /status ---
+
+  describe('GET /api/mesh/status', () => {
+    it('returns aggregate mesh status', async () => {
+      const mockStatus = {
+        totalAgents: 3,
+        activeCount: 2,
+        inactiveCount: 1,
+        staleCount: 0,
+        byRuntime: { 'claude-code': 2, cursor: 1 },
+        byProject: { '/home/user/proj-a': 1, '/home/user/proj-b': 2 },
+      };
+      meshCore.getStatus.mockReturnValue(mockStatus);
+
+      const res = await request(app).get('/api/mesh/status');
+
+      expect(res.status).toBe(200);
+      expect(res.body.totalAgents).toBe(3);
+      expect(res.body.activeCount).toBe(2);
+      expect(res.body.inactiveCount).toBe(1);
+      expect(res.body.staleCount).toBe(0);
+      expect(res.body.byRuntime['claude-code']).toBe(2);
+      expect(meshCore.getStatus).toHaveBeenCalled();
+    });
+
+    it('returns zero counts when no agents registered', async () => {
+      const res = await request(app).get('/api/mesh/status');
+
+      expect(res.status).toBe(200);
+      expect(res.body.totalAgents).toBe(0);
+      expect(res.body.activeCount).toBe(0);
+    });
+  });
+
+  // --- GET /agents/:id/health ---
+
+  describe('GET /api/mesh/agents/:id/health', () => {
+    it('returns health snapshot for existing agent', async () => {
+      const mockHealth = {
+        agentId: 'agent-1',
+        name: 'Test Agent',
+        status: 'active',
+        lastSeenAt: '2026-02-25T00:00:00Z',
+        lastSeenEvent: 'heartbeat',
+        registeredAt: '2026-02-25T00:00:00Z',
+        runtime: 'claude-code',
+        capabilities: ['code'],
+      };
+      meshCore.getAgentHealth.mockReturnValue(mockHealth);
+
+      const res = await request(app).get('/api/mesh/agents/agent-1/health');
+
+      expect(res.status).toBe(200);
+      expect(res.body.agentId).toBe('agent-1');
+      expect(res.body.status).toBe('active');
+      expect(res.body.lastSeenEvent).toBe('heartbeat');
+      expect(meshCore.getAgentHealth).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('returns 404 for unknown agent', async () => {
+      meshCore.getAgentHealth.mockReturnValue(undefined);
+
+      const res = await request(app).get('/api/mesh/agents/nonexistent/health');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Agent not found');
+    });
+  });
+
+  // --- POST /agents/:id/heartbeat ---
+
+  describe('POST /api/mesh/agents/:id/heartbeat', () => {
+    it('calls updateLastSeen with heartbeat event and returns success', async () => {
+      const mockHealth = {
+        agentId: 'agent-1',
+        name: 'Test Agent',
+        status: 'active',
+        lastSeenAt: null,
+        lastSeenEvent: null,
+        registeredAt: '2026-02-25T00:00:00Z',
+        runtime: 'claude-code',
+        capabilities: [],
+      };
+      meshCore.getAgentHealth.mockReturnValue(mockHealth);
+
+      const res = await request(app)
+        .post('/api/mesh/agents/agent-1/heartbeat')
+        .send({ event: 'message_sent' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(meshCore.updateLastSeen).toHaveBeenCalledWith('agent-1', 'message_sent');
+    });
+
+    it('defaults to "heartbeat" event when no body provided', async () => {
+      const mockHealth = {
+        agentId: 'agent-1',
+        name: 'Test Agent',
+        status: 'inactive',
+        lastSeenAt: null,
+        lastSeenEvent: null,
+        registeredAt: '2026-02-25T00:00:00Z',
+        runtime: 'claude-code',
+        capabilities: [],
+      };
+      meshCore.getAgentHealth.mockReturnValue(mockHealth);
+
+      const res = await request(app).post('/api/mesh/agents/agent-1/heartbeat').send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(meshCore.updateLastSeen).toHaveBeenCalledWith('agent-1', 'heartbeat');
+    });
+
+    it('returns 404 for unknown agent', async () => {
+      meshCore.getAgentHealth.mockReturnValue(undefined);
+
+      const res = await request(app)
+        .post('/api/mesh/agents/nonexistent/heartbeat')
+        .send({ event: 'heartbeat' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Agent not found');
+      expect(meshCore.updateLastSeen).not.toHaveBeenCalled();
     });
   });
 });

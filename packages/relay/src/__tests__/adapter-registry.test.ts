@@ -16,7 +16,7 @@ function createMockAdapter(overrides: Partial<RelayAdapter> = {}): RelayAdapter 
     displayName: 'Mock Adapter',
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
-    deliver: vi.fn().mockResolvedValue(undefined),
+    deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
     getStatus: vi.fn().mockReturnValue(status),
     ...overrides,
   };
@@ -135,7 +135,7 @@ describe('AdapterRegistry', () => {
     const delivered = await registry.deliver(subject, { ...envelope, subject });
 
     expect(delivered).toBe(true);
-    expect(adapter.deliver).toHaveBeenCalledWith(subject, expect.objectContaining({ subject }));
+    expect(adapter.deliver).toHaveBeenCalledWith(subject, expect.objectContaining({ subject }), undefined);
   });
 
   it('deliver() returns false when no adapter matches', async () => {

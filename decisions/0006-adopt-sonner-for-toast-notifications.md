@@ -1,7 +1,7 @@
 ---
 number: 6
 title: Adopt Sonner for Toast Notifications
-status: draft
+status: proposed
 created: 2026-02-21
 spec: pulse-ui-overhaul
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: pulse-ui-overhaul)
+Proposed (auto-extracted from spec: pulse-ui-overhaul)
 
 ## Context
 

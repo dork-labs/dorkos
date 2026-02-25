@@ -1,6 +1,6 @@
 import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
 import type { TraceSpan, DeliveryMetrics } from '@dorkos/shared/relay-schemas';
-import type { AgentManifest, DiscoveryCandidate, DenialRecord } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, DiscoveryCandidate, DenialRecord, AgentHealth, MeshStatus } from '@dorkos/shared/mesh-schemas';
 import type {
   StreamEvent,
   Session,
@@ -364,6 +364,19 @@ export class DirectTransport implements Transport {
   }
 
   async clearMeshDenial(_path: string): Promise<{ success: boolean }> {
+    throw new Error('Mesh is not supported in embedded mode');
+  }
+
+  // Mesh observability is not supported in embedded mode
+  async getMeshStatus(): Promise<MeshStatus> {
+    throw new Error('Mesh is not supported in embedded mode');
+  }
+
+  async getMeshAgentHealth(_id: string): Promise<AgentHealth> {
+    throw new Error('Mesh is not supported in embedded mode');
+  }
+
+  async sendMeshHeartbeat(_id: string, _event?: string): Promise<{ success: boolean }> {
     throw new Error('Mesh is not supported in embedded mode');
   }
 }

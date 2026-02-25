@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { AgentRegistry } from '../agent-registry.js';
-import type { AgentRegistryEntry } from '../agent-registry.js';
+import type { AgentRegistryEntry, AgentHealthEntry } from '../agent-registry.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,6 +21,8 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     projectPath: '/home/user/projects/backend',
+    namespace: '',
+    scanRoot: '',
     ...overrides,
   };
 }
@@ -235,5 +237,88 @@ describe('database getter', () => {
     expect(db).toBeDefined();
     const mode = db.pragma('journal_mode', { simple: true });
     expect(mode).toBe('wal');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Health Tracking (v2 migration)
+// ---------------------------------------------------------------------------
+
+describe('health tracking', () => {
+  it('migrates from v1 to v2 adding health columns', async () => {
+    const testDbPath = path.join(tmpDir, 'migrate-test.db');
+    const testRegistry = new AgentRegistry(testDbPath);
+    testRegistry.insert(makeEntry());
+    const entry = testRegistry.getWithHealth('01JKABC00001');
+    expect(entry).toBeDefined();
+    expect(entry!.lastSeenAt).toBeNull();
+    expect(entry!.healthStatus).toBe('stale');
+    testRegistry.close();
+  });
+
+  it('updateHealth() sets last_seen_at and last_seen_event', () => {
+    registry.insert(makeEntry());
+    const now = new Date().toISOString();
+    const updated = registry.updateHealth('01JKABC00001', now, 'heartbeat');
+    expect(updated).toBe(true);
+    const entry = registry.getWithHealth('01JKABC00001');
+    expect(entry!.lastSeenAt).toBe(now);
+    expect(entry!.lastSeenEvent).toBe('heartbeat');
+  });
+
+  it('getWithHealth() computes active status for recent timestamp', () => {
+    registry.insert(makeEntry());
+    const recentTime = new Date(Date.now() - 60 * 1000).toISOString(); // 1 min ago
+    registry.updateHealth('01JKABC00001', recentTime, 'message');
+    const entry = registry.getWithHealth('01JKABC00001');
+    expect(entry!.healthStatus).toBe('active');
+  });
+
+  it('getWithHealth() computes inactive status for 10-minute-old timestamp', () => {
+    registry.insert(makeEntry());
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    registry.updateHealth('01JKABC00001', tenMinAgo, 'message');
+    const entry = registry.getWithHealth('01JKABC00001');
+    expect(entry!.healthStatus).toBe('inactive');
+  });
+
+  it('getWithHealth() computes stale status for 60-minute-old timestamp', () => {
+    registry.insert(makeEntry());
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    registry.updateHealth('01JKABC00001', oneHourAgo, 'old_event');
+    const entry = registry.getWithHealth('01JKABC00001');
+    expect(entry!.healthStatus).toBe('stale');
+  });
+
+  it('getWithHealth() computes stale for null last_seen_at', () => {
+    registry.insert(makeEntry());
+    const entry = registry.getWithHealth('01JKABC00001');
+    expect(entry!.lastSeenAt).toBeNull();
+    expect(entry!.healthStatus).toBe('stale');
+  });
+
+  it('getAggregateStats() returns correct counts', () => {
+    const agent1 = makeEntry({ id: 'agent1', projectPath: '/p/1' });
+    const agent2 = makeEntry({ id: 'agent2', projectPath: '/p/2' });
+    const agent3 = makeEntry({ id: 'agent3', projectPath: '/p/3' });
+    registry.insert(agent1);
+    registry.insert(agent2);
+    registry.insert(agent3);
+    registry.updateHealth('agent1', new Date().toISOString(), 'recent'); // active
+    registry.updateHealth('agent2', new Date(Date.now() - 10 * 60 * 1000).toISOString(), 'old'); // inactive
+    // agent3 has no last_seen_at -> stale
+    const stats = registry.getAggregateStats();
+    expect(stats.totalAgents).toBe(3);
+    expect(stats.activeCount).toBe(1);
+    expect(stats.inactiveCount).toBe(1);
+    expect(stats.staleCount).toBe(1);
+  });
+
+  it('listWithHealth() includes healthStatus for all agents', () => {
+    registry.insert(makeEntry());
+    registry.updateHealth('01JKABC00001', new Date().toISOString(), 'test');
+    const entries = registry.listWithHealth();
+    expect(entries.length).toBe(1);
+    expect(entries[0]!.healthStatus).toBe('active');
   });
 });

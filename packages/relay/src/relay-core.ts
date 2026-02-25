@@ -487,6 +487,42 @@ export class RelayCore {
     return this.deadLetterQueue.listDead(options);
   }
 
+  // --- Access Rule Management ---
+
+  /**
+   * Add an access control rule.
+   *
+   * Delegates to the internal {@link AccessControl} module, which
+   * persists the rule to `access-rules.json` on disk.
+   *
+   * @param rule - The access rule to add (from, to, action, priority)
+   */
+  addAccessRule(rule: import('@dorkos/shared/relay-schemas').RelayAccessRule): void {
+    this.assertOpen();
+    this.accessControl.addRule(rule);
+  }
+
+  /**
+   * Remove the first access control rule matching the given patterns.
+   *
+   * @param from - The `from` pattern to match
+   * @param to - The `to` pattern to match
+   */
+  removeAccessRule(from: string, to: string): void {
+    this.assertOpen();
+    this.accessControl.removeRule(from, to);
+  }
+
+  /**
+   * List all access control rules, sorted by priority (highest first).
+   *
+   * @returns A shallow copy of the current rules array
+   */
+  listAccessRules(): import('@dorkos/shared/relay-schemas').RelayAccessRule[] {
+    this.assertOpen();
+    return this.accessControl.listRules();
+  }
+
   // --- Index ---
 
   /**

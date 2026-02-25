@@ -11,13 +11,25 @@ import { mkdirSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { monotonicFactory } from 'ulidx';
-import type { AgentManifest, AgentRuntime, DenialRecord, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
-import type { RelayCore } from '@dorkos/relay';
+import type {
+  AgentManifest,
+  AgentRuntime,
+  AgentHealth,
+  AgentHealthStatus,
+  DenialRecord,
+  DiscoveryCandidate,
+  MeshInspect,
+  MeshStatus,
+} from '@dorkos/shared/mesh-schemas';
+import type { RelayCore, SignalEmitter } from '@dorkos/relay';
 import type { DiscoveryStrategy } from './discovery-strategy.js';
 import { AgentRegistry } from './agent-registry.js';
 import type { AgentRegistryEntry } from './agent-registry.js';
 import { DenialList } from './denial-list.js';
 import { RelayBridge } from './relay-bridge.js';
+import { TopologyManager } from './topology.js';
+import type { TopologyView, CrossNamespaceRule } from './topology.js';
+import { resolveNamespace } from './namespace-resolver.js';
 import { ClaudeCodeStrategy } from './strategies/claude-code-strategy.js';
 import { CursorStrategy } from './strategies/cursor-strategy.js';
 import { CodexStrategy } from './strategies/codex-strategy.js';
@@ -41,6 +53,10 @@ export interface MeshOptions {
   relayCore?: RelayCore;
   /** Discovery strategies. Default: [ClaudeCodeStrategy, CursorStrategy, CodexStrategy]. */
   strategies?: DiscoveryStrategy[];
+  /** Default scan root for namespace derivation. */
+  defaultScanRoot?: string;
+  /** Optional SignalEmitter for lifecycle event broadcasting (graceful no-op when absent). */
+  signalEmitter?: SignalEmitter;
 }
 
 // === MeshCore ===
@@ -71,7 +87,10 @@ export class MeshCore {
   private readonly registry: AgentRegistry;
   private readonly denialList: DenialList;
   private readonly relayBridge: RelayBridge;
+  private readonly topology: TopologyManager;
   private readonly strategies: DiscoveryStrategy[];
+  private readonly defaultScanRoot: string;
+  private readonly signalEmitter: SignalEmitter | undefined;
   private readonly generateUlid = monotonicFactory();
 
   /**
@@ -88,7 +107,10 @@ export class MeshCore {
 
     this.registry = new AgentRegistry(dbPath);
     this.denialList = new DenialList(this.registry.database);
-    this.relayBridge = new RelayBridge(options.relayCore);
+    this.relayBridge = new RelayBridge(options.relayCore, options.signalEmitter);
+    this.topology = new TopologyManager(this.registry, this.relayBridge, options.relayCore);
+    this.defaultScanRoot = options.defaultScanRoot ?? os.homedir();
+    this.signalEmitter = options.signalEmitter;
     this.strategies = options.strategies ?? [
       new ClaudeCodeStrategy(),
       new CursorStrategy(),
@@ -144,15 +166,19 @@ export class MeshCore {
    * @param candidate - A DiscoveryCandidate yielded from discover()
    * @param overrides - Optional manifest field overrides
    * @param approver - Identifier of the entity approving registration (default: "mesh")
+   * @param scanRoot - Root directory for namespace derivation (default: options.defaultScanRoot)
    * @returns The created AgentManifest
    */
   async register(
     candidate: DiscoveryCandidate,
     overrides?: Partial<AgentManifest>,
     approver = DEFAULT_REGISTRAR,
+    scanRoot?: string,
   ): Promise<AgentManifest> {
     const id = this.generateUlid();
     const now = new Date().toISOString();
+    const effectiveScanRoot = scanRoot ?? this.defaultScanRoot;
+    const namespace = resolveNamespace(candidate.path, effectiveScanRoot, overrides?.namespace);
 
     const manifest: AgentManifest = {
       id,
@@ -162,16 +188,22 @@ export class MeshCore {
       capabilities: overrides?.capabilities ?? candidate.hints.inferredCapabilities ?? [],
       behavior: overrides?.behavior ?? { responseMode: 'always' },
       budget: overrides?.budget ?? { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
+      namespace,
       registeredAt: overrides?.registeredAt ?? now,
       registeredBy: overrides?.registeredBy ?? approver,
     };
 
     await writeManifest(candidate.path, manifest);
 
-    const entry: AgentRegistryEntry = { ...manifest, projectPath: candidate.path };
+    const entry: AgentRegistryEntry = {
+      ...manifest,
+      projectPath: candidate.path,
+      namespace,
+      scanRoot: effectiveScanRoot,
+    };
     this.registry.insert(entry);
 
-    await this.relayBridge.registerAgent(manifest, candidate.path);
+    await this.relayBridge.registerAgent(manifest, candidate.path, namespace, effectiveScanRoot);
 
     return manifest;
   }
@@ -182,15 +214,19 @@ export class MeshCore {
    * @param projectPath - Absolute path to the agent's project directory
    * @param partial - Manifest fields to set (name, runtime are required)
    * @param approver - Identifier of the entity approving registration (default: "mesh")
+   * @param scanRoot - Root directory for namespace derivation (default: options.defaultScanRoot)
    * @returns The created AgentManifest
    */
   async registerByPath(
     projectPath: string,
     partial: Partial<AgentManifest> & { name: string; runtime: AgentRuntime },
     approver = DEFAULT_REGISTRAR,
+    scanRoot?: string,
   ): Promise<AgentManifest> {
     const id = this.generateUlid();
     const now = new Date().toISOString();
+    const effectiveScanRoot = scanRoot ?? this.defaultScanRoot;
+    const namespace = resolveNamespace(projectPath, effectiveScanRoot, partial.namespace);
 
     const manifest: AgentManifest = {
       id,
@@ -200,16 +236,22 @@ export class MeshCore {
       capabilities: partial.capabilities ?? [],
       behavior: partial.behavior ?? { responseMode: 'always' },
       budget: partial.budget ?? { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
+      namespace,
       registeredAt: partial.registeredAt ?? now,
       registeredBy: partial.registeredBy ?? approver,
     };
 
     await writeManifest(projectPath, manifest);
 
-    const entry: AgentRegistryEntry = { ...manifest, projectPath };
+    const entry: AgentRegistryEntry = {
+      ...manifest,
+      projectPath,
+      namespace,
+      scanRoot: effectiveScanRoot,
+    };
     this.registry.insert(entry);
 
-    await this.relayBridge.registerAgent(manifest, projectPath);
+    await this.relayBridge.registerAgent(manifest, projectPath, namespace, effectiveScanRoot);
 
     return manifest;
   }
@@ -263,7 +305,7 @@ export class MeshCore {
     if (!updated) return undefined;
     const entry = this.registry.get(agentId);
     if (!entry) return undefined;
-    const { projectPath: _path, ...manifest } = entry;
+    const { projectPath: _p, namespace: _n, scanRoot: _s, ...manifest } = entry;
     return manifest;
   }
 
@@ -281,11 +323,20 @@ export class MeshCore {
     const agent = this.registry.get(agentId);
     if (!agent) return;
 
-    // Derive the subject that was registered in Relay
-    const subject = `relay.agent.${path.basename(agent.projectPath)}.${agent.id}`;
-    await this.relayBridge.unregisterAgent(subject);
+    const namespace = agent.namespace;
+    // Use namespace for subject when available, fall back to project basename
+    const subject = `relay.agent.${namespace || path.basename(agent.projectPath)}.${agent.id}`;
+    await this.relayBridge.unregisterAgent(subject, agent.id, agent.name);
 
     this.registry.remove(agentId);
+
+    // Clean up namespace rules if this was the last agent in the namespace
+    if (namespace) {
+      const remaining = this.registry.listByNamespace(namespace);
+      if (remaining.length === 0) {
+        this.relayBridge.cleanupNamespaceRules(namespace);
+      }
+    }
   }
 
   // --- Query ---
@@ -293,11 +344,30 @@ export class MeshCore {
   /**
    * List all registered agents, optionally filtered by runtime or capability.
    *
-   * @param filters - Optional runtime and/or capability filters
+   * When `callerNamespace` is provided, uses TopologyManager for namespace-scoped
+   * filtering with invisible boundary enforcement. Pass '*' for admin view.
+   *
+   * @param filters - Optional runtime, capability, and/or callerNamespace filters
    * @returns Array of agent manifests (projectPath stripped for public API)
    */
-  list(filters?: { runtime?: AgentRuntime; capability?: string }): AgentManifest[] {
-    return this.registry.list(filters).map(({ projectPath: _path, ...manifest }) => manifest);
+  list(filters?: { runtime?: AgentRuntime; capability?: string; callerNamespace?: string }): AgentManifest[] {
+    if (filters?.callerNamespace) {
+      // Delegate to TopologyManager for namespace-scoped visibility
+      const view = this.topology.getTopology(filters.callerNamespace);
+      let agents = view.namespaces.flatMap((ns) => ns.agents);
+
+      // Apply runtime/capability filters on top of topology filtering
+      if (filters.runtime) {
+        agents = agents.filter((a) => a.runtime === filters.runtime);
+      }
+      if (filters.capability) {
+        agents = agents.filter((a) => a.capabilities.includes(filters.capability!));
+      }
+      return agents;
+    }
+
+    const entries = this.registry.list(filters);
+    return entries.map(({ projectPath: _p, namespace: _n, scanRoot: _s, ...manifest }) => manifest);
   }
 
   /**
@@ -309,7 +379,7 @@ export class MeshCore {
   get(agentId: string): AgentManifest | undefined {
     const entry = this.registry.get(agentId);
     if (!entry) return undefined;
-    const { projectPath: _path, ...manifest } = entry;
+    const { projectPath: _p, namespace: _n, scanRoot: _s, ...manifest } = entry;
     return manifest;
   }
 
@@ -322,8 +392,172 @@ export class MeshCore {
   getByPath(projectPath: string): AgentManifest | undefined {
     const entry = this.registry.getByPath(projectPath);
     if (!entry) return undefined;
-    const { projectPath: _path, ...manifest } = entry;
+    const { projectPath: _p, namespace: _n, scanRoot: _s, ...manifest } = entry;
     return manifest;
+  }
+
+  // --- Topology ---
+
+  /**
+   * Get the topology view filtered by caller's namespace access.
+   *
+   * @param callerNamespace - The namespace of the requesting agent, or '*' for admin view
+   * @returns Topology view with accessible namespaces and cross-namespace rules
+   */
+  getTopology(callerNamespace: string): TopologyView {
+    return this.topology.getTopology(callerNamespace);
+  }
+
+  /**
+   * Get which agents a specific agent can reach.
+   *
+   * @param agentId - The ULID of the agent
+   * @returns Array of reachable agent manifests, or undefined if agent not found
+   */
+  getAgentAccess(agentId: string): AgentManifest[] | undefined {
+    return this.topology.getAgentAccess(agentId);
+  }
+
+  /**
+   * Add a cross-namespace allow rule via Relay access control.
+   *
+   * @param sourceNamespace - The namespace to allow messages from
+   * @param targetNamespace - The namespace to allow messages to
+   */
+  allowCrossNamespace(sourceNamespace: string, targetNamespace: string): void {
+    this.topology.allowCrossNamespace(sourceNamespace, targetNamespace);
+  }
+
+  /**
+   * Remove a cross-namespace allow rule (reverts to default-deny).
+   *
+   * @param sourceNamespace - Source namespace
+   * @param targetNamespace - Target namespace
+   */
+  denyCrossNamespace(sourceNamespace: string, targetNamespace: string): void {
+    this.topology.denyCrossNamespace(sourceNamespace, targetNamespace);
+  }
+
+  /**
+   * List all cross-namespace access rules.
+   *
+   * @returns Array of cross-namespace rules extracted from Relay access control
+   */
+  listCrossNamespaceRules(): CrossNamespaceRule[] {
+    return this.topology.listCrossNamespaceRules();
+  }
+
+  // --- Health & Observability ---
+
+  /**
+   * Update the last-seen timestamp and event for an agent.
+   *
+   * Captures the previous health status before the update and emits a
+   * `mesh.agent.lifecycle.health_changed` signal via the SignalEmitter if
+   * the status transitions (e.g. stale → active). When no SignalEmitter is
+   * configured the update still persists; signal emission is skipped silently.
+   *
+   * @param agentId - The agent's ULID
+   * @param event - Description of the triggering event (e.g. 'heartbeat', 'message_sent')
+   */
+  updateLastSeen(agentId: string, event: string): void {
+    const before = this.registry.getWithHealth(agentId);
+    const previousStatus: AgentHealthStatus | undefined = before?.healthStatus;
+
+    this.registry.updateHealth(agentId, new Date().toISOString(), event);
+
+    if (this.signalEmitter && before !== undefined && previousStatus !== undefined) {
+      const after = this.registry.getWithHealth(agentId);
+      const currentStatus = after?.healthStatus;
+      if (currentStatus !== undefined && previousStatus !== currentStatus) {
+        const subject = 'mesh.agent.lifecycle.health_changed';
+        this.signalEmitter.emit(subject, {
+          type: 'progress',
+          state: 'health_changed',
+          endpointSubject: subject,
+          timestamp: new Date().toISOString(),
+          data: {
+            agentId,
+            agentName: before.name,
+            event: 'health_changed',
+            previousStatus,
+            currentStatus,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    }
+  }
+
+  /**
+   * Get the health status for a single agent.
+   *
+   * @param agentId - The agent's ULID
+   * @returns AgentHealth snapshot, or undefined if the agent is not found
+   */
+  getAgentHealth(agentId: string): AgentHealth | undefined {
+    const entry = this.registry.getWithHealth(agentId);
+    if (!entry) return undefined;
+    return {
+      agentId: entry.id,
+      name: entry.name,
+      status: entry.healthStatus,
+      lastSeenAt: entry.lastSeenAt,
+      lastSeenEvent: entry.lastSeenEvent,
+      registeredAt: entry.registeredAt,
+      runtime: entry.runtime,
+      capabilities: entry.capabilities,
+    };
+  }
+
+  /**
+   * Get aggregate mesh status — counts by health status plus runtime and project groupings.
+   *
+   * @returns MeshStatus snapshot with live counts and groupings
+   */
+  getStatus(): MeshStatus {
+    const stats = this.registry.getAggregateStats();
+    const agents = this.registry.listWithHealth();
+
+    const byRuntime: Record<string, number> = {};
+    const byProject: Record<string, number> = {};
+
+    for (const agent of agents) {
+      byRuntime[agent.runtime] = (byRuntime[agent.runtime] ?? 0) + 1;
+      const project = agent.projectPath || 'unknown';
+      byProject[project] = (byProject[project] ?? 0) + 1;
+    }
+
+    return {
+      totalAgents: stats.totalAgents,
+      activeCount: stats.activeCount,
+      inactiveCount: stats.inactiveCount,
+      staleCount: stats.staleCount,
+      byRuntime,
+      byProject,
+    };
+  }
+
+  /**
+   * Get a detailed inspection of a single agent combining manifest, health, and relay info.
+   *
+   * @param agentId - The agent's ULID
+   * @returns MeshInspect snapshot, or undefined if the agent is not found
+   */
+  inspect(agentId: string): MeshInspect | undefined {
+    const entry = this.registry.get(agentId);
+    if (!entry) return undefined;
+
+    const health = this.getAgentHealth(agentId);
+    if (!health) return undefined;
+
+    const { projectPath, namespace, scanRoot: _s, ...manifest } = entry;
+
+    // Derive relay subject using the same pattern as registration
+    const ns = namespace || path.basename(projectPath);
+    const relaySubject = `relay.agent.${ns}.${agentId}`;
+
+    return { agent: manifest, health, relaySubject };
   }
 
   /** Close the database connection. */
@@ -343,8 +577,15 @@ export class MeshCore {
     // Skip if already registered at this path
     if (this.registry.getByPath(projectPath)) return;
 
-    const entry: AgentRegistryEntry = { ...manifest, projectPath };
+    const namespace = manifest.namespace ?? '';
+    const entry: AgentRegistryEntry = {
+      ...manifest,
+      projectPath,
+      namespace,
+      scanRoot: this.defaultScanRoot,
+    };
     this.registry.insert(entry);
-    await this.relayBridge.registerAgent(manifest, projectPath);
+    await this.relayBridge.registerAgent(manifest, projectPath, namespace, this.defaultScanRoot);
   }
+
 }

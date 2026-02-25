@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Loader2, Network, Plus, Search, Trash2, X } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/layers/shared/ui';
 import { Badge } from '@/layers/shared/ui/badge';
@@ -10,6 +10,13 @@ import {
   useUnregisterAgent,
 } from '@/layers/entities/mesh';
 import type { DiscoveryCandidate, AgentManifest, DenialRecord } from '@dorkos/shared/mesh-schemas';
+import { MeshStatsHeader } from './MeshStatsHeader';
+import { AgentHealthDetail } from './AgentHealthDetail';
+import { TopologyPanel } from './TopologyPanel';
+
+const LazyTopologyGraph = lazy(() =>
+  import('./TopologyGraph').then((m) => ({ default: m.TopologyGraph })),
+);
 
 // -- Discovery Tab --
 
@@ -211,13 +218,14 @@ function DeniedTab({ denied, isLoading }: DeniedTabProps) {
 
 // -- Main Panel --
 
-/** Main Mesh panel — tabs for Discovery, Agents, and Denied, with disabled/loading states. */
+/** Main Mesh panel — tabs for Topology, Discovery, Agents, and Denied, with disabled/loading states. */
 export function MeshPanel() {
   const meshEnabled = useMeshEnabled();
   const { data: agentsResult, isLoading: agentsLoading } = useRegisteredAgents(undefined, meshEnabled);
   const agents = agentsResult?.agents ?? [];
   const { data: deniedResult, isLoading: deniedLoading } = useDeniedAgents(meshEnabled);
   const denied = deniedResult?.denied ?? [];
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   if (!meshEnabled) {
     return (
@@ -237,12 +245,34 @@ export function MeshPanel() {
   }
 
   return (
-    <Tabs defaultValue="discovery" className="flex h-full flex-col">
+    <Tabs defaultValue="topology" className="flex h-full flex-col">
+      <MeshStatsHeader />
       <TabsList className="mx-4 mt-3 shrink-0">
+        <TabsTrigger value="topology">Topology</TabsTrigger>
         <TabsTrigger value="discovery">Discovery</TabsTrigger>
         <TabsTrigger value="agents">Agents</TabsTrigger>
         <TabsTrigger value="denied">Denied</TabsTrigger>
       </TabsList>
+
+      <TabsContent value="topology" className="flex-1 flex overflow-hidden">
+        <div className="flex-1">
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Loading topology...
+              </div>
+            }
+          >
+            <LazyTopologyGraph onSelectAgent={setSelectedAgentId} />
+          </Suspense>
+        </div>
+        {selectedAgentId && (
+          <AgentHealthDetail
+            agentId={selectedAgentId}
+            onClose={() => setSelectedAgentId(null)}
+          />
+        )}
+      </TabsContent>
 
       <TabsContent value="discovery" className="min-h-0 flex-1 overflow-y-auto">
         <DiscoveryTab />

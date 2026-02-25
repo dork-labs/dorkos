@@ -21,7 +21,16 @@ import type {
 } from '@dorkos/shared/types';
 import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
 import type { TraceSpan, DeliveryMetrics } from '@dorkos/shared/relay-schemas';
-import type { AgentManifest, DiscoveryCandidate, DenialRecord } from '@dorkos/shared/mesh-schemas';
+import type {
+  AgentManifest,
+  DiscoveryCandidate,
+  DenialRecord,
+  AgentHealth,
+  MeshStatus,
+  TopologyView,
+  UpdateAccessRuleRequest,
+  CrossNamespaceRule,
+} from '@dorkos/shared/mesh-schemas';
 
 async function fetchJSON<T>(baseUrl: string, url: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${baseUrl}${url}`, {
@@ -477,5 +486,40 @@ export class HttpTransport implements Transport {
 
   clearMeshDenial(path: string): Promise<{ success: boolean }> {
     return fetchJSON(this.baseUrl, `/mesh/denied/${encodeURIComponent(path)}`, { method: 'DELETE' });
+  }
+
+  // --- Mesh Observability ---
+
+  getMeshStatus(): Promise<MeshStatus> {
+    return fetchJSON(this.baseUrl, '/mesh/status');
+  }
+
+  getMeshAgentHealth(id: string): Promise<AgentHealth> {
+    return fetchJSON(this.baseUrl, `/mesh/agents/${id}/health`);
+  }
+
+  sendMeshHeartbeat(id: string, event?: string): Promise<{ success: boolean }> {
+    return fetchJSON(this.baseUrl, `/mesh/agents/${id}/heartbeat`, {
+      method: 'POST',
+      body: JSON.stringify({ ...(event && { event }) }),
+    });
+  }
+
+  // --- Mesh Topology ---
+
+  getMeshTopology(namespace?: string): Promise<TopologyView> {
+    const qs = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    return fetchJSON(this.baseUrl, `/mesh/topology${qs}`);
+  }
+
+  updateMeshAccessRule(body: UpdateAccessRuleRequest): Promise<CrossNamespaceRule> {
+    return fetchJSON(this.baseUrl, '/mesh/topology/access', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  getMeshAgentAccess(agentId: string): Promise<{ rules: CrossNamespaceRule[] }> {
+    return fetchJSON(this.baseUrl, `/mesh/agents/${encodeURIComponent(agentId)}/access`);
   }
 }

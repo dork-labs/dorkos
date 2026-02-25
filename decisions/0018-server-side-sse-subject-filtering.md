@@ -1,7 +1,7 @@
 ---
 number: 18
 title: Use Server-Side Subject Filtering for Relay SSE Streams
-status: draft
+status: proposed
 created: 2026-02-24
 spec: relay-server-client-integration
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: relay-server-client-integration)
+Proposed (auto-extracted from spec: relay-server-client-integration)
 
 ## Context
 

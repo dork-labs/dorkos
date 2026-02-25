@@ -2,7 +2,7 @@
 title: "Mesh Network Topology"
 spec: 3
 order: 3
-status: not-started
+status: in-progress
 blockedBy: [2]
 blocks: []
 parallelWith: [4]

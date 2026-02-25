@@ -2,7 +2,7 @@
 title: "Mesh Server & Client Integration"
 spec: 2
 order: 2
-status: not-started
+status: done
 blockedBy: [1]
 blocks: [3, 4]
 parallelWith: []

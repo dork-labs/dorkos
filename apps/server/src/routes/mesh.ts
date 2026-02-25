@@ -1,6 +1,6 @@
 /**
  * Mesh agent discovery and registry routes — discover agents, manage registrations,
- * and maintain the denial list.
+ * maintain the denial list, and query network topology.
  *
  * @module routes/mesh
  */
@@ -12,6 +12,8 @@ import {
   DenyRequestSchema,
   UpdateAgentRequestSchema,
   AgentListQuerySchema,
+  HeartbeatRequestSchema,
+  UpdateAccessRuleRequestSchema,
 } from '@dorkos/shared/mesh-schemas';
 
 /**
@@ -72,6 +74,34 @@ export function createMeshRouter(meshCore: MeshCore): Router {
     }
   });
 
+  // GET /topology — Query the mesh network topology with optional namespace filtering
+  router.get('/topology', (req, res) => {
+    const namespace = (req.query.namespace as string) ?? '*';
+    const topology = meshCore.getTopology(namespace);
+    return res.json(topology);
+  });
+
+  // PUT /topology/access — Create or remove cross-namespace access rules
+  router.put('/topology/access', (req, res) => {
+    const result = UpdateAccessRuleRequestSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+    }
+    const { sourceNamespace, targetNamespace, action } = result.data;
+    if (action === 'allow') {
+      meshCore.allowCrossNamespace(sourceNamespace, targetNamespace);
+    } else {
+      meshCore.denyCrossNamespace(sourceNamespace, targetNamespace);
+    }
+    return res.json({ success: true });
+  });
+
+  // GET /status — Aggregate mesh health status
+  router.get('/status', (_req, res) => {
+    const status = meshCore.getStatus();
+    res.json(status);
+  });
+
   // GET /agents — List agents with optional filters
   router.get('/agents', (req, res) => {
     const result = AgentListQuerySchema.safeParse(req.query);
@@ -80,6 +110,32 @@ export function createMeshRouter(meshCore: MeshCore): Router {
     }
     const agents = meshCore.list(result.data);
     return res.json({ agents });
+  });
+
+  // GET /agents/:id/access — Get reachable agents for a specific agent
+  // MUST come before GET /agents/:id to avoid being swallowed by the param route
+  router.get('/agents/:id/access', (req, res) => {
+    const agents = meshCore.getAgentAccess(req.params.id);
+    if (!agents) return res.status(404).json({ error: 'Agent not found' });
+    return res.json({ agents });
+  });
+
+  // GET /agents/:id/health — Health snapshot for a single agent
+  // MUST come before GET /agents/:id to avoid being swallowed by the param route
+  router.get('/agents/:id/health', (req, res) => {
+    const health = meshCore.getAgentHealth(req.params.id);
+    if (!health) return res.status(404).json({ error: 'Agent not found' });
+    return res.json(health);
+  });
+
+  // POST /agents/:id/heartbeat — Record a heartbeat for an agent
+  router.post('/agents/:id/heartbeat', (req, res) => {
+    const parsed = HeartbeatRequestSchema.safeParse(req.body ?? {});
+    const event = parsed.success ? (parsed.data.event ?? 'heartbeat') : 'heartbeat';
+    const health = meshCore.getAgentHealth(req.params.id);
+    if (!health) return res.status(404).json({ error: 'Agent not found' });
+    meshCore.updateLastSeen(req.params.id, event);
+    return res.json({ success: true });
   });
 
   // GET /agents/:id — Get single agent

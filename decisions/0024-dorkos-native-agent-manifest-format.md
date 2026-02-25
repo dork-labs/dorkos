@@ -1,7 +1,7 @@
 ---
 number: 24
 title: Use DorkOS-Native Agent Manifest at .dork/agent.json
-status: draft
+status: proposed
 created: 2026-02-24
 spec: mesh-core-library
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: mesh-core-library)
+Proposed (auto-extracted from spec: mesh-core-library)
 
 ## Context
 

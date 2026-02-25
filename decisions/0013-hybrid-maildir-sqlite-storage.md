@@ -1,7 +1,7 @@
 ---
 number: 13
 title: Use Hybrid Maildir + SQLite for Relay Storage
-status: draft
+status: proposed
 created: 2026-02-24
 spec: relay-core-library
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: relay-core-library)
+Proposed (auto-extracted from spec: relay-core-library)
 
 ## Context
 

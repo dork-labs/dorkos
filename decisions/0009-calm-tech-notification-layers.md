@@ -1,7 +1,7 @@
 ---
 number: 9
 title: Use Calm Tech Layered Notifications for Background Tasks
-status: draft
+status: proposed
 created: 2026-02-21
 spec: pulse-v2-enhancements
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: pulse-v2-enhancements)
+Proposed (auto-extracted from spec: pulse-v2-enhancements)
 
 ## Context
 

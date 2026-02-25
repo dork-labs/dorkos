@@ -463,14 +463,16 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
 
 /** List registered agents with optional filters. */
 export function createMeshListHandler(deps: McpToolDeps) {
-  return async (args: { runtime?: string; capability?: string }) => {
+  return async (args: { runtime?: string; capability?: string; callerNamespace?: string }) => {
     const err = requireMesh(deps);
     if (err) return err;
+    const hasFilters = args.runtime || args.capability || args.callerNamespace;
     const agents = deps.meshCore!.list(
-      args.runtime || args.capability
+      hasFilters
         ? {
             runtime: args.runtime as 'claude-code' | 'cursor' | 'codex' | 'other' | undefined,
             capability: args.capability,
+            callerNamespace: args.callerNamespace,
           }
         : undefined,
     );
@@ -509,6 +511,39 @@ export function createMeshUnregisterHandler(deps: McpToolDeps) {
       const message = e instanceof Error ? e.message : 'Unregister failed';
       return jsonContent({ error: message, code: 'UNREGISTER_FAILED' }, true);
     }
+  };
+}
+
+/** Get aggregate mesh health status — total agents, active/inactive/stale counts, by runtime, by project. */
+export function createMeshStatusHandler(deps: McpToolDeps) {
+  return async () => {
+    const err = requireMesh(deps);
+    if (err) return err;
+    const status = deps.meshCore!.getStatus();
+    return jsonContent(status);
+  };
+}
+
+/** Inspect a specific agent — manifest, health status, relay endpoint. */
+export function createMeshInspectHandler(deps: McpToolDeps) {
+  return async (args: { agentId: string }) => {
+    const err = requireMesh(deps);
+    if (err) return err;
+    const result = deps.meshCore!.inspect(args.agentId);
+    if (!result) {
+      return { content: [{ type: 'text' as const, text: `Agent ${args.agentId} not found` }], isError: true };
+    }
+    return jsonContent(result);
+  };
+}
+
+/** Query the agent network topology visible to a given namespace. */
+export function createMeshQueryTopologyHandler(deps: McpToolDeps) {
+  return async (args: { namespace?: string }) => {
+    const err = requireMesh(deps);
+    if (err) return err;
+    const topology = deps.meshCore!.getTopology(args.namespace ?? '*');
+    return jsonContent(topology);
   };
 }
 
@@ -698,6 +733,7 @@ export function createDorkOsToolServer(deps: McpToolDeps) {
           {
             runtime: z.string().optional().describe('Filter by runtime'),
             capability: z.string().optional().describe('Filter by capability'),
+            callerNamespace: z.string().optional().describe('Filter by namespace visibility'),
           },
           createMeshListHandler(deps)
         ),
@@ -717,6 +753,28 @@ export function createDorkOsToolServer(deps: McpToolDeps) {
             agentId: z.string().describe('Agent ID to unregister'),
           },
           createMeshUnregisterHandler(deps)
+        ),
+        tool(
+          'mesh_status',
+          'Get aggregate mesh health status — total agents, active/inactive/stale counts, by runtime, by project.',
+          {},
+          createMeshStatusHandler(deps)
+        ),
+        tool(
+          'mesh_inspect',
+          'Inspect a specific agent — manifest, health status, relay endpoint.',
+          {
+            agentId: z.string().describe('The agent ULID to inspect'),
+          },
+          createMeshInspectHandler(deps)
+        ),
+        tool(
+          'mesh_query_topology',
+          'Query the agent network topology visible to a given namespace. Returns namespaces, agents, and access rules.',
+          {
+            namespace: z.string().optional().describe('Caller namespace (omit for admin view)'),
+          },
+          createMeshQueryTopologyHandler(deps)
         ),
       ]
     : [];
