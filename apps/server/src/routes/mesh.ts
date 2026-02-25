@@ -34,7 +34,7 @@ export function createMeshRouter(meshCore: MeshCore): Router {
       for await (const candidate of meshCore.discover(result.data.roots, options)) {
         candidates.push(candidate);
       }
-      return res.json(candidates);
+      return res.json({ candidates });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Discovery failed';
       return res.status(500).json({ error: message });
@@ -79,7 +79,7 @@ export function createMeshRouter(meshCore: MeshCore): Router {
       return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
     }
     const agents = meshCore.list(result.data);
-    return res.json(agents);
+    return res.json({ agents });
   });
 
   // GET /agents/:id — Get single agent
@@ -132,7 +132,7 @@ export function createMeshRouter(meshCore: MeshCore): Router {
   // GET /denied — List all denial records
   router.get('/denied', (_req, res) => {
     const denied = meshCore.listDenied();
-    return res.json(denied);
+    return res.json({ denied });
   });
 
   // DELETE /denied/:encodedPath — Clear a denial by URL-encoded path

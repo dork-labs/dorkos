@@ -70,9 +70,9 @@ describe('Mesh routes', () => {
         .send({ roots: ['/home/user'] });
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
-      expect(res.body[0].projectPath).toBe('/home/user/proj-a');
-      expect(res.body[1].detectedRuntime).toBe('cursor');
+      expect(res.body.candidates).toHaveLength(2);
+      expect(res.body.candidates[0].projectPath).toBe('/home/user/proj-a');
+      expect(res.body.candidates[1].detectedRuntime).toBe('cursor');
       expect(meshCore.discover).toHaveBeenCalledWith(['/home/user'], undefined);
     });
 
@@ -204,8 +204,8 @@ describe('Mesh routes', () => {
       const res = await request(app).get('/api/mesh/agents');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe('agent-1');
+      expect(res.body.agents).toHaveLength(1);
+      expect(res.body.agents[0].id).toBe('agent-1');
       expect(meshCore.list).toHaveBeenCalledWith({});
     });
 
@@ -367,8 +367,8 @@ describe('Mesh routes', () => {
       const res = await request(app).get('/api/mesh/denied');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].filePath).toBe('/home/user/bad');
+      expect(res.body.denied).toHaveLength(1);
+      expect(res.body.denied[0].filePath).toBe('/home/user/bad');
     });
 
     it('returns empty array when no denials', async () => {
@@ -377,7 +377,7 @@ describe('Mesh routes', () => {
       const res = await request(app).get('/api/mesh/denied');
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body.denied).toEqual([]);
     });
   });
 
