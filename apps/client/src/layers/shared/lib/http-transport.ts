@@ -519,7 +519,7 @@ export class HttpTransport implements Transport {
     });
   }
 
-  getMeshAgentAccess(agentId: string): Promise<{ rules: CrossNamespaceRule[] }> {
+  getMeshAgentAccess(agentId: string): Promise<{ agents: AgentManifest[] }> {
     return fetchJSON(this.baseUrl, `/mesh/agents/${encodeURIComponent(agentId)}/access`);
   }
 }

@@ -252,6 +252,7 @@ export function MeshPanel() {
         <TabsTrigger value="discovery">Discovery</TabsTrigger>
         <TabsTrigger value="agents">Agents</TabsTrigger>
         <TabsTrigger value="denied">Denied</TabsTrigger>
+        <TabsTrigger value="access">Access</TabsTrigger>
       </TabsList>
 
       <TabsContent value="topology" className="flex-1 flex overflow-hidden">
@@ -284,6 +285,10 @@ export function MeshPanel() {
 
       <TabsContent value="denied" className="min-h-0 flex-1 overflow-y-auto">
         <DeniedTab denied={denied} isLoading={deniedLoading} />
+      </TabsContent>
+
+      <TabsContent value="access" className="min-h-0 flex-1 overflow-y-auto">
+        <TopologyPanel />
       </TabsContent>
     </Tabs>
   );

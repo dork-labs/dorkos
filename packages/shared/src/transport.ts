@@ -211,6 +211,6 @@ export interface Transport {
   getMeshTopology(namespace?: string): Promise<TopologyView>;
   /** Create or update a cross-namespace access rule. */
   updateMeshAccessRule(body: UpdateAccessRuleRequest): Promise<CrossNamespaceRule>;
-  /** Get access rules for a specific agent. */
-  getMeshAgentAccess(agentId: string): Promise<{ rules: CrossNamespaceRule[] }>;
+  /** Get reachable agents for a specific agent. */
+  getMeshAgentAccess(agentId: string): Promise<{ agents: AgentManifest[] }>;
 }

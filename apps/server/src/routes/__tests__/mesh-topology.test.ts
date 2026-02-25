@@ -128,7 +128,7 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+      expect(res.body).toEqual({ sourceNamespace: 'ns-a', targetNamespace: 'ns-b', action: 'allow' });
       expect(meshCore.allowCrossNamespace).toHaveBeenCalledWith('ns-a', 'ns-b');
       expect(meshCore.denyCrossNamespace).not.toHaveBeenCalled();
     });
@@ -141,7 +141,7 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+      expect(res.body).toEqual({ sourceNamespace: 'ns-a', targetNamespace: 'ns-b', action: 'deny' });
       expect(meshCore.denyCrossNamespace).toHaveBeenCalledWith('ns-a', 'ns-b');
       expect(meshCore.allowCrossNamespace).not.toHaveBeenCalled();
     });

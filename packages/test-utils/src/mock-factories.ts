@@ -185,7 +185,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Mesh Topology
     getMeshTopology: vi.fn().mockResolvedValue({ callerNamespace: '*', namespaces: [], accessRules: [] }),
     updateMeshAccessRule: vi.fn().mockResolvedValue({ sourceNamespace: '', targetNamespace: '', action: 'allow' }),
-    getMeshAgentAccess: vi.fn().mockResolvedValue({ rules: [] }),
+    getMeshAgentAccess: vi.fn().mockResolvedValue({ agents: [] }),
     ...overrides,
   };
 }

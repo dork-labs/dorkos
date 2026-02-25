@@ -18,6 +18,8 @@ const mockUseDeniedAgents = vi.fn().mockReturnValue({ data: undefined, isLoading
 const mockUseUnregisterAgent = vi.fn().mockReturnValue({ mutate: vi.fn() });
 const mockUseMeshStatus = vi.fn().mockReturnValue({ data: undefined, isLoading: false });
 const mockUseMeshAgentHealth = vi.fn().mockReturnValue({ data: undefined, isLoading: false });
+const mockUseTopology = vi.fn().mockReturnValue({ data: undefined, isLoading: false });
+const mockUseUpdateAccessRule = vi.fn().mockReturnValue({ mutate: vi.fn(), isPending: false });
 
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshEnabled: (...args: unknown[]) => mockUseMeshEnabled(...args),
@@ -27,6 +29,8 @@ vi.mock('@/layers/entities/mesh', () => ({
   useUnregisterAgent: (...args: unknown[]) => mockUseUnregisterAgent(...args),
   useMeshStatus: (...args: unknown[]) => mockUseMeshStatus(...args),
   useMeshAgentHealth: (...args: unknown[]) => mockUseMeshAgentHealth(...args),
+  useTopology: (...args: unknown[]) => mockUseTopology(...args),
+  useUpdateAccessRule: (...args: unknown[]) => mockUseUpdateAccessRule(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -130,12 +134,13 @@ describe('MeshPanel - disabled state', () => {
 describe('MeshPanel - enabled state', () => {
   beforeEach(enableMesh);
 
-  it('renders all 4 tabs', () => {
+  it('renders all 5 tabs', () => {
     render(<MeshPanel />, { wrapper: createWrapper() });
     expect(screen.getByRole('tab', { name: 'Topology' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Discovery' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Agents' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Denied' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Access' })).toBeInTheDocument();
   });
 
   it('has Topology as the default tab value', () => {
