@@ -135,7 +135,7 @@ Smart routing based on arguments:
 | `/browsertest debug chat-messaging` | Debug a specific failing test |
 | `/browsertest maintain` | Audit suite health, update stale tests |
 | `/browsertest report` | Show test health dashboard |
-| `/browsertest create chat file-upload` | Explicitly create a new test |
+| `/browsertest create chat file-upload` | Explore feature, write test, iterate until 3/3 stable |
 
 ### `/browsertest:maintain` — Suite Health Audit
 
@@ -172,13 +172,25 @@ The manifest is automatically updated by the custom reporter after each test run
 
 ## Adding New Tests
 
+### Manual
+
 1. Create a POM if the feature needs one (in `pages/`)
 2. Register the POM as a fixture in `fixtures/index.ts`
 3. Create the test file in `tests/<feature>/`
 4. Run the test: `cd apps/e2e && npx playwright test tests/<feature>/<test>.spec.ts`
 5. Manifest is auto-updated by the reporter
 
-Or use the AI command: `/browsertest create <feature> <description>`
+### AI-Assisted (`/browsertest create`)
+
+The AI command uses a 5-phase explore-first loop:
+
+1. **EXPLORE** — Navigates the feature with Playwright MCP, capturing snapshots at each state change to discover real selectors and timing
+2. **WRITE** — Creates/updates POMs and spec using only explored selectors (never guesses)
+3. **RUN & OBSERVE** — Runs the test; on failure, inspects actual browser state to diagnose and fix (up to 3 iterations)
+4. **STABILIZE** — Runs 3 consecutive times (`--repeat-each=3`) to catch flakiness
+5. **RECORD** — Writes `explorationNotes` to manifest, appends new gotchas to `GOTCHAS.md`
+
+Before starting, the command reads `apps/e2e/GOTCHAS.md` (known anti-patterns) and checks `explorationNotes` on related tests in the manifest.
 
 ## Debugging
 

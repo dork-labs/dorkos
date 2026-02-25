@@ -149,3 +149,47 @@ Run by tag: `npx playwright test --grep @smoke`
 **Settings dialog:** Opens as a modal overlay. Use `Escape` key or click-outside to close. The dialog has `data-testid="settings-dialog"`.
 
 **Feature-Sliced Design alignment:** Test directories mirror FSD features: `tests/chat/`, `tests/session-list/`, `tests/settings/`, `tests/pulse/`, etc.
+
+## 9. Learning Methodology
+
+This section guides the exploration phase of test creation — the "learn by doing" loop that discovers selectors and timing through real interaction rather than guessing.
+
+### What to Observe During Navigation
+
+At each snapshot, look for:
+
+- **Element hierarchy**: parent containers, list structures, nested components
+- **State transitions**: loading spinners, skeleton screens, empty states → populated states
+- **Conditional rendering**: elements that appear only after an action (modals, toasts, dropdowns)
+- **Keyboard accessibility**: focus order, aria-expanded, aria-selected attributes
+- **Dynamic IDs**: elements with generated IDs or keys that change between runs
+
+### Evaluating Selectors at Each Snapshot
+
+For every element you plan to interact with or assert against:
+
+1. **First choice — `getByRole()`**: Check the element's role and accessible name in the snapshot. Prefer `{ name: /pattern/i }` for resilience.
+2. **Second choice — `data-testid`**: If the role is generic (div, span) or the name is dynamic, check for a testid attribute.
+3. **Third choice — `getByText()`**: Only for static, stable text content. Never for timestamps, counts, or user-generated content.
+4. **Avoid**: CSS classes, XPath, nth-child — these break on any styling or layout change.
+
+### When to Stop Exploring
+
+- You have observed every state transition the test description requires
+- You have confirmed selectors for all elements you will interact with or assert
+- You have identified the timing characteristics (immediate render vs async load) of each assertion target
+- **Stop here** — do not explore adjacent features or "nice to have" flows
+
+### Handling DorkOS Dynamic Content
+
+- **SSE streams**: Messages arrive via Server-Sent Events. The inference indicator (`data-testid="inference-indicator-streaming"`) signals when streaming is active. Always wait for it to reach `hidden` before asserting message content.
+- **Optimistic updates**: Some UI updates appear before server confirmation. Re-locate elements after mutations rather than holding stale references.
+- **Session side effects**: Creating or switching sessions triggers URL changes, sidebar re-renders, and SSE reconnections. Allow these to settle before proceeding.
+
+### Building on Previous Knowledge
+
+Before writing a new test:
+
+1. **Read `GOTCHAS.md`** — avoid repeating known mistakes.
+2. **Check `explorationNotes`** in `manifest.json` for related tests — reuse timing strategies and selector patterns.
+3. **Review existing POMs** — extend them rather than creating parallel locator definitions for the same elements.

@@ -12,6 +12,7 @@ interface TestEntry {
   passCount: number;
   failCount: number;
   relatedCode: string[];
+  explorationNotes?: string[];
   lastModified: string;
 }
 

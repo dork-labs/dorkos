@@ -1,22 +1,40 @@
 import type { Page, Locator } from '@playwright/test';
+import { BasePage } from './BasePage';
 
 export class ChatPage {
   readonly page: Page;
+  readonly basePage: BasePage;
   readonly input: Locator;
   readonly sendButton: Locator;
   readonly messageList: Locator;
+  readonly panel: Locator;
 
   constructor(page: Page) {
     this.page = page;
+    this.basePage = new BasePage(page);
     this.input = page.getByRole('textbox', { name: /message/i });
     this.sendButton = page.getByRole('button', { name: /send/i });
     this.messageList = page.locator('[data-testid="message-list"]');
+    this.panel = page.locator('[data-testid="chat-panel"]');
   }
 
+  /** Navigate to the app and ensure a chat session is active. */
   async goto(sessionId?: string) {
     const url = sessionId ? `/?session=${sessionId}` : '/';
     await this.page.goto(url);
-    await this.page.waitForSelector('[data-testid="chat-panel"]', { timeout: 10_000 });
+    await this.basePage.waitForAppReady();
+
+    // If no session specified, create one via the sidebar
+    if (!sessionId) {
+      const hasChatPanel = await this.panel.isVisible().catch(() => false);
+      if (!hasChatPanel) {
+        await this.basePage.ensureSidebarOpen();
+        await this.page.getByRole('button', { name: /new chat/i }).click();
+        await this.panel.waitFor({ state: 'visible', timeout: 10_000 });
+      }
+    } else {
+      await this.panel.waitFor({ state: 'visible', timeout: 10_000 });
+    }
   }
 
   async sendMessage(text: string) {
@@ -25,7 +43,6 @@ export class ChatPage {
   }
 
   async waitForResponse(timeoutMs = 60_000) {
-    // Wait for the streaming indicator to appear then disappear
     await this.page
       .locator('[data-testid="inference-indicator-streaming"]')
       .waitFor({ state: 'visible', timeout: 10_000 })

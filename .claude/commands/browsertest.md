@@ -29,17 +29,65 @@ After running, read `apps/e2e/manifest.json` and display a results summary.
 
 ### `create <feature> <description>`
 
-Create a new browser test:
+Create a new browser test using a 5-phase explore-first loop. Never guess selectors — discover them by navigating like a real user.
 
-1. Read `apps/e2e/manifest.json` to check if a similar test already exists
-2. Use the Playwright MCP tools (`mcp__playwright__browser_navigate`, `mcp__playwright__browser_snapshot`) to navigate to the feature in the running app at `http://localhost:4241`
-3. Capture accessibility snapshots to identify key elements, selectors, and user flows
-4. Check `apps/e2e/pages/` for existing POMs that cover this feature. Create a new POM if needed
-5. Write a `.spec.ts` file in `apps/e2e/tests/<feature>/` using the custom fixtures from `../../fixtures`
-6. Run the test to verify it passes: `cd apps/e2e && npx playwright test tests/<feature>/<new-test>.spec.ts`
-7. The manifest reporter will auto-update `manifest.json`
+#### Pre-Flight
 
-Follow the patterns in `.claude/skills/browser-testing/SKILL.md` for test-writing methodology.
+1. Read `apps/e2e/manifest.json` — check if a similar test already exists. If it does, confirm with the user before overwriting.
+2. Read `apps/e2e/GOTCHAS.md` — absorb known anti-patterns before writing anything.
+3. Check manifest for `explorationNotes` on related tests — build on prior knowledge.
+4. Read `apps/e2e/pages/` for existing POMs that may already cover needed interactions.
+
+#### Phase 1: EXPLORE
+
+Navigate the feature step-by-step as a real user would. At **each** meaningful state change:
+
+1. `mcp__playwright__browser_navigate` to `http://localhost:4241` (or the relevant page)
+2. `mcp__playwright__browser_snapshot` to capture the accessibility tree
+3. Document: element roles, names, testids, hierarchy, loading indicators, conditional rendering
+4. Note timing: what loads immediately, what appears after an SSE event or API call, what animates
+
+Continue until you have observed every state the test needs to assert against. Stay within the scope of `<description>` — don't explore unrelated features.
+
+#### Phase 2: WRITE
+
+Using **only** the selectors discovered in Phase 1:
+
+1. Create or update POMs in `apps/e2e/pages/` with the explored locators. Prefer `getByRole()` → `data-testid` → text. Never use CSS classes.
+2. Register new POMs in `apps/e2e/fixtures/index.ts`.
+3. Write the `.spec.ts` file in `apps/e2e/tests/<feature>/` using custom fixtures from `../../fixtures`.
+4. Follow the patterns in `.claude/skills/browser-testing/SKILL.md`.
+
+#### Phase 3: RUN & OBSERVE
+
+```bash
+cd apps/e2e && npx playwright test tests/<feature>/<new-test>.spec.ts
+```
+
+- **If it passes** → proceed to Phase 4.
+- **If it fails** (max 3 iterations):
+  1. Read the error message and identify the failing step.
+  2. Use `mcp__playwright__browser_navigate` + `mcp__playwright__browser_snapshot` to inspect the **actual** page state at the point of failure.
+  3. Diagnose: wrong selector? timing issue? unexpected UI state?
+  4. Fix the spec or POM, then re-run.
+- **If still failing after 3 iterations** → use `AskUserQuestion` to present the diagnosis and ask for guidance.
+
+#### Phase 4: STABILIZE
+
+Run the test 3 consecutive times:
+
+```bash
+cd apps/e2e && npx playwright test tests/<feature>/<new-test>.spec.ts --repeat-each=3
+```
+
+- **3/3 pass** → proceed to Phase 5.
+- **Any failure** → diagnose the flaky step (usually a timing issue), fix, then re-run Phase 3 once. If still flaky after that, ask the user.
+
+#### Phase 5: RECORD
+
+1. Write `explorationNotes` to the test entry in `apps/e2e/manifest.json` — document selectors, timing observations, and gotchas specific to this feature.
+2. If you discovered any new anti-patterns, append them to `apps/e2e/GOTCHAS.md` under the appropriate category.
+3. Display a summary: test name, phases completed, iterations needed, key observations.
 
 ### `debug <test-name>`
 
