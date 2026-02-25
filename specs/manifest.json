@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 55,
+  "nextNumber": 56,
   "specs": [
     {
       "number": 1,
@@ -379,6 +379,13 @@
       "title": "Mesh Core Library",
       "created": "2026-02-24",
       "status": "specified"
+    },
+    {
+      "number": 55,
+      "slug": "relay-convergence",
+      "title": "Relay Convergence — Migrate Pulse & Console to Relay Transport",
+      "created": "2026-02-25",
+      "status": "ideation"
     }
   ]
 }

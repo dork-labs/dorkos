@@ -36,6 +36,8 @@ elif [[ "$FILE_PATH" =~ ^packages/test-utils/ ]]; then
   WORKSPACE_DIR="packages/test-utils"
 elif [[ "$FILE_PATH" =~ ^packages/relay/ ]]; then
   WORKSPACE_DIR="packages/relay"
+elif [[ "$FILE_PATH" =~ ^packages/mesh/ ]]; then
+  WORKSPACE_DIR="packages/mesh"
 else
   # Fallback: run from repo root
   WORKSPACE_DIR="."

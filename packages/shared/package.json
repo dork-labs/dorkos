@@ -31,6 +31,10 @@
     "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
       "default": "./dist/relay-schemas.js"
+    },
+    "./mesh-schemas": {
+      "types": "./src/mesh-schemas.ts",
+      "default": "./dist/mesh-schemas.js"
     }
   },
   "scripts": {
