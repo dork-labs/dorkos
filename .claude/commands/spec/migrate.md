@@ -26,6 +26,7 @@ IMPLEMENTATION_SUMMARY.md
 specs/<slug>/
 ├── 01-ideation.md
 ├── 02-specification.md
+├── 03-tasks.json
 ├── 03-tasks.md
 └── 04-implementation.md
 ```

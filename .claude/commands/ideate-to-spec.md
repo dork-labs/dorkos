@@ -191,7 +191,7 @@ When transforming ideation to specification:
    This script will populate `specSlug`, `ideationPath`, `specPath`, etc. in the roadmap item.
 
 4. This ensures the roadmap link is preserved through:
-   `01-ideation.md` → `02-specification.md` → `03-tasks.md` → `04-implementation.md`
+   `01-ideation.md` → `02-specification.md` → `03-tasks.json` + `03-tasks.md` → `04-implementation.md`
 
 **Note:** The `link_spec.py` script is idempotent and can be run multiple times safely. It detects which spec files exist and updates the linkedArtifacts accordingly.
 

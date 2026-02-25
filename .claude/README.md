@@ -19,7 +19,7 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 
 | Component    | Count | Location                                                                   |
 | ------------ | ----- | -------------------------------------------------------------------------- |
-| Commands     | 52    | `.claude/commands/`                                                        |
+| Commands     | 54    | `.claude/commands/`                                                        |
 | Agents       | 5     | `.claude/agents/`                                                          |
 | Skills       | 11    | `.claude/skills/`                                                          |
 | Rules        | 8     | `.claude/rules/`                                                           |
