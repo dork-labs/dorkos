@@ -51,14 +51,23 @@ export function SessionSidebar() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const [activeSessionId, setActiveSession] = useSessionId();
-  const { setSidebarOpen, devtoolsOpen, toggleDevtools } = useAppStore();
+  const {
+    setSidebarOpen,
+    devtoolsOpen,
+    toggleDevtools,
+    pickerOpen,
+    setPickerOpen,
+    settingsOpen,
+    setSettingsOpen,
+    pulseOpen,
+    setPulseOpen,
+    relayOpen,
+    setRelayOpen,
+    meshOpen,
+    setMeshOpen,
+  } = useAppStore();
   const isMobile = useIsMobile();
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pulseOpen, setPulseOpen] = useState(false);
-  const [relayOpen, setRelayOpen] = useState(false);
-  const [meshOpen, setMeshOpen] = useState(false);
   const relayEnabled = useRelayEnabled();
   const meshEnabled = useMeshEnabled();
   const [selectedCwd, setSelectedCwd] = useDirectoryState();

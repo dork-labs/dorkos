@@ -75,6 +75,12 @@ interface UseInteractiveShortcutsOptions {
 
 ## Keyboard Shortcut Reference
 
+### Navigation
+
+| Key                  | Action         |
+| -------------------- | -------------- |
+| `Cmd+B` / `Ctrl+B`  | Toggle sidebar |
+
 ### Approval Mode (`WAITING_FOR_APPROVAL`)
 
 | Key      | Action                |

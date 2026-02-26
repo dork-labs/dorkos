@@ -48,6 +48,18 @@ interface AppState {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
 
+  // Transient dialog state (survives mobile sidebar remount)
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
+  pulseOpen: boolean;
+  setPulseOpen: (open: boolean) => void;
+  relayOpen: boolean;
+  setRelayOpen: (open: boolean) => void;
+  meshOpen: boolean;
+  setMeshOpen: (open: boolean) => void;
+  pickerOpen: boolean;
+  setPickerOpen: (open: boolean) => void;
+
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
 
@@ -114,6 +126,7 @@ interface AppState {
 
 // localStorage keys for all persisted boolean settings
 const BOOL_KEYS = {
+  sidebarOpen: 'dorkos-sidebar-open',
   showTimestamps: 'dorkos-show-timestamps',
   expandToolCalls: 'dorkos-expand-tool-calls',
   autoHideToolCalls: 'dorkos-auto-hide-tool-calls',
@@ -135,6 +148,7 @@ const BOOL_KEYS = {
 
 // Default values for each persisted boolean
 const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
+  sidebarOpen: false,
   showTimestamps: false,
   expandToolCalls: false,
   autoHideToolCalls: true,
@@ -157,9 +171,35 @@ const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
 export const useAppStore = create<AppState>()(
   devtools(
     (set) => ({
-      sidebarOpen: false,
-      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-      setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      // On mobile, always start closed regardless of persisted value
+      sidebarOpen: (() => {
+        try {
+          if (window.matchMedia('(max-width: 767px)').matches) return false;
+        } catch {}
+        return readBool(BOOL_KEYS.sidebarOpen, BOOL_DEFAULTS.sidebarOpen);
+      })(),
+      toggleSidebar: () =>
+        set((s) => {
+          const next = !s.sidebarOpen;
+          writeBool(BOOL_KEYS.sidebarOpen, next);
+          return { sidebarOpen: next };
+        }),
+      setSidebarOpen: (open) => {
+        writeBool(BOOL_KEYS.sidebarOpen, open);
+        set({ sidebarOpen: open });
+      },
+
+      // Transient dialog state (not persisted — survives mobile sidebar remount)
+      settingsOpen: false,
+      setSettingsOpen: (open) => set({ settingsOpen: open }),
+      pulseOpen: false,
+      setPulseOpen: (open) => set({ pulseOpen: open }),
+      relayOpen: false,
+      setRelayOpen: (open) => set({ relayOpen: open }),
+      meshOpen: false,
+      setMeshOpen: (open) => set({ meshOpen: open }),
+      pickerOpen: false,
+      setPickerOpen: (open) => set({ pickerOpen: open }),
 
       sessionId: null,
       setSessionId: (id) => set({ sessionId: id }),

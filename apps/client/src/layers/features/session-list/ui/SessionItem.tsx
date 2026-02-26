@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Copy, Check, ShieldOff } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime, TIMING } from '@/layers/shared/lib';
-import { useIsMobile } from '@/layers/shared/model';
 
 interface SessionItemProps {
   session: Session;
@@ -60,7 +59,6 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 export function SessionItem({ session, isActive, onClick, isNew = false }: SessionItemProps) {
   const [expanded, setExpanded] = useState(false);
-  const isMobile = useIsMobile();
   const isSkipMode = session.permissionMode === 'bypassPermissions';
 
   const Wrapper = isNew ? motion.div : 'div';
@@ -92,15 +90,11 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
         role="button"
         tabIndex={0}
         onClick={() => {
-          if (isMobile) {
-            setExpanded((prev) => !prev);
-          }
           onClick();
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            if (isMobile) setExpanded((prev) => !prev);
             onClick();
           }
         }}
