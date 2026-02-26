@@ -88,9 +88,29 @@ Namespaces serve two purposes:
 
 ### Cross-Namespace Access
 
-Mesh provides methods to manage cross-namespace communication. You can allow agents in namespace A to send messages to agents in namespace B by adding a cross-namespace allow rule. These rules map to Relay access control rules using subject patterns like `relay.agent.{sourceNamespace}.>` to `relay.agent.{targetNamespace}.>`.
+Mesh provides methods to manage cross-namespace communication. You can allow agents in namespace A to send messages to agents in namespace B by adding a cross-namespace allow rule. These rules map to Relay access control rules using subject patterns like `relay.agent.{sourceNamespace}.*` to `relay.agent.{targetNamespace}.*`.
+
+Cross-namespace rules are **unidirectional** — allowing A to message B does not automatically allow B to message A. To enable two-way communication, add rules in both directions.
 
 Removing a cross-namespace rule reverts to the default-deny behavior, isolating the two namespaces from each other. This gives you fine-grained control over which parts of your agent network can interact.
+
+### How Access Rules Work
+
+Under the hood, Mesh writes Relay access control rules with a priority scheme that determines which rule wins when multiple rules match:
+
+| Priority | Rule | Effect |
+|----------|------|--------|
+| **100** | Same-namespace allow | Agents in the same namespace can always communicate |
+| **50** | Cross-namespace allow | Explicitly permitted cross-namespace communication |
+| **10** | Cross-namespace deny | Default deny for all cross-namespace traffic |
+
+When an agent registers, Mesh automatically creates both the same-namespace allow (priority 100) and the cross-namespace deny (priority 10). The deny blocks messages to agents outside the namespace, while the allow ensures agents within the same namespace are unaffected.
+
+Cross-namespace allow rules (priority 50) sit between these two defaults, overriding the deny for the specific namespace pair they target.
+
+<Callout type="info">
+The access rules above operate at namespace granularity. Blocking individual agents within the same namespace is not supported through the Mesh API or UI, but is architecturally possible by writing Relay access rules directly with a priority above 100.
+</Callout>
 
 ## Topology
 

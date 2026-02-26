@@ -50,13 +50,20 @@ Agents within the same namespace (`backend`) can communicate freely. Cross-names
 Mesh manages cross-namespace access through the UI or API. To allow backend agents to send messages to frontend agents:
 
 ```bash
-# Via the REST API
-curl -X POST http://localhost:4242/api/mesh/agents/cross-namespace \
+# Via the REST API — allow backend to message frontend
+curl -X PUT http://localhost:4242/api/mesh/topology/access \
   -H 'Content-Type: application/json' \
-  -d '{"sourceNamespace": "backend", "targetNamespace": "frontend"}'
+  -d '{"sourceNamespace": "backend", "targetNamespace": "frontend", "action": "allow"}'
 ```
 
-This creates a Relay access rule permitting messages from `relay.agent.backend.>` to `relay.agent.frontend.>`. The access rules are bidirectional by default, so both namespaces can communicate.
+This creates a Relay access rule permitting messages from `relay.agent.backend.*` to `relay.agent.frontend.*`. Note that access rules are **unidirectional** — the rule above allows backend to message frontend, but not the reverse. To enable two-way communication, add a second rule with the namespaces swapped:
+
+```bash
+# Allow frontend to message backend (reverse direction)
+curl -X PUT http://localhost:4242/api/mesh/topology/access \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceNamespace": "frontend", "targetNamespace": "backend", "action": "allow"}'
+```
 
 ## Agent-to-Agent Messaging
 
