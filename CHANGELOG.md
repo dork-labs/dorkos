@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Correct Mesh documentation to match implementation
 - Correct Pulse documentation to match implementation
 - Replace julianday() with strftime() in TraceStore latency metric
 - Correct access rule directionality, endpoint, and add priority scheme

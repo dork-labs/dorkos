@@ -155,13 +155,13 @@ You can inspect any individual agent to get a combined view of its manifest, hea
 
 ## Storage
 
-Mesh uses SQLite for its registry database, stored at `~/.dork/mesh/mesh.db`. The database contains:
+Mesh stores its data in the consolidated DorkOS database at `~/.dork/dork.db`, managed by Drizzle ORM. The database contains:
 
-- **Agent registry** — All registered agents with their manifests, project paths, namespaces, and health tracking fields
-- **Denial list** — Paths that have been explicitly excluded from discovery
-- **Health tracking** — Last-seen timestamps and event descriptions for each agent
+- **Agent registry** (`agents` table) — All registered agents with their manifests, project paths, namespaces, and health tracking fields
+- **Denial list** (`agentDenials` table) — Paths that have been explicitly excluded from discovery
+- **Rate limiting** (`rateLimitBuckets` table) — Sliding-window rate limits per agent per minute
 
-The registry uses the same `better-sqlite3` library with WAL mode that Relay and Pulse use, providing concurrent read/write access and crash resilience.
+Health tracking (last-seen timestamps and event descriptions) is stored directly on the agent registry rows rather than in a separate table.
 
 In addition to the database, each registered agent has a `.dork/agent.json` file in its project directory. This file is the portable representation of the agent's manifest — it survives database rebuilds and can be used to re-import agents via the auto-import mechanism during discovery scans.
 

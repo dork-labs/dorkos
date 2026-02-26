@@ -368,7 +368,7 @@ The Mesh subsystem (`packages/mesh/src/`) provides agent discovery, registration
 | `topology.ts` | Computes network topology views with cross-namespace rules |
 | `budget-mapper.ts` | Maps Relay budget envelopes to mesh agent capabilities |
 | `relay-bridge.ts` | Optional bridge publishing lifecycle events to Relay subjects |
-| `manifest.ts` | Reads/writes `.dorkos-agent.json` manifest files |
+| `manifest.ts` | Reads/writes `.dork/agent.json` manifest files |
 
 ### Discovery Strategies
 
