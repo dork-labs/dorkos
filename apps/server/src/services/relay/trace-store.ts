@@ -174,7 +174,7 @@ export class TraceStore {
       .select({
         avgMs: sql<number | null>`AVG(
           CASE WHEN ${relayTraces.deliveredAt} IS NOT NULL AND ${relayTraces.sentAt} IS NOT NULL
-          THEN (julianday(${relayTraces.deliveredAt}) - julianday(${relayTraces.sentAt})) * 86400000
+          THEN (strftime('%s', ${relayTraces.deliveredAt}) - strftime('%s', ${relayTraces.sentAt})) * 1000
           END
         )`,
       })

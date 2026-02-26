@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Migrate from npm to pnpm for faster installs and stricter dependency resolution
 - Route Pulse jobs and console output through Relay transport for unified message delivery and tracing
 - Comprehensive Relay & Mesh release preparation
 - Redesign Pulse scheduler UI with filtering, accessibility, and navigation improvements
@@ -36,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replace julianday() with strftime() in TraceStore latency metric
 - Correct access rule directionality, endpoint, and add priority scheme
 - Resolve React Flow zero-height error in topology tab
 - Surface API errors in MeshPanel and harden MeshCore init
@@ -45,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix 7 critical wiring bugs in Relay convergence implementation
 - Resolve four completion gaps in Pulse scheduler — runs now correctly persist state, handle timeouts, and clean up on cancellation
 - Declare runtime env vars in turbo.json globalPassThroughEnv
+- Fix docs search, add blog footer and TOC sidebar
 
 ---
 
