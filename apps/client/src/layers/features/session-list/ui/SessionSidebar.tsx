@@ -368,7 +368,7 @@ export function SessionSidebar() {
               Agent discovery and registry
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
-          <div className="overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col">
             <MeshPanel />
           </div>
         </ResponsiveDialogContent>

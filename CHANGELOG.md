@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve React Flow zero-height error in topology tab
 - Surface API errors in MeshPanel and harden MeshCore init
 - Aggregate manifest reporter counts per spec file, not per test case
 - Wire live health data into Mesh topology graph and fix aggregate SQL boundary

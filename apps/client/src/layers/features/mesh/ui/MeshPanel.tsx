@@ -228,8 +228,8 @@ export function MeshPanel() {
               <TabsTrigger value="access">Access</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="topology" className="flex flex-1 overflow-hidden">
-              <div className="flex-1">
+            <TabsContent value="topology" className="relative flex-1 overflow-hidden">
+              <div className="absolute inset-0">
                 <Suspense
                   fallback={
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

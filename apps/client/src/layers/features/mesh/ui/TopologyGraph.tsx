@@ -88,7 +88,7 @@ export function TopologyGraph({ onSelectAgent }: TopologyGraphProps) {
   }
 
   return (
-    <div className="h-full w-full">
+    <div className="absolute inset-0">
       <ReactFlow
         nodes={nodes}
         edges={edges}
