@@ -10,6 +10,8 @@ export { RegisterAgentDialog } from './ui/RegisterAgentDialog';
 export { AgentNode } from './ui/AgentNode';
 export type { AgentNodeData } from './ui/AgentNode';
 export { TopologyGraph } from './ui/TopologyGraph';
+export { NamespaceHubNode } from './ui/NamespaceHubNode';
+export { TopologyLegend } from './ui/TopologyLegend';
 export { MeshStatsHeader } from './ui/MeshStatsHeader';
 export { AgentHealthDetail } from './ui/AgentHealthDetail';
 export { MeshEmptyState } from './ui/MeshEmptyState';

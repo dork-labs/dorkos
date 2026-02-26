@@ -11,6 +11,8 @@ export interface AgentNodeData extends Record<string, unknown> {
   runtime: string;
   healthStatus: 'active' | 'inactive' | 'stale';
   capabilities: string[];
+  namespace?: string;
+  namespaceColor?: string;
 }
 
 const STATUS_COLORS: Record<AgentNodeData['healthStatus'], string> = {
@@ -25,7 +27,10 @@ function AgentNodeComponent({ data }: NodeProps) {
   const dotColor = STATUS_COLORS[d.healthStatus] ?? STATUS_COLORS.stale;
 
   return (
-    <div className="min-w-[140px] rounded-lg border bg-card px-3 py-2 shadow-sm">
+    <div
+      className="min-w-[140px] rounded-lg border bg-card px-3 py-2 shadow-sm"
+      style={d.namespaceColor ? { borderLeft: `3px solid ${d.namespaceColor}` } : undefined}
+    >
       <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotColor}`} />
