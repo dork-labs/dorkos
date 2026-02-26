@@ -50,6 +50,7 @@
     "streamdown": "latest",
     "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
+    "zod": "^4.3.6",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

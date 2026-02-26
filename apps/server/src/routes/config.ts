@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { createRequire } from 'module';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveClaudeCliPath } from '../lib/sdk-utils.js';
-import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { configManager } from '../services/core/config-manager.js';
+import { env } from '../env.js';
 import { UserConfigSchema, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isPulseEnabled } from '../services/pulse/pulse-state.js';
@@ -91,7 +91,7 @@ router.get('/', async (_req, res) => {
   res.json({
     version: SERVER_VERSION,
     latestVersion,
-    port: parseInt(process.env.DORKOS_PORT || String(DEFAULT_PORT), 10),
+    port: env.DORKOS_PORT,
     uptime: process.uptime(),
     workingDirectory: process.cwd(),
     boundary: getBoundary(),
@@ -101,8 +101,8 @@ router.get('/', async (_req, res) => {
       enabled: tunnel.enabled,
       connected: tunnel.connected,
       url: tunnel.url,
-      authEnabled: !!process.env.TUNNEL_AUTH,
-      tokenConfigured: !!(process.env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken),
+      authEnabled: !!env.TUNNEL_AUTH,
+      tokenConfigured: !!(env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken),
     },
     pulse: {
       enabled: isPulseEnabled(),

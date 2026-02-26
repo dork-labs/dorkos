@@ -2,9 +2,10 @@ import path from 'path';
 import { createApp } from './app.js';
 import { RoadmapStore } from './services/roadmap-store.js';
 import { logger } from './lib/logger.js';
+import { env } from './env.js';
 
-const port = Number(process.env.ROADMAP_PORT) || 4243;
-const projectRoot = process.env.ROADMAP_PROJECT_ROOT || process.cwd();
+const port = env.ROADMAP_PORT;
+const projectRoot = env.ROADMAP_PROJECT_ROOT;
 const dataFile = path.join(projectRoot, 'roadmap.json');
 
 const store = new RoadmapStore(dataFile);

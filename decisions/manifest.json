@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 42,
+  "nextNumber": 43,
   "decisions": [
     {
       "number": 1,
@@ -365,6 +365,15 @@
       "created": "2026-02-25",
       "extractedFrom": "db-drizzle-consolidation",
       "specSlug": "db-drizzle-consolidation"
+    },
+    {
+      "number": 42,
+      "slug": "manual-zod-env-validation-over-t3-env",
+      "title": "Use Manual Zod Validation for Env Vars, Not T3 Env",
+      "status": "draft",
+      "created": "2026-02-25",
+      "extractedFrom": "env-var-discipline",
+      "specSlug": "env-var-discipline"
     }
   ]
 }

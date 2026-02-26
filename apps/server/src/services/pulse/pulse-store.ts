@@ -12,6 +12,7 @@ import type {
   UpdateScheduleRequest,
 } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
+import { env } from '../../env.js';
 
 /** Raw row shape from the `runs` SQLite table (snake_case). */
 interface RunRow {
@@ -104,7 +105,7 @@ export class PulseStore {
   };
 
   constructor(dorkHome?: string) {
-    const home = dorkHome ?? process.env.DORK_HOME ?? path.join(os.homedir(), '.dork');
+    const home = dorkHome ?? env.DORK_HOME ?? path.join(os.homedir(), '.dork');
     fs.mkdirSync(home, { recursive: true });
 
     const dbPath = path.join(home, 'pulse.db');

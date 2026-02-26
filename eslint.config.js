@@ -194,6 +194,38 @@ export default tseslint.config(
     },
   },
 
+  // Env var discipline: no raw process.env access outside env.ts
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'warn', // warn-first per project convention; escalate to error once migration verified
+        {
+          selector: "MemberExpression[object.name='process'][property.name='env']",
+          message:
+            "Import env vars from the app's env.ts instead of accessing process.env directly.",
+        },
+      ],
+    },
+  },
+
+  // Carve-outs for files that legitimately access process.env
+  {
+    files: [
+      '**/env.ts',                                    // env.ts files read process.env by design
+      '**/*.config.ts',                               // vite.config.ts, playwright.config.ts run in Node before bundling
+      '**/__tests__/**',                              // tests stub process.env for mocking
+      '**/*.test.ts',                                 // flat test files
+      '**/*.spec.ts',                                 // e2e spec files
+      'packages/cli/src/cli.ts',                      // CLI bootstrap sets env vars for server subprocess
+      'packages/cli/src/config-commands.ts',          // reads process.env.EDITOR (OS system var, not DorkOS-owned)
+      'apps/server/src/lib/dork-home.ts',             // bootstrap utility; runs before env.ts initializes
+      'apps/server/src/lib/logger.ts',                // reads NODE_ENV at call time (initLogger called at request time)
+      'apps/server/src/routes/tunnel.ts',             // reads tunnel vars at request time (written by CLI bootstrap after env.ts loads)
+    ],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
+
   // Test file overrides — relax strict rules
   {
     files: ['**/__tests__/**/*.{ts,tsx}', '**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],

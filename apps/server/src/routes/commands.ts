@@ -4,9 +4,10 @@ import { CommandsQuerySchema } from '@dorkos/shared/schemas';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { env } from '../env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const defaultRoot = process.env.DORKOS_DEFAULT_CWD ?? path.resolve(__dirname, '../../../../');
+const defaultRoot = env.DORKOS_DEFAULT_CWD ?? path.resolve(__dirname, '../../../../');
 const registryCache = new Map<string, CommandRegistryService>();
 
 function getRegistry(cwd?: string): CommandRegistryService {

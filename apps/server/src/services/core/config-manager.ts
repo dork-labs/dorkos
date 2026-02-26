@@ -1,4 +1,5 @@
 import Conf from 'conf';
+import { type Schema } from 'conf';
 import { z } from 'zod';
 import fs from 'fs';
 import os from 'os';
@@ -10,11 +11,16 @@ import {
 } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../lib/logger.js';
+import { env } from '../../env.js';
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
 }) as { properties?: Record<string, unknown> };
 const jsonSchemaProperties = jsonSchemaFull.properties ?? {};
+
+// Cast the runtime JSON schema to conf's Schema type. The Zod-generated schema
+// is structurally compatible at runtime but TypeScript cannot verify it statically.
+const confSchema = jsonSchemaProperties as unknown as Schema<UserConfig>;
 
 /**
  * Manages persistent user configuration at ~/.dork/config.json.
@@ -29,7 +35,7 @@ class ConfigManager {
 
   constructor(dorkHome?: string) {
     const configDir =
-      dorkHome ?? process.env.DORK_HOME ?? path.join(os.homedir(), '.dork');
+      dorkHome ?? env.DORK_HOME ?? path.join(os.homedir(), '.dork');
     const configPath = path.join(configDir, 'config.json');
     this._isFirstRun = !fs.existsSync(configPath);
 
@@ -37,7 +43,7 @@ class ConfigManager {
       this.store = new Conf<UserConfig>({
         configName: 'config',
         cwd: configDir,
-        schema: jsonSchemaProperties as any,
+        schema: confSchema,
         defaults: USER_CONFIG_DEFAULTS,
         clearInvalidConfig: false,
         projectVersion: '1.0.0',
@@ -60,7 +66,7 @@ class ConfigManager {
       this.store = new Conf<UserConfig>({
         configName: 'config',
         cwd: configDir,
-        schema: jsonSchemaProperties as any,
+        schema: confSchema,
         defaults: USER_CONFIG_DEFAULTS,
         clearInvalidConfig: false,
       });
@@ -79,7 +85,7 @@ class ConfigManager {
 
   /** Get a nested value via dot-path (e.g., 'server.port') */
   getDot(key: string): unknown {
-    return this.store.get(key as any);
+    return this.store.get(key as keyof UserConfig);
   }
 
   /** Set a top-level config section */
@@ -90,10 +96,10 @@ class ConfigManager {
   /** Set a nested value via dot-path. Returns warning if key is sensitive. */
   setDot(key: string, value: unknown): { warning?: string } {
     const result: { warning?: string } = {};
-    if (SENSITIVE_CONFIG_KEYS.includes(key as any)) {
+    if (SENSITIVE_CONFIG_KEYS.includes(key as (typeof SENSITIVE_CONFIG_KEYS)[number])) {
       result.warning = `'${key}' contains sensitive data. Consider using environment variables instead.`;
     }
-    this.store.set(key as any, value);
+    this.store.set(key as keyof UserConfig, value as UserConfig[keyof UserConfig]);
     return result;
   }
 
@@ -105,7 +111,7 @@ class ConfigManager {
   /** Reset a specific key or all keys to defaults */
   reset(key?: string): void {
     if (key) {
-      this.store.reset(key as any);
+      this.store.reset(key as keyof UserConfig);
     } else {
       this.store.clear();
       this.store.set(USER_CONFIG_DEFAULTS);

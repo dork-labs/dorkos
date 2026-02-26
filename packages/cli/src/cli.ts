@@ -7,6 +7,7 @@ import { checkClaude } from './check-claude.js';
 import { checkForUpdate } from './update-check.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
+import { env } from './env.js';
 
 // Injected at build time by esbuild define
 declare const __CLI_VERSION__: string;
@@ -80,7 +81,7 @@ if (values.version) {
 }
 
 // Resolve data directory: explicit env var > ~/.dork (CLI always runs in production mode)
-const DORK_HOME = process.env.DORK_HOME || path.join(os.homedir(), '.dork');
+const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
 fs.mkdirSync(DORK_HOME, { recursive: true });
 fs.mkdirSync(path.join(DORK_HOME, 'logs'), { recursive: true });
 process.env.DORK_HOME = DORK_HOME;
@@ -199,9 +200,9 @@ if (resolvedDir !== effectiveBoundary && !resolvedDir.startsWith(effectiveBounda
 
 // Log level: CLI flag > env var > config > default
 const logLevelName = values['log-level']
-  || process.env.LOG_LEVEL
+  || env.LOG_LEVEL
   || (cfgMgr.getDot('logging.level') as string | null)
-  || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+  || (env.NODE_ENV === 'production' ? 'info' : 'debug');
 process.env.DORKOS_LOG_LEVEL = String(LOG_LEVEL_MAP[logLevelName] ?? 3);
 
 // Load .env from user's cwd (project-local, optional)

@@ -12,6 +12,7 @@ import { makeUserPrompt, resolveClaudeCliPath } from '../../lib/sdk-utils.js';
 import { buildSystemPromptAppend } from './context-builder.js';
 import { validateBoundary } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
+import { env } from '../../env.js';
 
 export { buildTaskEvent } from '../session/build-task-event.js';
 
@@ -30,7 +31,7 @@ export class AgentManager {
 
   constructor(cwd?: string) {
     const thisDir = path.dirname(fileURLToPath(import.meta.url));
-    this.cwd = cwd ?? process.env.DORKOS_DEFAULT_CWD ?? path.resolve(thisDir, '../../../../');
+    this.cwd = cwd ?? env.DORKOS_DEFAULT_CWD ?? path.resolve(thisDir, '../../../../');
     this.claudeCliPath = resolveClaudeCliPath();
   }
 

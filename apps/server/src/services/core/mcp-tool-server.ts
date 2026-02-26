@@ -6,6 +6,7 @@ import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../relay/adapter-manager.js';
 import type { TraceStore } from '../relay/trace-store.js';
 import type { MeshCore } from '@dorkos/mesh';
+import { env } from '../../env.js';
 
 /**
  * Explicit dependency interface for MCP tool handlers.
@@ -53,8 +54,8 @@ export async function handlePing() {
 export async function handleGetServerInfo(args: { include_uptime?: boolean }) {
   const info: Record<string, unknown> = {
     product: 'DorkOS',
-    port: process.env.DORKOS_PORT ?? '4242',
-    version: process.env.DORKOS_VERSION ?? 'development',
+    port: env.DORKOS_PORT,
+    version: env.DORKOS_VERSION ?? 'development',
   };
   if (args.include_uptime) {
     info.uptime_seconds = Math.floor(process.uptime());

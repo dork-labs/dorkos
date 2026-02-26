@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Disciplined env var handling with per-app Zod validation
 - Enable Relay, Mesh, and Pulse by default
 - Env-aware data dir, mesh panel UX overhaul, web lint fixes
 - Enhance browser testing methodology and documentation

@@ -112,53 +112,35 @@ describe('MCP Tool Handlers', () => {
     });
 
     it('uses DORKOS_PORT env var when set', async () => {
-      const original = process.env.DORKOS_PORT;
-      process.env.DORKOS_PORT = '9999';
-      try {
-        const result = await handleGetServerInfo({});
-        const parsed = JSON.parse(result.content[0].text);
-        expect(parsed.port).toBe('9999');
-      } finally {
-        if (original !== undefined) process.env.DORKOS_PORT = original;
-        else delete process.env.DORKOS_PORT;
-      }
+      vi.stubEnv('DORKOS_PORT', '9999');
+      vi.resetModules();
+      const { handleGetServerInfo: handler } = await import('../mcp-tool-server.js');
+      const result = await handler({});
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.port).toBe(9999);
+      vi.unstubAllEnvs();
     });
 
     it('uses DORKOS_VERSION env var when set', async () => {
-      const original = process.env.DORKOS_VERSION;
-      process.env.DORKOS_VERSION = '2.0.0';
-      try {
-        const result = await handleGetServerInfo({});
-        const parsed = JSON.parse(result.content[0].text);
-        expect(parsed.version).toBe('2.0.0');
-      } finally {
-        if (original !== undefined) process.env.DORKOS_VERSION = original;
-        else delete process.env.DORKOS_VERSION;
-      }
+      vi.stubEnv('DORKOS_VERSION', '2.0.0');
+      vi.resetModules();
+      const { handleGetServerInfo: handler } = await import('../mcp-tool-server.js');
+      const result = await handler({});
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.version).toBe('2.0.0');
+      vi.unstubAllEnvs();
     });
 
     it('defaults port to 4242 when env var unset', async () => {
-      const original = process.env.DORKOS_PORT;
-      delete process.env.DORKOS_PORT;
-      try {
-        const result = await handleGetServerInfo({});
-        const parsed = JSON.parse(result.content[0].text);
-        expect(parsed.port).toBe('4242');
-      } finally {
-        if (original !== undefined) process.env.DORKOS_PORT = original;
-      }
+      const result = await handleGetServerInfo({});
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.port).toBe(4242);
     });
 
     it('defaults version to development when env var unset', async () => {
-      const original = process.env.DORKOS_VERSION;
-      delete process.env.DORKOS_VERSION;
-      try {
-        const result = await handleGetServerInfo({});
-        const parsed = JSON.parse(result.content[0].text);
-        expect(parsed.version).toBe('development');
-      } finally {
-        if (original !== undefined) process.env.DORKOS_VERSION = original;
-      }
+      const result = await handleGetServerInfo({});
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.version).toBe('development');
     });
   });
 

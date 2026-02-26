@@ -2,6 +2,7 @@ import os from 'node:os';
 import { getGitStatus } from './git-status.js';
 import type { GitStatusResponse } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
+import { env } from '../../env.js';
 
 /**
  * Build a system prompt append string containing runtime context.
@@ -29,8 +30,8 @@ async function buildEnvBlock(cwd: string): Promise<string> {
   const lines = [
     `Working directory: ${cwd}`,
     `Product: DorkOS`,
-    `Version: ${process.env.DORKOS_VERSION ?? 'development'}`,
-    `Port: ${process.env.DORKOS_PORT ?? '4242'}`,
+    `Version: ${env.DORKOS_VERSION ?? 'development'}`,
+    `Port: ${env.DORKOS_PORT}`,
     `Platform: ${os.platform()}`,
     `OS Version: ${os.release()}`,
     `Node.js: ${process.version}`,

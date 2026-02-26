@@ -14,6 +14,7 @@ import tunnelRoutes from './routes/tunnel.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
+import { env } from './env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,8 +44,8 @@ export function createApp() {
   app.use(errorHandler);
 
   // In production, serve the built React app
-  if (process.env.NODE_ENV === 'production') {
-    const distPath = process.env.CLIENT_DIST_PATH ?? path.join(__dirname, '../../client/dist');
+  if (env.NODE_ENV === 'production') {
+    const distPath = env.CLIENT_DIST_PATH ?? path.join(__dirname, '../../client/dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
