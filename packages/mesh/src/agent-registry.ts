@@ -1,15 +1,17 @@
 /**
- * SQLite-backed agent registry for the Mesh module.
+ * Drizzle-backed agent registry for the Mesh module.
  *
- * Persists registered agent manifests in a SQLite database, providing
- * fast lookup by ULID or project path. Follows the same better-sqlite3
- * patterns as relay's sqlite-index and server's pulse-store: WAL mode,
- * PRAGMA user_version migrations, and prepared statements.
+ * Persists registered agent manifests in the consolidated DorkOS database,
+ * providing fast lookup by ULID or project path. Uses Drizzle ORM query
+ * builders against the `agents` table defined in @dorkos/db.
  *
  * @module mesh/agent-registry
  */
-import Database from 'better-sqlite3';
+import { eq, desc } from 'drizzle-orm';
+import { agents } from '@dorkos/db';
+import type { Db } from '@dorkos/db';
 import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
+import { computeHealthStatus } from './health.js';
 
 // === Types ===
 
@@ -29,30 +31,6 @@ export interface AgentListFilters {
   capability?: string;
 }
 
-// === Row Shape ===
-
-/** Raw SQLite row for an agent (snake_case columns). */
-interface AgentRow {
-  id: string;
-  name: string;
-  description: string;
-  project_path: string;
-  runtime: string;
-  capabilities_json: string;
-  manifest_json: string;
-  registered_at: string;
-  registered_by: string;
-  namespace: string;
-  scan_root: string;
-}
-
-/** Raw SQLite row for an agent with health columns (snake_case). */
-interface AgentHealthRow extends AgentRow {
-  last_seen_at: string | null;
-  last_seen_event: string | null;
-  health_status: 'active' | 'inactive' | 'stale';
-}
-
 /** An agent entry with computed health status. */
 export interface AgentHealthEntry extends AgentRegistryEntry {
   lastSeenAt: string | null;
@@ -68,40 +46,6 @@ export interface AggregateStats {
   staleCount: number;
 }
 
-// === Migrations ===
-
-const MIGRATIONS = [
-  // Version 1: initial schema
-  `CREATE TABLE IF NOT EXISTS agents (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    project_path TEXT NOT NULL UNIQUE,
-    runtime TEXT NOT NULL,
-    capabilities_json TEXT NOT NULL DEFAULT '[]',
-    manifest_json TEXT NOT NULL,
-    registered_at TEXT NOT NULL,
-    registered_by TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_agents_project_path ON agents(project_path);
-  CREATE INDEX IF NOT EXISTS idx_agents_runtime ON agents(runtime);`,
-  // Version 2: health tracking columns
-  `ALTER TABLE agents ADD COLUMN last_seen_at TEXT;
-   ALTER TABLE agents ADD COLUMN last_seen_event TEXT;`,
-  // Version 3: budget counters for sliding window rate limiting
-  `CREATE TABLE IF NOT EXISTS budget_counters (
-    agent_id TEXT NOT NULL,
-    bucket_minute INTEGER NOT NULL,
-    call_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (agent_id, bucket_minute)
-  );
-  CREATE INDEX IF NOT EXISTS idx_budget_counters_agent ON budget_counters(agent_id);`,
-  // Version 4: namespace and scan_root columns
-  `ALTER TABLE agents ADD COLUMN namespace TEXT NOT NULL DEFAULT '';
-   ALTER TABLE agents ADD COLUMN scan_root TEXT NOT NULL DEFAULT '';
-   CREATE INDEX IF NOT EXISTS idx_agents_namespace ON agents(namespace);`,
-];
-
 // === AgentRegistry ===
 
 /**
@@ -109,87 +53,20 @@ const MIGRATIONS = [
  *
  * @example
  * ```typescript
- * const registry = new AgentRegistry('/home/user/.dork/mesh/mesh.db');
+ * const db = createDb(':memory:');
+ * runMigrations(db);
+ * const registry = new AgentRegistry(db);
  * registry.insert({ id: ulid(), name: 'My Agent', projectPath: '/projects/my-agent', ... });
  * const agent = registry.getByPath('/projects/my-agent');
- * registry.close();
  * ```
  */
 export class AgentRegistry {
-  private readonly db: Database.Database;
-  private readonly stmts: {
-    insert: Database.Statement;
-    getById: Database.Statement;
-    getByPath: Database.Statement;
-    listAll: Database.Statement;
-    listByNamespace: Database.Statement;
-    update: Database.Statement;
-    remove: Database.Statement;
-    updateHealth: Database.Statement;
-    getWithHealth: Database.Statement;
-    listWithHealth: Database.Statement;
-    getAggregateStats: Database.Statement;
-  };
-
   /**
-   * Open (or create) the agent registry database.
+   * Create an AgentRegistry backed by a Drizzle database instance.
    *
-   * @param dbPath - Absolute path to the SQLite database file
+   * @param db - Drizzle database instance from createDb()
    */
-  constructor(dbPath: string) {
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('synchronous = NORMAL');
-    this.db.pragma('busy_timeout = 5000');
-    this.db.pragma('temp_store = MEMORY');
-    this.db.pragma('foreign_keys = ON');
-
-    this.runMigrations();
-
-    this.stmts = {
-      insert: this.db.prepare(
-        `INSERT INTO agents (id, name, description, project_path, runtime, capabilities_json, manifest_json, registered_at, registered_by, namespace, scan_root)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ),
-      getById: this.db.prepare(`SELECT * FROM agents WHERE id = ?`),
-      getByPath: this.db.prepare(`SELECT * FROM agents WHERE project_path = ?`),
-      listAll: this.db.prepare(`SELECT * FROM agents ORDER BY registered_at DESC`),
-      listByNamespace: this.db.prepare(`SELECT * FROM agents WHERE namespace = ? ORDER BY registered_at DESC`),
-      update: this.db.prepare(
-        `UPDATE agents SET name = ?, description = ?, runtime = ?, capabilities_json = ?, manifest_json = ? WHERE id = ?`,
-      ),
-      remove: this.db.prepare(`DELETE FROM agents WHERE id = ?`),
-      updateHealth: this.db.prepare(
-        `UPDATE agents SET last_seen_at = ?, last_seen_event = ? WHERE id = ?`,
-      ),
-      getWithHealth: this.db.prepare(`
-        SELECT *, CASE
-          WHEN last_seen_at IS NULL THEN 'stale'
-          WHEN (julianday('now') - julianday(last_seen_at)) * 86400 < 300 THEN 'active'
-          WHEN (julianday('now') - julianday(last_seen_at)) * 86400 < 1800 THEN 'inactive'
-          ELSE 'stale'
-        END AS health_status
-        FROM agents WHERE id = ?
-      `),
-      listWithHealth: this.db.prepare(`
-        SELECT *, CASE
-          WHEN last_seen_at IS NULL THEN 'stale'
-          WHEN (julianday('now') - julianday(last_seen_at)) * 86400 < 300 THEN 'active'
-          WHEN (julianday('now') - julianday(last_seen_at)) * 86400 < 1800 THEN 'inactive'
-          ELSE 'stale'
-        END AS health_status
-        FROM agents ORDER BY registered_at DESC
-      `),
-      getAggregateStats: this.db.prepare(`
-        SELECT
-          COUNT(*) AS total_agents,
-          SUM(CASE WHEN last_seen_at IS NOT NULL AND (julianday('now') - julianday(last_seen_at)) * 86400 < 300 THEN 1 ELSE 0 END) AS active_count,
-          SUM(CASE WHEN last_seen_at IS NOT NULL AND (julianday('now') - julianday(last_seen_at)) * 86400 >= 300 AND (julianday('now') - julianday(last_seen_at)) * 86400 < 1800 THEN 1 ELSE 0 END) AS inactive_count,
-          SUM(CASE WHEN last_seen_at IS NULL OR (julianday('now') - julianday(last_seen_at)) * 86400 > 1800 THEN 1 ELSE 0 END) AS stale_count
-        FROM agents
-      `),
-    };
-  }
+  constructor(private readonly db: Db) {}
 
   /**
    * Insert a new agent into the registry.
@@ -198,19 +75,19 @@ export class AgentRegistry {
    * @throws If project_path already exists (UNIQUE constraint)
    */
   insert(agent: AgentRegistryEntry): void {
-    this.stmts.insert.run(
-      agent.id,
-      agent.name,
-      agent.description,
-      agent.projectPath,
-      agent.runtime,
-      JSON.stringify(agent.capabilities),
-      JSON.stringify(agent),
-      agent.registeredAt,
-      agent.registeredBy,
-      agent.namespace ?? '',
-      agent.scanRoot ?? '',
-    );
+    const now = new Date().toISOString();
+    this.db.insert(agents).values({
+      id: agent.id,
+      name: agent.name,
+      description: agent.description ?? '',
+      projectPath: agent.projectPath,
+      runtime: agent.runtime,
+      capabilities: JSON.stringify(agent.capabilities),
+      namespace: agent.namespace ?? 'default',
+      approver: agent.registeredBy,
+      registeredAt: agent.registeredAt,
+      updatedAt: now,
+    }).run();
   }
 
   /**
@@ -220,7 +97,8 @@ export class AgentRegistry {
    * @returns The agent entry, or undefined if not found
    */
   get(id: string): AgentRegistryEntry | undefined {
-    const row = this.stmts.getById.get(id) as AgentRow | undefined;
+    const rows = this.db.select().from(agents).where(eq(agents.id, id)).all();
+    const row = rows[0];
     return row ? this.rowToEntry(row) : undefined;
   }
 
@@ -231,7 +109,8 @@ export class AgentRegistry {
    * @returns The agent entry, or undefined if not found
    */
   getByPath(projectPath: string): AgentRegistryEntry | undefined {
-    const row = this.stmts.getByPath.get(projectPath) as AgentRow | undefined;
+    const rows = this.db.select().from(agents).where(eq(agents.projectPath, projectPath)).all();
+    const row = rows[0];
     return row ? this.rowToEntry(row) : undefined;
   }
 
@@ -242,7 +121,7 @@ export class AgentRegistry {
    * @returns Array of agent entries ordered by registration date (newest first)
    */
   list(filters?: AgentListFilters): AgentRegistryEntry[] {
-    const rows = this.stmts.listAll.all() as AgentRow[];
+    const rows = this.db.select().from(agents).orderBy(desc(agents.registeredAt)).all();
     const entries = rows.map((row) => this.rowToEntry(row));
 
     if (!filters) return entries;
@@ -265,15 +144,15 @@ export class AgentRegistry {
     const existing = this.get(id);
     if (!existing) return false;
 
-    const merged: AgentRegistryEntry = { ...existing, ...partial, id };
-    const result = this.stmts.update.run(
-      merged.name,
-      merged.description,
-      merged.runtime,
-      JSON.stringify(merged.capabilities),
-      JSON.stringify(merged),
-      id,
-    );
+    const merged = { ...existing, ...partial, id };
+    const now = new Date().toISOString();
+    const result = this.db.update(agents).set({
+      name: merged.name,
+      description: merged.description,
+      runtime: merged.runtime,
+      capabilities: JSON.stringify(merged.capabilities),
+      updatedAt: now,
+    }).where(eq(agents.id, id)).run();
     return result.changes > 0;
   }
 
@@ -284,7 +163,7 @@ export class AgentRegistry {
    * @returns `true` if the agent was removed, `false` if not found
    */
   remove(id: string): boolean {
-    const result = this.stmts.remove.run(id);
+    const result = this.db.delete(agents).where(eq(agents.id, id)).run();
     return result.changes > 0;
   }
 
@@ -297,7 +176,10 @@ export class AgentRegistry {
    * @returns true if agent was found and updated
    */
   updateHealth(id: string, lastSeenAt: string, lastSeenEvent: string): boolean {
-    const result = this.stmts.updateHealth.run(lastSeenAt, lastSeenEvent, id);
+    const result = this.db.update(agents).set({
+      lastSeenAt,
+      lastSeenEvent,
+    }).where(eq(agents.id, id)).run();
     return result.changes > 0;
   }
 
@@ -308,8 +190,9 @@ export class AgentRegistry {
    * @returns The agent entry with health fields, or undefined if not found
    */
   getWithHealth(id: string): AgentHealthEntry | undefined {
-    const row = this.stmts.getWithHealth.get(id) as AgentHealthRow | undefined;
-    return row ? this.healthRowToEntry(row) : undefined;
+    const rows = this.db.select().from(agents).where(eq(agents.id, id)).all();
+    const row = rows[0];
+    return row ? this.rowToHealthEntry(row) : undefined;
   }
 
   /**
@@ -319,8 +202,8 @@ export class AgentRegistry {
    * @returns Array of agents with health status ordered by registration date (newest first)
    */
   listWithHealth(filters?: AgentListFilters): AgentHealthEntry[] {
-    const rows = this.stmts.listWithHealth.all() as AgentHealthRow[];
-    const entries = rows.map((row) => this.healthRowToEntry(row));
+    const rows = this.db.select().from(agents).orderBy(desc(agents.registeredAt)).all();
+    const entries = rows.map((row) => this.rowToHealthEntry(row));
     if (!filters) return entries;
     return entries.filter((entry) => {
       if (filters.runtime && entry.runtime !== filters.runtime) return false;
@@ -335,36 +218,24 @@ export class AgentRegistry {
    * @returns Counts of total, active, inactive, and stale agents
    */
   getAggregateStats(): AggregateStats {
-    const row = this.stmts.getAggregateStats.get() as {
-      total_agents: number;
-      active_count: number;
-      inactive_count: number;
-      stale_count: number;
-    };
-    return {
-      totalAgents: row.total_agents,
-      activeCount: row.active_count,
-      inactiveCount: row.inactive_count,
-      staleCount: row.stale_count,
-    };
-  }
+    const rows = this.db.select().from(agents).all();
+    let activeCount = 0;
+    let inactiveCount = 0;
+    let staleCount = 0;
 
-  /** Close the database connection. */
-  close(): void {
-    this.db.close();
-  }
-
-  /** Expose the underlying Database instance for shared use (e.g., DenialList). */
-  get database(): Database.Database {
-    return this.db;
-  }
-
-  private runMigrations(): void {
-    const currentVersion = (this.db.pragma('user_version', { simple: true }) as number) ?? 0;
-    for (let i = currentVersion; i < MIGRATIONS.length; i++) {
-      this.db.exec(MIGRATIONS[i]!);
-      this.db.pragma(`user_version = ${i + 1}`);
+    for (const row of rows) {
+      const status = computeHealthStatus(row.lastSeenAt);
+      if (status === 'active') activeCount++;
+      else if (status === 'inactive') inactiveCount++;
+      else staleCount++;
     }
+
+    return {
+      totalAgents: rows.length,
+      activeCount,
+      inactiveCount,
+      staleCount,
+    };
   }
 
   /**
@@ -374,30 +245,38 @@ export class AgentRegistry {
    * @returns Array of agent entries in the given namespace
    */
   listByNamespace(namespace: string): AgentRegistryEntry[] {
-    const rows = this.stmts.listByNamespace.all(namespace) as AgentRow[];
+    const rows = this.db.select().from(agents)
+      .where(eq(agents.namespace, namespace))
+      .orderBy(desc(agents.registeredAt))
+      .all();
     return rows.map((row) => this.rowToEntry(row));
   }
 
-  private rowToEntry(row: AgentRow): AgentRegistryEntry {
-    const manifest = JSON.parse(row.manifest_json) as AgentManifest;
+  /** Row type returned by Drizzle select from agents table. */
+  private rowToEntry(row: typeof agents.$inferSelect): AgentRegistryEntry {
     return {
-      ...manifest,
-      projectPath: row.project_path,
-      namespace: row.namespace ?? '',
-      scanRoot: row.scan_root ?? '',
+      id: row.id,
+      name: row.name,
+      description: row.description ?? '',
+      runtime: row.runtime as AgentRuntime,
+      capabilities: JSON.parse(row.capabilities) as string[],
+      behavior: { responseMode: 'always' },
+      budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
+      namespace: row.namespace,
+      registeredAt: row.registeredAt,
+      registeredBy: row.approver ?? 'mesh',
+      projectPath: row.projectPath,
+      scanRoot: '',
     };
   }
 
-  private healthRowToEntry(row: AgentHealthRow): AgentHealthEntry {
-    const manifest = JSON.parse(row.manifest_json) as AgentManifest;
+  /** Convert a row to an entry with computed health status. */
+  private rowToHealthEntry(row: typeof agents.$inferSelect): AgentHealthEntry {
     return {
-      ...manifest,
-      projectPath: row.project_path,
-      namespace: row.namespace ?? '',
-      scanRoot: row.scan_root ?? '',
-      lastSeenAt: row.last_seen_at,
-      lastSeenEvent: row.last_seen_event,
-      healthStatus: row.health_status,
+      ...this.rowToEntry(row),
+      lastSeenAt: row.lastSeenAt,
+      lastSeenEvent: row.lastSeenEvent,
+      healthStatus: computeHealthStatus(row.lastSeenAt),
     };
   }
 }

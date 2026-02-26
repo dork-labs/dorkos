@@ -25,6 +25,9 @@ describe('serverEnv', () => {
   });
 
   it('feature flags default to false', async () => {
+    vi.stubEnv('DORKOS_PULSE_ENABLED', undefined as unknown as string);
+    vi.stubEnv('DORKOS_RELAY_ENABLED', undefined as unknown as string);
+    vi.stubEnv('DORKOS_MESH_ENABLED', undefined as unknown as string);
     const { env } = await import('../env.js');
     expect(env.DORKOS_PULSE_ENABLED).toBe(false);
     expect(env.DORKOS_RELAY_ENABLED).toBe(false);

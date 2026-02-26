@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { DeadLetterQueue } from '../dead-letter-queue.js';
 import { MaildirStore } from '../maildir-store.js';
 import { SqliteIndex } from '../sqlite-index.js';
@@ -11,6 +12,12 @@ import type { DeadLetter } from '../types.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function createTestDb(): Db {
+  const db = createDb(':memory:');
+  runMigrations(db);
+  return db;
+}
 
 const TEST_ENDPOINT = 'dlq-endpoint-abc';
 
@@ -63,10 +70,9 @@ let dlq: DeadLetterQueue;
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-dlq-test-'));
   mailboxesDir = path.join(tmpDir, 'mailboxes');
-  const dbPath = path.join(tmpDir, 'index.db');
 
   maildirStore = new MaildirStore({ rootDir: mailboxesDir });
-  sqliteIndex = new SqliteIndex({ dbPath });
+  sqliteIndex = new SqliteIndex(createTestDb());
   dlq = new DeadLetterQueue({
     maildirStore,
     sqliteIndex,

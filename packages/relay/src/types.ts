@@ -146,6 +146,8 @@ export interface ReliabilityConfig {
 
 export interface RelayOptions {
   dataDir?: string;
+  /** Drizzle database instance. When provided, SqliteIndex uses this instead of creating its own. */
+  db?: import('@dorkos/db').Db;
   maxHops?: number;
   defaultTtlMs?: number;
   defaultCallBudget?: number;

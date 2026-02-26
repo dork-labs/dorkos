@@ -2,12 +2,13 @@
  * Maps agent manifest budget constraints to enforceable rate limits.
  *
  * Uses a sliding window log algorithm (ADR 0014) with 1-minute time buckets
- * stored in SQLite. Each call to `checkBudget` sums calls in the last 60
- * minutes and compares against `maxCallsPerHour`.
+ * stored in SQLite via Drizzle ORM. Each call to `checkBudget` sums calls
+ * in the last 60 minutes and compares against `maxCallsPerHour`.
  *
  * @module mesh/budget-mapper
  */
-import type Database from 'better-sqlite3';
+import type { Db } from '@dorkos/db';
+import { rateLimitBuckets, eq, and, sql } from '@dorkos/db';
 
 /** Number of 1-minute buckets in one hour. */
 const BUCKETS_PER_HOUR = 60;
@@ -33,13 +34,12 @@ export type BudgetCheckResult = BudgetAllowed | BudgetDenied;
 /**
  * Sliding window rate limiter for agent call budgets.
  *
- * Stores call counts in 1-minute buckets in the `budget_counters` SQLite table
- * (created by migration v3 in AgentRegistry). Sums the last 60 buckets to
- * enforce `maxCallsPerHour`.
+ * Stores call counts in 1-minute buckets in the `rate_limit_buckets` SQLite table.
+ * Sums the last 60 buckets to enforce `maxCallsPerHour`.
  *
  * @example
  * ```typescript
- * const mapper = new BudgetMapper(registry.database);
+ * const mapper = new BudgetMapper(db);
  * const result = mapper.checkBudget('agent-id', 100);
  * if (result.allowed) {
  *   mapper.recordCall('agent-id');
@@ -47,35 +47,12 @@ export type BudgetCheckResult = BudgetAllowed | BudgetDenied;
  * ```
  */
 export class BudgetMapper {
-  private readonly stmts: {
-    increment: Database.Statement;
-    sumWindow: Database.Statement;
-    prune: Database.Statement;
-  };
-
   /**
-   * Create a BudgetMapper backed by the given SQLite database.
+   * Create a BudgetMapper backed by a Drizzle database instance.
    *
-   * @param db - A better-sqlite3 Database instance (shared with AgentRegistry)
+   * @param db - Drizzle database instance from `@dorkos/db`
    */
-  constructor(private readonly db: Database.Database) {
-    this.stmts = {
-      increment: this.db.prepare(
-        `INSERT INTO budget_counters (agent_id, bucket_minute, call_count)
-         VALUES (?, ?, 1)
-         ON CONFLICT(agent_id, bucket_minute)
-         DO UPDATE SET call_count = call_count + 1`,
-      ),
-      sumWindow: this.db.prepare(
-        `SELECT COALESCE(SUM(call_count), 0) AS total
-         FROM budget_counters
-         WHERE agent_id = ? AND bucket_minute >= ?`,
-      ),
-      prune: this.db.prepare(
-        `DELETE FROM budget_counters WHERE bucket_minute < ?`,
-      ),
-    };
-  }
+  constructor(private readonly db: Db) {}
 
   /**
    * Check if an agent has remaining budget for this hour.
@@ -89,10 +66,23 @@ export class BudgetMapper {
     const windowStart = nowMinute - BUCKETS_PER_HOUR;
 
     // Lazily prune old buckets
-    this.stmts.prune.run(nowMinute - PRUNE_AGE_MINUTES);
+    this.db
+      .delete(rateLimitBuckets)
+      .where(sql`${rateLimitBuckets.bucketMinute} < ${nowMinute - PRUNE_AGE_MINUTES}`)
+      .run();
 
-    const row = this.stmts.sumWindow.get(agentId, windowStart) as { total: number };
-    const used = row.total;
+    const result = this.db
+      .select({ total: sql<number>`coalesce(sum(${rateLimitBuckets.count}), 0)` })
+      .from(rateLimitBuckets)
+      .where(
+        and(
+          eq(rateLimitBuckets.agentId, agentId),
+          sql`${rateLimitBuckets.bucketMinute} >= ${windowStart}`,
+        ),
+      )
+      .get();
+
+    const used = result?.total ?? 0;
 
     if (used >= maxCallsPerHour) {
       return { allowed: false, used };
@@ -108,7 +98,14 @@ export class BudgetMapper {
    */
   recordCall(agentId: string): void {
     const nowMinute = this.currentMinuteBucket();
-    this.stmts.increment.run(agentId, nowMinute);
+    this.db
+      .insert(rateLimitBuckets)
+      .values({ agentId, bucketMinute: nowMinute, count: 1 })
+      .onConflictDoUpdate({
+        target: [rateLimitBuckets.agentId, rateLimitBuckets.bucketMinute],
+        set: { count: sql`${rateLimitBuckets.count} + 1` },
+      })
+      .run();
   }
 
   /**

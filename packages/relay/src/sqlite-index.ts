@@ -6,70 +6,34 @@
  * from Maildir files -- if it corrupts, call `rebuild()` to recreate it
  * from scratch.
  *
- * Follows the same better-sqlite3 patterns as `apps/server/src/services/pulse-store.ts`:
- * WAL mode, PRAGMA user_version migrations, prepared statements.
+ * Uses Drizzle ORM against the consolidated @dorkos/db database.
  *
  * @module relay/sqlite-index
  */
-import Database from 'better-sqlite3';
+import { eq, and, lt, desc, sql, count } from 'drizzle-orm';
+import { relayIndex, type Db } from '@dorkos/db';
 import type { RelayMetrics } from './types.js';
 import type { MaildirStore } from './maildir-store.js';
 
 // === Types ===
 
 /** Status of a message in the index. */
-export type MessageStatus = 'new' | 'cur' | 'failed';
-
-/** Raw row shape from the `messages` SQLite table (snake_case). */
-interface MessageRow {
-  id: string;
-  subject: string;
-  sender: string;
-  endpoint_hash: string;
-  status: string;
-  created_at: string;
-  ttl: number;
-}
+export type MessageStatus = 'pending' | 'delivered' | 'failed';
 
 /** Mapped message record (camelCase). */
 export interface IndexedMessage {
   id: string;
   subject: string;
-  sender: string;
   endpointHash: string;
   status: MessageStatus;
   createdAt: string;
-  ttl: number;
+  expiresAt: string | null;
 }
 
-/** Options for creating a SqliteIndex. */
+/** @deprecated Use `Db` from `@dorkos/db` instead. */
 export interface SqliteIndexOptions {
-  /** Absolute path to the SQLite database file (e.g. `~/.dork/relay/index.db`). */
   dbPath: string;
 }
-
-// === Migrations ===
-
-const MIGRATIONS = [
-  // Version 1: initial schema
-  `CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    subject TEXT NOT NULL,
-    sender TEXT NOT NULL,
-    endpoint_hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'new',
-    created_at TEXT NOT NULL,
-    ttl INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_messages_subject ON messages(subject);
-  CREATE INDEX IF NOT EXISTS idx_messages_endpoint_hash ON messages(endpoint_hash, created_at DESC);
-  CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
-  CREATE INDEX IF NOT EXISTS idx_messages_ttl ON messages(ttl);`,
-
-  // Version 2: composite index for rate-limiting sender lookups
-  `CREATE INDEX IF NOT EXISTS idx_messages_sender_created
-    ON messages(sender, created_at DESC);`,
-];
 
 // === SqliteIndex ===
 
@@ -82,90 +46,23 @@ const MIGRATIONS = [
  *
  * @example
  * ```ts
- * const index = new SqliteIndex({ dbPath: '/home/user/.dork/relay/index.db' });
+ * import { createDb, runMigrations } from '@dorkos/db';
+ * const db = createDb(':memory:');
+ * runMigrations(db);
+ * const index = new SqliteIndex(db);
  * index.insertMessage({
  *   id: '01JABC',
  *   subject: 'relay.agent.proj.backend',
- *   sender: 'relay.agent.proj.frontend',
  *   endpointHash: 'a1b2c3d4e5f6',
- *   status: 'new',
+ *   status: 'pending',
  *   createdAt: new Date().toISOString(),
- *   ttl: Date.now() + 60000,
+ *   expiresAt: new Date(Date.now() + 60000).toISOString(),
  * });
  * const messages = index.getBySubject('relay.agent.proj.backend');
  * ```
  */
 export class SqliteIndex {
-  private readonly db: Database.Database;
-  private readonly stmts: {
-    insertMessage: Database.Statement;
-    updateStatus: Database.Statement;
-    getBySubject: Database.Statement;
-    getByEndpoint: Database.Statement;
-    deleteExpired: Database.Statement;
-    deleteAll: Database.Statement;
-    countByStatus: Database.Statement;
-    countBySubject: Database.Statement;
-    totalCount: Database.Statement;
-    getMessage: Database.Statement;
-    countSenderInWindow: Database.Statement;
-    countNewByEndpoint: Database.Statement;
-  };
-
-  constructor(options: SqliteIndexOptions) {
-    this.db = new Database(options.dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('synchronous = NORMAL');
-    this.db.pragma('busy_timeout = 5000');
-    this.db.pragma('temp_store = MEMORY');
-    this.db.pragma('foreign_keys = ON');
-
-    this.runMigrations();
-
-    this.stmts = {
-      insertMessage: this.db.prepare(
-        `INSERT OR REPLACE INTO messages (id, subject, sender, endpoint_hash, status, created_at, ttl)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ),
-      updateStatus: this.db.prepare(
-        `UPDATE messages SET status = ? WHERE id = ?`
-      ),
-      getBySubject: this.db.prepare(
-        `SELECT * FROM messages WHERE subject = ? ORDER BY created_at DESC`
-      ),
-      getByEndpoint: this.db.prepare(
-        `SELECT * FROM messages WHERE endpoint_hash = ? ORDER BY created_at DESC`
-      ),
-      deleteExpired: this.db.prepare(
-        `DELETE FROM messages WHERE ttl < ?`
-      ),
-      deleteAll: this.db.prepare(
-        `DELETE FROM messages`
-      ),
-      countByStatus: this.db.prepare(
-        `SELECT status, COUNT(*) as count FROM messages GROUP BY status`
-      ),
-      countBySubject: this.db.prepare(
-        `SELECT subject, COUNT(*) as count FROM messages GROUP BY subject ORDER BY count DESC`
-      ),
-      totalCount: this.db.prepare(
-        `SELECT COUNT(*) as count FROM messages`
-      ),
-      getMessage: this.db.prepare(
-        `SELECT * FROM messages WHERE id = ?`
-      ),
-      /** Count messages from a sender within a time window (for rate limiting). */
-      countSenderInWindow: this.db.prepare(
-        `SELECT COUNT(*) as cnt FROM messages
-         WHERE sender = ? AND created_at > ?`
-      ),
-      /** Count unprocessed messages for an endpoint (for backpressure). */
-      countNewByEndpoint: this.db.prepare(
-        `SELECT COUNT(*) as cnt FROM messages
-         WHERE endpoint_hash = ? AND status = 'new'`
-      ),
-    };
-  }
+  constructor(private readonly db: Db) {}
 
   // --- Write Operations ---
 
@@ -178,26 +75,42 @@ export class SqliteIndex {
    * @param message - The indexed message record to insert.
    */
   insertMessage(message: IndexedMessage): void {
-    this.stmts.insertMessage.run(
-      message.id,
-      message.subject,
-      message.sender,
-      message.endpointHash,
-      message.status,
-      message.createdAt,
-      message.ttl,
-    );
+    this.db
+      .insert(relayIndex)
+      .values({
+        id: message.id,
+        subject: message.subject,
+        endpointHash: message.endpointHash,
+        status: message.status,
+        createdAt: message.createdAt,
+        expiresAt: message.expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: relayIndex.id,
+        set: {
+          subject: message.subject,
+          endpointHash: message.endpointHash,
+          status: message.status,
+          createdAt: message.createdAt,
+          expiresAt: message.expiresAt,
+        },
+      })
+      .run();
   }
 
   /**
    * Update the status of an existing message.
    *
    * @param id - The ULID of the message to update.
-   * @param status - The new status (`new`, `cur`, or `failed`).
+   * @param status - The new status (`pending`, `delivered`, or `failed`).
    * @returns `true` if a row was updated, `false` if the message was not found.
    */
   updateStatus(id: string, status: MessageStatus): boolean {
-    const result = this.stmts.updateStatus.run(status, id);
+    const result = this.db
+      .update(relayIndex)
+      .set({ status })
+      .where(eq(relayIndex.id, id))
+      .run();
     return result.changes > 0;
   }
 
@@ -210,8 +123,12 @@ export class SqliteIndex {
    * @returns The indexed message, or `null` if not found.
    */
   getMessage(id: string): IndexedMessage | null {
-    const row = this.stmts.getMessage.get(id) as MessageRow | undefined;
-    return row ? mapMessageRow(row) : null;
+    const rows = this.db
+      .select()
+      .from(relayIndex)
+      .where(eq(relayIndex.id, id))
+      .all();
+    return rows.length > 0 ? mapRow(rows[0]) : null;
   }
 
   /**
@@ -221,8 +138,13 @@ export class SqliteIndex {
    * @returns An array of indexed messages matching the subject.
    */
   getBySubject(subject: string): IndexedMessage[] {
-    const rows = this.stmts.getBySubject.all(subject) as MessageRow[];
-    return rows.map(mapMessageRow);
+    const rows = this.db
+      .select()
+      .from(relayIndex)
+      .where(eq(relayIndex.subject, subject))
+      .orderBy(desc(relayIndex.createdAt))
+      .all();
+    return rows.map(mapRow);
   }
 
   /**
@@ -232,33 +154,52 @@ export class SqliteIndex {
    * @returns An array of indexed messages for the endpoint.
    */
   getByEndpoint(endpointHash: string): IndexedMessage[] {
-    const rows = this.stmts.getByEndpoint.all(endpointHash) as MessageRow[];
-    return rows.map(mapMessageRow);
+    const rows = this.db
+      .select()
+      .from(relayIndex)
+      .where(eq(relayIndex.endpointHash, endpointHash))
+      .orderBy(desc(relayIndex.createdAt))
+      .all();
+    return rows.map(mapRow);
   }
 
   /**
-   * Count messages sent by a specific sender within a time window.
+   * Count messages sent within a time window by filtering on createdAt.
    * Used by the rate limiter for sliding window log checks.
    *
-   * @param sender - The sender's subject identifier.
+   * @param sender - Unused (retained for API compatibility). Rate limiting
+   *        is now done at the RelayCore level before indexing.
    * @param windowStartIso - ISO 8601 timestamp marking the start of the window.
-   * @returns The number of messages from this sender after the window start.
+   * @returns The number of messages after the window start.
    */
-  countSenderInWindow(sender: string, windowStartIso: string): number {
-    const row = this.stmts.countSenderInWindow.get(sender, windowStartIso) as { cnt: number };
-    return row.cnt;
+  countSenderInWindow(_sender: string, windowStartIso: string): number {
+    const rows = this.db
+      .select({ cnt: count() })
+      .from(relayIndex)
+      .where(sql`${relayIndex.createdAt} > ${windowStartIso}`)
+      .all();
+    return rows[0]?.cnt ?? 0;
   }
 
   /**
-   * Count unprocessed (status='new') messages for an endpoint.
+   * Count unprocessed (status='pending') messages for an endpoint.
    * Used by backpressure detection.
    *
    * @param endpointHash - The endpoint hash to check.
-   * @returns The number of messages with status 'new' for this endpoint.
+   * @returns The number of messages with status 'pending' for this endpoint.
    */
   countNewByEndpoint(endpointHash: string): number {
-    const row = this.stmts.countNewByEndpoint.get(endpointHash) as { cnt: number };
-    return row.cnt;
+    const rows = this.db
+      .select({ cnt: count() })
+      .from(relayIndex)
+      .where(
+        and(
+          eq(relayIndex.endpointHash, endpointHash),
+          eq(relayIndex.status, 'pending'),
+        ),
+      )
+      .all();
+    return rows[0]?.cnt ?? 0;
   }
 
   // --- Query Operations ---
@@ -266,8 +207,8 @@ export class SqliteIndex {
   /**
    * Query messages with optional filters and cursor-based pagination.
    *
-   * Supports filtering by subject, status, sender, and endpoint hash.
-   * Uses ULID cursor for pagination (messages are sorted by created_at DESC).
+   * Supports filtering by subject, status, sender (no-op), and endpoint hash.
+   * Uses ULID cursor for pagination (messages are sorted by id DESC).
    *
    * @param filters - Optional query filters
    * @returns An object with messages array and optional nextCursor
@@ -280,60 +221,70 @@ export class SqliteIndex {
     cursor?: string;
     limit?: number;
   }): { messages: IndexedMessage[]; nextCursor?: string } {
-    const conditions: string[] = [];
-    const params: unknown[] = [];
+    const conditions = [];
 
     if (filters?.subject) {
-      conditions.push('subject = ?');
-      params.push(filters.subject);
+      conditions.push(eq(relayIndex.subject, filters.subject));
     }
     if (filters?.status) {
-      conditions.push('status = ?');
-      params.push(filters.status);
-    }
-    if (filters?.sender) {
-      conditions.push('sender = ?');
-      params.push(filters.sender);
+      conditions.push(
+        eq(relayIndex.status, filters.status as 'pending' | 'delivered' | 'failed'),
+      );
     }
     if (filters?.endpointHash) {
-      conditions.push('endpoint_hash = ?');
-      params.push(filters.endpointHash);
+      conditions.push(eq(relayIndex.endpointHash, filters.endpointHash));
     }
     if (filters?.cursor) {
-      conditions.push('id < ?');
-      params.push(filters.cursor);
+      conditions.push(lt(relayIndex.id, filters.cursor));
     }
 
     const limit = filters?.limit ?? 50;
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const sql = `SELECT * FROM messages ${where} ORDER BY id DESC LIMIT ?`;
-    params.push(limit + 1);
+    const whereClause =
+      conditions.length > 0 ? and(...conditions) : undefined;
 
-    const rows = this.db.prepare(sql).all(...params) as MessageRow[];
+    const rows = this.db
+      .select()
+      .from(relayIndex)
+      .where(whereClause)
+      .orderBy(desc(relayIndex.id))
+      .limit(limit + 1)
+      .all();
+
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
-    const messages = pageRows.map(mapMessageRow);
+    const messages = pageRows.map(mapRow);
 
     return {
       messages,
-      ...(hasMore && messages.length > 0 && { nextCursor: messages[messages.length - 1].id }),
+      ...(hasMore &&
+        messages.length > 0 && {
+          nextCursor: messages[messages.length - 1].id,
+        }),
     };
   }
 
   // --- Maintenance Operations ---
 
   /**
-   * Delete all messages whose TTL has expired.
+   * Delete all messages whose expiresAt has passed.
    *
-   * Compares the stored TTL (Unix timestamp in ms) against the provided
-   * current time. Messages with `ttl < now` are removed.
+   * Compares the stored expiresAt (ISO 8601 string) against the current time.
    *
    * @param now - Current time as Unix timestamp in milliseconds. Defaults to `Date.now()`.
    * @returns The number of expired messages deleted.
    */
   deleteExpired(now?: number): number {
     const timestamp = now ?? Date.now();
-    const result = this.stmts.deleteExpired.run(timestamp);
+    const isoNow = new Date(timestamp).toISOString();
+    const result = this.db
+      .delete(relayIndex)
+      .where(
+        and(
+          sql`${relayIndex.expiresAt} IS NOT NULL`,
+          lt(relayIndex.expiresAt, isoNow),
+        ),
+      )
+      .run();
     return result.changes;
   }
 
@@ -356,15 +307,19 @@ export class SqliteIndex {
     endpointHashes: Map<string, string>,
   ): Promise<number> {
     // Drop all existing data
-    this.stmts.deleteAll.run();
+    this.db.delete(relayIndex).run();
 
-    let count = 0;
+    let rebuildCount = 0;
     const subdirs = ['new', 'cur', 'failed'] as const;
 
-    for (const [hash, subject] of endpointHashes) {
-      // Suppress unused variable warning — subject is used for documentation clarity
-      void subject;
+    /** Map Maildir subdirectory names to Drizzle status values. */
+    const statusMap: Record<string, MessageStatus> = {
+      new: 'pending',
+      cur: 'delivered',
+      failed: 'failed',
+    };
 
+    for (const [hash, _subject] of endpointHashes) {
       for (const subdir of subdirs) {
         const messageIds = await listMessageIds(maildirStore, hash, subdir);
 
@@ -372,25 +327,22 @@ export class SqliteIndex {
           const envelope = await maildirStore.readEnvelope(hash, subdir, messageId);
           if (!envelope) continue;
 
-          // Use the Maildir filename ULID as the index ID (not envelope.id)
-          // to stay consistent with how RelayCore indexes during normal operation.
-          // In fan-out, one envelope goes to multiple endpoints — each gets a
-          // unique filename ULID, so using it preserves per-delivery rows.
           this.insertMessage({
             id: messageId,
             subject: envelope.subject,
-            sender: envelope.from,
             endpointHash: hash,
-            status: subdir === 'failed' ? 'failed' : subdir === 'cur' ? 'cur' : 'new',
+            status: statusMap[subdir],
             createdAt: envelope.createdAt,
-            ttl: envelope.budget.ttl,
+            expiresAt: envelope.budget.ttl
+              ? new Date(envelope.budget.ttl).toISOString()
+              : null,
           });
-          count++;
+          rebuildCount++;
         }
       }
     }
 
-    return count;
+    return rebuildCount;
   }
 
   // --- Metrics ---
@@ -404,19 +356,42 @@ export class SqliteIndex {
    * @returns Aggregate relay metrics.
    */
   getMetrics(): RelayMetrics {
-    const totalResult = this.stmts.totalCount.get() as { count: number };
-    const totalMessages = totalResult.count;
+    // Total count
+    const totalRows = this.db
+      .select({ cnt: count() })
+      .from(relayIndex)
+      .all();
+    const totalMessages = totalRows[0]?.cnt ?? 0;
 
-    const statusRows = this.stmts.countByStatus.all() as Array<{ status: string; count: number }>;
+    // Count by status
+    const statusRows = this.db
+      .select({
+        status: relayIndex.status,
+        cnt: count(),
+      })
+      .from(relayIndex)
+      .groupBy(relayIndex.status)
+      .all();
     const byStatus: Record<string, number> = {};
     for (const row of statusRows) {
-      byStatus[row.status] = row.count;
+      if (row.status) {
+        byStatus[row.status] = row.cnt;
+      }
     }
 
-    const subjectRows = this.stmts.countBySubject.all() as Array<{ subject: string; count: number }>;
+    // Count by subject
+    const subjectRows = this.db
+      .select({
+        subject: relayIndex.subject,
+        cnt: count(),
+      })
+      .from(relayIndex)
+      .groupBy(relayIndex.subject)
+      .orderBy(desc(count()))
+      .all();
     const bySubject = subjectRows.map((row) => ({
       subject: row.subject,
-      count: row.count,
+      count: row.cnt,
     }));
 
     return { totalMessages, byStatus, bySubject };
@@ -427,10 +402,11 @@ export class SqliteIndex {
   /**
    * Close the database connection.
    *
-   * Should be called during graceful shutdown to release the WAL file.
+   * No-op for Drizzle — the consolidated database lifecycle is managed
+   * by the server startup code. Retained for API compatibility.
    */
   close(): void {
-    this.db.close();
+    // No-op: database lifecycle is managed by the caller
   }
 
   /**
@@ -439,44 +415,28 @@ export class SqliteIndex {
    * @returns `true` if WAL mode is active.
    */
   isWalMode(): boolean {
-    const result = this.db.pragma('journal_mode', { simple: true }) as string;
+    const result = this.db.$client.pragma('journal_mode', {
+      simple: true,
+    }) as string;
     return result === 'wal';
-  }
-
-  // --- Internal Helpers ---
-
-  /** Run schema migrations based on PRAGMA user_version. */
-  private runMigrations(): void {
-    const currentVersion = (this.db.pragma('user_version', { simple: true }) as number) ?? 0;
-    if (currentVersion >= MIGRATIONS.length) return;
-
-    const migrate = this.db.transaction(() => {
-      for (let i = currentVersion; i < MIGRATIONS.length; i++) {
-        this.db.exec(MIGRATIONS[i]);
-      }
-      this.db.pragma(`user_version = ${MIGRATIONS.length}`);
-    });
-
-    migrate();
   }
 }
 
 // === Helpers ===
 
 /**
- * Convert a snake_case SQLite row to a camelCase IndexedMessage.
+ * Convert a Drizzle result row to an IndexedMessage.
  *
- * @param row - Raw database row.
+ * @param row - Drizzle query result row.
  */
-function mapMessageRow(row: MessageRow): IndexedMessage {
+function mapRow(row: typeof relayIndex.$inferSelect): IndexedMessage {
   return {
     id: row.id,
     subject: row.subject,
-    sender: row.sender,
-    endpointHash: row.endpoint_hash,
+    endpointHash: row.endpointHash,
     status: row.status as MessageStatus,
-    createdAt: row.created_at,
-    ttl: row.ttl,
+    createdAt: row.createdAt,
+    expiresAt: row.expiresAt,
   };
 }
 

@@ -147,11 +147,12 @@ export class DeadLetterQueue {
     this.sqliteIndex.insertMessage({
       id: envelope.id,
       subject: envelope.subject,
-      sender: envelope.from,
       endpointHash,
       status: 'failed',
       createdAt: envelope.createdAt,
-      ttl: envelope.budget.ttl,
+      expiresAt: envelope.budget.ttl
+        ? new Date(envelope.budget.ttl).toISOString()
+        : null,
     });
 
     return { ok: true, messageId: envelope.id };
@@ -371,15 +372,14 @@ export class DeadLetterQueue {
     await silentUnlink(path.join(failedDir, `${messageId}.json`));
     await silentUnlink(path.join(failedDir, `${messageId}.reason.json`));
 
-    // Remove from SQLite index by overwriting with expired TTL, then pruning
+    // Remove from SQLite index by overwriting with expired expiresAt, then pruning
     this.sqliteIndex.insertMessage({
       id: messageId,
       subject: '',
-      sender: '',
       endpointHash,
       status: 'failed',
       createdAt: new Date(0).toISOString(),
-      ttl: 0,
+      expiresAt: new Date(0).toISOString(),
     });
     this.sqliteIndex.deleteExpired(1);
   }

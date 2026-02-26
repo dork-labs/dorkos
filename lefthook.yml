@@ -1,0 +1,8 @@
+pre-commit:
+  commands:
+    db-migrations:
+      glob: "packages/db/src/schema/*.ts"
+      run: |
+        npx drizzle-kit generate --config packages/db/drizzle.config.ts
+        git add packages/db/drizzle/
+      fail_text: "DB schema changed — migrations generated and staged. Review and re-commit."

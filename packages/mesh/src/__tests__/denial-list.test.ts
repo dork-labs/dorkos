@@ -1,28 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as nodefs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import Database from 'better-sqlite3';
+import { createTestDb } from '@dorkos/test-utils';
+import type { Db } from '@dorkos/db';
 import { DenialList } from '../denial-list.js';
 
 // === Setup ===
 
 let tmpDir: string;
-let db: Database.Database;
+let db: Db;
 let denialList: DenialList;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mesh-denial-test-'));
-  const dbPath = path.join(tmpDir, 'mesh.db');
-  db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+  db = createTestDb();
   denialList = new DenialList(db);
-});
-
-afterEach(async () => {
-  db.close();
-  await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
 // === Tests ===
@@ -56,7 +50,7 @@ describe('deny and isDenied', () => {
     expect(records[0].reason).toBeUndefined();
   });
 
-  it('re-denying the same path updates the record (INSERT OR REPLACE)', () => {
+  it('re-denying the same path updates the record', () => {
     const dir = path.join(tmpDir, 'project-e');
     denialList.deny(dir, 'claude-code', 'First reason', 'user');
     denialList.deny(dir, 'claude-code', 'Updated reason', 'admin');
@@ -117,18 +111,12 @@ describe('path canonicalization', () => {
 });
 
 describe('persistence', () => {
-  it('denials survive db close and reopen', async () => {
+  it('denials persist across DenialList instances on the same db', () => {
     const dir = path.join(tmpDir, 'project-h');
     denialList.deny(dir, 'claude-code', 'Persistent', 'user');
 
-    db.close();
-
-    // Reopen
-    const dbPath = path.join(tmpDir, 'mesh.db');
-    db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    denialList = new DenialList(db);
-
-    expect(denialList.isDenied(dir)).toBe(true);
+    // Create a new DenialList on the same db
+    const denialList2 = new DenialList(db);
+    expect(denialList2.isDenied(dir)).toBe(true);
   });
 });

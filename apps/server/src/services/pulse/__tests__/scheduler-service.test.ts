@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import { SchedulerService, buildPulseAppend, type SchedulerAgentManager } from '../scheduler-service.js';
 import { PulseStore } from '../pulse-store.js';
+import { createTestDb } from '@dorkos/test-utils';
+import type { Db } from '@dorkos/db';
 import type { PulseSchedule, PulseRun } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
 import type { PulseDispatchPayload } from '@dorkos/shared/relay-schemas';
@@ -31,24 +30,20 @@ const DEFAULT_CONFIG = {
 
 describe('SchedulerService', () => {
   let store: PulseStore;
-  let tmpDir: string;
+  let db: Db;
   let mockAgent: ReturnType<typeof createMockAgentManager>;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scheduler-test-'));
-    store = new PulseStore(tmpDir);
+    db = createTestDb();
+    store = new PulseStore(db);
     mockAgent = createMockAgentManager();
-  });
-
-  afterEach(() => {
-    store.close();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   describe('start()', () => {
     it('marks interrupted running runs as failed on startup', async () => {
-      // Create a "running" run that simulates a crash
-      store.createRun('sched-1', 'scheduled');
+      // Create a schedule + "running" run that simulates a crash
+      const sched = store.createSchedule({ name: 'Crash', prompt: 'test', cron: '0 * * * *' });
+      store.createRun(sched.id, 'scheduled');
 
       const service = new SchedulerService(store, mockAgent, DEFAULT_CONFIG);
       await service.start();

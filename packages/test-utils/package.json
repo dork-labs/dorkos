@@ -10,10 +10,19 @@
     "./sse-helpers": "./src/sse-helpers.ts"
   },
   "dependencies": {
-    "@dorkos/shared": "workspace:*",
+    "@dorkos/db": "workspace:*",
+    "@dorkos/shared": "workspace:*"
+  },
+  "peerDependencies": {
     "@dorkos/relay": "workspace:*"
   },
+  "peerDependenciesMeta": {
+    "@dorkos/relay": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@dorkos/relay": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@tanstack/react-query": "^5.90.20",
     "@testing-library/react": "^16.0.0",

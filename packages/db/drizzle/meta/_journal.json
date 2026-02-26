@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1772141678848,
+      "tag": "0000_magenta_gladiator",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1772142245164,
+      "tag": "0001_messy_vin_gonzales",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1772143064263,
+      "tag": "0002_cloudy_trish_tilby",
+      "breakpoints": true
+    }
+  ]
+}

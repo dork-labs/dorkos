@@ -132,9 +132,13 @@ describe('MCP Tool Handlers', () => {
     });
 
     it('defaults port to 4242 when env var unset', async () => {
-      const result = await handleGetServerInfo({});
+      vi.stubEnv('DORKOS_PORT', undefined as unknown as string);
+      vi.resetModules();
+      const { handleGetServerInfo: handler } = await import('../mcp-tool-server.js');
+      const result = await handler({});
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.port).toBe(4242);
+      vi.unstubAllEnvs();
     });
 
     it('defaults version to development when env var unset', async () => {

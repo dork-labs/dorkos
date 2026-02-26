@@ -7,10 +7,10 @@
  *
  * @module mesh/mesh-core
  */
-import { mkdirSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { monotonicFactory } from 'ulidx';
+import type { Db } from '@dorkos/db';
 import type {
   AgentManifest,
   AgentRuntime,
@@ -37,9 +37,6 @@ import { scanDirectory } from './discovery-engine.js';
 import type { DiscoveryOptions } from './discovery-engine.js';
 import { readManifest, writeManifest } from './manifest.js';
 
-/** Default data directory for Mesh state. */
-const DEFAULT_DATA_DIR = path.join(os.homedir(), '.dork', 'mesh');
-
 /** Default registrar identifier when none is provided. */
 const DEFAULT_REGISTRAR = 'mesh';
 
@@ -47,8 +44,8 @@ const DEFAULT_REGISTRAR = 'mesh';
 
 /** Options for creating a MeshCore instance. */
 export interface MeshOptions {
-  /** Directory for mesh.db and other persisted state. Default: ~/.dork/mesh */
-  dataDir?: string;
+  /** Drizzle database instance from @dorkos/db createDb(). */
+  db: Db;
   /** Optional RelayCore for automatic endpoint registration. */
   relayCore?: RelayCore;
   /** Discovery strategies. Default: [ClaudeCodeStrategy, CursorStrategy, CodexStrategy]. */
@@ -98,15 +95,9 @@ export class MeshCore {
    *
    * @param options - Configuration options
    */
-  constructor(options: MeshOptions = {}) {
-    const dataDir = options.dataDir ?? DEFAULT_DATA_DIR;
-    const dbPath = path.join(dataDir, 'mesh.db');
-
-    // Ensure data directory exists before better-sqlite3 opens the DB file
-    mkdirSync(dataDir, { recursive: true });
-
-    this.registry = new AgentRegistry(dbPath);
-    this.denialList = new DenialList(this.registry.database);
+  constructor(options: MeshOptions) {
+    this.registry = new AgentRegistry(options.db);
+    this.denialList = new DenialList(options.db);
     this.relayBridge = new RelayBridge(options.relayCore, options.signalEmitter);
     this.topology = new TopologyManager(this.registry, this.relayBridge, options.relayCore);
     this.defaultScanRoot = options.defaultScanRoot ?? os.homedir();
@@ -576,9 +567,13 @@ export class MeshCore {
     return { agent: manifest, health, relaySubject };
   }
 
-  /** Close the database connection. */
+  /**
+   * No-op — the database lifecycle is managed by the caller.
+   *
+   * Retained for backward compatibility with existing call sites.
+   */
   close(): void {
-    this.registry.close();
+    // DB is owned externally; nothing to close.
   }
 
   // --- Private helpers ---

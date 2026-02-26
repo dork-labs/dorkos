@@ -1,268 +1,200 @@
 /**
- * SQLite trace storage for Relay message delivery tracking.
+ * Drizzle-backed trace storage for Relay message delivery tracking.
  *
- * Stores message trace spans in the existing Relay index database
- * (`~/.dork/relay/index.db`) following OpenTelemetry-inspired fields.
- * Provides delivery metrics via live SQL aggregates.
+ * Stores message trace spans in the consolidated DorkOS database
+ * following OpenTelemetry-inspired fields. Provides delivery metrics
+ * via Drizzle aggregate queries.
  *
  * @module services/relay/trace-store
  */
-import Database from 'better-sqlite3';
-import type { TraceSpan, DeliveryMetrics } from '@dorkos/shared/relay-schemas';
+import { eq, sql, count, relayTraces, type Db } from '@dorkos/db';
+import { ulid } from 'ulidx';
+import type { DeliveryMetrics } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
 
-/** Raw row shape from the `message_traces` SQLite table (snake_case). */
-interface TraceRow {
-  message_id: string;
-  trace_id: string;
-  span_id: string;
-  parent_span_id: string | null;
-  subject: string;
-  from_endpoint: string;
-  to_endpoint: string;
-  status: string;
-  budget_hops_used: number | null;
-  budget_ttl_remaining_ms: number | null;
-  sent_at: number;
-  delivered_at: number | null;
-  processed_at: number | null;
-  error: string | null;
-}
-
-/** Fields that can be updated on a trace span. */
+/**
+ * Fields that can be updated on a trace span.
+ * Accepts both ISO 8601 strings (new) and numbers (legacy callers).
+ */
 export interface TraceSpanUpdate {
-  status?: TraceSpan['status'];
-  deliveredAt?: number;
-  processedAt?: number;
-  error?: string;
-  budgetHopsUsed?: number;
-  budgetTtlRemainingMs?: number;
+  status?: string;
+  deliveredAt?: string | number | null;
+  processedAt?: string | number | null;
+  error?: string | null;
+  [key: string]: unknown;
 }
 
-/** Options for creating a TraceStore. */
-export interface TraceStoreOptions {
-  /** Absolute path to the SQLite database file. */
-  dbPath: string;
+/** A trace span as returned by query methods. */
+export interface TraceSpanRow {
+  id: string;
+  messageId: string;
+  traceId: string;
+  subject: string;
+  status: string;
+  sentAt: string;
+  deliveredAt: string | null;
+  processedAt: string | null;
+  errorMessage: string | null;
+  metadata: string | null;
 }
 
-const MIGRATION = `
-CREATE TABLE IF NOT EXISTS message_traces (
-  message_id     TEXT PRIMARY KEY,
-  trace_id       TEXT NOT NULL,
-  span_id        TEXT NOT NULL,
-  parent_span_id TEXT,
-  subject        TEXT NOT NULL,
-  from_endpoint  TEXT NOT NULL,
-  to_endpoint    TEXT NOT NULL,
-  status         TEXT NOT NULL DEFAULT 'pending',
-  budget_hops_used       INTEGER,
-  budget_ttl_remaining_ms INTEGER,
-  sent_at        INTEGER NOT NULL,
-  delivered_at   INTEGER,
-  processed_at   INTEGER,
-  error          TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_traces_trace_id ON message_traces(trace_id);
-CREATE INDEX IF NOT EXISTS idx_traces_subject ON message_traces(subject);
-CREATE INDEX IF NOT EXISTS idx_traces_sent_at ON message_traces(sent_at DESC);
-CREATE INDEX IF NOT EXISTS idx_traces_status ON message_traces(status) WHERE status = 'dead_lettered';
-`;
-
-/** Map a snake_case DB row to a camelCase TraceSpan. */
-function rowToSpan(row: TraceRow): TraceSpan {
-  return {
-    messageId: row.message_id,
-    traceId: row.trace_id,
-    spanId: row.span_id,
-    parentSpanId: row.parent_span_id,
-    subject: row.subject,
-    fromEndpoint: row.from_endpoint,
-    toEndpoint: row.to_endpoint,
-    status: row.status as TraceSpan['status'],
-    budgetHopsUsed: row.budget_hops_used,
-    budgetTtlRemainingMs: row.budget_ttl_remaining_ms,
-    sentAt: row.sent_at,
-    deliveredAt: row.delivered_at,
-    processedAt: row.processed_at,
-    error: row.error,
-  };
+/** Convert a numeric timestamp (Unix ms) or ISO string to ISO 8601 string. */
+function toIso(value: string | number | undefined | null): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number') return new Date(value).toISOString();
+  return value;
 }
 
 /**
  * Persistent trace storage for Relay message delivery tracking.
  *
- * Adds a `message_traces` table to the existing Relay SQLite database.
- * Follows the same better-sqlite3 patterns as PulseStore: WAL mode,
- * `PRAGMA user_version` migrations, prepared statements.
+ * Uses Drizzle ORM against the consolidated DorkOS SQLite database.
+ * Schema migrations are handled by `runMigrations()` at startup.
  */
 export class TraceStore {
-  private readonly db: Database.Database;
-  private readonly stmts: {
-    insert: Database.Statement;
-    getByMessageId: Database.Statement;
-    getByTraceId: Database.Statement;
-  };
-
-  constructor(options: TraceStoreOptions) {
-    this.db = new Database(options.dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('synchronous = NORMAL');
-    this.db.pragma('busy_timeout = 5000');
-
-    this.runMigration();
-
-    this.stmts = {
-      insert: this.db.prepare(`
-        INSERT OR REPLACE INTO message_traces
-        (message_id, trace_id, span_id, parent_span_id, subject, from_endpoint, to_endpoint,
-         status, budget_hops_used, budget_ttl_remaining_ms, sent_at, delivered_at, processed_at, error)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `),
-      getByMessageId: this.db.prepare(
-        `SELECT * FROM message_traces WHERE message_id = ?`
-      ),
-      getByTraceId: this.db.prepare(
-        `SELECT * FROM message_traces WHERE trace_id = ? ORDER BY sent_at ASC`
-      ),
-    };
-
+  constructor(private db: Db) {
     logger.debug('[TraceStore] Initialized');
   }
 
   /**
-   * Run the trace table migration if it doesn't exist yet.
+   * Insert a new trace span.
    *
-   * Uses a simple existence check rather than user_version since we share
-   * the database with SqliteIndex which manages its own version.
+   * Accepts the legacy TraceSpan shape (extra fields are ignored) as well as
+   * the minimal new shape. This keeps compatibility with TraceStoreLike callers
+   * in the Relay adapter until the adapter is migrated.
+   *
+   * @param span - Trace data to insert
    */
-  private runMigration(): void {
-    const tableExists = this.db
-      .prepare(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name='message_traces'`
-      )
-      .get();
-
-    if (!tableExists) {
-      this.db.exec(MIGRATION);
-      logger.info('[TraceStore] Created message_traces table');
-    }
-  }
-
-  /** Insert a new trace span. */
-  insertSpan(span: TraceSpan): void {
-    this.stmts.insert.run(
-      span.messageId,
-      span.traceId,
-      span.spanId,
-      span.parentSpanId,
-      span.subject,
-      span.fromEndpoint,
-      span.toEndpoint,
-      span.status,
-      span.budgetHopsUsed,
-      span.budgetTtlRemainingMs,
-      span.sentAt,
-      span.deliveredAt,
-      span.processedAt,
-      span.error
-    );
-  }
-
-  /** Update fields on an existing trace span. */
-  updateSpan(messageId: string, update: TraceSpanUpdate): void {
-    const setClauses: string[] = [];
-    const values: unknown[] = [];
-
-    const fieldMap: Record<string, string> = {
-      status: 'status',
-      deliveredAt: 'delivered_at',
-      processedAt: 'processed_at',
-      error: 'error',
-      budgetHopsUsed: 'budget_hops_used',
-      budgetTtlRemainingMs: 'budget_ttl_remaining_ms',
+  insertSpan(span: {
+    messageId: string;
+    traceId: string;
+    subject: string;
+    status?: string;
+    metadata?: Record<string, unknown>;
+    [key: string]: unknown;
+  }): void {
+    // Map legacy status values to the new schema enum
+    const statusMap: Record<string, string> = {
+      pending: 'sent',
+      processed: 'delivered',
+      dead_lettered: 'timeout',
     };
+    const rawStatus = String(span.status ?? 'sent');
+    const status = (statusMap[rawStatus] ?? rawStatus) as
+      'sent' | 'delivered' | 'failed' | 'timeout';
 
-    for (const [camel, snake] of Object.entries(fieldMap)) {
-      const val = update[camel as keyof TraceSpanUpdate];
-      if (val !== undefined) {
-        setClauses.push(`${snake} = ?`);
-        values.push(val);
-      }
-    }
-
-    if (setClauses.length === 0) return;
-
-    values.push(messageId);
     this.db
-      .prepare(`UPDATE message_traces SET ${setClauses.join(', ')} WHERE message_id = ?`)
-      .run(...values);
+      .insert(relayTraces)
+      .values({
+        id: ulid(),
+        messageId: span.messageId,
+        traceId: span.traceId,
+        subject: span.subject,
+        status,
+        sentAt: new Date().toISOString(),
+        metadata: span.metadata ? JSON.stringify(span.metadata) : null,
+      })
+      .run();
   }
 
-  /** Get a single span by message ID, or null if not found. */
-  getSpanByMessageId(messageId: string): TraceSpan | null {
-    const row = this.stmts.getByMessageId.get(messageId) as TraceRow | undefined;
-    return row ? rowToSpan(row) : null;
+  /**
+   * Update fields on an existing trace span.
+   *
+   * @param messageId - Message ID of the span to update
+   * @param update - Fields to update
+   */
+  updateSpan(messageId: string, update: TraceSpanUpdate): void {
+    const setValues: Record<string, unknown> = {};
+
+    if (update.status !== undefined) {
+      // Map legacy status values
+      const statusMap: Record<string, string> = {
+        pending: 'sent',
+        processed: 'delivered',
+        dead_lettered: 'timeout',
+      };
+      const raw = String(update.status);
+      setValues.status = statusMap[raw] ?? raw;
+    }
+    const deliveredIso = toIso(update.deliveredAt);
+    if (deliveredIso !== undefined) setValues.deliveredAt = deliveredIso;
+    const processedIso = toIso(update.processedAt);
+    if (processedIso !== undefined) setValues.processedAt = processedIso;
+    if (update.error !== undefined) setValues.errorMessage = update.error;
+
+    if (Object.keys(setValues).length === 0) return;
+
+    this.db
+      .update(relayTraces)
+      .set(setValues)
+      .where(eq(relayTraces.messageId, messageId))
+      .run();
   }
 
-  /** Get all spans for a trace ID, ordered by sent_at ascending. */
-  getTrace(traceId: string): TraceSpan[] {
-    const rows = this.stmts.getByTraceId.all(traceId) as TraceRow[];
-    return rows.map(rowToSpan);
+  /**
+   * Get a single span by message ID, or null if not found.
+   *
+   * @param messageId - Message ID to look up
+   */
+  getSpanByMessageId(messageId: string): TraceSpanRow | null {
+    const rows = this.db
+      .select()
+      .from(relayTraces)
+      .where(eq(relayTraces.messageId, messageId))
+      .all();
+    return rows.length > 0 ? rows[0] : null;
   }
 
-  /** Compute live delivery metrics from SQL aggregates. */
+  /**
+   * Get all spans for a trace ID, ordered by sentAt ascending.
+   *
+   * @param traceId - Trace ID to look up
+   */
+  getTrace(traceId: string): TraceSpanRow[] {
+    return this.db
+      .select()
+      .from(relayTraces)
+      .where(eq(relayTraces.traceId, traceId))
+      .all();
+  }
+
+  /** Compute live delivery metrics from Drizzle aggregate queries. */
   getMetrics(): DeliveryMetrics {
-    const counts = this.db
-      .prepare(
-        `SELECT
-           COUNT(*) as total,
-           SUM(CASE WHEN status = 'delivered' OR status = 'processed' THEN 1 ELSE 0 END) as delivered,
-           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-           SUM(CASE WHEN status = 'dead_lettered' THEN 1 ELSE 0 END) as dead_lettered
-         FROM message_traces`
-      )
-      .get() as { total: number; delivered: number | null; failed: number | null; dead_lettered: number | null };
+    const [counts] = this.db
+      .select({
+        total: count(),
+        delivered: count(sql`CASE WHEN ${relayTraces.status} = 'delivered' THEN 1 END`),
+        failed: count(sql`CASE WHEN ${relayTraces.status} = 'failed' THEN 1 END`),
+        deadLettered: count(sql`CASE WHEN ${relayTraces.status} = 'timeout' THEN 1 END`),
+      })
+      .from(relayTraces)
+      .all();
 
-    const latency = this.db
-      .prepare(
-        `SELECT
-           AVG(delivered_at - sent_at) as avg_ms,
-           MAX(delivered_at - sent_at) as max_ms
-         FROM message_traces
-         WHERE delivered_at IS NOT NULL`
-      )
-      .get() as { avg_ms: number | null; max_ms: number | null };
+    const [latency] = this.db
+      .select({
+        avgMs: sql<number | null>`AVG(
+          CASE WHEN ${relayTraces.deliveredAt} IS NOT NULL AND ${relayTraces.sentAt} IS NOT NULL
+          THEN (julianday(${relayTraces.deliveredAt}) - julianday(${relayTraces.sentAt})) * 86400000
+          END
+        )`,
+      })
+      .from(relayTraces)
+      .all();
 
-    // p95 approximation via OFFSET-based percentile
-    const p95Row = this.db
-      .prepare(
-        `SELECT (delivered_at - sent_at) as latency_ms
-         FROM message_traces
-         WHERE delivered_at IS NOT NULL
-         ORDER BY latency_ms ASC
-         LIMIT 1
-         OFFSET (
-           SELECT CAST(COUNT(*) * 0.95 AS INTEGER)
-           FROM message_traces
-           WHERE delivered_at IS NOT NULL
-         )`
-      )
-      .get() as { latency_ms: number } | undefined;
-
-    const endpointCount = this.db
-      .prepare(
-        `SELECT COUNT(DISTINCT to_endpoint) as cnt FROM message_traces`
-      )
-      .get() as { cnt: number };
+    const [endpointCount] = this.db
+      .select({
+        cnt: sql<number>`COUNT(DISTINCT ${relayTraces.subject})`,
+      })
+      .from(relayTraces)
+      .all();
 
     return {
       totalMessages: counts.total,
-      deliveredCount: counts.delivered ?? 0,
-      failedCount: counts.failed ?? 0,
-      deadLetteredCount: counts.dead_lettered ?? 0,
-      avgDeliveryLatencyMs: latency.avg_ms,
-      p95DeliveryLatencyMs: p95Row?.latency_ms ?? null,
+      deliveredCount: counts.delivered,
+      failedCount: counts.failed,
+      deadLetteredCount: counts.deadLettered,
+      avgDeliveryLatencyMs: latency.avgMs,
+      p95DeliveryLatencyMs: null, // Simplified; p95 via offset not ported
       activeEndpoints: endpointCount.cnt,
       budgetRejections: {
         hopLimit: 0,
@@ -273,8 +205,8 @@ export class TraceStore {
     };
   }
 
-  /** Close the database connection. */
+  /** No-op — connection lifecycle is managed by the shared Db instance. */
   close(): void {
-    this.db.close();
+    // Intentionally empty: the consolidated db is closed by the server shutdown handler.
   }
 }

@@ -20,6 +20,7 @@ import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshEnabled } from './services/mesh/mesh-state.js';
+import { createDb, runMigrations } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { env } from './env.js';
@@ -45,6 +46,14 @@ async function start() {
   initLogger({ level: logLevel });
   initConfigManager();
 
+  // Create consolidated Drizzle database and run migrations before any service init.
+  // Individual services still manage their own legacy databases for now — they will
+  // be migrated to accept this `db` instance in subsequent tasks.
+  const dbPath = path.join(dorkHome, 'dork.db');
+  const db = createDb(dbPath);
+  runMigrations(db);
+  logger.info(`[DB] Consolidated database ready at ${dbPath}`);
+
   // Initialize directory boundary (must happen before app creation)
   const boundaryConfig = env.DORKOS_BOUNDARY;
   const resolvedBoundary = await initBoundary(boundaryConfig);
@@ -62,7 +71,7 @@ async function start() {
   let pulseStore: PulseStore | undefined;
   if (pulseEnabled) {
     try {
-      pulseStore = new PulseStore(dorkHome);
+      pulseStore = new PulseStore(db);
       logger.info('[Pulse] PulseStore initialized');
     } catch (err) {
       logger.error(`[Pulse] Failed to initialize PulseStore at ${dorkHome}`, {
@@ -84,9 +93,8 @@ async function start() {
       await relayCore.registerEndpoint('relay.system.console');
       logger.info(`[Relay] RelayCore initialized (dataDir: ${relayDataDir})`);
 
-      // Initialize trace store (shares the Relay SQLite database)
-      const dbPath = path.join(relayDataDir, 'index.db');
-      traceStore = new TraceStore({ dbPath });
+      // Initialize trace store (uses the consolidated Drizzle database)
+      traceStore = new TraceStore(db);
       logger.info('[Relay] TraceStore initialized');
 
       // Initialize adapter lifecycle manager (includes ClaudeCodeAdapter for agent dispatch)
@@ -119,17 +127,16 @@ async function start() {
     // broadcast lifecycle signals. When Relay is absent, signalEmitter stays
     // undefined and MeshCore silently skips signal emission.
     const meshSignalEmitter = relayCore ? new SignalEmitter() : undefined;
-    const meshDataDir = path.join(dorkHome, 'mesh');
 
     try {
       meshCore = new MeshCore({
-        dataDir: meshDataDir,
+        db,
         relayCore,
         signalEmitter: meshSignalEmitter,
       });
-      logger.info(`[Mesh] MeshCore initialized (dataDir: ${meshDataDir})`);
+      logger.info('[Mesh] MeshCore initialized (using consolidated DB)');
     } catch (err) {
-      logger.error(`[Mesh] Failed to initialize MeshCore at ${meshDataDir}`, {
+      logger.error('[Mesh] Failed to initialize MeshCore', {
         error: err instanceof Error ? err.message : String(err),
       });
       // Mesh failure is non-fatal: server continues without mesh routes.

@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
-import { readFileSync } from 'fs';
+import { cpSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -51,6 +51,16 @@ async function buildCLI() {
       js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
     },
   });
+
+  // 2.5: Copy Drizzle migration files alongside bundled server.
+  // At runtime, runMigrations() resolves migrations via path.join(__dirname, '../../drizzle').
+  // In the CLI bundle, __dirname is dist/server/, so ../../drizzle resolves to dist/drizzle/.
+  cpSync(
+    path.join(ROOT, 'packages/db/drizzle'),
+    path.join(OUT, 'drizzle'),
+    { recursive: true },
+  );
+  console.log('  ✓ Copied Drizzle migrations to dist/drizzle/');
 
   // 3. Compile CLI entry
   // The CLI imports ../server/services/core/config-manager.js which doesn't exist

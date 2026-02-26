@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import { createPulseRouter } from '../pulse.js';
 import { PulseStore } from '../../services/pulse/pulse-store.js';
 import type { SchedulerService } from '../../services/pulse/scheduler-service.js';
+import { createTestDb } from '@dorkos/test-utils';
+import type { Db } from '@dorkos/db';
 
 vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -28,11 +27,11 @@ describe('Pulse routes', () => {
   let app: express.Application;
   let store: PulseStore;
   let scheduler: ReturnType<typeof createMockScheduler>;
-  let tmpDir: string;
+  let db: Db;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-routes-test-'));
-    store = new PulseStore(tmpDir);
+    db = createTestDb();
+    store = new PulseStore(db);
     scheduler = createMockScheduler();
     app = express();
     app.use(express.json());
@@ -45,7 +44,6 @@ describe('Pulse routes', () => {
 
   afterEach(() => {
     store.close();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   describe('GET /api/pulse/schedules', () => {
@@ -174,9 +172,10 @@ describe('Pulse routes', () => {
     });
 
     it('returns runs with pagination', async () => {
-      store.createRun('sched-1', 'scheduled');
-      store.createRun('sched-1', 'scheduled');
-      store.createRun('sched-1', 'scheduled');
+      const sched = store.createSchedule({ name: 'S1', prompt: 'p', cron: '0 * * * *' });
+      store.createRun(sched.id, 'scheduled');
+      store.createRun(sched.id, 'scheduled');
+      store.createRun(sched.id, 'scheduled');
 
       const res = await request(app).get('/api/pulse/runs?limit=2');
       expect(res.status).toBe(200);
@@ -184,19 +183,22 @@ describe('Pulse routes', () => {
     });
 
     it('filters by scheduleId', async () => {
-      store.createRun('sched-1', 'scheduled');
-      store.createRun('sched-2', 'scheduled');
+      const s1 = store.createSchedule({ name: 'S1', prompt: 'p', cron: '0 * * * *' });
+      const s2 = store.createSchedule({ name: 'S2', prompt: 'p', cron: '0 * * * *' });
+      store.createRun(s1.id, 'scheduled');
+      store.createRun(s2.id, 'scheduled');
 
-      const res = await request(app).get('/api/pulse/runs?scheduleId=sched-1');
+      const res = await request(app).get(`/api/pulse/runs?scheduleId=${s1.id}`);
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
-      expect(res.body[0].scheduleId).toBe('sched-1');
+      expect(res.body[0].scheduleId).toBe(s1.id);
     });
   });
 
   describe('GET /api/pulse/runs/:id', () => {
     it('returns a run', async () => {
-      const run = store.createRun('sched-1', 'scheduled');
+      const sched = store.createSchedule({ name: 'S1', prompt: 'p', cron: '0 * * * *' });
+      const run = store.createRun(sched.id, 'scheduled');
       const res = await request(app).get(`/api/pulse/runs/${run.id}`);
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(run.id);

@@ -21,12 +21,12 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
     "@asteasolutions/zod-to-openapi": "^8.4.0",
+    "@dorkos/db": "workspace:*",
     "@dorkos/mesh": "workspace:*",
     "@dorkos/relay": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@ngrok/ngrok": "^1.7.0",
     "@scalar/express-api-reference": "^0.8.40",
-    "better-sqlite3": "^12.6.2",
     "chokidar": "^4.0.3",
     "conf": "^15.1.0",
     "consola": "^3.4.2",
@@ -34,13 +34,13 @@
     "croner": "^10.0.1",
     "express": "^4.21.0",
     "gray-matter": "^4.0.3",
+    "ulidx": "^2.4.0",
     "uuid": "^10.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.0",
     "@types/express": "^5.0.0",
     "@types/express-serve-static-core": "^5.0.0",

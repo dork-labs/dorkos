@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { createTestDb } from '@dorkos/test-utils';
+import type { Db } from '@dorkos/db';
 import { MeshCore } from '../mesh-core.js';
 import { writeManifest } from '../manifest.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -18,8 +20,11 @@ async function makeTempDir(): Promise<string> {
   return dir;
 }
 
+let db: Db;
+
 beforeEach(() => {
   tempDirs.length = 0;
+  db = createTestDb();
 });
 
 afterEach(async () => {
@@ -61,12 +66,10 @@ async function setupProjects(rootDir: string) {
 describe('full lifecycle', () => {
   it('discover -> register -> list -> unregister', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projects = path.join(base, 'projects');
-    await fs.mkdir(dataDir, { recursive: true });
 
     const { projectA } = await setupProjects(projects);
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     // Discover
     const candidates = [];
@@ -106,15 +109,13 @@ describe('full lifecycle', () => {
 describe('auto-import', () => {
   it('auto-imports pre-registered projects without yielding as candidate', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projects = path.join(base, 'projects');
-    await fs.mkdir(dataDir, { recursive: true });
 
     const preRegisteredDir = path.join(projects, 'pre-registered');
     await fs.mkdir(preRegisteredDir, { recursive: true });
     await writeManifest(preRegisteredDir, makeManifest({ name: 'pre-registered-agent' }));
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     const candidates = [];
     for await (const c of mesh.discover([projects])) {
@@ -140,12 +141,10 @@ describe('auto-import', () => {
 describe('denial filtering', () => {
   it('discover skips denied paths', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projects = path.join(base, 'projects');
-    await fs.mkdir(dataDir, { recursive: true });
 
     const { projectA, projectB } = await setupProjects(projects);
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     await mesh.deny(projectA, 'not needed');
 
@@ -162,12 +161,10 @@ describe('denial filtering', () => {
 
   it('undeny re-enables a previously denied path for discovery', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projects = path.join(base, 'projects');
-    await fs.mkdir(dataDir, { recursive: true });
 
     const { projectA } = await setupProjects(projects);
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     await mesh.deny(projectA);
 
@@ -192,12 +189,10 @@ describe('denial filtering', () => {
 describe('registerByPath', () => {
   it('registers an agent directly without prior discovery', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projectDir = path.join(base, 'my-project');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     const manifest = await mesh.registerByPath(projectDir, {
       name: 'manual-agent',
@@ -219,42 +214,14 @@ describe('registerByPath', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Persistence across restarts
-// ---------------------------------------------------------------------------
-
-describe('persistence', () => {
-  it('agents survive MeshCore close and recreate with same dataDir', async () => {
-    const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
-    const projectDir = path.join(base, 'project');
-    await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
-
-    // First instance
-    const mesh1 = new MeshCore({ dataDir, defaultScanRoot: base });
-    await mesh1.registerByPath(projectDir, { name: 'persistent-agent', runtime: 'claude-code' });
-    mesh1.close();
-
-    // Second instance with same dataDir
-    const mesh2 = new MeshCore({ dataDir, defaultScanRoot: base });
-    const agents = mesh2.list();
-    expect(agents).toHaveLength(1);
-    expect(agents[0].name).toBe('persistent-agent');
-    mesh2.close();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // RelayCore integration
 // ---------------------------------------------------------------------------
 
 describe('RelayCore integration', () => {
   it('calls registerEndpoint on registration', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projectDir = path.join(base, 'project');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
     const mockRelayCore = {
       registerEndpoint: vi.fn().mockResolvedValue({ hash: 'abc', subject: 'test' }),
@@ -264,7 +231,7 @@ describe('RelayCore integration', () => {
       listAccessRules: vi.fn().mockReturnValue([]),
     };
 
-    const mesh = new MeshCore({ dataDir, relayCore: mockRelayCore as never, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, relayCore: mockRelayCore as never, defaultScanRoot: base });
     const manifest = await mesh.registerByPath(projectDir, {
       name: 'relay-agent',
       runtime: 'claude-code',
@@ -280,10 +247,8 @@ describe('RelayCore integration', () => {
 
   it('calls unregisterEndpoint on unregistration', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projectDir = path.join(base, 'project');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
     const mockRelayCore = {
       registerEndpoint: vi.fn().mockResolvedValue({ hash: 'abc', subject: 'test' }),
@@ -293,7 +258,7 @@ describe('RelayCore integration', () => {
       listAccessRules: vi.fn().mockReturnValue([]),
     };
 
-    const mesh = new MeshCore({ dataDir, relayCore: mockRelayCore as never, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, relayCore: mockRelayCore as never, defaultScanRoot: base });
     const manifest = await mesh.registerByPath(projectDir, {
       name: 'relay-agent',
       runtime: 'claude-code',
@@ -314,12 +279,10 @@ describe('RelayCore integration', () => {
 describe('get and getByPath', () => {
   it('get returns the correct agent by ID', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projectDir = path.join(base, 'project');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
     const manifest = await mesh.registerByPath(projectDir, {
       name: 'my-agent',
       runtime: 'cursor',
@@ -336,12 +299,10 @@ describe('get and getByPath', () => {
 
   it('getByPath returns the correct agent by project path', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const projectDir = path.join(base, 'project');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: base });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
     await mesh.registerByPath(projectDir, { name: 'path-agent', runtime: 'codex' });
 
     const found = mesh.getByPath(projectDir);
@@ -361,15 +322,12 @@ describe('get and getByPath', () => {
 describe('namespace wiring', () => {
   it('register() stores namespace derived from scanRoot + projectPath', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const scanRoot = path.join(base, 'scan');
     const projectDir = path.join(scanRoot, 'team-alpha', 'agent-one');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(projectDir, { recursive: true });
     await fs.writeFile(path.join(projectDir, 'CLAUDE.md'), '# Agent', 'utf-8');
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: scanRoot });
+    const mesh = new MeshCore({ db, defaultScanRoot: scanRoot });
 
     const candidates = [];
     for await (const c of mesh.discover([scanRoot])) {
@@ -387,15 +345,12 @@ describe('namespace wiring', () => {
 
   it('register() with manifest namespace override uses the override', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const scanRoot = path.join(base, 'scan');
     const projectDir = path.join(scanRoot, 'team-alpha', 'agent-one');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(projectDir, { recursive: true });
     await fs.writeFile(path.join(projectDir, 'CLAUDE.md'), '# Agent', 'utf-8');
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: scanRoot });
+    const mesh = new MeshCore({ db, defaultScanRoot: scanRoot });
 
     const candidates = [];
     for await (const c of mesh.discover([scanRoot])) {
@@ -413,13 +368,11 @@ describe('namespace wiring', () => {
 
   it('registerByPath() stores namespace and scanRoot', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const scanRoot = path.join(base, 'scan');
     const projectDir = path.join(scanRoot, 'my-ns', 'my-agent');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: scanRoot });
+    const mesh = new MeshCore({ db, defaultScanRoot: scanRoot });
 
     const manifest = await mesh.registerByPath(projectDir, {
       name: 'ns-agent',
@@ -433,15 +386,13 @@ describe('namespace wiring', () => {
 
   it('list({ callerNamespace }) returns only agents in that namespace', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const scanRoot = path.join(base, 'scan');
     const projectA = path.join(scanRoot, 'ns-a', 'agent-a');
     const projectB = path.join(scanRoot, 'ns-b', 'agent-b');
     await fs.mkdir(projectA, { recursive: true });
     await fs.mkdir(projectB, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: scanRoot });
+    const mesh = new MeshCore({ db, defaultScanRoot: scanRoot });
 
     await mesh.registerByPath(projectA, { name: 'agent-a', runtime: 'claude-code' });
     await mesh.registerByPath(projectB, { name: 'agent-b', runtime: 'claude-code' });
@@ -462,15 +413,13 @@ describe('namespace wiring', () => {
 
   it('list() without callerNamespace returns all agents', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const scanRoot = path.join(base, 'scan');
     const projectA = path.join(scanRoot, 'ns-a', 'agent-a');
     const projectB = path.join(scanRoot, 'ns-b', 'agent-b');
     await fs.mkdir(projectA, { recursive: true });
     await fs.mkdir(projectB, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: scanRoot });
+    const mesh = new MeshCore({ db, defaultScanRoot: scanRoot });
 
     await mesh.registerByPath(projectA, { name: 'agent-a', runtime: 'claude-code' });
     await mesh.registerByPath(projectB, { name: 'agent-b', runtime: 'claude-code' });
@@ -483,15 +432,13 @@ describe('namespace wiring', () => {
 
   it('list({ callerNamespace: "*" }) returns all namespaces (admin view)', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const scanRoot = path.join(base, 'scan');
     const projectA = path.join(scanRoot, 'ns-a', 'agent-a');
     const projectB = path.join(scanRoot, 'ns-b', 'agent-b');
     await fs.mkdir(projectA, { recursive: true });
     await fs.mkdir(projectB, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
-    const mesh = new MeshCore({ dataDir, defaultScanRoot: scanRoot });
+    const mesh = new MeshCore({ db, defaultScanRoot: scanRoot });
 
     await mesh.registerByPath(projectA, { name: 'agent-a', runtime: 'claude-code' });
     await mesh.registerByPath(projectB, { name: 'agent-b', runtime: 'claude-code' });
@@ -504,11 +451,9 @@ describe('namespace wiring', () => {
 
   it('unregister() cleans up namespace rules when last agent removed', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const scanRoot = path.join(base, 'scan');
     const projectDir = path.join(scanRoot, 'my-ns', 'agent');
     await fs.mkdir(projectDir, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
     const mockRelayCore = {
       registerEndpoint: vi.fn().mockResolvedValue({ hash: 'abc', subject: 'test' }),
@@ -519,7 +464,7 @@ describe('namespace wiring', () => {
     };
 
     const mesh = new MeshCore({
-      dataDir,
+      db,
       relayCore: mockRelayCore as never,
       defaultScanRoot: scanRoot,
     });
@@ -539,13 +484,11 @@ describe('namespace wiring', () => {
 
   it('unregister() does NOT clean up rules when other agents remain in namespace', async () => {
     const base = await makeTempDir();
-    const dataDir = path.join(base, 'data');
     const scanRoot = path.join(base, 'scan');
     const projectA = path.join(scanRoot, 'my-ns', 'agent-a');
     const projectB = path.join(scanRoot, 'my-ns', 'agent-b');
     await fs.mkdir(projectA, { recursive: true });
     await fs.mkdir(projectB, { recursive: true });
-    await fs.mkdir(dataDir, { recursive: true });
 
     const mockRelayCore = {
       registerEndpoint: vi.fn().mockResolvedValue({ hash: 'abc', subject: 'test' }),
@@ -556,7 +499,7 @@ describe('namespace wiring', () => {
     };
 
     const mesh = new MeshCore({
-      dataDir,
+      db,
       relayCore: mockRelayCore as never,
       defaultScanRoot: scanRoot,
     });

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Consolidate three SQLite databases into single Drizzle-managed dork.db
 - Wire edges and namespace grouping into topology graph
 - Disciplined env var handling with per-app Zod validation
 - Enable Relay, Mesh, and Pulse by default

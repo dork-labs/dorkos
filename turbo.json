@@ -71,6 +71,21 @@
     "e2e:ui": {
       "cache": false,
       "persistent": true
+    },
+    "db:generate": {
+      "inputs": [
+        "src/schema/**/*.ts",
+        "drizzle.config.ts"
+      ],
+      "outputs": ["drizzle/**"],
+      "cache": true
+    },
+    "db:check": {
+      "inputs": [
+        "src/schema/**/*.ts",
+        "drizzle.config.ts"
+      ],
+      "cache": false
     }
   }
 }

@@ -1,21 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { PulseStore } from '../pulse-store.js';
+import { createTestDb } from '@dorkos/test-utils';
+import type { Db } from '@dorkos/db';
+import { pulseSchedules } from '@dorkos/db';
 
 describe('PulseStore', () => {
   let store: PulseStore;
-  let tmpDir: string;
+  let db: Db;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-store-test-'));
-    store = new PulseStore(tmpDir);
-  });
-
-  afterEach(() => {
-    store.close();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    db = createTestDb();
+    store = new PulseStore(db);
   });
 
   // === Schedule CRUD ===
@@ -39,25 +34,23 @@ describe('PulseStore', () => {
       expect(schedule.enabled).toBe(true);
       expect(schedule.status).toBe('active');
       expect(schedule.permissionMode).toBe('acceptEdits');
-      expect(schedule.timezone).toBeNull();
+      expect(schedule.timezone).toBe('UTC');
       expect(schedule.cwd).toBeNull();
       expect(schedule.maxRuntime).toBeNull();
       expect(schedule.nextRun).toBeNull();
     });
 
-    it('persists schedules to disk', () => {
+    it('persists schedules in the database', () => {
       store.createSchedule({
         name: 'Test',
         prompt: 'Run tests',
         cron: '*/5 * * * *',
       });
 
-      const filePath = path.join(tmpDir, 'schedules.json');
-      expect(fs.existsSync(filePath)).toBe(true);
-
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      expect(data).toHaveLength(1);
-      expect(data[0].name).toBe('Test');
+      // Verify directly via Drizzle query
+      const rows = db.select().from(pulseSchedules).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].name).toBe('Test');
     });
 
     it('reads created schedules back', () => {
@@ -103,23 +96,26 @@ describe('PulseStore', () => {
     it('returns false when deleting nonexistent schedule', () => {
       expect(store.deleteSchedule('nope')).toBe(false);
     });
-
-    it('uses atomic write (temp file rename)', () => {
-      store.createSchedule({ name: 'Atomic', prompt: 'p', cron: '* * * * *' });
-      // .tmp file should not exist after write
-      expect(fs.existsSync(path.join(tmpDir, 'schedules.json.tmp'))).toBe(false);
-      // Main file should exist
-      expect(fs.existsSync(path.join(tmpDir, 'schedules.json'))).toBe(true);
-    });
   });
 
   // === Run CRUD ===
 
   describe('run CRUD', () => {
+    // Helper: create a schedule so FK constraint is satisfied
+    function createTestSchedule(id?: string) {
+      const schedule = store.createSchedule({
+        name: `Schedule ${id ?? 'test'}`,
+        prompt: 'test prompt',
+        cron: '* * * * *',
+      });
+      return schedule.id;
+    }
+
     it('creates a run with running status', () => {
-      const run = store.createRun('sched-1', 'scheduled');
+      const schedId = createTestSchedule();
+      const run = store.createRun(schedId, 'scheduled');
       expect(run.id).toBeDefined();
-      expect(run.scheduleId).toBe('sched-1');
+      expect(run.scheduleId).toBe(schedId);
       expect(run.status).toBe('running');
       expect(run.trigger).toBe('scheduled');
       expect(run.startedAt).toBeDefined();
@@ -127,7 +123,8 @@ describe('PulseStore', () => {
     });
 
     it('gets a run by ID', () => {
-      const created = store.createRun('sched-1', 'manual');
+      const schedId = createTestSchedule();
+      const created = store.createRun(schedId, 'manual');
       const found = store.getRun(created.id);
       expect(found).not.toBeNull();
       expect(found!.trigger).toBe('manual');
@@ -138,7 +135,8 @@ describe('PulseStore', () => {
     });
 
     it('updates run fields', () => {
-      const run = store.createRun('sched-1', 'scheduled');
+      const schedId = createTestSchedule();
+      const run = store.createRun(schedId, 'scheduled');
       const updated = store.updateRun(run.id, {
         status: 'completed',
         finishedAt: new Date().toISOString(),
@@ -159,8 +157,9 @@ describe('PulseStore', () => {
     });
 
     it('lists runs with pagination', () => {
+      const schedId = createTestSchedule();
       for (let i = 0; i < 5; i++) {
-        store.createRun('sched-1', 'scheduled');
+        store.createRun(schedId, 'scheduled');
       }
 
       const all = store.listRuns({ limit: 10 });
@@ -174,20 +173,23 @@ describe('PulseStore', () => {
     });
 
     it('lists runs filtered by schedule', () => {
-      store.createRun('sched-1', 'scheduled');
-      store.createRun('sched-2', 'scheduled');
-      store.createRun('sched-1', 'manual');
+      const schedId1 = createTestSchedule('1');
+      const schedId2 = createTestSchedule('2');
+      store.createRun(schedId1, 'scheduled');
+      store.createRun(schedId2, 'scheduled');
+      store.createRun(schedId1, 'manual');
 
-      const sched1Runs = store.listRuns({ scheduleId: 'sched-1' });
+      const sched1Runs = store.listRuns({ scheduleId: schedId1 });
       expect(sched1Runs).toHaveLength(2);
 
-      const sched2Runs = store.listRuns({ scheduleId: 'sched-2' });
+      const sched2Runs = store.listRuns({ scheduleId: schedId2 });
       expect(sched2Runs).toHaveLength(1);
     });
 
     it('gets running runs', () => {
-      const r1 = store.createRun('sched-1', 'scheduled');
-      store.createRun('sched-1', 'scheduled');
+      const schedId = createTestSchedule();
+      const r1 = store.createRun(schedId, 'scheduled');
+      store.createRun(schedId, 'scheduled');
       store.updateRun(r1.id, { status: 'completed' });
 
       const running = store.getRunningRuns();
@@ -195,52 +197,80 @@ describe('PulseStore', () => {
     });
 
     it('counts runs', () => {
-      store.createRun('sched-1', 'scheduled');
-      store.createRun('sched-1', 'scheduled');
-      store.createRun('sched-2', 'scheduled');
+      const schedId1 = createTestSchedule('1');
+      const schedId2 = createTestSchedule('2');
+      store.createRun(schedId1, 'scheduled');
+      store.createRun(schedId1, 'scheduled');
+      store.createRun(schedId2, 'scheduled');
 
       expect(store.countRuns()).toBe(3);
-      expect(store.countRuns('sched-1')).toBe(2);
-      expect(store.countRuns('sched-2')).toBe(1);
+      expect(store.countRuns(schedId1)).toBe(2);
+      expect(store.countRuns(schedId2)).toBe(1);
     });
   });
 
   // === Retention pruning ===
 
   describe('pruneRuns', () => {
+    function createTestSchedule() {
+      return store.createSchedule({
+        name: 'Prune Test',
+        prompt: 'test',
+        cron: '* * * * *',
+      }).id;
+    }
+
     it('prunes old runs keeping only retentionCount', () => {
+      const schedId = createTestSchedule();
       for (let i = 0; i < 5; i++) {
-        store.createRun('sched-1', 'scheduled');
+        store.createRun(schedId, 'scheduled');
       }
 
-      const pruned = store.pruneRuns('sched-1', 2);
+      const pruned = store.pruneRuns(schedId, 2);
       expect(pruned).toBe(3);
-      expect(store.countRuns('sched-1')).toBe(2);
+      expect(store.countRuns(schedId)).toBe(2);
     });
 
     it('does not prune other schedules', () => {
-      for (let i = 0; i < 3; i++) {
-        store.createRun('sched-1', 'scheduled');
-      }
-      store.createRun('sched-2', 'scheduled');
+      const schedId1 = createTestSchedule();
+      const schedId2 = store.createSchedule({
+        name: 'Other',
+        prompt: 'test',
+        cron: '* * * * *',
+      }).id;
 
-      store.pruneRuns('sched-1', 1);
-      expect(store.countRuns('sched-1')).toBe(1);
-      expect(store.countRuns('sched-2')).toBe(1);
+      for (let i = 0; i < 3; i++) {
+        store.createRun(schedId1, 'scheduled');
+      }
+      store.createRun(schedId2, 'scheduled');
+
+      store.pruneRuns(schedId1, 1);
+      expect(store.countRuns(schedId1)).toBe(1);
+      expect(store.countRuns(schedId2)).toBe(1);
     });
 
     it('returns 0 when nothing to prune', () => {
-      store.createRun('sched-1', 'scheduled');
-      expect(store.pruneRuns('sched-1', 10)).toBe(0);
+      const schedId = createTestSchedule();
+      store.createRun(schedId, 'scheduled');
+      expect(store.pruneRuns(schedId, 10)).toBe(0);
     });
   });
 
   // === Crash recovery ===
 
   describe('markRunningAsFailed', () => {
+    function createTestSchedule() {
+      return store.createSchedule({
+        name: 'Recovery Test',
+        prompt: 'test',
+        cron: '* * * * *',
+      }).id;
+    }
+
     it('marks running runs as failed', () => {
-      store.createRun('sched-1', 'scheduled');
-      store.createRun('sched-1', 'scheduled');
+      const schedId = createTestSchedule();
+      store.createRun(schedId, 'scheduled');
+      store.createRun(schedId, 'scheduled');
 
       const changed = store.markRunningAsFailed();
       expect(changed).toBe(2);
@@ -254,7 +284,8 @@ describe('PulseStore', () => {
     });
 
     it('does not affect completed runs', () => {
-      const run = store.createRun('sched-1', 'scheduled');
+      const schedId = createTestSchedule();
+      const run = store.createRun(schedId, 'scheduled');
       store.updateRun(run.id, { status: 'completed' });
 
       const changed = store.markRunningAsFailed();
@@ -265,24 +296,43 @@ describe('PulseStore', () => {
     });
   });
 
-  // === Schema migration ===
+  // === Shared Db lifecycle ===
 
-  describe('schema migration', () => {
-    it('runs idempotently', () => {
-      // Creating a second store instance against the same DB should not fail
-      const store2 = new PulseStore(tmpDir);
-      store2.createRun('sched-1', 'scheduled');
-      expect(store2.countRuns()).toBe(1);
-      store2.close();
+  describe('shared database', () => {
+    it('works with a second PulseStore sharing the same db', () => {
+      const store2 = new PulseStore(db);
+      store.createSchedule({ name: 'From store 1', prompt: 'p', cron: '* * * * *' });
+      const schedules = store2.getSchedules();
+      expect(schedules).toHaveLength(1);
+      expect(schedules[0].name).toBe('From store 1');
     });
   });
 
-  // === Graceful handling ===
+  // === ULID IDs ===
 
-  describe('missing schedules file', () => {
-    it('returns empty array when file does not exist', () => {
-      // Fresh store with no schedules.json yet
-      expect(store.getSchedules()).toEqual([]);
+  describe('ID generation', () => {
+    it('generates ULID IDs (no UUID hyphens)', () => {
+      const schedule = store.createSchedule({ name: 'ULID test', prompt: 'p', cron: '* * * * *' });
+      expect(schedule.id).toMatch(/^[0-9A-Z]{26}$/i);
+      expect(schedule.id).not.toContain('-');
+
+      const run = store.createRun(schedule.id, 'manual');
+      expect(run.id).toMatch(/^[0-9A-Z]{26}$/i);
+      expect(run.id).not.toContain('-');
+    });
+  });
+
+  // === ISO 8601 timestamps ===
+
+  describe('timestamps', () => {
+    it('stores ISO 8601 timestamps', () => {
+      const schedule = store.createSchedule({ name: 'TS test', prompt: 'p', cron: '* * * * *' });
+      expect(schedule.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      expect(schedule.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+
+      const run = store.createRun(schedule.id, 'scheduled');
+      expect(run.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      expect(run.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
   });
 });

@@ -16,8 +16,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@dorkos/db": "workspace:*",
     "@dorkos/shared": "workspace:*",
-    "better-sqlite3": "^11.0.0",
+    "drizzle-orm": "^0.39.0",
     "ulidx": "^2.4.0"
   },
   "peerDependencies": {
@@ -30,8 +31,8 @@
   },
   "devDependencies": {
     "@dorkos/relay": "workspace:*",
+    "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@types/better-sqlite3": "^7.6.0",
     "vitest": "^4.0.18"
   }
 }

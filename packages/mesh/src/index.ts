@@ -40,5 +40,8 @@ export type { BudgetCheckResult, BudgetAllowed, BudgetDenied } from './budget-ma
 export { TopologyManager } from './topology.js';
 export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology.js';
 
+// Health
+export { computeHealthStatus } from './health.js';
+
 // Relay Bridge
 export { RelayBridge } from './relay-bridge.js';

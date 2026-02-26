@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as os from 'node:os';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils';
+import type { Db } from '@dorkos/db';
 import { AgentRegistry } from '../agent-registry.js';
-import type { AgentRegistryEntry, AgentHealthEntry } from '../agent-registry.js';
+import type { AgentRegistryEntry } from '../agent-registry.js';
+import { DenialList } from '../denial-list.js';
+import { computeHealthStatus } from '../health.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,29 +28,12 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
   };
 }
 
-let tmpDir: string;
+let db: Db;
 let registry: AgentRegistry;
 
-beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mesh-registry-test-'));
-  const dbPath = path.join(tmpDir, 'mesh.db');
-  registry = new AgentRegistry(dbPath);
-});
-
-afterEach(async () => {
-  registry.close();
-  await fs.rm(tmpDir, { recursive: true, force: true });
-});
-
-// ---------------------------------------------------------------------------
-// WAL Mode
-// ---------------------------------------------------------------------------
-
-describe('WAL mode', () => {
-  it('uses WAL journal mode', () => {
-    const mode = registry.database.pragma('journal_mode', { simple: true });
-    expect(mode).toBe('wal');
-  });
+beforeEach(() => {
+  db = createTestDb();
+  registry = new AgentRegistry(db);
 });
 
 // ---------------------------------------------------------------------------
@@ -207,55 +191,10 @@ describe('constraints', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Persistence
-// ---------------------------------------------------------------------------
-
-describe('persistence', () => {
-  it('survives close and reopen', async () => {
-    const entry = makeEntry();
-    registry.insert(entry);
-    registry.close();
-
-    // Reopen with same path
-    const dbPath = path.join(tmpDir, 'mesh.db');
-    registry = new AgentRegistry(dbPath);
-
-    const result = registry.get(entry.id);
-    expect(result).toBeDefined();
-    expect(result!.name).toBe(entry.name);
-    expect(result!.projectPath).toBe(entry.projectPath);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// database getter (internal)
-// ---------------------------------------------------------------------------
-
-describe('database getter', () => {
-  it('returns the underlying database instance', () => {
-    const db = registry.database;
-    expect(db).toBeDefined();
-    const mode = db.pragma('journal_mode', { simple: true });
-    expect(mode).toBe('wal');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Health Tracking (v2 migration)
+// Health Tracking
 // ---------------------------------------------------------------------------
 
 describe('health tracking', () => {
-  it('migrates from v1 to v2 adding health columns', async () => {
-    const testDbPath = path.join(tmpDir, 'migrate-test.db');
-    const testRegistry = new AgentRegistry(testDbPath);
-    testRegistry.insert(makeEntry());
-    const entry = testRegistry.getWithHealth('01JKABC00001');
-    expect(entry).toBeDefined();
-    expect(entry!.lastSeenAt).toBeNull();
-    expect(entry!.healthStatus).toBe('stale');
-    testRegistry.close();
-  });
-
   it('updateHealth() sets last_seen_at and last_seen_event', () => {
     registry.insert(makeEntry());
     const now = new Date().toISOString();
@@ -320,5 +259,96 @@ describe('health tracking', () => {
     const entries = registry.listWithHealth();
     expect(entries.length).toBe(1);
     expect(entries[0]!.healthStatus).toBe('active');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anti-regression: Drizzle migration
+// ---------------------------------------------------------------------------
+
+describe('anti-regression: Drizzle migration', () => {
+  it('does not store manifest_json column', () => {
+    // Use the raw SQLite client to inspect table schema
+    const columns = db.$client.pragma('table_info(agents)') as Array<{
+      name: string;
+    }>;
+    const columnNames = columns.map((c) => c.name);
+
+    expect(columnNames).not.toContain('manifest_json');
+    // Verify key structured columns exist instead
+    expect(columnNames).toContain('name');
+    expect(columnNames).toContain('runtime');
+    expect(columnNames).toContain('capabilities_json');
+    expect(columnNames).toContain('project_path');
+  });
+
+  it('computes health status in TypeScript via computeHealthStatus()', () => {
+    registry.insert(makeEntry());
+
+    // Active: < 5 min ago
+    const recentTime = new Date(Date.now() - 60 * 1000).toISOString();
+    registry.updateHealth('01JKABC00001', recentTime, 'heartbeat');
+    const active = registry.getWithHealth('01JKABC00001');
+    expect(active!.healthStatus).toBe('active');
+    expect(computeHealthStatus(recentTime)).toBe('active');
+
+    // Inactive: 5-30 min ago
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    registry.updateHealth('01JKABC00001', tenMinAgo, 'heartbeat');
+    const inactive = registry.getWithHealth('01JKABC00001');
+    expect(inactive!.healthStatus).toBe('inactive');
+    expect(computeHealthStatus(tenMinAgo)).toBe('inactive');
+
+    // Stale: > 30 min ago
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    registry.updateHealth('01JKABC00001', oneHourAgo, 'heartbeat');
+    const stale = registry.getWithHealth('01JKABC00001');
+    expect(stale!.healthStatus).toBe('stale');
+    expect(computeHealthStatus(oneHourAgo)).toBe('stale');
+
+    // Null lastSeenAt: stale
+    expect(computeHealthStatus(null)).toBe('stale');
+  });
+
+  it('stores all IDs as ULIDs', () => {
+    const ulidPattern = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+    // Agent ID from makeEntry uses a short test ID; verify real ULID-style IDs
+    // work through insert/get. The denial list generates real ULIDs.
+    const denialList = new DenialList(db);
+    denialList.deny('/tmp/test-anti-regression-ulid', 'claude-code', 'test', 'user');
+
+    const denials = denialList.list();
+    expect(denials).toHaveLength(1);
+
+    // Read the raw denial row to check the auto-generated ULID id
+    const rawRows = db.$client
+      .prepare('SELECT id FROM agent_denials')
+      .all() as Array<{ id: string }>;
+    expect(rawRows[0].id).toMatch(ulidPattern);
+  });
+
+  it('stores timestamps as ISO 8601 strings', () => {
+    const isoPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+    registry.insert(makeEntry());
+    const entry = registry.get('01JKABC00001');
+    expect(entry).toBeDefined();
+    expect(entry!.registeredAt).toMatch(isoPattern);
+
+    // Verify raw row timestamps are ISO strings (not Julian day numbers)
+    const rawRows = db.$client
+      .prepare('SELECT registered_at, updated_at FROM agents WHERE id = ?')
+      .all('01JKABC00001') as Array<{ registered_at: string; updated_at: string }>;
+    expect(rawRows[0].registered_at).toMatch(isoPattern);
+    expect(rawRows[0].updated_at).toMatch(isoPattern);
+
+    // Verify denial timestamps too
+    const denialList = new DenialList(db);
+    denialList.deny('/tmp/test-anti-regression-ts', 'claude-code', 'test', 'user');
+    const denialRows = db.$client
+      .prepare('SELECT created_at FROM agent_denials')
+      .all() as Array<{ created_at: string }>;
+    expect(denialRows[0].created_at).toMatch(isoPattern);
   });
 });

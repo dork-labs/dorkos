@@ -18,6 +18,7 @@ import * as os from 'node:os';
 import fs from 'node:fs';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { monotonicFactory } from 'ulidx';
+import { createDb, runMigrations } from '@dorkos/db';
 import { validateSubject, matchesPattern } from './subject-matcher.js';
 import { enforceBudget, createDefaultBudget } from './budget-enforcer.js';
 import { EndpointRegistry } from './endpoint-registry.js';
@@ -157,12 +158,21 @@ export class RelayCore {
     };
 
     const mailboxesDir = path.join(dataDir, 'mailboxes');
-    const dbPath = path.join(dataDir, 'index.db');
 
     this.endpointRegistry = new EndpointRegistry(dataDir);
     this.subscriptionRegistry = new SubscriptionRegistry(dataDir);
     this.maildirStore = new MaildirStore({ rootDir: mailboxesDir });
-    this.sqliteIndex = new SqliteIndex({ dbPath });
+
+    // Use injected Drizzle db when provided; otherwise create a standalone one
+    if (options?.db) {
+      this.sqliteIndex = new SqliteIndex(options.db);
+    } else {
+      // Legacy/test path: create standalone database for this relay instance
+      const dbPath = path.join(dataDir, 'index.db');
+      const legacyDb = createDb(dbPath);
+      runMigrations(legacyDb);
+      this.sqliteIndex = new SqliteIndex(legacyDb);
+    }
     this.deadLetterQueue = new DeadLetterQueue({
       maildirStore: this.maildirStore,
       sqliteIndex: this.sqliteIndex,
@@ -722,11 +732,12 @@ export class RelayCore {
     this.sqliteIndex.insertMessage({
       id: deliverResult.messageId,
       subject: deliveryEnvelope.subject,
-      sender: deliveryEnvelope.from,
       endpointHash: endpoint.hash,
-      status: 'new',
+      status: 'pending',
       createdAt: deliveryEnvelope.createdAt,
-      ttl: deliveryEnvelope.budget.ttl,
+      expiresAt: deliveryEnvelope.budget.ttl
+        ? new Date(deliveryEnvelope.budget.ttl).toISOString()
+        : null,
     });
 
     // Synchronous fast-path: dispatch to matching subscription handlers
@@ -764,7 +775,7 @@ export class RelayCore {
 
       // All handlers succeeded — complete the message
       await this.maildirStore.complete(endpoint.hash, messageId);
-      this.sqliteIndex.updateStatus(messageId, 'cur');
+      this.sqliteIndex.updateStatus(messageId, 'delivered');
     } catch (err) {
       // Handler failed — move to failed/ and record for circuit breaker
       const reason = err instanceof Error ? err.message : String(err);
@@ -838,7 +849,7 @@ export class RelayCore {
 
       // All handlers succeeded — complete the message (remove from cur/)
       await this.maildirStore.complete(endpoint.hash, messageId);
-      this.sqliteIndex.updateStatus(messageId, 'cur');
+      this.sqliteIndex.updateStatus(messageId, 'delivered');
     } catch (err) {
       // Handler failed — move to failed/
       const reason = err instanceof Error ? err.message : String(err);

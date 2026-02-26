@@ -1,46 +1,18 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import { AgentRegistry } from '../agent-registry.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils';
+import type { Db } from '@dorkos/db';
 import { BudgetMapper } from '../budget-mapper.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-let tmpDir: string;
-let registry: AgentRegistry;
+let db: Db;
 let mapper: BudgetMapper;
 
-beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mesh-budget-test-'));
-  const dbPath = path.join(tmpDir, 'mesh.db');
-  registry = new AgentRegistry(dbPath);
-  mapper = new BudgetMapper(registry.database);
-});
-
-afterEach(async () => {
-  registry.close();
-  await fs.rm(tmpDir, { recursive: true, force: true });
-  vi.restoreAllMocks();
-});
-
-// ---------------------------------------------------------------------------
-// Migration
-// ---------------------------------------------------------------------------
-
-describe('budget_counters table migration', () => {
-  it('creates budget_counters table at version 3', () => {
-    const version = registry.database.pragma('user_version', { simple: true });
-    expect(version).toBeGreaterThanOrEqual(3);
-
-    // Verify table exists by running a query
-    const row = registry.database
-      .prepare('SELECT COUNT(*) AS cnt FROM budget_counters')
-      .get() as { cnt: number };
-    expect(row.cnt).toBe(0);
-  });
+beforeEach(() => {
+  db = createTestDb();
+  mapper = new BudgetMapper(db);
 });
 
 // ---------------------------------------------------------------------------
@@ -107,10 +79,10 @@ describe('recordCall', () => {
 
     // Verify the bucket has count=3 via a raw query
     const nowMinute = mapper.currentMinuteBucket();
-    const row = registry.database
-      .prepare('SELECT call_count FROM budget_counters WHERE agent_id = ? AND bucket_minute = ?')
-      .get('agent-001', nowMinute) as { call_count: number };
-    expect(row.call_count).toBe(3);
+    const row = db.$client
+      .prepare('SELECT count FROM rate_limit_buckets WHERE agent_id = ? AND bucket_minute = ?')
+      .get('agent-001', nowMinute) as { count: number };
+    expect(row.count).toBe(3);
   });
 
   it('uses SQLite UPSERT correctly for concurrent-like calls', () => {
@@ -120,13 +92,13 @@ describe('recordCall', () => {
     }
 
     const nowMinute = mapper.currentMinuteBucket();
-    const rows = registry.database
-      .prepare('SELECT * FROM budget_counters WHERE agent_id = ?')
-      .all('agent-001') as Array<{ agent_id: string; bucket_minute: number; call_count: number }>;
+    const rows = db.$client
+      .prepare('SELECT * FROM rate_limit_buckets WHERE agent_id = ?')
+      .all('agent-001') as Array<{ agent_id: string; bucket_minute: number; count: number }>;
 
     // Should be exactly one row for this minute
     expect(rows.length).toBe(1);
-    expect(rows[0]!.call_count).toBe(10);
+    expect(rows[0]!.count).toBe(10);
     expect(rows[0]!.bucket_minute).toBe(nowMinute);
   });
 });
@@ -141,8 +113,8 @@ describe('sliding window', () => {
     const oldBucket = nowMinute - 61; // 61 minutes ago — outside the window
 
     // Insert old bucket directly
-    registry.database
-      .prepare('INSERT INTO budget_counters (agent_id, bucket_minute, call_count) VALUES (?, ?, ?)')
+    db.$client
+      .prepare('INSERT INTO rate_limit_buckets (agent_id, bucket_minute, count) VALUES (?, ?, ?)')
       .run('agent-001', oldBucket, 50);
 
     // These old calls should NOT be counted
@@ -155,8 +127,8 @@ describe('sliding window', () => {
     const recentBucket = nowMinute - 30; // 30 minutes ago — inside the window
 
     // Insert recent bucket directly
-    registry.database
-      .prepare('INSERT INTO budget_counters (agent_id, bucket_minute, call_count) VALUES (?, ?, ?)')
+    db.$client
+      .prepare('INSERT INTO rate_limit_buckets (agent_id, bucket_minute, count) VALUES (?, ?, ?)')
       .run('agent-001', recentBucket, 40);
 
     const result = mapper.checkBudget('agent-001', 100);
@@ -169,8 +141,8 @@ describe('sliding window', () => {
 
     // windowStart = nowMinute - 60, query is bucket_minute >= windowStart
     // so bucket at nowMinute - 60 IS included
-    registry.database
-      .prepare('INSERT INTO budget_counters (agent_id, bucket_minute, call_count) VALUES (?, ?, ?)')
+    db.$client
+      .prepare('INSERT INTO rate_limit_buckets (agent_id, bucket_minute, count) VALUES (?, ?, ?)')
       .run('agent-001', boundaryBucket, 25);
 
     const result = mapper.checkBudget('agent-001', 100);
@@ -181,14 +153,14 @@ describe('sliding window', () => {
     const nowMinute = mapper.currentMinuteBucket();
 
     // Insert calls at various times within the window
-    registry.database
-      .prepare('INSERT INTO budget_counters (agent_id, bucket_minute, call_count) VALUES (?, ?, ?)')
+    db.$client
+      .prepare('INSERT INTO rate_limit_buckets (agent_id, bucket_minute, count) VALUES (?, ?, ?)')
       .run('agent-001', nowMinute - 10, 20);
-    registry.database
-      .prepare('INSERT INTO budget_counters (agent_id, bucket_minute, call_count) VALUES (?, ?, ?)')
+    db.$client
+      .prepare('INSERT INTO rate_limit_buckets (agent_id, bucket_minute, count) VALUES (?, ?, ?)')
       .run('agent-001', nowMinute - 30, 30);
-    registry.database
-      .prepare('INSERT INTO budget_counters (agent_id, bucket_minute, call_count) VALUES (?, ?, ?)')
+    db.$client
+      .prepare('INSERT INTO rate_limit_buckets (agent_id, bucket_minute, count) VALUES (?, ?, ?)')
       .run('agent-001', nowMinute - 50, 15);
 
     const result = mapper.checkBudget('agent-001', 100);
@@ -206,16 +178,16 @@ describe('pruning', () => {
     const veryOldBucket = nowMinute - 130; // 130 minutes ago
 
     // Insert very old bucket directly
-    registry.database
-      .prepare('INSERT INTO budget_counters (agent_id, bucket_minute, call_count) VALUES (?, ?, ?)')
+    db.$client
+      .prepare('INSERT INTO rate_limit_buckets (agent_id, bucket_minute, count) VALUES (?, ?, ?)')
       .run('agent-001', veryOldBucket, 99);
 
     // checkBudget triggers lazy pruning
     mapper.checkBudget('agent-001', 100);
 
     // Verify the old bucket was pruned
-    const row = registry.database
-      .prepare('SELECT COUNT(*) AS cnt FROM budget_counters WHERE bucket_minute = ?')
+    const row = db.$client
+      .prepare('SELECT COUNT(*) AS cnt FROM rate_limit_buckets WHERE bucket_minute = ?')
       .get(veryOldBucket) as { cnt: number };
     expect(row.cnt).toBe(0);
   });
@@ -224,15 +196,15 @@ describe('pruning', () => {
     const nowMinute = mapper.currentMinuteBucket();
     const recentBucket = nowMinute - 90; // 90 minutes ago — outside 60-min window but inside prune window
 
-    registry.database
-      .prepare('INSERT INTO budget_counters (agent_id, bucket_minute, call_count) VALUES (?, ?, ?)')
+    db.$client
+      .prepare('INSERT INTO rate_limit_buckets (agent_id, bucket_minute, count) VALUES (?, ?, ?)')
       .run('agent-001', recentBucket, 10);
 
     mapper.checkBudget('agent-001', 100);
 
     // The bucket at 90 minutes should NOT be pruned (< 120 minutes)
-    const row = registry.database
-      .prepare('SELECT COUNT(*) AS cnt FROM budget_counters WHERE bucket_minute = ?')
+    const row = db.$client
+      .prepare('SELECT COUNT(*) AS cnt FROM rate_limit_buckets WHERE bucket_minute = ?')
       .get(recentBucket) as { cnt: number };
     expect(row.cnt).toBe(1);
   });
