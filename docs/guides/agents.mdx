@@ -1,0 +1,122 @@
+---
+title: Agent Identity
+description: Give your projects a name, color, and emoji so you think in agents, not file paths
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps'
+import { Callout } from 'fumadocs-ui/components/callout'
+
+# Agent Identity
+
+Agents give your project directories a first-class identity in DorkOS. Instead of seeing `/Users/me/projects/api` everywhere, you see a named agent with a color dot and emoji. Agent identity works independently of [Mesh](/docs/guides/agent-discovery) — no feature flags required.
+
+## What You Get
+
+When a directory has an agent registered:
+
+- **Sidebar** shows the agent name, color dot, emoji, and description instead of a raw path
+- **Tab title** displays the agent's emoji and name
+- **Favicon** reflects the agent's color
+- **Directory picker** recents show agent names for registered directories
+- **Pulse schedules** display agent identity instead of paths
+- **Claude sessions** receive agent identity context in the system prompt
+
+Unregistered directories work exactly as before with zero changes.
+
+## Creating an Agent
+
+<Steps>
+<Step>
+### Quick create from the sidebar
+
+Click the **+ Agent** button next to the directory path in the sidebar. This creates a `.dork/agent.json` file with sensible defaults (name derived from the directory, a deterministic color and emoji).
+</Step>
+
+<Step>
+### Customize in the Agent Dialog
+
+The Agent Settings Dialog opens automatically after creation. Edit the name, description, pick a color and emoji, then close the dialog. Changes save automatically.
+</Step>
+</Steps>
+
+### Manual creation
+
+You can also create the file directly:
+
+```json title=".dork/agent.json"
+{
+  "id": "01HXYZ...",
+  "name": "backend-bot",
+  "description": "REST API and database agent",
+  "runtime": "claude-code",
+  "capabilities": ["api-design", "database"],
+  "behavior": { "responseMode": "always" },
+  "budget": { "maxHopsPerMessage": 5, "maxCallsPerHour": 100 },
+  "registeredAt": "2026-02-26T00:00:00.000Z",
+  "registeredBy": "manual"
+}
+```
+
+## Agent Settings Dialog
+
+Click the agent name or gear icon in the sidebar to open the settings dialog. It has four tabs:
+
+### Identity
+
+Configure the agent's visual identity:
+
+- **Name** and **Description** — displayed in the sidebar and directory picker
+- **Color** — pick from a palette or enter a hex code; clears to a deterministic default
+- **Emoji** — pick from a curated grid; clears to a deterministic default
+- **Runtime** — `claude-code`, `cursor`, `codex`, or `other`
+
+### Persona
+
+Configure how the agent influences Claude's behavior. See the [Persona Injection](/docs/guides/persona) guide for details.
+
+### Capabilities
+
+Configure agent metadata used by Mesh for discovery and routing:
+
+- **Capabilities** — tag-style chips (e.g., `api-design`, `frontend`)
+- **Namespace** — subject namespace for Relay routing
+- **Response Mode** and **Budget** — behavioral constraints
+
+### Connections
+
+A read-only view linking to other subsystems:
+
+- **Pulse schedules** targeting this agent's directory
+- **Relay endpoints** registered for this agent
+- **Mesh health** status and heartbeat info
+
+Each section hides when its subsystem is disabled.
+
+## Visual Identity
+
+Every agent gets a deterministic color and emoji derived from its ID. You can override either in the Identity tab. The priority is:
+
+1. User-set override (stored in `.dork/agent.json` as `color`/`icon`)
+2. Deterministic hash from the agent's ID (stable across directory renames)
+3. For unregistered directories: deterministic hash from the path (current behavior)
+
+<Callout type="info">
+Clearing a color or emoji override reverts to the deterministic default — no visual identity is ever lost.
+</Callout>
+
+## API
+
+Agent identity is available via REST endpoints at `/api/agents/`:
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/agents/current?path=...` | Get agent for a directory |
+| POST | `/api/agents` | Create a new agent |
+| PATCH | `/api/agents/current?path=...` | Update agent fields |
+| POST | `/api/agents/resolve` | Batch resolve agents for multiple paths |
+
+These endpoints are always available — no feature flag needed. All paths are boundary-validated.
+
+## MCP Tool
+
+Claude sessions can query their own agent identity via the `agent_get_current` MCP tool. This is always available, even without Mesh enabled.

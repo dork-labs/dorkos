@@ -14,6 +14,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | TransportContext       | `apps/client/src/layers/shared/model/TransportContext.tsx`         |
 | Session entity hooks   | `apps/client/src/layers/entities/session/`                         |
 | Command entity hooks   | `apps/client/src/layers/entities/command/`                         |
+| Agent entity hooks     | `apps/client/src/layers/entities/agent/`                           |
 | Chat feature hooks     | `apps/client/src/layers/features/chat/model/use-chat-session.ts`  |
 | Express routes         | `apps/server/src/routes/`                                          |
 | Zod schemas            | `packages/shared/src/schemas.ts`                                   |
@@ -229,6 +230,89 @@ useQuery({ queryKey: ['sessions'], ... }); // Duplicate, easy to drift
 
 **Cause**: ETag mismatch between cached and actual content.
 **Fix**: Force refetch by invalidating the query: `queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })`.
+
+## Agent Entity Hooks
+
+The agent entity layer (`entities/agent/`) provides hooks for agent identity, independent of Mesh. These work whenever a `.dork/agent.json` file exists in the working directory.
+
+### Query Key Factory
+
+```typescript
+// apps/client/src/layers/entities/agent/api/queries.ts
+export const agentKeys = {
+  all: ['agents'] as const,
+  byPath: (path: string) => ['agents', 'byPath', path] as const,
+  resolved: (paths: string[]) => ['agents', 'resolved', ...paths] as const,
+};
+```
+
+### useCurrentAgent
+
+Fetches the agent manifest for a working directory. Returns `null` when no agent is registered. Uses a 60-second stale time since agent config changes infrequently.
+
+```typescript
+// apps/client/src/layers/entities/agent/model/use-current-agent.ts
+export function useCurrentAgent(cwd: string | null) {
+  const transport = useTransport();
+  return useQuery<AgentManifest | null>({
+    queryKey: agentKeys.byPath(cwd ?? ''),
+    queryFn: () => transport.getAgentByPath(cwd!),
+    enabled: !!cwd,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+  });
+}
+```
+
+### useUpdateAgent
+
+Mutation with optimistic updates. Reverts to previous data on error.
+
+```typescript
+// apps/client/src/layers/entities/agent/model/use-update-agent.ts
+export function useUpdateAgent() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (opts: { path: string; updates: Partial<AgentManifest> }) =>
+      transport.updateAgentByPath(opts.path, opts.updates),
+    onMutate: async ({ path, updates }) => {
+      await queryClient.cancelQueries({ queryKey: agentKeys.byPath(path) });
+      const previous = queryClient.getQueryData<AgentManifest | null>(agentKeys.byPath(path));
+      if (previous) {
+        queryClient.setQueryData(agentKeys.byPath(path), { ...previous, ...updates });
+      }
+      return { previous };
+    },
+    onError: (_err, { path }, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(agentKeys.byPath(path), context.previous);
+      }
+    },
+    onSettled: (_data, _err, { path }) => {
+      queryClient.invalidateQueries({ queryKey: agentKeys.byPath(path) });
+    },
+  });
+}
+```
+
+### useResolvedAgents
+
+Batch-resolves agents for multiple paths in a single request. Used by DirectoryPicker to show agent names in recents.
+
+```typescript
+// apps/client/src/layers/entities/agent/model/use-resolved-agents.ts
+export function useResolvedAgents(paths: string[]) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: agentKeys.resolved(paths),
+    queryFn: () => transport.resolveAgents(paths),
+    enabled: paths.length > 0,
+    staleTime: 60_000,
+  });
+}
+```
 
 ## Relay Entity Hooks
 

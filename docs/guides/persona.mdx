@@ -1,0 +1,99 @@
+---
+title: Persona Injection
+description: Shape Claude's behavior per-project with custom system prompt text
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+
+# Persona Injection
+
+Persona injection lets you append custom text to Claude's system prompt for every session in a directory. Use it to define an agent's expertise, constraints, tone, or domain knowledge.
+
+## How It Works
+
+When a directory has an agent with persona text configured, DorkOS injects two XML blocks into the system prompt:
+
+```xml
+<agent_identity>
+Name: backend-bot
+ID: 01HXYZ...
+Description: REST API and database agent
+Capabilities: api-design, database
+</agent_identity>
+
+<agent_persona>
+You are backend-bot, an expert in REST API design and PostgreSQL.
+Always suggest database migrations for schema changes.
+Prefer Express.js patterns consistent with the existing codebase.
+Never modify frontend code without asking first.
+</agent_persona>
+```
+
+The `<agent_identity>` block is always included when an agent exists — it gives Claude basic awareness of which agent it is. The `<agent_persona>` block is only included when persona text exists and the toggle is enabled.
+
+## Configuring a Persona
+
+### Via the Agent Dialog
+
+1. Open the Agent Settings Dialog (click agent name or gear icon in sidebar)
+2. Go to the **Persona** tab
+3. Write your persona text in the textarea
+4. Ensure the **Enabled** toggle is on
+5. Check the live preview to see the exact XML that will be injected
+
+### Via JSON
+
+Edit `.dork/agent.json` directly:
+
+```json title=".dork/agent.json"
+{
+  "name": "backend-bot",
+  "persona": "You are backend-bot, an expert in REST API design...",
+  "personaEnabled": true
+}
+```
+
+Set `personaEnabled` to `false` to keep the text saved but stop injecting it.
+
+## Writing Effective Personas
+
+<Callout type="info">
+Persona text is appended to Claude Code's existing system prompt. You don't need to repeat general coding instructions — focus on what makes this agent unique.
+</Callout>
+
+**Good patterns:**
+
+- Define the agent's domain expertise and boundaries
+- Specify coding conventions specific to the project
+- Set constraints on what the agent should and shouldn't modify
+- Reference key architectural decisions or patterns
+
+**Example personas:**
+
+```text title="API agent"
+You are backend-bot, the API specialist for this project.
+- Always use Zod schemas for request validation
+- Prefer service-layer functions over inline route logic
+- Run relevant tests before suggesting changes are complete
+- Never modify client-side code without asking
+```
+
+```text title="Docs agent"
+You are docs-bot, responsible for documentation quality.
+- Write in active voice, present tense
+- Keep guides under 500 words where possible
+- Include code examples for every concept
+- Check that all internal links resolve
+```
+
+## Persona Toggle
+
+The `personaEnabled` field (default: `true`) controls whether the `<agent_persona>` block is injected. The `<agent_identity>` block is always injected when an agent exists, regardless of this toggle.
+
+This is useful when you want to temporarily disable persona injection without deleting the text — for example, to compare Claude's behavior with and without the persona.
+
+## Limits
+
+- Persona text is limited to **4,000 characters**
+- The text is injected as a system prompt append, not as user content
+- Persona injection adds one filesystem read to session creation, run in parallel with other context (env, git), so latency impact is negligible

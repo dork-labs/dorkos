@@ -8,6 +8,8 @@
     "keyboard-shortcuts",
     "tunnel-setup",
     "relay-messaging",
+    "agents",
+    "persona",
     "agent-discovery",
     "pulse-scheduler",
     "relay-observability",

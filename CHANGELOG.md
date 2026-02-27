@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add agent identity documentation across internal and external guides
 - Migrate from npm to pnpm for faster installs and stricter dependency resolution
 - Route Pulse jobs and console output through Relay transport for unified message delivery and tracing
 - Comprehensive Relay & Mesh release preparation

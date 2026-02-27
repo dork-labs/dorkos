@@ -152,6 +152,95 @@ The `warnings` field is only present when the patch includes keys listed in `SEN
 }
 ```
 
+## Agent Endpoints
+
+Agent identity endpoints are always mounted at `/api/agents/` — no feature flag required. They operate on `.dork/agent.json` files via the shared manifest module. All path parameters are boundary-validated.
+
+### GET /api/agents/current
+
+Get the agent manifest for a working directory.
+
+**Query params:**
+
+- `path` (required) - Absolute path to the project directory
+
+**Responses:**
+
+- `200` - `AgentManifest` object
+- `400` - Missing `path` query parameter
+- `403` - Path outside configured boundary
+- `404` - No agent registered at this path
+
+### POST /api/agents
+
+Create a new agent (writes `.dork/agent.json`).
+
+**Request body:** `CreateAgentRequest`
+
+```json
+{
+  "path": "/path/to/project",
+  "name": "my-agent",
+  "description": "Backend API agent",
+  "runtime": "claude-code"
+}
+```
+
+Only `path` is required. `name` defaults to the directory basename, `runtime` defaults to `claude-code`.
+
+**Responses:**
+
+- `201` - Created `AgentManifest`
+- `400` - Validation error
+- `403` - Path outside configured boundary
+- `409` - Agent already exists at this path (returns existing agent)
+
+### PATCH /api/agents/current
+
+Update agent fields by path. Merges the request body into the existing manifest.
+
+**Query params:**
+
+- `path` (required) - Absolute path to the project directory
+
+**Request body:** `UpdateAgentRequest` (all fields optional)
+
+```json
+{
+  "name": "new-name",
+  "description": "Updated description",
+  "persona": "You are an expert in REST APIs...",
+  "personaEnabled": true,
+  "color": "#6366f1",
+  "icon": "\ud83e\udd16"
+}
+```
+
+**Responses:**
+
+- `200` - Updated `AgentManifest`
+- `400` - Validation error or missing `path`
+- `403` - Path outside configured boundary
+- `404` - No agent registered at this path
+
+### POST /api/agents/resolve
+
+Batch-resolve agents for multiple paths. Avoids N+1 queries in the DirectoryPicker.
+
+**Request body:** `ResolveAgentsRequest`
+
+```json
+{
+  "paths": ["/path/to/project-a", "/path/to/project-b"]
+}
+```
+
+Maximum 20 paths per request.
+
+**Responses:**
+
+- `200` - `{ agents: Record<string, AgentManifest | null> }` — keys are paths, values are manifests or `null` for unregistered directories
+
 ## Relay Endpoints
 
 All relay endpoints are under `/api/relay/` and require `DORKOS_RELAY_ENABLED=true`. When disabled, the relay router is not mounted and requests return 404.

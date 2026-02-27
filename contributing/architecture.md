@@ -119,6 +119,7 @@ packages/
   shared/src/
     transport.ts            -- Transport interface (the "port")
     types.ts                -- Shared type definitions
+    manifest.ts             -- Agent manifest I/O (readManifest, writeManifest, removeManifest)
 
 apps/
   client/src/layers/
@@ -419,7 +420,7 @@ function createMockTransport(overrides?: Partial<Transport>): Transport {
   return {
     listSessions: vi.fn().mockResolvedValue([]),
     createSession: vi.fn(),
-    // ...all 9 methods
+    // ...all 13 methods
     ...overrides,
   };
 }
