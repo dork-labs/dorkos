@@ -85,7 +85,7 @@ Express server on port `DORKOS_PORT` (default 4242). All endpoints that accept `
 - **`routes/git.ts`** - Git status and branch information
 - **`routes/tunnel.ts`** - Runtime tunnel control (POST /start and /stop). Resolves auth token from env var or config, delegates to `tunnelManager`, persists enabled state
 - **`routes/pulse.ts`** - Pulse scheduler CRUD (GET/POST/PATCH/DELETE schedules, POST trigger, GET/POST runs). Delegates to SchedulerService and PulseStore
-- **`routes/relay.ts`** - Relay inter-agent messaging (POST/GET messages, GET/POST/DELETE endpoints, GET inbox, GET dead-letters, GET metrics, GET stream SSE). Feature-flag guarded via `relay-state.ts`
+- **`routes/relay.ts`** - Relay inter-agent messaging (POST/GET messages, GET/POST/DELETE endpoints, GET inbox, GET dead-letters, GET metrics, GET stream SSE) and adapter catalog management (GET /adapters/catalog, POST /adapters, DELETE /adapters/:id, PATCH /adapters/:id/config, POST /adapters/test). Feature-flag guarded via `relay-state.ts`
 - **`routes/mesh.ts`** - Mesh agent discovery and registry (POST /discover, POST/GET/PATCH/DELETE /agents, GET /agents/:id/access, GET /agents/:id/health, POST /agents/:id/heartbeat, GET /topology, PUT /topology/access, POST /deny, GET/DELETE /denied, GET /status). Feature-flag guarded via `mesh-state.ts`. Factory: `createMeshRouter(meshCore)`
 - **`routes/agents.ts`** - Agent identity CRUD (GET/POST/PATCH /agents/current for per-CWD agent identity, POST /agents/resolve for batch path→agent resolution). Always mounted (no feature flag). Reads/writes `.dork/agent.json` manifest files via `@dorkos/shared/manifest`
 

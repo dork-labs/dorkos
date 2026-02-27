@@ -12,6 +12,8 @@
  */
 import { pathToFileURL } from 'node:url';
 import { resolve, isAbsolute } from 'node:path';
+import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
+import { AdapterManifestSchema } from '@dorkos/shared/relay-schemas';
 import type { RelayAdapter } from './types.js';
 
 /** Configuration entry for a single adapter to load. */
@@ -27,6 +29,13 @@ export interface PluginAdapterConfig {
 /** Expected module shape from a plugin package. */
 export interface AdapterPluginModule {
   default: (config: Record<string, unknown>) => RelayAdapter;
+  getManifest?: () => AdapterManifest;
+}
+
+/** Result of loading an adapter, including optional manifest metadata. */
+export interface LoadedAdapter {
+  adapter: RelayAdapter;
+  manifest?: AdapterManifest;
 }
 
 /**
@@ -42,29 +51,32 @@ export interface AdapterPluginModule {
  * @param configs - Array of adapter configuration entries
  * @param builtinMap - Map of type string to factory function for built-in adapters
  * @param configDir - Base directory for resolving relative plugin paths
- * @returns Array of successfully loaded adapter instances
+ * @returns Array of successfully loaded adapter instances with optional manifests
  */
 export async function loadAdapters(
   configs: PluginAdapterConfig[],
   builtinMap: Map<string, (config: Record<string, unknown>) => RelayAdapter>,
   configDir: string,
-): Promise<RelayAdapter[]> {
-  const adapters: RelayAdapter[] = [];
+): Promise<LoadedAdapter[]> {
+  const results: LoadedAdapter[] = [];
 
   for (const entry of configs) {
     if (entry.enabled === false) continue;
 
     try {
       let adapter: RelayAdapter | null = null;
+      let manifest: AdapterManifest | undefined;
 
       if (entry.builtin && builtinMap.has(entry.type)) {
         // Built-in adapter from the provided factory map
+        // Built-in manifests are handled by AdapterManager, not plugin loader
         const factory = builtinMap.get(entry.type)!;
         adapter = factory(entry.config);
       } else if (entry.plugin?.package) {
         // npm package via dynamic import
         const mod = (await import(entry.plugin.package)) as AdapterPluginModule;
         adapter = validateAndCreate(mod, entry);
+        manifest = extractManifest(mod, entry);
       } else if (entry.plugin?.path) {
         // Local file via dynamic import with pathToFileURL
         const absPath = isAbsolute(entry.plugin.path)
@@ -72,10 +84,11 @@ export async function loadAdapters(
           : resolve(configDir, entry.plugin.path);
         const mod = (await import(pathToFileURL(absPath).href)) as AdapterPluginModule;
         adapter = validateAndCreate(mod, entry);
+        manifest = extractManifest(mod, entry);
       }
 
       if (adapter) {
-        adapters.push(adapter);
+        results.push({ adapter, manifest });
       }
     } catch (err) {
       // Non-fatal: log warning and continue loading remaining adapters
@@ -83,7 +96,7 @@ export async function loadAdapters(
     }
   }
 
-  return adapters;
+  return results;
 }
 
 /**
@@ -108,6 +121,49 @@ function validateAndCreate(
   const adapter = factory(entry.config);
   validateAdapterShape(adapter, entry.id);
   return adapter;
+}
+
+/**
+ * Extract and validate an AdapterManifest from a loaded plugin module.
+ *
+ * If the module exports `getManifest()`, calls it and validates with Zod.
+ * Falls back to a minimal manifest generated from the config entry.
+ *
+ * @param mod - The dynamically imported module
+ * @param entry - The config entry for fallback metadata
+ * @returns A validated manifest, or a minimal fallback
+ */
+function extractManifest(
+  mod: unknown,
+  entry: PluginAdapterConfig,
+): AdapterManifest | undefined {
+  const m = mod as Record<string, unknown>;
+  if (typeof m.getManifest === 'function') {
+    try {
+      const raw = (m.getManifest as () => unknown)();
+      const parsed = AdapterManifestSchema.safeParse(raw);
+      if (parsed.success) {
+        return parsed.data;
+      }
+      console.warn(
+        `[PluginLoader] Manifest from '${entry.id}' failed validation:`,
+        parsed.error.flatten(),
+      );
+    } catch (err) {
+      console.warn(`[PluginLoader] Failed to get manifest from '${entry.id}':`, err);
+    }
+  }
+
+  // Fallback: generate minimal manifest
+  return {
+    type: entry.type,
+    displayName: entry.id,
+    description: 'Custom adapter',
+    category: 'custom',
+    builtin: false,
+    configFields: [],
+    multiInstance: false,
+  };
 }
 
 /**

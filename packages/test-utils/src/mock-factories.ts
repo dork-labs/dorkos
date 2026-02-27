@@ -176,6 +176,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Relay Adapters
     listRelayAdapters: vi.fn().mockResolvedValue([]),
     toggleRelayAdapter: vi.fn().mockResolvedValue({ ok: true }),
+    getAdapterCatalog: vi.fn().mockResolvedValue([]),
+    addRelayAdapter: vi.fn().mockResolvedValue({ ok: true }),
+    removeRelayAdapter: vi.fn().mockResolvedValue({ ok: true }),
+    updateRelayAdapterConfig: vi.fn().mockResolvedValue({ ok: true }),
+    testRelayAdapterConnection: vi.fn().mockResolvedValue({ ok: true }),
     // Mesh
     discoverMeshAgents: vi.fn().mockResolvedValue({ candidates: [] }),
     listMeshAgents: vi.fn().mockResolvedValue({ agents: [] }),

@@ -3,7 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { createRelayRouter } from '../relay.js';
 import type { RelayCore, AdapterRegistry, WebhookAdapter } from '@dorkos/relay';
-import type { AdapterManager } from '../../services/relay/adapter-manager.js';
+import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
 
 function createMockRelayCore(): RelayCore {
   return {
@@ -294,7 +294,7 @@ describe('Relay routes', () => {
 // --- Adapter Route Tests ---
 
 /** Create a mock AdapterManager for route testing. */
-function createMockAdapterManager(): AdapterManager {
+function createMockAdapterManager(): AdapterManager & { _mockWebhookAdapter: WebhookAdapter } {
   const mockWebhookAdapter = {
     id: 'wh-github',
     subjectPrefix: 'relay.webhook.github',
@@ -360,6 +360,28 @@ function createMockAdapterManager(): AdapterManager {
     disable: vi.fn().mockResolvedValue(undefined),
     reload: vi.fn().mockResolvedValue(undefined),
     getRegistry: vi.fn().mockReturnValue(mockRegistry),
+    getCatalog: vi.fn().mockReturnValue([
+      {
+        manifest: {
+          type: 'telegram',
+          displayName: 'Telegram',
+          description: 'Telegram bot adapter',
+          category: 'messaging',
+          builtin: true,
+          configFields: [],
+        },
+        instances: [
+          {
+            config: { id: 'tg-main', type: 'telegram', enabled: true, config: { token: '***', mode: 'polling' } },
+            status: { state: 'connected', messageCount: { inbound: 10, outbound: 5 }, errorCount: 0 },
+          },
+        ],
+      },
+    ]),
+    addAdapter: vi.fn().mockResolvedValue(undefined),
+    removeAdapter: vi.fn().mockResolvedValue(undefined),
+    updateConfig: vi.fn().mockResolvedValue(undefined),
+    testConnection: vi.fn().mockResolvedValue({ ok: true }),
     _mockWebhookAdapter: mockWebhookAdapter,
   } as unknown as AdapterManager & { _mockWebhookAdapter: WebhookAdapter };
 }
@@ -383,6 +405,38 @@ describe('Adapter routes', () => {
         res.status(500).json({ error: err.message });
       },
     );
+  });
+
+  describe('GET /api/relay/adapters/catalog', () => {
+    it('returns 200 with catalog entries array', async () => {
+      const res = await request(app).get('/api/relay/adapters/catalog');
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].manifest.type).toBe('telegram');
+      expect(res.body[0].instances).toHaveLength(1);
+      expect(res.body[0].instances[0].config.id).toBe('tg-main');
+    });
+
+    it('includes masked password fields for instances', async () => {
+      const res = await request(app).get('/api/relay/adapters/catalog');
+
+      expect(res.status).toBe(200);
+      // Token should be masked by getCatalog
+      expect(res.body[0].instances[0].config.config.token).toBe('***');
+    });
+
+    it('returns 500 when getCatalog throws', async () => {
+      vi.mocked(adapterManager.getCatalog).mockImplementation(() => {
+        throw new Error('Catalog build failed');
+      });
+
+      const res = await request(app).get('/api/relay/adapters/catalog');
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('Catalog build failed');
+    });
   });
 
   describe('GET /api/relay/adapters', () => {
@@ -525,6 +579,189 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(401);
       expect(res.body.error).toBe('Invalid signature');
+    });
+  });
+
+  describe('POST /api/relay/adapters', () => {
+    it('returns 201 on success', async () => {
+      const res = await request(app)
+        .post('/api/relay/adapters')
+        .send({ type: 'webhook', id: 'wh-new', config: { inbound: { subject: 'relay.webhook.new', secret: 'secret-long-enough' } } });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({ ok: true, id: 'wh-new' });
+      expect(vi.mocked(adapterManager.addAdapter)).toHaveBeenCalledWith(
+        'webhook',
+        'wh-new',
+        { inbound: { subject: 'relay.webhook.new', secret: 'secret-long-enough' } },
+        undefined,
+      );
+    });
+
+    it('returns 400 when body missing required fields', async () => {
+      const res = await request(app)
+        .post('/api/relay/adapters')
+        .send({ type: 'webhook' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Missing required fields');
+    });
+
+    it('returns 409 when ID already exists (DUPLICATE_ID)', async () => {
+      vi.mocked(adapterManager.addAdapter).mockRejectedValue(
+        new AdapterError("Adapter with ID 'tg-main' already exists", 'DUPLICATE_ID'),
+      );
+
+      const res = await request(app)
+        .post('/api/relay/adapters')
+        .send({ type: 'telegram', id: 'tg-main', config: { token: 'x', mode: 'polling' } });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('DUPLICATE_ID');
+    });
+
+    it('returns 400 for UNKNOWN_TYPE', async () => {
+      vi.mocked(adapterManager.addAdapter).mockRejectedValue(
+        new AdapterError('Unknown adapter type: foobar', 'UNKNOWN_TYPE'),
+      );
+
+      const res = await request(app)
+        .post('/api/relay/adapters')
+        .send({ type: 'foobar', id: 'fb-1', config: {} });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('UNKNOWN_TYPE');
+    });
+
+    it('returns 400 for MULTI_INSTANCE_DENIED', async () => {
+      vi.mocked(adapterManager.addAdapter).mockRejectedValue(
+        new AdapterError("Adapter type 'claude-code' does not support multiple instances", 'MULTI_INSTANCE_DENIED'),
+      );
+
+      const res = await request(app)
+        .post('/api/relay/adapters')
+        .send({ type: 'claude-code', id: 'cc-2', config: {} });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('MULTI_INSTANCE_DENIED');
+    });
+  });
+
+  describe('DELETE /api/relay/adapters/:id', () => {
+    it('returns 200 on success', async () => {
+      const res = await request(app).delete('/api/relay/adapters/wh-github');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(vi.mocked(adapterManager.removeAdapter)).toHaveBeenCalledWith('wh-github');
+    });
+
+    it('returns 404 when not found', async () => {
+      vi.mocked(adapterManager.removeAdapter).mockRejectedValue(
+        new AdapterError("Adapter 'nonexistent' not found", 'NOT_FOUND'),
+      );
+
+      const res = await request(app).delete('/api/relay/adapters/nonexistent');
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('NOT_FOUND');
+    });
+
+    it('returns 400 for built-in claude-code', async () => {
+      vi.mocked(adapterManager.removeAdapter).mockRejectedValue(
+        new AdapterError('Cannot remove the built-in claude-code adapter', 'REMOVE_BUILTIN_DENIED'),
+      );
+
+      const res = await request(app).delete('/api/relay/adapters/claude-code');
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('REMOVE_BUILTIN_DENIED');
+    });
+  });
+
+  describe('PATCH /api/relay/adapters/:id/config', () => {
+    it('returns 200 on success', async () => {
+      const res = await request(app)
+        .patch('/api/relay/adapters/tg-main/config')
+        .send({ config: { token: 'new-token', mode: 'webhook' } });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(vi.mocked(adapterManager.updateConfig)).toHaveBeenCalledWith(
+        'tg-main',
+        { token: 'new-token', mode: 'webhook' },
+      );
+    });
+
+    it('returns 404 when not found', async () => {
+      vi.mocked(adapterManager.updateConfig).mockRejectedValue(
+        new AdapterError("Adapter 'nonexistent' not found", 'NOT_FOUND'),
+      );
+
+      const res = await request(app)
+        .patch('/api/relay/adapters/nonexistent/config')
+        .send({ config: { token: 'x' } });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('NOT_FOUND');
+    });
+
+    it('returns 400 when config missing', async () => {
+      const res = await request(app)
+        .patch('/api/relay/adapters/tg-main/config')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Missing required field: config');
+    });
+  });
+
+  describe('POST /api/relay/adapters/test', () => {
+    it('returns 200 with { ok: true } on success', async () => {
+      const res = await request(app)
+        .post('/api/relay/adapters/test')
+        .send({ type: 'telegram', config: { token: 'test-token', mode: 'polling' } });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(vi.mocked(adapterManager.testConnection)).toHaveBeenCalledWith(
+        'telegram',
+        { token: 'test-token', mode: 'polling' },
+      );
+    });
+
+    it('returns 200 with { ok: false, error } on failure', async () => {
+      vi.mocked(adapterManager.testConnection).mockResolvedValue({
+        ok: false,
+        error: 'Connection refused',
+      });
+
+      const res = await request(app)
+        .post('/api/relay/adapters/test')
+        .send({ type: 'telegram', config: { token: 'bad-token', mode: 'polling' } });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: false, error: 'Connection refused' });
+    });
+
+    it('returns 400 when body missing required fields', async () => {
+      const res = await request(app)
+        .post('/api/relay/adapters/test')
+        .send({ type: 'telegram' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Missing required fields');
+    });
+
+    it('returns 500 when testConnection throws', async () => {
+      vi.mocked(adapterManager.testConnection).mockRejectedValue(new Error('Unexpected failure'));
+
+      const res = await request(app)
+        .post('/api/relay/adapters/test')
+        .send({ type: 'telegram', config: { token: 'x' } });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('Unexpected failure');
     });
   });
 

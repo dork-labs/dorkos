@@ -99,11 +99,11 @@ export type {
 export { AdapterRegistry } from './adapter-registry.js';
 
 // Adapter implementations
-export { TelegramAdapter } from './adapters/telegram-adapter.js';
-export { WebhookAdapter, verifySignature } from './adapters/webhook-adapter.js';
+export { TelegramAdapter, TELEGRAM_MANIFEST } from './adapters/telegram-adapter.js';
+export { WebhookAdapter, verifySignature, WEBHOOK_MANIFEST } from './adapters/webhook-adapter.js';
 
 // Built-in adapters
-export { ClaudeCodeAdapter } from './adapters/claude-code-adapter.js';
+export { ClaudeCodeAdapter, CLAUDE_CODE_MANIFEST } from './adapters/claude-code-adapter.js';
 export type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,
@@ -117,4 +117,5 @@ export { loadAdapters, validateAdapterShape } from './adapter-plugin-loader.js';
 export type {
   PluginAdapterConfig,
   AdapterPluginModule,
+  LoadedAdapter,
 } from './adapter-plugin-loader.js';

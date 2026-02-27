@@ -14,7 +14,7 @@ import {
   EndpointRegistrationSchema,
 } from '@dorkos/shared/relay-schemas';
 import { initSSEStream } from '../services/core/stream-adapter.js';
-import type { AdapterManager } from '../services/relay/adapter-manager.js';
+import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 
 /**
@@ -194,6 +194,17 @@ export function createRelayRouter(
 
   // --- Adapter Management Routes ---
   if (adapterManager) {
+    // GET /adapters/catalog must be defined before /:id routes to avoid param collision
+    router.get('/adapters/catalog', (_req, res) => {
+      try {
+        const catalog = adapterManager.getCatalog();
+        res.json(catalog);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to retrieve adapter catalog';
+        res.status(500).json({ error: message });
+      }
+    });
+
     // POST /adapters/reload must be defined before /:id routes to avoid param collision
     router.post('/adapters/reload', async (_req, res) => {
       try {
@@ -216,6 +227,90 @@ export function createRelayRouter(
       const adapter = adapterManager.getAdapter(req.params.id);
       if (!adapter) return res.status(404).json({ error: 'Adapter not found' });
       return res.json(adapter);
+    });
+
+    // POST /adapters/test — Test adapter connection (must be before /:id routes)
+    router.post('/adapters/test', async (req, res) => {
+      const { type, config } = req.body as { type?: string; config?: Record<string, unknown> };
+      if (!type || !config) {
+        return res.status(400).json({ error: 'Missing required fields: type, config' });
+      }
+      try {
+        const result = await adapterManager.testConnection(type, config);
+        return res.json(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Test failed';
+        return res.status(500).json({ error: message });
+      }
+    });
+
+    // POST /adapters — Create a new adapter
+    router.post('/adapters', async (req, res) => {
+      const { type, id, config, enabled } = req.body as {
+        type?: string;
+        id?: string;
+        config?: Record<string, unknown>;
+        enabled?: boolean;
+      };
+      if (!type || !id || !config) {
+        return res.status(400).json({ error: 'Missing required fields: type, id, config' });
+      }
+      try {
+        await adapterManager.addAdapter(type, id, config, enabled);
+        return res.status(201).json({ ok: true, id });
+      } catch (err) {
+        if (err instanceof AdapterError) {
+          const statusMap: Record<string, number> = {
+            DUPLICATE_ID: 409,
+            UNKNOWN_TYPE: 400,
+            MULTI_INSTANCE_DENIED: 400,
+            NOT_FOUND: 404,
+            REMOVE_BUILTIN_DENIED: 400,
+          };
+          return res.status(statusMap[err.code] ?? 500).json({ error: err.message, code: err.code });
+        }
+        const message = err instanceof Error ? err.message : 'Create failed';
+        return res.status(500).json({ error: message });
+      }
+    });
+
+    // DELETE /adapters/:id — Remove an adapter
+    router.delete('/adapters/:id', async (req, res) => {
+      try {
+        await adapterManager.removeAdapter(req.params.id);
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err instanceof AdapterError) {
+          const statusMap: Record<string, number> = {
+            NOT_FOUND: 404,
+            REMOVE_BUILTIN_DENIED: 400,
+          };
+          return res.status(statusMap[err.code] ?? 500).json({ error: err.message, code: err.code });
+        }
+        const message = err instanceof Error ? err.message : 'Remove failed';
+        return res.status(500).json({ error: message });
+      }
+    });
+
+    // PATCH /adapters/:id/config — Update adapter config
+    router.patch('/adapters/:id/config', async (req, res) => {
+      const { config } = req.body as { config?: Record<string, unknown> };
+      if (!config) {
+        return res.status(400).json({ error: 'Missing required field: config' });
+      }
+      try {
+        await adapterManager.updateConfig(req.params.id, config);
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err instanceof AdapterError) {
+          const statusMap: Record<string, number> = {
+            NOT_FOUND: 404,
+          };
+          return res.status(statusMap[err.code] ?? 500).json({ error: err.message, code: err.code });
+        }
+        const message = err instanceof Error ? err.message : 'Update failed';
+        return res.status(500).json({ error: message });
+      }
     });
 
     // POST /adapters/:id/enable — Enable adapter

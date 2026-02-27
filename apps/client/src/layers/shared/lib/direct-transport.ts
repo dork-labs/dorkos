@@ -1,5 +1,5 @@
 import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
-import type { TraceSpan, DeliveryMetrics } from '@dorkos/shared/relay-schemas';
+import type { TraceSpan, DeliveryMetrics, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest, DiscoveryCandidate, DenialRecord, AgentHealth, MeshStatus, TopologyView, CrossNamespaceRule, UpdateAccessRuleRequest } from '@dorkos/shared/mesh-schemas';
 import type {
   StreamEvent,
@@ -329,6 +329,26 @@ export class DirectTransport implements Transport {
 
   async toggleRelayAdapter(_id: string, _enabled: boolean): Promise<{ ok: boolean }> {
     throw new Error('Relay adapters are not supported in embedded mode');
+  }
+
+  async getAdapterCatalog(): Promise<CatalogEntry[]> {
+    return [];
+  }
+
+  async addRelayAdapter(_type: string, _id: string, _config: Record<string, unknown>): Promise<{ ok: boolean }> {
+    throw new Error('Adapter management not supported in embedded mode');
+  }
+
+  async removeRelayAdapter(_id: string): Promise<{ ok: boolean }> {
+    throw new Error('Adapter management not supported in embedded mode');
+  }
+
+  async updateRelayAdapterConfig(_id: string, _config: Record<string, unknown>): Promise<{ ok: boolean }> {
+    throw new Error('Adapter management not supported in embedded mode');
+  }
+
+  async testRelayAdapterConnection(_type: string, _config: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+    throw new Error('Adapter management not supported in embedded mode');
   }
 
   // Mesh agent discovery is not supported in embedded mode

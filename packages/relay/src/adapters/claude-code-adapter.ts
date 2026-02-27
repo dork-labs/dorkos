@@ -11,7 +11,7 @@
  * @module relay/adapters/claude-code-adapter
  */
 import { randomUUID } from 'node:crypto';
-import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import type { RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { PulseDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type {
@@ -22,6 +22,37 @@ import type {
   DeliveryResult,
   PublishOptions,
 } from '../types.js';
+
+// === Manifest ===
+
+/** Static adapter manifest for the Claude Code built-in adapter. */
+export const CLAUDE_CODE_MANIFEST: AdapterManifest = {
+  type: 'claude-code',
+  displayName: 'Claude Code',
+  description: 'Routes messages to Claude Agent SDK sessions. Auto-configured.',
+  iconEmoji: '🤖',
+  category: 'internal',
+  builtin: true,
+  multiInstance: false,
+  configFields: [
+    {
+      key: 'maxConcurrent',
+      label: 'Max Concurrent Sessions',
+      type: 'number',
+      required: false,
+      default: 3,
+      description: 'Maximum number of concurrent agent sessions.',
+    },
+    {
+      key: 'defaultTimeoutMs',
+      label: 'Default Timeout (ms)',
+      type: 'number',
+      required: false,
+      default: 300000,
+      description: 'Default timeout for agent sessions in milliseconds.',
+    },
+  ],
+};
 
 // === Constants ===
 

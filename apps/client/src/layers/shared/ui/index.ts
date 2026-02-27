@@ -3,6 +3,19 @@
  *
  * @module shared/ui
  */
+export {
+  AlertDialog,
+  AlertDialogPortal,
+  AlertDialogOverlay,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from './alert-dialog';
 export { Badge, badgeVariants } from './badge';
 export { Button, buttonVariants } from './button';
 export { Input } from './input';
@@ -89,6 +102,7 @@ export { Switch } from './switch';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
 export { DirectoryPicker } from './DirectoryPicker';
 export { Skeleton } from './skeleton';
+export { Textarea } from './textarea';
 export { Toaster } from './sonner';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 export { FeatureDisabledState } from './FeatureDisabledState';

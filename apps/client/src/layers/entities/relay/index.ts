@@ -9,5 +9,12 @@ export { useRelayEndpoints } from './model/use-relay-endpoints';
 export { useRelayMetrics } from './model/use-relay-metrics';
 export { useRelayEventStream } from './model/use-relay-event-stream';
 export { useRelayAdapters, useToggleAdapter } from './model/use-relay-adapters';
+export {
+  useAdapterCatalog,
+  useAddAdapter,
+  useRemoveAdapter,
+  useUpdateAdapterConfig,
+  useTestAdapterConnection,
+} from './model/use-adapter-catalog';
 export { useMessageTrace } from './model/use-message-trace';
 export { useDeliveryMetrics } from './model/use-delivery-metrics';

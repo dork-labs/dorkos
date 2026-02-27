@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayAdapter, AdapterStatus, DeliveryResult } from '../types.js';
 import { loadAdapters, validateAdapterShape } from '../adapter-plugin-loader.js';
-import type { PluginAdapterConfig } from '../adapter-plugin-loader.js';
+import type { PluginAdapterConfig, LoadedAdapter } from '../adapter-plugin-loader.js';
 
 // === Mock helpers ===
 
@@ -55,8 +55,23 @@ describe('loadAdapters', () => {
     const result = await loadAdapters(configs, builtinMap, '/config/dir');
 
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('builtin-test');
+    expect(result[0].adapter.id).toBe('builtin-test');
     expect(factory).toHaveBeenCalledWith({});
+  });
+
+  it('returns undefined manifest for built-in adapters', async () => {
+    const mockAdapter = createMockAdapter({ id: 'builtin-test' });
+    const factory = vi.fn().mockReturnValue(mockAdapter);
+    builtinMap.set('test-type', factory);
+
+    const configs: PluginAdapterConfig[] = [
+      createConfig({ id: 'builtin-test', type: 'test-type', builtin: true }),
+    ];
+
+    const result = await loadAdapters(configs, builtinMap, '/config/dir');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].manifest).toBeUndefined();
   });
 
   it('skips disabled entries', async () => {
@@ -146,6 +161,24 @@ describe('loadAdapters', () => {
     }).toThrow("missing 'getStatus()' method");
 
     warnSpy.mockRestore();
+  });
+
+  it('returns LoadedAdapter[] shape with adapter and manifest fields', async () => {
+    const mockAdapter = createMockAdapter({ id: 'shaped' });
+    const factory = vi.fn().mockReturnValue(mockAdapter);
+    builtinMap.set('test-type', factory);
+
+    const configs: PluginAdapterConfig[] = [
+      createConfig({ id: 'shaped', type: 'test-type', builtin: true }),
+    ];
+
+    const result = await loadAdapters(configs, builtinMap, '/config/dir');
+
+    expect(result).toHaveLength(1);
+    const loaded: LoadedAdapter = result[0];
+    expect(loaded).toHaveProperty('adapter');
+    expect(loaded).toHaveProperty('manifest');
+    expect(loaded.adapter.id).toBe('shaped');
   });
 });
 

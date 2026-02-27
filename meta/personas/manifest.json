@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "personas": [
+    {
+      "slug": "the-autonomous-builder",
+      "name": "Kai Nakamura",
+      "archetype": "The Autonomous Builder",
+      "role": "primary",
+      "confidence": "proto-persona",
+      "created": "2026-02-27",
+      "reviewBy": "2026-08-27"
+    },
+    {
+      "slug": "the-knowledge-architect",
+      "name": "Priya Sharma",
+      "archetype": "The Knowledge Architect",
+      "role": "secondary",
+      "confidence": "proto-persona",
+      "created": "2026-02-27",
+      "reviewBy": "2026-08-27"
+    }
+  ],
+  "antiPersonas": [
+    {
+      "slug": "the-prompt-dabbler",
+      "name": "Jordan Wells",
+      "archetype": "The Prompt Dabbler",
+      "confidence": "proto-persona",
+      "created": "2026-02-27",
+      "reviewBy": "2026-08-27"
+    }
+  ],
+  "icp": {
+    "slug": "icp-ai-native-dev-shop",
+    "name": "AI-Native Dev Shop",
+    "confidence": "proto-persona",
+    "created": "2026-02-27",
+    "reviewBy": "2026-08-27"
+  }
+}

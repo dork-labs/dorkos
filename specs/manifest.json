@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 67,
+  "nextNumber": 68,
   "specs": [
     {
       "number": 1,
@@ -463,6 +463,13 @@
       "title": "Relay Initialization Failure & Feature Flag DX",
       "created": "2026-02-26",
       "status": "ideation"
+    },
+    {
+      "number": 67,
+      "slug": "adapter-catalog-management",
+      "title": "Adapter Catalog & Management UI",
+      "created": "2026-02-27",
+      "status": "specified"
     }
   ]
 }

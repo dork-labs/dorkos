@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "productContext": {
+    "litepaper": "meta/dorkos-litepaper.md",
+    "brandFoundation": "meta/brand-foundation.md",
+    "architecture": "contributing/architecture.md",
+    "designSystem": "contributing/design-system.md",
+    "specs": "specs/manifest.json",
+    "claudeMd": "CLAUDE.md"
+  },
+  "lastScanned": "2026-02-27"
+}

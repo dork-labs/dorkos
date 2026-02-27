@@ -23,7 +23,7 @@ import { createServer, type Server } from 'node:http';
 import { Bot, webhookCallback } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
 import type { Context as GrammyContext } from 'grammy';
-import type { Signal, StandardPayload, RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import type { Signal, StandardPayload, RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
 import type {
   RelayAdapter,
   RelayPublisher,
@@ -151,6 +151,62 @@ function extractChannelName(chat: GrammyContext['chat']): string | undefined {
   }
   return undefined;
 }
+
+// === Manifest ===
+
+/** Static adapter manifest for the Telegram built-in adapter. */
+export const TELEGRAM_MANIFEST: AdapterManifest = {
+  type: 'telegram',
+  displayName: 'Telegram',
+  description: 'Send and receive messages via a Telegram bot.',
+  iconEmoji: '✈️',
+  category: 'messaging',
+  docsUrl: 'https://core.telegram.org/bots',
+  builtin: true,
+  multiInstance: false,
+  configFields: [
+    {
+      key: 'token',
+      label: 'Bot Token',
+      type: 'password',
+      required: true,
+      placeholder: '123456789:ABCDefGHijklMNOpqrSTUvwxYZ',
+      description: 'Token from @BotFather on Telegram.',
+    },
+    {
+      key: 'mode',
+      label: 'Receiving Mode',
+      type: 'select',
+      required: true,
+      default: 'polling',
+      options: [
+        { label: 'Long Polling', value: 'polling' },
+        { label: 'Webhook', value: 'webhook' },
+      ],
+      description: 'Polling requires no public URL. Webhook is recommended for production.',
+    },
+    {
+      key: 'webhookUrl',
+      label: 'Webhook URL',
+      type: 'url',
+      required: true,
+      placeholder: 'https://your-domain.com/relay/webhooks/telegram',
+      description: 'Public HTTPS URL where Telegram sends updates.',
+      showWhen: { field: 'mode', equals: 'webhook' },
+    },
+    {
+      key: 'webhookPort',
+      label: 'Webhook Port',
+      type: 'number',
+      required: false,
+      default: 8443,
+      description: 'Port for the webhook HTTP server.',
+      showWhen: { field: 'mode', equals: 'webhook' },
+    },
+  ],
+  setupInstructions:
+    'Open Telegram and search for **@BotFather**. Send `/newbot`, choose a name and username. Copy the token provided.',
+};
 
 // === TelegramAdapter ===
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 44,
+  "nextNumber": 46,
   "decisions": [
     {
       "number": 1,
@@ -383,6 +383,24 @@
       "created": "2026-02-26",
       "extractedFrom": "mesh-registry-integrity",
       "specSlug": "mesh-registry-integrity"
+    },
+    {
+      "number": 44,
+      "slug": "configfield-descriptor-over-zod-serialization",
+      "title": "Use ConfigField Descriptor Array Over Zod Serialization for Adapter Forms",
+      "status": "draft",
+      "created": "2026-02-27",
+      "extractedFrom": "adapter-catalog-management",
+      "specSlug": "adapter-catalog-management"
+    },
+    {
+      "number": 45,
+      "slug": "adapter-manifest-self-declaration",
+      "title": "Adapters Self-Declare Metadata via AdapterManifest",
+      "status": "draft",
+      "created": "2026-02-27",
+      "extractedFrom": "adapter-catalog-management",
+      "specSlug": "adapter-catalog-management"
     }
   ]
 }

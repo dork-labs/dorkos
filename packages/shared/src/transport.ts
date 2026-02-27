@@ -27,7 +27,7 @@ import type {
   UpdateScheduleRequest,
   ListRunsQuery,
 } from './types.js';
-import type { AdapterConfigZ, AdapterStatusZ, TraceSpan, DeliveryMetrics } from './relay-schemas.js';
+import type { AdapterConfigZ, AdapterStatusZ, TraceSpan, DeliveryMetrics, CatalogEntry } from './relay-schemas.js';
 import type {
   AgentManifest,
   DiscoveryCandidate,
@@ -174,6 +174,16 @@ export interface Transport {
   listRelayAdapters(): Promise<AdapterListItem[]>;
   /** Enable or disable a relay adapter by ID. */
   toggleRelayAdapter(id: string, enabled: boolean): Promise<{ ok: boolean }>;
+  /** Retrieve the adapter catalog with available types and configured instances. */
+  getAdapterCatalog(): Promise<CatalogEntry[]>;
+  /** Add a new relay adapter instance. */
+  addRelayAdapter(type: string, id: string, config: Record<string, unknown>): Promise<{ ok: boolean }>;
+  /** Remove a relay adapter by ID. */
+  removeRelayAdapter(id: string): Promise<{ ok: boolean }>;
+  /** Update the config for an existing relay adapter. */
+  updateRelayAdapterConfig(id: string, config: Record<string, unknown>): Promise<{ ok: boolean }>;
+  /** Test connectivity for an adapter type and config without registering it. */
+  testRelayAdapterConnection(type: string, config: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
 
   // --- Mesh Agent Discovery ---
 

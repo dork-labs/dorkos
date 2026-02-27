@@ -20,7 +20,7 @@ import type {
   ListRunsQuery,
 } from '@dorkos/shared/types';
 import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
-import type { TraceSpan, DeliveryMetrics } from '@dorkos/shared/relay-schemas';
+import type { TraceSpan, DeliveryMetrics, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type {
   AgentManifest,
   DiscoveryCandidate,
@@ -431,6 +431,37 @@ export class HttpTransport implements Transport {
   toggleRelayAdapter(id: string, enabled: boolean): Promise<{ ok: boolean }> {
     return fetchJSON(this.baseUrl, `/relay/adapters/${id}/${enabled ? 'enable' : 'disable'}`, {
       method: 'POST',
+    });
+  }
+
+  getAdapterCatalog(): Promise<CatalogEntry[]> {
+    return fetchJSON(this.baseUrl, '/relay/adapters/catalog');
+  }
+
+  addRelayAdapter(type: string, id: string, config: Record<string, unknown>): Promise<{ ok: boolean }> {
+    return fetchJSON(this.baseUrl, '/relay/adapters', {
+      method: 'POST',
+      body: JSON.stringify({ type, id, config }),
+    });
+  }
+
+  removeRelayAdapter(id: string): Promise<{ ok: boolean }> {
+    return fetchJSON(this.baseUrl, `/relay/adapters/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  updateRelayAdapterConfig(id: string, config: Record<string, unknown>): Promise<{ ok: boolean }> {
+    return fetchJSON(this.baseUrl, `/relay/adapters/${encodeURIComponent(id)}/config`, {
+      method: 'PATCH',
+      body: JSON.stringify({ config }),
+    });
+  }
+
+  testRelayAdapterConnection(type: string, config: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+    return fetchJSON(this.baseUrl, '/relay/adapters/test', {
+      method: 'POST',
+      body: JSON.stringify({ type, config }),
     });
   }
 

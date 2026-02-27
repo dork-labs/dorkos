@@ -441,6 +441,137 @@ Aggregate delivery metrics for the Relay system. Requires `DORKOS_RELAY_ENABLED=
 }
 ```
 
+## Adapter Catalog Endpoints
+
+All adapter catalog endpoints are under `/api/relay/adapters/` and require `DORKOS_RELAY_ENABLED=true`. They are only mounted when `AdapterManager` is available.
+
+### GET /api/relay/adapters/catalog
+
+Returns the full adapter catalog with manifests and running instances for each adapter type.
+
+**Responses:**
+
+- `200` - Array of `CatalogEntry` objects:
+
+```json
+[
+  {
+    "manifest": {
+      "type": "telegram",
+      "displayName": "Telegram",
+      "description": "Send and receive messages via a Telegram bot.",
+      "iconEmoji": "\u2708\ufe0f",
+      "category": "messaging",
+      "builtin": true,
+      "multiInstance": false,
+      "configFields": [...]
+    },
+    "instances": [
+      {
+        "id": "telegram",
+        "enabled": true,
+        "status": { "state": "connected", "messageCount": { "inbound": 42, "outbound": 15 }, "errorCount": 0 }
+      }
+    ]
+  }
+]
+```
+
+- `500` - Internal error
+
+### POST /api/relay/adapters
+
+Create a new adapter instance. Persists to `~/.dork/relay/adapters.json` and starts the adapter.
+
+**Request body:**
+
+```json
+{
+  "type": "webhook",
+  "id": "github-webhook",
+  "config": {
+    "inbound": { "subject": "relay.webhook.github", "secret": "min-16-char-secret" },
+    "outbound": { "url": "https://example.com/hook", "secret": "min-16-char-secret" }
+  },
+  "enabled": true
+}
+```
+
+All of `type`, `id`, and `config` are required. `enabled` defaults to `true`.
+
+**Responses:**
+
+- `201` - Created: `{ ok: true, id: "github-webhook" }`
+- `400` - Missing required fields or validation error
+- `409` - Duplicate ID (`DUPLICATE_ID`)
+- `400` - Unknown adapter type (`UNKNOWN_TYPE`)
+- `400` - Single-instance adapter already exists (`MULTI_INSTANCE_DENIED`)
+
+**Error codes** (in `code` field):
+
+| Code                     | HTTP | Description                                    |
+| ------------------------ | ---- | ---------------------------------------------- |
+| `DUPLICATE_ID`           | 409  | An adapter with this ID already exists          |
+| `UNKNOWN_TYPE`           | 400  | The adapter type is not recognized              |
+| `MULTI_INSTANCE_DENIED`  | 400  | Adapter type does not support multiple instances |
+
+### DELETE /api/relay/adapters/:id
+
+Remove an adapter instance. Stops the adapter and removes it from config.
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `404` - Adapter not found (`NOT_FOUND`)
+- `400` - Cannot remove built-in adapter (`REMOVE_BUILTIN_DENIED`)
+
+### PATCH /api/relay/adapters/:id/config
+
+Update an adapter's configuration. Triggers a hot-reload of the adapter.
+
+**Request body:**
+
+```json
+{
+  "config": {
+    "token": "new-bot-token",
+    "mode": "webhook"
+  }
+}
+```
+
+The `config` field is required and replaces the adapter's configuration.
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `400` - Missing `config` field
+- `404` - Adapter not found (`NOT_FOUND`)
+
+### POST /api/relay/adapters/test
+
+Test an adapter connection without persisting. Creates a temporary adapter instance, attempts to start it, and reports success or failure.
+
+**Request body:**
+
+```json
+{
+  "type": "telegram",
+  "config": {
+    "token": "123456:ABC...",
+    "mode": "polling"
+  }
+}
+```
+
+Both `type` and `config` are required.
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `400` - Missing required fields
+- `500` - Test failed: `{ error: "Connection timeout" }`
+
 ## Validation Errors
 
 Invalid requests return HTTP 400 with a structured error body:

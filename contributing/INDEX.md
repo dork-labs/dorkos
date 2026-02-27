@@ -26,6 +26,8 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `styling-theming.md` | Tailwind v4, dark mode, Shadcn | `index.css\|apps/client/src/layers/shared/ui/\|tailwind` |
 | `parallel-execution.md` | Parallel agent execution patterns, batching | `.claude/agents/\|\.claude/commands/` |
 | `autonomous-roadmap-execution.md` | Autonomous workflow, `/roadmap:work` | `.claude/commands/roadmap/` |
+| `relay-adapters.md` | Adapter interface, lifecycle, testing | `packages/relay/src/adapters/\|adapter-registry\|adapter-manager` |
+| `adapter-catalog.md` | AdapterManifest, ConfigField, plugin manifests, catalog API | `AdapterManifest\|ConfigField\|adapter-plugin-loader\|adapters/catalog` |
 
 ## Pattern Syntax
 

@@ -15,7 +15,7 @@
  * @module relay/adapters/webhook-adapter
  */
 import crypto from 'node:crypto';
-import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import type { RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
 import type { RelayAdapter, AdapterStatus, AdapterContext, DeliveryResult, WebhookAdapterConfig, RelayPublisher } from '../types.js';
 
 /** Stripe-standard timestamp window for replay attack prevention (±5 minutes). */
@@ -26,6 +26,64 @@ const NONCE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /** How often expired nonces are pruned from the in-memory map. */
 const NONCE_PRUNE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+// === Manifest ===
+
+/** Static adapter manifest for the Webhook built-in adapter. */
+export const WEBHOOK_MANIFEST: AdapterManifest = {
+  type: 'webhook',
+  displayName: 'Webhook',
+  description: 'Send and receive messages via HMAC-signed HTTP webhooks.',
+  iconEmoji: '🔗',
+  category: 'automation',
+  builtin: true,
+  multiInstance: true,
+  configFields: [
+    {
+      key: 'inbound.subject',
+      label: 'Inbound Subject',
+      type: 'text',
+      required: true,
+      placeholder: 'relay.webhook.my-service',
+      description: 'Relay subject to publish inbound messages to.',
+      section: 'Inbound',
+    },
+    {
+      key: 'inbound.secret',
+      label: 'Inbound Secret',
+      type: 'password',
+      required: true,
+      description: 'HMAC-SHA256 secret for verifying inbound webhooks (min 16 characters).',
+      section: 'Inbound',
+    },
+    {
+      key: 'outbound.url',
+      label: 'Outbound URL',
+      type: 'url',
+      required: true,
+      placeholder: 'https://api.example.com/webhook',
+      description: 'URL to POST outbound messages to.',
+      section: 'Outbound',
+    },
+    {
+      key: 'outbound.secret',
+      label: 'Outbound Secret',
+      type: 'password',
+      required: true,
+      description: 'HMAC-SHA256 secret for signing outbound requests (min 16 characters).',
+      section: 'Outbound',
+    },
+    {
+      key: 'outbound.headers',
+      label: 'Custom Headers',
+      type: 'textarea',
+      required: false,
+      placeholder: '{"Authorization": "Bearer xxx"}',
+      description: 'JSON object of custom HTTP headers for outbound requests.',
+      section: 'Outbound',
+    },
+  ],
+};
 
 /**
  * Webhook adapter — bridges generic HTTP webhooks into the Relay subject hierarchy.

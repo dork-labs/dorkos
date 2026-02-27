@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AdapterManager } from '../adapter-manager.js';
+import { AdapterManager, AdapterError } from '../adapter-manager.js';
 import type { AdapterRegistry, RelayAdapter } from '@dorkos/relay';
 import type { AdapterManagerDeps } from '../adapter-manager.js';
 
@@ -357,6 +357,534 @@ describe('AdapterManager', () => {
       // No initialize called -> no watcher
       await expect(manager.shutdown()).resolves.not.toThrow();
       expect(registry.shutdown).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('getCatalog()', () => {
+    it('returns all three built-in manifests after initialize', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const catalog = manager.getCatalog();
+
+      const types = catalog.map((e) => e.manifest.type);
+      expect(types).toContain('telegram');
+      expect(types).toContain('webhook');
+      expect(types).toContain('claude-code');
+    });
+
+    it('returns empty instances for adapter types with no configured instances', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const catalog = manager.getCatalog();
+      const claudeCode = catalog.find((e) => e.manifest.type === 'claude-code');
+
+      expect(claudeCode).toBeDefined();
+      expect(claudeCode!.instances).toHaveLength(0);
+    });
+
+    it('returns correct enabled and status for configured instances', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const catalog = manager.getCatalog();
+      const telegram = catalog.find((e) => e.manifest.type === 'telegram');
+
+      expect(telegram).toBeDefined();
+      expect(telegram!.instances).toHaveLength(1);
+      expect(telegram!.instances[0].id).toBe('tg-main');
+      expect(telegram!.instances[0].enabled).toBe(true);
+      expect(telegram!.instances[0].status.state).toBe('connected');
+    });
+  });
+
+  describe('maskSensitiveFields (via listAdapters)', () => {
+    it('replaces top-level password fields with ***', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const adapters = manager.listAdapters();
+      const tg = adapters.find((a) => a.config.id === 'tg-main');
+      const config = tg!.config.config as Record<string, unknown>;
+
+      expect(config.token).toBe('***');
+      expect(config.mode).toBe('polling');
+    });
+
+    it('replaces nested dot-notation password fields with ***', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const adapters = manager.listAdapters();
+      const wh = adapters.find((a) => a.config.id === 'wh-github');
+      const config = wh!.config.config as Record<string, Record<string, unknown>>;
+
+      expect(config.inbound.secret).toBe('***');
+      expect(config.outbound.secret).toBe('***');
+      // Non-password fields preserved
+      expect(config.inbound.subject).toBe('relay.webhook.github');
+      expect(config.outbound.url).toBe('https://example.com/hook');
+    });
+
+    it('preserves non-password fields unchanged', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const adapters = manager.listAdapters();
+      const tg = adapters.find((a) => a.config.id === 'tg-main');
+      const config = tg!.config.config as Record<string, unknown>;
+
+      expect(config.mode).toBe('polling');
+    });
+
+    it('handles missing nested paths gracefully', async () => {
+      // Config with a flat structure but webhook manifest expects nested keys
+      const configWithFlat = JSON.stringify({
+        adapters: [
+          {
+            id: 'wh-flat',
+            type: 'webhook',
+            enabled: true,
+            config: { someKey: 'value' },
+          },
+        ],
+      });
+      vi.mocked(readFile).mockResolvedValue(configWithFlat);
+      await manager.initialize();
+
+      // Should not throw even though inbound.secret path doesn't exist
+      const adapters = manager.listAdapters();
+      expect(adapters).toHaveLength(1);
+      const config = adapters[0].config.config as Record<string, unknown>;
+      expect(config.someKey).toBe('value');
+    });
+  });
+
+  describe('getManifest()', () => {
+    it('returns manifest for known type', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const manifest = manager.getManifest('telegram');
+      expect(manifest).toBeDefined();
+      expect(manifest!.displayName).toBe('Telegram');
+    });
+
+    it('returns undefined for unknown type', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      expect(manager.getManifest('unknown')).toBeUndefined();
+    });
+  });
+
+  describe('registerPluginManifest()', () => {
+    it('adds a custom manifest to the catalog', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await manager.initialize();
+
+      manager.registerPluginManifest('custom-adapter', {
+        type: 'custom-adapter',
+        displayName: 'Custom',
+        description: 'A custom adapter',
+        category: 'custom',
+        builtin: false,
+        configFields: [],
+        multiInstance: false,
+      });
+
+      const manifest = manager.getManifest('custom-adapter');
+      expect(manifest).toBeDefined();
+      expect(manifest!.displayName).toBe('Custom');
+
+      // Also appears in catalog
+      const catalog = manager.getCatalog();
+      const custom = catalog.find((e) => e.manifest.type === 'custom-adapter');
+      expect(custom).toBeDefined();
+      expect(custom!.instances).toHaveLength(0);
+    });
+  });
+
+  describe('testConnection()', () => {
+    it('returns { ok: true } when adapter starts successfully', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const result = await manager.testConnection('telegram', {
+        token: 'test-token',
+        mode: 'polling',
+      });
+
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('returns { ok: false } when adapter start fails', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      // Make the next TelegramAdapter's start() throw
+      const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
+      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
+        id,
+        subjectPrefix: 'relay.human.telegram',
+        displayName: `Telegram (${id})`,
+        start: vi.fn().mockRejectedValue(new Error('Invalid token')),
+        stop: vi.fn().mockResolvedValue(undefined),
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: vi.fn().mockReturnValue({
+          state: 'disconnected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        }),
+      }));
+
+      const result = await manager.testConnection('telegram', {
+        token: 'bad-token',
+        mode: 'polling',
+      });
+
+      expect(result).toEqual({ ok: false, error: 'Invalid token' });
+    });
+
+    it('returns { ok: false } for unknown adapter type', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const result = await manager.testConnection('nonexistent', {});
+
+      expect(result).toEqual({ ok: false, error: 'Unknown adapter type: nonexistent' });
+    });
+
+    it('always calls stop() on the adapter, even on failure', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const stopFn = vi.fn().mockResolvedValue(undefined);
+      const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
+      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
+        id,
+        subjectPrefix: 'relay.human.telegram',
+        displayName: `Telegram (${id})`,
+        start: vi.fn().mockRejectedValue(new Error('fail')),
+        stop: stopFn,
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: vi.fn().mockReturnValue({
+          state: 'disconnected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        }),
+      }));
+
+      await manager.testConnection('telegram', { token: 't', mode: 'polling' });
+
+      expect(stopFn).toHaveBeenCalledOnce();
+    });
+
+    it('does NOT register the adapter in the registry', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      await manager.testConnection('telegram', { token: 't', mode: 'polling' });
+
+      expect(registry.register).not.toHaveBeenCalled();
+    });
+
+    it('times out after 15 seconds if start() hangs', async () => {
+      vi.useFakeTimers();
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const stopFn = vi.fn().mockResolvedValue(undefined);
+      const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
+      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
+        id,
+        subjectPrefix: 'relay.human.telegram',
+        displayName: `Telegram (${id})`,
+        start: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves
+        stop: stopFn,
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: vi.fn().mockReturnValue({
+          state: 'disconnected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        }),
+      }));
+
+      const resultPromise = manager.testConnection('telegram', {
+        token: 't',
+        mode: 'polling',
+      });
+
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      const result = await resultPromise;
+
+      expect(result).toEqual({ ok: false, error: 'Connection test timed out' });
+      expect(stopFn).toHaveBeenCalledOnce();
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('addAdapter()', () => {
+    it('adds a new adapter to configs and persists', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      await manager.addAdapter('webhook', 'wh-new', {
+        inbound: { subject: 'relay.webhook.test', secret: 'secret-16-chars!!' },
+        outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+      });
+
+      expect(writeFile).toHaveBeenCalledWith(
+        configPath,
+        expect.stringContaining('"wh-new"'),
+        'utf-8',
+      );
+      const adapters = manager.listAdapters();
+      expect(adapters).toHaveLength(1);
+      expect(adapters[0].config.id).toBe('wh-new');
+    });
+
+    it('starts the adapter if enabled', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      await manager.addAdapter('webhook', 'wh-new', {
+        inbound: { subject: 'relay.webhook.test', secret: 'secret-16-chars!!' },
+        outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+      });
+
+      expect(registry.register).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'wh-new' }),
+      );
+    });
+
+    it('does not start the adapter if disabled', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      await manager.addAdapter('webhook', 'wh-new', {
+        inbound: { subject: 'relay.webhook.test', secret: 'secret-16-chars!!' },
+        outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+      }, false);
+
+      expect(registry.register).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate IDs with DUPLICATE_ID', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      await expect(
+        manager.addAdapter('webhook', 'tg-main', {}),
+      ).rejects.toThrow(AdapterError);
+
+      try {
+        await manager.addAdapter('webhook', 'tg-main', {});
+      } catch (err) {
+        expect((err as AdapterError).code).toBe('DUPLICATE_ID');
+      }
+    });
+
+    it('rejects unknown adapter types with UNKNOWN_TYPE', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await manager.initialize();
+
+      await expect(
+        manager.addAdapter('nonexistent-type', 'new-id', {}),
+      ).rejects.toThrow(AdapterError);
+
+      try {
+        await manager.addAdapter('nonexistent-type', 'new-id', {});
+      } catch (err) {
+        expect((err as AdapterError).code).toBe('UNKNOWN_TYPE');
+      }
+    });
+
+    it('rejects second instance of non-multiInstance type', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      // telegram is non-multiInstance, tg-main already exists
+      await expect(
+        manager.addAdapter('telegram', 'tg-second', { token: 'tok', mode: 'polling' }),
+      ).rejects.toThrow(AdapterError);
+
+      try {
+        await manager.addAdapter('telegram', 'tg-second', { token: 'tok', mode: 'polling' });
+      } catch (err) {
+        expect((err as AdapterError).code).toBe('MULTI_INSTANCE_DENIED');
+      }
+    });
+
+    it('allows second instance of multiInstance type (webhook)', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      // webhook is multiInstance, wh-github already exists
+      await expect(
+        manager.addAdapter('webhook', 'wh-second', {
+          inbound: { subject: 'relay.webhook.test2', secret: 'secret-16-chars!!' },
+          outbound: { url: 'https://example2.com', secret: 'secret-16-chars!!' },
+        }),
+      ).resolves.not.toThrow();
+
+      const adapters = manager.listAdapters();
+      const whIds = adapters.filter((a) => a.config.type === 'webhook').map((a) => a.config.id);
+      expect(whIds).toContain('wh-github');
+      expect(whIds).toContain('wh-second');
+    });
+  });
+
+  describe('removeAdapter()', () => {
+    it('stops, removes from config, persists', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      await manager.removeAdapter('tg-main');
+
+      expect(registry.unregister).toHaveBeenCalledWith('tg-main');
+      expect(writeFile).toHaveBeenCalled();
+      const adapters = manager.listAdapters();
+      expect(adapters.find((a) => a.config.id === 'tg-main')).toBeUndefined();
+    });
+
+    it('returns NOT_FOUND for unknown IDs', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      try {
+        await manager.removeAdapter('nonexistent');
+      } catch (err) {
+        expect(err).toBeInstanceOf(AdapterError);
+        expect((err as AdapterError).code).toBe('NOT_FOUND');
+      }
+    });
+
+    it('rejects removing built-in claude-code', async () => {
+      const configWithClaude = JSON.stringify({
+        adapters: [
+          {
+            id: 'claude-code',
+            type: 'claude-code',
+            builtin: true,
+            enabled: true,
+            config: { maxConcurrent: 3 },
+          },
+        ],
+      });
+      vi.mocked(readFile).mockResolvedValue(configWithClaude);
+      await manager.initialize();
+
+      try {
+        await manager.removeAdapter('claude-code');
+      } catch (err) {
+        expect(err).toBeInstanceOf(AdapterError);
+        expect((err as AdapterError).code).toBe('REMOVE_BUILTIN_DENIED');
+      }
+    });
+  });
+
+  describe('updateConfig()', () => {
+    it('merges new config and persists', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      await manager.updateConfig('tg-main', { token: 'new-token', mode: 'webhook' });
+
+      expect(writeFile).toHaveBeenCalled();
+    });
+
+    it('preserves password fields when empty string submitted', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      // Update with empty token (password field) — should preserve original
+      await manager.updateConfig('tg-main', { token: '', mode: 'webhook' });
+
+      const adapter = manager.getAdapter('tg-main');
+      const config = adapter!.config.config as Record<string, unknown>;
+      expect(config.token).toBe('bot-token-123');
+      expect(config.mode).toBe('webhook');
+    });
+
+    it('preserves password fields when *** submitted', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      await manager.updateConfig('tg-main', { token: '***', mode: 'webhook' });
+
+      const adapter = manager.getAdapter('tg-main');
+      const config = adapter!.config.config as Record<string, unknown>;
+      expect(config.token).toBe('bot-token-123');
+    });
+
+    it('preserves nested password fields (e.g., inbound.secret)', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      // Update wh-github with empty nested secrets — should preserve originals
+      await manager.updateConfig('wh-github', {
+        inbound: { subject: 'relay.webhook.new', secret: '' },
+        outbound: { url: 'https://new.com', secret: '***' },
+      });
+
+      const adapter = manager.getAdapter('wh-github');
+      const config = adapter!.config.config as Record<string, Record<string, unknown>>;
+      expect(config.inbound.secret).toBe('a-very-long-secret-16');
+      expect(config.outbound.secret).toBe('another-long-secret-16');
+      expect(config.inbound.subject).toBe('relay.webhook.new');
+      expect(config.outbound.url).toBe('https://new.com');
+    });
+
+    it('restarts adapter after config change', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      // tg-main is enabled and running
+      await manager.updateConfig('tg-main', { token: 'new-token', mode: 'polling' });
+
+      // Should unregister and re-register
+      expect(registry.unregister).toHaveBeenCalledWith('tg-main');
+      expect(registry.register).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'tg-main' }),
+      );
+    });
+
+    it('does not restart disabled adapter after config change', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      // wh-github is disabled, should not restart
+      await manager.updateConfig('wh-github', {
+        inbound: { subject: 'relay.webhook.new', secret: 'new-secret-16-ch!' },
+        outbound: { url: 'https://new.com', secret: 'new-secret-16-ch!' },
+      });
+
+      expect(registry.unregister).not.toHaveBeenCalled();
+      expect(registry.register).not.toHaveBeenCalled();
+    });
+
+    it('returns NOT_FOUND for unknown IDs', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      try {
+        await manager.updateConfig('nonexistent', { key: 'value' });
+      } catch (err) {
+        expect(err).toBeInstanceOf(AdapterError);
+        expect((err as AdapterError).code).toBe('NOT_FOUND');
+      }
     });
   });
 

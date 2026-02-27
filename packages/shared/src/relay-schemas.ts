@@ -428,3 +428,97 @@ export const RelayReceiptSchema = z
   .openapi('RelayReceipt');
 
 export type RelayReceipt = z.infer<typeof RelayReceiptSchema>;
+
+// === Adapter Catalog Schemas ===
+
+export const ConfigFieldTypeSchema = z
+  .enum(['text', 'password', 'number', 'boolean', 'select', 'textarea', 'url'])
+  .openapi('ConfigFieldType');
+
+export type ConfigFieldType = z.infer<typeof ConfigFieldTypeSchema>;
+
+export const ConfigFieldOptionSchema = z
+  .object({
+    label: z.string(),
+    value: z.string(),
+  })
+  .openapi('ConfigFieldOption');
+
+export type ConfigFieldOption = z.infer<typeof ConfigFieldOptionSchema>;
+
+export const ConfigFieldSchema = z
+  .object({
+    key: z.string(),
+    label: z.string(),
+    type: ConfigFieldTypeSchema,
+    required: z.boolean(),
+    default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    placeholder: z.string().optional(),
+    description: z.string().optional(),
+    options: z.array(ConfigFieldOptionSchema).optional(),
+    section: z.string().optional(),
+    showWhen: z
+      .object({
+        field: z.string(),
+        equals: z.union([z.string(), z.boolean(), z.number()]),
+      })
+      .optional(),
+  })
+  .openapi('ConfigField');
+
+export type ConfigField = z.infer<typeof ConfigFieldSchema>;
+
+export const AdapterSetupStepSchema = z
+  .object({
+    stepId: z.string(),
+    title: z.string(),
+    description: z.string().optional(),
+    fields: z.array(z.string()),
+  })
+  .openapi('AdapterSetupStep');
+
+export type AdapterSetupStep = z.infer<typeof AdapterSetupStepSchema>;
+
+export const AdapterCategorySchema = z
+  .enum(['messaging', 'automation', 'internal', 'custom'])
+  .openapi('AdapterCategory');
+
+export type AdapterCategory = z.infer<typeof AdapterCategorySchema>;
+
+export const AdapterManifestSchema = z
+  .object({
+    type: z.string(),
+    displayName: z.string(),
+    description: z.string(),
+    iconEmoji: z.string().optional(),
+    category: AdapterCategorySchema,
+    docsUrl: z.string().url().optional(),
+    builtin: z.boolean(),
+    configFields: z.array(ConfigFieldSchema),
+    setupSteps: z.array(AdapterSetupStepSchema).optional(),
+    setupInstructions: z.string().optional(),
+    multiInstance: z.boolean().default(false),
+  })
+  .openapi('AdapterManifest');
+
+export type AdapterManifest = z.infer<typeof AdapterManifestSchema>;
+
+export const CatalogInstanceSchema = z
+  .object({
+    id: z.string(),
+    enabled: z.boolean(),
+    status: AdapterStatusSchema,
+    config: z.record(z.string(), z.unknown()).optional(),
+  })
+  .openapi('CatalogInstance');
+
+export type CatalogInstance = z.infer<typeof CatalogInstanceSchema>;
+
+export const CatalogEntrySchema = z
+  .object({
+    manifest: AdapterManifestSchema,
+    instances: z.array(CatalogInstanceSchema),
+  })
+  .openapi('CatalogEntry');
+
+export type CatalogEntry = z.infer<typeof CatalogEntrySchema>;

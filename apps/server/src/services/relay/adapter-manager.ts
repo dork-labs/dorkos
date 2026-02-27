@@ -28,6 +28,9 @@ import {
   WebhookAdapter,
   ClaudeCodeAdapter,
   loadAdapters,
+  TELEGRAM_MANIFEST,
+  WEBHOOK_MANIFEST,
+  CLAUDE_CODE_MANIFEST,
 } from '@dorkos/relay';
 import type {
   ClaudeCodeAgentManagerLike,
@@ -35,8 +38,32 @@ import type {
   PulseStoreLike,
 } from '@dorkos/relay';
 import { AdaptersConfigFileSchema } from '@dorkos/shared/relay-schemas';
+import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
+
+/**
+ * Error class for adapter CRUD operations.
+ *
+ * Includes a machine-readable `code` for programmatic error handling.
+ */
+export class AdapterError extends Error {
+  constructor(
+    message: string,
+    public readonly code:
+      | 'DUPLICATE_ID'
+      | 'NOT_FOUND'
+      | 'UNKNOWN_TYPE'
+      | 'MULTI_INSTANCE_DENIED'
+      | 'REMOVE_BUILTIN_DENIED',
+  ) {
+    super(message);
+    this.name = 'AdapterError';
+  }
+}
+
+/** Timeout for connection test attempts (ms). */
+const CONNECTION_TEST_TIMEOUT_MS = 15_000;
 
 /** Chokidar stability threshold before triggering hot-reload (ms). */
 const CONFIG_STABILITY_THRESHOLD_MS = 150;
@@ -68,6 +95,7 @@ export class AdapterManager {
   private readonly configPath: string;
   private configs: AdapterConfig[] = [];
   private readonly deps: AdapterManagerDeps;
+  private manifests = new Map<string, AdapterManifest>();
 
   /**
    * @param registry - The adapter registry managing adapter lifecycle
@@ -91,6 +119,7 @@ export class AdapterManager {
    * Should be called once during server startup.
    */
   async initialize(): Promise<void> {
+    this.populateBuiltinManifests();
     await this.ensureDefaultConfig();
     await this.loadConfig();
     await this.startEnabledAdapters();
@@ -167,7 +196,15 @@ export class AdapterManager {
         messageCount: { inbound: 0, outbound: 0 },
         errorCount: 0,
       };
-      return { config, status };
+      const manifest = this.manifests.get(config.type);
+      const maskedConfig = {
+        ...config,
+        config: this.maskSensitiveFields(
+          config.config as Record<string, unknown>,
+          manifest,
+        ),
+      };
+      return { config: maskedConfig, status };
     });
   }
 
@@ -227,6 +264,193 @@ export class AdapterManager {
         manifest,
       },
     };
+  }
+
+  /**
+   * Test connectivity for an adapter type and config without registering it.
+   *
+   * Creates a transient adapter instance, attempts to start it with a noop
+   * publisher, and returns success/failure. The adapter is always cleaned up
+   * via stop() regardless of outcome and is never added to the registry.
+   *
+   * @param type - The adapter type (e.g., 'telegram', 'webhook')
+   * @param config - The adapter-specific configuration to test
+   * @returns Result indicating success or failure with an error message
+   */
+  async testConnection(
+    type: string,
+    config: Record<string, unknown>,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const manifest = this.manifests.get(type);
+    if (!manifest) {
+      return { ok: false, error: `Unknown adapter type: ${type}` };
+    }
+
+    const tempConfig = {
+      id: `__test_${type}_${Date.now()}`,
+      type,
+      enabled: true,
+      builtin: manifest.builtin,
+      config,
+    } as AdapterConfig;
+
+    let adapter: RelayAdapter | null = null;
+    try {
+      adapter = await this.createAdapter(tempConfig);
+      if (!adapter) {
+        return { ok: false, error: 'Failed to create adapter instance' };
+      }
+
+      // Noop publisher — test adapter is not registered in the relay
+      const noopRelay = {
+        publish: async () => ({ messageId: '', deliveredTo: 0 }),
+        onSignal: () => () => {},
+      };
+
+      await Promise.race([
+        adapter.start(noopRelay),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Connection test timed out')),
+            CONNECTION_TEST_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    } finally {
+      if (adapter) {
+        try {
+          await adapter.stop();
+        } catch {
+          /* swallow stop errors */
+        }
+      }
+    }
+  }
+
+  /**
+   * Add a new adapter instance, persist config, and start it if enabled.
+   *
+   * @param type - The adapter type (must match a known manifest)
+   * @param id - Unique adapter ID
+   * @param config - Adapter-specific configuration
+   * @param enabled - Whether to start the adapter immediately (default true)
+   * @throws {AdapterError} DUPLICATE_ID, UNKNOWN_TYPE, or MULTI_INSTANCE_DENIED
+   */
+  async addAdapter(
+    type: string,
+    id: string,
+    config: Record<string, unknown>,
+    enabled = true,
+  ): Promise<void> {
+    if (this.configs.some((c) => c.id === id)) {
+      throw new AdapterError(`Adapter with ID '${id}' already exists`, 'DUPLICATE_ID');
+    }
+
+    const manifest = this.manifests.get(type);
+    if (!manifest) {
+      throw new AdapterError(`Unknown adapter type: ${type}`, 'UNKNOWN_TYPE');
+    }
+
+    if (!manifest.multiInstance) {
+      const existing = this.configs.find((c) => c.type === type);
+      if (existing) {
+        throw new AdapterError(
+          `Adapter type '${type}' does not support multiple instances. Existing: '${existing.id}'`,
+          'MULTI_INSTANCE_DENIED',
+        );
+      }
+    }
+
+    const adapterConfig = {
+      id,
+      type,
+      enabled,
+      builtin: manifest.builtin,
+      config,
+    } as AdapterConfig;
+    this.configs.push(adapterConfig);
+    await this.saveConfig();
+
+    if (enabled) {
+      const adapter = await this.createAdapter(adapterConfig);
+      if (adapter) {
+        await this.registry.register(adapter);
+      }
+    }
+  }
+
+  /**
+   * Remove an adapter instance, stop it if running, and persist the change.
+   *
+   * @param id - The adapter ID to remove
+   * @throws {AdapterError} NOT_FOUND or REMOVE_BUILTIN_DENIED
+   */
+  async removeAdapter(id: string): Promise<void> {
+    const index = this.configs.findIndex((c) => c.id === id);
+    if (index === -1) {
+      throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
+    }
+
+    const config = this.configs[index];
+
+    if (config.type === 'claude-code' && config.builtin) {
+      throw new AdapterError(
+        'Cannot remove the built-in claude-code adapter',
+        'REMOVE_BUILTIN_DENIED',
+      );
+    }
+
+    try {
+      await this.registry.unregister(id);
+    } catch {
+      /* not running — ignore */
+    }
+
+    this.configs.splice(index, 1);
+    await this.saveConfig();
+  }
+
+  /**
+   * Update an adapter's config with password field preservation.
+   *
+   * When a password field's incoming value is empty, `'***'`, or undefined,
+   * the existing value is preserved. Restarts the adapter if it is currently running.
+   *
+   * @param id - The adapter ID to update
+   * @param newConfig - Partial config to merge
+   * @throws {AdapterError} NOT_FOUND
+   */
+  async updateConfig(id: string, newConfig: Record<string, unknown>): Promise<void> {
+    const existing = this.configs.find((c) => c.id === id);
+    if (!existing) {
+      throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
+    }
+
+    const manifest = this.manifests.get(existing.type);
+    const mergedConfig = this.mergeWithPasswordPreservation(
+      existing.config as Record<string, unknown>,
+      newConfig,
+      manifest,
+    );
+
+    existing.config = mergedConfig;
+    await this.saveConfig();
+
+    // Restart adapter if running
+    if (existing.enabled && this.registry.get(id)) {
+      try {
+        await this.registry.unregister(id);
+      } catch {
+        /* ignore */
+      }
+      const adapter = await this.createAdapter(existing);
+      if (adapter) await this.registry.register(adapter);
+    }
   }
 
   /**
@@ -415,7 +639,167 @@ export class AdapterManager {
       configDir,
     );
 
-    return results[0] ?? null;
+    const result = results[0];
+    if (!result) return null;
+
+    // Register plugin manifest if discovered
+    if (result.manifest) {
+      this.registerPluginManifest(config.type, result.manifest);
+    }
+
+    return result.adapter;
+  }
+
+  /**
+   * Return the full adapter catalog with manifests and configured instances.
+   *
+   * Each entry pairs a manifest with all configured instances of that type,
+   * including their enabled state and runtime status.
+   */
+  getCatalog(): CatalogEntry[] {
+    const entries: CatalogEntry[] = [];
+    for (const [type, manifest] of this.manifests) {
+      const instances = this.configs
+        .filter((c) => c.type === type)
+        .map((c) => {
+          const adapter = this.registry.get(c.id);
+          const baseStatus = adapter?.getStatus() ?? {
+            state: 'disconnected' as const,
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          };
+          return {
+            id: c.id,
+            enabled: c.enabled,
+            status: {
+              id: c.id,
+              type: c.type,
+              displayName: manifest.displayName,
+              ...baseStatus,
+            },
+            config: this.maskSensitiveFields(
+              (c.config ?? {}) as Record<string, unknown>,
+              manifest,
+            ),
+          };
+        });
+      entries.push({ manifest, instances });
+    }
+    return entries;
+  }
+
+  /**
+   * Get a manifest by adapter type.
+   *
+   * @param type - The adapter type to look up
+   */
+  getManifest(type: string): AdapterManifest | undefined {
+    return this.manifests.get(type);
+  }
+
+  /**
+   * Register a plugin-discovered manifest for a given adapter type.
+   *
+   * @param type - The adapter type key
+   * @param manifest - The manifest to register
+   */
+  registerPluginManifest(type: string, manifest: AdapterManifest): void {
+    this.manifests.set(type, manifest);
+  }
+
+  /** Populate the manifests map with built-in adapter manifests. */
+  private populateBuiltinManifests(): void {
+    this.manifests.set('telegram', TELEGRAM_MANIFEST);
+    this.manifests.set('webhook', WEBHOOK_MANIFEST);
+    this.manifests.set('claude-code', CLAUDE_CODE_MANIFEST);
+  }
+
+  /**
+   * Mask password-type fields in an adapter config using the manifest definition.
+   *
+   * Supports dot-notation keys (e.g., `inbound.secret`) by traversing nested objects.
+   *
+   * @param config - The raw config object
+   * @param manifest - The adapter manifest with field definitions
+   * @returns A deep copy of config with password fields replaced by `'***'`
+   */
+  private maskSensitiveFields(
+    config: Record<string, unknown>,
+    manifest?: AdapterManifest,
+  ): Record<string, unknown> {
+    if (!manifest) return config;
+    const masked = structuredClone(config) as Record<string, unknown>;
+    for (const field of manifest.configFields) {
+      if (field.type !== 'password') continue;
+      const parts = field.key.split('.');
+      let current: Record<string, unknown> = masked;
+      let found = true;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (current[parts[i]] && typeof current[parts[i]] === 'object') {
+          current = current[parts[i]] as Record<string, unknown>;
+        } else {
+          found = false;
+          break;
+        }
+      }
+      const lastKey = parts.at(-1)!;
+      if (found && lastKey in current) {
+        current[lastKey] = '***';
+      }
+    }
+    return masked;
+  }
+
+  /**
+   * Merge incoming config with existing, preserving password fields when masked or empty.
+   *
+   * @param existing - The current config values
+   * @param incoming - The new config values to merge
+   * @param manifest - The adapter manifest with field definitions
+   * @returns Merged config with password fields preserved when appropriate
+   */
+  private mergeWithPasswordPreservation(
+    existing: Record<string, unknown>,
+    incoming: Record<string, unknown>,
+    manifest?: AdapterManifest,
+  ): Record<string, unknown> {
+    const result = { ...existing, ...incoming };
+    if (!manifest) return result;
+
+    for (const field of manifest.configFields) {
+      if (field.type !== 'password') continue;
+      const parts = field.key.split('.');
+      const incomingValue = this.getNestedValue(incoming, parts);
+      if (incomingValue === '' || incomingValue === '***' || incomingValue === undefined) {
+        const existingValue = this.getNestedValue(existing, parts);
+        if (existingValue !== undefined) {
+          this.setNestedValue(result, parts, existingValue);
+        }
+      }
+    }
+    return result;
+  }
+
+  /** Traverse a nested object using dot-notation key parts. */
+  private getNestedValue(obj: Record<string, unknown>, parts: string[]): unknown {
+    let current: unknown = obj;
+    for (const part of parts) {
+      if (current == null || typeof current !== 'object') return undefined;
+      current = (current as Record<string, unknown>)[part];
+    }
+    return current;
+  }
+
+  /** Set a value in a nested object using dot-notation key parts, creating intermediates. */
+  private setNestedValue(obj: Record<string, unknown>, parts: string[], value: unknown): void {
+    let current: Record<string, unknown> = obj;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!(parts[i] in current) || typeof current[parts[i]] !== 'object') {
+        current[parts[i]] = {};
+      }
+      current = current[parts[i]] as Record<string, unknown>;
+    }
+    current[parts.at(-1)!] = value;
   }
 
   /**
