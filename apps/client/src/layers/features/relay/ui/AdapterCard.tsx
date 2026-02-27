@@ -19,15 +19,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/layers/shared/ui/alert-dialog';
+import { cn } from '@/layers/shared/lib';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
-
-const STATUS_COLORS: Record<string, string> = {
-  connected: 'bg-green-500',
-  disconnected: 'bg-gray-400',
-  error: 'bg-red-500',
-  starting: 'bg-yellow-500',
-  stopping: 'bg-yellow-500',
-};
+import { getStatusBorderColor } from '../lib/status-colors';
 
 const CATEGORY_COLORS: Record<string, string> = {
   messaging: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -47,14 +41,20 @@ interface AdapterCardProps {
 /** Displays a configured adapter instance with status, toggle, and kebab menu actions. */
 export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemove }: AdapterCardProps) {
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
-  const dotColor = STATUS_COLORS[instance.status.state] ?? 'bg-gray-400';
+  const borderColor = getStatusBorderColor(instance.status.state);
   const isBuiltinClaude = manifest.type === 'claude-code' && manifest.builtin;
+  const displayName = instance.status.displayName || instance.id;
 
   return (
     <>
-      <div className="flex items-center justify-between rounded-lg border p-3">
+      <div
+        className={cn(
+          'flex items-center justify-between rounded-lg border border-l-2 p-3',
+          'hover:shadow-sm transition-shadow',
+          borderColor,
+        )}
+      >
         <div className="flex items-center gap-3">
-          <span className={`h-2 w-2 rounded-full ${dotColor}`} />
           <div>
             <div className="flex items-center gap-2">
               {manifest.iconEmoji && (
@@ -62,15 +62,18 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
                   {manifest.iconEmoji}
                 </span>
               )}
-              <span className="text-sm font-medium">
-                {instance.status.displayName || instance.id}
-              </span>
+              <span className="text-sm font-medium">{displayName}</span>
               <Badge
                 variant="secondary"
                 className={CATEGORY_COLORS[manifest.category] ?? ''}
               >
                 {manifest.category}
               </Badge>
+              {isBuiltinClaude && (
+                <Badge variant="outline" className="text-xs">
+                  System
+                </Badge>
+              )}
             </div>
             <div className="text-xs text-muted-foreground">
               In: {instance.status.messageCount.inbound} | Out: {instance.status.messageCount.outbound}
@@ -116,8 +119,8 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
           <AlertDialogHeader>
             <AlertDialogTitle>Remove adapter</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove &quot;{instance.status.displayName || instance.id}&quot;?
-              This action cannot be undone.
+              Are you sure you want to remove &quot;{displayName}&quot;? This will stop the adapter
+              and remove its configuration. Messages to its subjects will no longer be delivered.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

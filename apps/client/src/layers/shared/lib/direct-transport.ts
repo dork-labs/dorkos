@@ -305,6 +305,10 @@ export class DirectTransport implements Transport {
     return { totalMessages: 0, byStatus: {}, bySubject: [] };
   }
 
+  async listRelayDeadLetters(_filters?: { endpointHash?: string }): Promise<unknown[]> {
+    return [];
+  }
+
   // Relay convergence is not supported in embedded mode
   async sendMessageRelay(
     _sessionId: string,

@@ -1,12 +1,26 @@
-import { Radio } from 'lucide-react';
+import { Inbox, Radio } from 'lucide-react';
 import { useRelayEndpoints } from '@/layers/entities/relay';
+import { cn } from '@/layers/shared/lib';
+import { getStatusDotColor } from '../lib/status-colors';
 
 interface EndpointListProps {
   enabled: boolean;
   onSelectEndpoint?: (subject: string) => void;
 }
 
-/** List of registered relay endpoints. */
+/** Format an ISO timestamp as a relative time string. */
+function formatTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/** List of registered relay endpoints with health indicators and card layout. */
 export function EndpointList({ enabled, onSelectEndpoint }: EndpointListProps) {
   const { data: endpoints = [], isLoading } = useRelayEndpoints(enabled);
 
@@ -25,12 +39,12 @@ export function EndpointList({ enabled, onSelectEndpoint }: EndpointListProps) {
 
   if (endpoints.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-        <Radio className="size-8 text-muted-foreground/30" />
-        <div>
-          <p className="font-medium">No endpoints registered</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Endpoints are registered by the server or via MCP tools.
+      <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+        <Inbox className="size-10 text-muted-foreground/50" />
+        <div className="space-y-1">
+          <p className="text-sm font-medium">No endpoints registered</p>
+          <p className="text-sm text-muted-foreground">
+            Endpoints are created automatically when adapters subscribe to message subjects.
           </p>
         </div>
       </div>
@@ -41,21 +55,35 @@ export function EndpointList({ enabled, onSelectEndpoint }: EndpointListProps) {
     <div className="space-y-2 p-4">
       {endpoints.map((ep) => {
         const endpoint = ep as Record<string, unknown>;
+        const subject = endpoint.subject as string;
+        const status = (endpoint.status as string | undefined) ?? 'healthy';
+        const description = endpoint.description as string | undefined;
+        const messageCount = endpoint.messageCount as number | undefined;
+        const lastActivity = endpoint.lastActivity as string | undefined;
+
         return (
           <button
-            key={endpoint.subject as string}
+            key={subject}
             type="button"
-            onClick={() => onSelectEndpoint?.(endpoint.subject as string)}
-            className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+            onClick={() => onSelectEndpoint?.(subject)}
+            className="w-full rounded-lg border p-3 text-left transition-shadow hover:shadow-sm"
           >
             <div className="flex items-center gap-2">
-              <Radio className="size-4 shrink-0 text-muted-foreground" />
-              <span className="font-mono text-sm">{endpoint.subject as string}</span>
+              <span
+                className={cn('size-2 shrink-0 rounded-full', getStatusDotColor(status))}
+                aria-label={`Status: ${status}`}
+              />
+              <Inbox className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate font-mono text-sm font-medium">{subject}</span>
             </div>
-            {endpoint.description != null && (
-              <p className="mt-1 pl-6 text-xs text-muted-foreground">
-                {String(endpoint.description)}
-              </p>
+            {description != null && (
+              <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+            )}
+            {(messageCount != null || lastActivity != null) && (
+              <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
+                {messageCount != null && <span>{messageCount} messages</span>}
+                {lastActivity != null && <span>{formatTimeAgo(lastActivity)}</span>}
+              </div>
             )}
           </button>
         );

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Dialog,
   DialogContent,
@@ -258,47 +259,57 @@ export function AdapterSetupWizard({
           {/* Step indicator */}
           <StepIndicator current={step} />
 
-          {/* Configure step */}
-          {step === 'configure' && (
-            <ConfigureStep
-              manifest={manifest}
-              isEditMode={isEditMode}
-              adapterId={adapterId}
-              onAdapterIdChange={setAdapterId}
-              idError={idError}
-              fields={visibleFields}
-              values={values}
-              errors={errors}
-              onChange={handleFieldChange}
-              currentSetupStep={currentSetupStep}
-            />
-          )}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Configure step */}
+              {step === 'configure' && (
+                <ConfigureStep
+                  manifest={manifest}
+                  isEditMode={isEditMode}
+                  adapterId={adapterId}
+                  onAdapterIdChange={setAdapterId}
+                  idError={idError}
+                  fields={visibleFields}
+                  values={values}
+                  errors={errors}
+                  onChange={handleFieldChange}
+                  currentSetupStep={currentSetupStep}
+                />
+              )}
 
-          {/* Test step */}
-          {step === 'test' && (
-            <TestStep
-              isPending={testConnection.isPending}
-              isSuccess={testConnection.isSuccess}
-              isError={testConnection.isError}
-              errorMessage={testConnection.error?.message}
-              onRetry={() =>
-                testConnection.mutate({
-                  type: manifest.type,
-                  config: unflattenConfig(values as Record<string, unknown>),
-                })
-              }
-            />
-          )}
+              {/* Test step */}
+              {step === 'test' && (
+                <TestStep
+                  isPending={testConnection.isPending}
+                  isSuccess={testConnection.isSuccess}
+                  isError={testConnection.isError}
+                  errorMessage={testConnection.error?.message}
+                  onRetry={() =>
+                    testConnection.mutate({
+                      type: manifest.type,
+                      config: unflattenConfig(values as Record<string, unknown>),
+                    })
+                  }
+                />
+              )}
 
-          {/* Confirm step */}
-          {step === 'confirm' && (
-            <ConfirmStep
-              manifest={manifest}
-              adapterId={adapterId}
-              isEditMode={isEditMode}
-              values={values}
-            />
-          )}
+              {/* Confirm step */}
+              {step === 'confirm' && (
+                <ConfirmStep
+                  manifest={manifest}
+                  adapterId={adapterId}
+                  isEditMode={isEditMode}
+                  values={values}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         <DialogFooter>

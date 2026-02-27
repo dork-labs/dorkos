@@ -154,6 +154,8 @@ export interface Transport {
   ): Promise<{ messages: unknown[]; nextCursor?: string }>;
   /** Get relay system metrics. */
   getRelayMetrics(): Promise<unknown>;
+  /** List dead-letter messages with optional filters. */
+  listRelayDeadLetters(filters?: { endpointHash?: string }): Promise<unknown[]>;
 
   // --- Relay Convergence ---
 

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { RefreshCw, Route } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger, TabsContent, FeatureDisabledState, Skeleton, Button } from '@/layers/shared/ui';
@@ -11,11 +12,13 @@ import {
 } from '@/layers/entities/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { ActivityFeed } from './ActivityFeed';
+import { ConnectionStatusBanner } from './ConnectionStatusBanner';
 import { EndpointList } from './EndpointList';
 import { InboxView } from './InboxView';
 import { AdapterCard } from './AdapterCard';
 import { CatalogCard } from './CatalogCard';
 import { AdapterSetupWizard } from './AdapterSetupWizard';
+import { RelayHealthBar } from './RelayHealthBar';
 
 interface WizardState {
   open: boolean;
@@ -168,9 +171,20 @@ function AdaptersTab({ enabled }: AdaptersTabProps) {
 export function RelayPanel() {
   const relayEnabled = useRelayEnabled();
   const [selectedEndpoint, setSelectedEndpoint] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('activity');
+  const deadLetterRef = useRef<HTMLDivElement>(null);
 
-  // Connect SSE stream when relay is enabled
-  useRelayEventStream(relayEnabled);
+  // Connect SSE stream when relay is enabled; track connection health for banner
+  const { connectionState } = useRelayEventStream(relayEnabled);
+
+  /** Switch to the activity tab and scroll dead letters section into view. */
+  const handleFailedClick = () => {
+    setActiveTab('activity');
+    // Defer scroll until after the tab content is visible in the DOM
+    setTimeout(() => {
+      deadLetterRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
 
   if (!relayEnabled) {
     return (
@@ -184,28 +198,42 @@ export function RelayPanel() {
   }
 
   return (
-    <Tabs defaultValue="activity" className="flex h-full flex-col">
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
+      <RelayHealthBar enabled={relayEnabled} onFailedClick={handleFailedClick} />
+      <ConnectionStatusBanner connectionState={connectionState} className="mx-4 mt-2" />
+
       <TabsList className="mx-4 mt-3 shrink-0">
         <TabsTrigger value="activity">Activity</TabsTrigger>
         <TabsTrigger value="endpoints">Endpoints</TabsTrigger>
         <TabsTrigger value="adapters">Adapters</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="activity" className="min-h-0 flex-1 overflow-y-auto">
-        <ActivityFeed enabled={relayEnabled} />
-      </TabsContent>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
+          <TabsContent value="activity" className="h-full">
+            <ActivityFeed enabled={relayEnabled} deadLetterRef={deadLetterRef} onSwitchToAdapters={() => setActiveTab('adapters')} />
+          </TabsContent>
 
-      <TabsContent value="endpoints" className="min-h-0 flex-1 overflow-y-auto">
-        {selectedEndpoint ? (
-          <InboxView subject={selectedEndpoint} onBack={() => setSelectedEndpoint(null)} />
-        ) : (
-          <EndpointList enabled={relayEnabled} onSelectEndpoint={setSelectedEndpoint} />
-        )}
-      </TabsContent>
+          <TabsContent value="endpoints" className="h-full">
+            {selectedEndpoint ? (
+              <InboxView subject={selectedEndpoint} onBack={() => setSelectedEndpoint(null)} />
+            ) : (
+              <EndpointList enabled={relayEnabled} onSelectEndpoint={setSelectedEndpoint} />
+            )}
+          </TabsContent>
 
-      <TabsContent value="adapters" className="min-h-0 flex-1 overflow-y-auto">
-        <AdaptersTab enabled={relayEnabled} />
-      </TabsContent>
+          <TabsContent value="adapters" className="h-full">
+            <AdaptersTab enabled={relayEnabled} />
+          </TabsContent>
+        </motion.div>
+      </AnimatePresence>
     </Tabs>
   );
 }

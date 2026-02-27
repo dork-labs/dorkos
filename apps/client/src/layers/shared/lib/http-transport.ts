@@ -392,6 +392,13 @@ export class HttpTransport implements Transport {
     return fetchJSON(this.baseUrl, '/relay/metrics');
   }
 
+  listRelayDeadLetters(filters?: { endpointHash?: string }): Promise<unknown[]> {
+    const params = new URLSearchParams();
+    if (filters?.endpointHash) params.set('endpointHash', filters.endpointHash);
+    const qs = params.toString();
+    return fetchJSON(this.baseUrl, `/relay/dead-letters${qs ? `?${qs}` : ''}`);
+  }
+
   // --- Relay Convergence ---
 
   async sendMessageRelay(

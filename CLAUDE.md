@@ -148,7 +148,7 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gra
 | `entities/session/`      | useSessionId, useSessions, useDirectoryState, useDefaultCwd        | Session domain hooks        |
 | `entities/command/`      | useCommands                                                        | Command domain hook         |
 | `entities/pulse/`        | usePulseEnabled, useSchedules, useRuns, useActiveRunCount, useCancelRun, useCompletedRunBadge | Pulse scheduler domain hooks|
-| `entities/relay/`        | useRelayEnabled, useRelayMessages, useRelayEndpoints, useRelayMetrics, useSendRelayMessage, useRelayEventStream, useMessageTrace, useDeliveryMetrics | Relay messaging domain hooks|
+| `entities/relay/`        | useRelayEnabled, useRelayMessages, useRelayEndpoints, useRelayMetrics, useSendRelayMessage, useRelayEventStream, useMessageTrace, useDeliveryMetrics, useDeadLetters, useRelayAdapters, useToggleAdapter, useAdapterCatalog, useAddAdapter, useRemoveAdapter, useUpdateAdapterConfig, useTestAdapterConnection | Relay messaging domain hooks|
 | `entities/mesh/`         | useMeshEnabled, useRegisteredAgents, useDiscoverAgents, useRegisterAgent, useDenyAgent, useUnregisterAgent, useUpdateAgent, useDeniedAgents, useMeshStatus, useMeshAgentHealth, useMeshHeartbeat | Mesh discovery domain hooks |
 | `entities/agent/`        | useCurrentAgent, useResolvedAgents, useCreateAgent, useUpdateAgent, useAgentVisual | Agent identity domain hooks |
 | `features/chat/`         | ChatPanel, MessageList, MessageItem, ToolCallCard, useChatSession  | Chat interface              |
@@ -157,7 +157,7 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, pure neutral gra
 | `features/settings/`     | SettingsDialog                                                     | Settings UI                 |
 | `features/files/`        | FilePalette, useFiles                                              | File browser                |
 | `features/pulse/`        | PulsePanel, ScheduleRow, CreateScheduleDialog, RunHistoryPanel, CronPresets, CronVisualBuilder, TimezoneCombobox | Pulse scheduler UI          |
-| `features/relay/`        | RelayPanel, ActivityFeed, MessageRow, EndpointList, InboxView, MessageTrace, DeliveryMetricsDashboard | Relay messaging UI          |
+| `features/relay/`        | RelayPanel, ActivityFeed, MessageRow, EndpointList, InboxView, MessageTrace, DeliveryMetricsDashboard, RelayHealthBar, DeadLetterSection, ConnectionStatusBanner, ComposeMessageDialog, AdapterCard, CatalogCard, ConfigFieldInput, AdapterSetupWizard | Relay messaging UI          |
 | `features/mesh/`         | MeshPanel, CandidateCard, AgentCard, RegisterAgentDialog, TopologyGraph, AgentNode, MeshStatsHeader, AgentHealthDetail | Mesh discovery, registry & observability UI|
 | `features/agent-settings/` | AgentDialog, IdentityTab, PersonaTab, CapabilitiesTab, ConnectionsTab | Agent identity settings UI  |
 | `features/status/`       | StatusLine, GitStatusItem, ModelItem, etc.                         | Status bar                  |

@@ -138,26 +138,27 @@ describe('AdapterCard', () => {
     expect(screen.getByText('📨')).toBeTruthy();
   });
 
-  it('shows a green dot for connected state', () => {
+  it('shows a green left border for connected state', () => {
     const { container } = render(<AdapterCard {...defaultProps()} />);
-    const dot = container.querySelector('.bg-green-500');
-    expect(dot).toBeTruthy();
+    const card = container.querySelector('.border-l-green-500');
+    expect(card).toBeTruthy();
   });
 
-  it('shows a red dot for error state', () => {
+  it('shows a red left border for error state', () => {
     const { container } = render(
       <AdapterCard {...defaultProps({ instance: errorInstance })} />,
     );
-    const dot = container.querySelector('.bg-red-500');
-    expect(dot).toBeTruthy();
+    const card = container.querySelector('.border-l-red-500');
+    expect(card).toBeTruthy();
   });
 
-  it('shows a gray dot for disconnected state', () => {
+  it('shows a red left border for disconnected state', () => {
     const { container } = render(
       <AdapterCard {...defaultProps({ instance: disabledInstance })} />,
     );
-    const dot = container.querySelector('.bg-gray-400');
-    expect(dot).toBeTruthy();
+    // disconnected maps to border-l-red-500 in the unified status color system
+    const card = container.querySelector('.border-l-red-500');
+    expect(card).toBeTruthy();
   });
 
   it('displays inbound and outbound message counts', () => {

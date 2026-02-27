@@ -160,6 +160,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     unregisterRelayEndpoint: vi.fn().mockResolvedValue({ success: true }),
     readRelayInbox: vi.fn().mockResolvedValue({ messages: [] }),
     getRelayMetrics: vi.fn().mockResolvedValue({ totalMessages: 0, byStatus: {}, bySubject: [] }),
+    listRelayDeadLetters: vi.fn().mockResolvedValue([]),
     // Relay Convergence
     sendMessageRelay: vi.fn().mockResolvedValue({ messageId: 'msg-1', traceId: 'trace-1' }),
     getRelayTrace: vi.fn().mockResolvedValue({ traceId: 'trace-1', spans: [] }),

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 68,
+  "nextNumber": 69,
   "specs": [
     {
       "number": 1,
@@ -470,6 +470,13 @@
       "title": "Adapter Catalog & Management UI",
       "created": "2026-02-27",
       "status": "specified"
+    },
+    {
+      "number": 68,
+      "slug": "relay-ux-elevation",
+      "title": "Relay UX Elevation — World-Class Relay Panel Experience",
+      "created": "2026-02-27",
+      "status": "draft"
     }
   ]
 }
