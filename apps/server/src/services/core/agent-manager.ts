@@ -2,7 +2,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { query, type Options, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { Response } from 'express';
-import type { StreamEvent, PermissionMode } from '@dorkos/shared/types';
+import type { StreamEvent, PermissionMode, ModelOption } from '@dorkos/shared/types';
 import { SESSIONS } from '../../config/constants.js';
 import { SessionLockManager } from '../session/session-lock.js';
 import { createCanUseTool } from './interactive-handlers.js';
@@ -16,6 +16,12 @@ import { env } from '../../env.js';
 
 export { buildTaskEvent } from '../session/build-task-event.js';
 
+const DEFAULT_MODELS: ModelOption[] = [
+  { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast, intelligent model for everyday tasks' },
+  { value: 'claude-haiku-4-5-20251001', displayName: 'Haiku 4.5', description: 'Fastest, most compact model' },
+  { value: 'claude-opus-4-6', displayName: 'Opus 4.6', description: 'Most capable model for complex tasks' },
+];
+
 /**
  * Manages Claude Agent SDK sessions — creation, resumption, streaming, tool approval,
  * and session locking. Calls the SDK's `query()` function and maps streaming events
@@ -28,6 +34,7 @@ export class AgentManager {
   private readonly cwd: string;
   private readonly claudeCliPath: string | undefined;
   private mcpServers: Record<string, unknown> = {};
+  private cachedModels: ModelOption[] | null = null;
 
   constructor(cwd?: string) {
     const thisDir = path.dirname(fileURLToPath(import.meta.url));
@@ -145,6 +152,20 @@ export class AgentManager {
 
     const agentQuery = query({ prompt: makeUserPrompt(content), options: sdkOptions });
     session.activeQuery = agentQuery;
+
+    // Non-blocking model fetch on first invocation
+    if (!this.cachedModels) {
+      agentQuery.supportedModels().then((models) => {
+        this.cachedModels = models.map((m) => ({
+          value: m.value,
+          displayName: m.displayName,
+          description: m.description,
+        }));
+        logger.debug('[sendMessage] cached supported models', { count: this.cachedModels.length });
+      }).catch((err) => {
+        logger.debug('[sendMessage] failed to fetch supported models', { err });
+      });
+    }
 
     let emittedDone = false;
     const toolState = createToolState();
@@ -295,6 +316,11 @@ export class AgentManager {
 
   getLockInfo(sessionId: string): { clientId: string; acquiredAt: number } | null {
     return this.lockManager.getLockInfo(sessionId);
+  }
+
+  /** Get available models — returns SDK-reported models if cached, otherwise defaults. */
+  async getSupportedModels(): Promise<ModelOption[]> {
+    return this.cachedModels ?? DEFAULT_MODELS;
   }
 }
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Fetch available models dynamically from Claude Agent SDK
 - Elevate Relay panel UX with health bar, dead letters, motion, and filters
 - Add adapter catalog and management UI
 

@@ -140,6 +140,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
     }),
     getGitStatus: vi.fn().mockResolvedValue({ error: 'not_git_repo' as const }),
+    // Models
+    getModels: vi.fn().mockResolvedValue([
+      { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast model' },
+      { value: 'claude-opus-4-6', displayName: 'Opus 4.6', description: 'Capable model' },
+    ]),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
     // Pulse

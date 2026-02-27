@@ -7,16 +7,12 @@ import {
   ResponsiveDropdownMenuRadioGroup,
   ResponsiveDropdownMenuRadioItem,
 } from '@/layers/shared/ui';
+import { useModels } from '@/layers/entities/session';
+import type { ModelOption } from '@dorkos/shared/types';
 
-const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-  { value: 'claude-opus-4-6', label: 'Opus 4.6' },
-];
-
-function getModelLabel(model: string): string {
-  const option = MODEL_OPTIONS.find((o) => o.value === model);
-  if (option) return option.label;
+function getModelLabel(model: string, models: ModelOption[]): string {
+  const option = models.find((o) => o.value === model);
+  if (option) return option.displayName;
   const match = model.match(/claude-(\w+)-/);
   return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : model;
 }
@@ -27,20 +23,27 @@ interface ModelItemProps {
 }
 
 export function ModelItem({ model, onChangeModel }: ModelItemProps) {
+  const { data: models = [] } = useModels();
+
   return (
     <ResponsiveDropdownMenu>
       <ResponsiveDropdownMenuTrigger asChild>
         <button className="hover:text-foreground inline-flex items-center gap-1 transition-colors duration-150">
           <Bot className="size-(--size-icon-xs)" />
-          <span>{getModelLabel(model)}</span>
+          <span>{getModelLabel(model, models)}</span>
         </button>
       </ResponsiveDropdownMenuTrigger>
-      <ResponsiveDropdownMenuContent side="top" align="start" className="w-44">
+      <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
         <ResponsiveDropdownMenuLabel>Model</ResponsiveDropdownMenuLabel>
         <ResponsiveDropdownMenuRadioGroup value={model} onValueChange={onChangeModel}>
-          {MODEL_OPTIONS.map((m) => (
+          {models.map((m) => (
             <ResponsiveDropdownMenuRadioItem key={m.value} value={m.value}>
-              {m.label}
+              <div>
+                <div>{m.displayName}</div>
+                <div className="text-muted-foreground text-[10px] leading-tight">
+                  {m.description}
+                </div>
+              </div>
             </ResponsiveDropdownMenuRadioItem>
           ))}
         </ResponsiveDropdownMenuRadioGroup>

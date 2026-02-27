@@ -58,6 +58,7 @@ export type {
   RelayReceiptEvent,
   MessageDeliveredEvent,
   RelayMessageEvent,
+  ModelOption,
 } from './schemas.js';
 
 export type {

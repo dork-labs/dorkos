@@ -33,6 +33,14 @@ vi.mock('../../../lib/boundary.js', () => ({
   },
 }));
 
+/** Wrap an async generator with stub SDK query methods so the mock matches the real shape. */
+function mockQueryResult(gen: AsyncGenerator) {
+  return Object.assign(gen, {
+    supportedModels: vi.fn().mockResolvedValue([]),
+    setPermissionMode: vi.fn().mockResolvedValue(undefined),
+  });
+}
+
 describe('AgentManager', () => {
   let agentManager: typeof import('../agent-manager.js').agentManager;
 
@@ -70,7 +78,7 @@ describe('AgentManager', () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        (async function* () {
+        mockQueryResult((async function* () {
           yield {
             type: 'system',
             subtype: 'init',
@@ -108,7 +116,7 @@ describe('AgentManager', () => {
             uuid: 'uuid-2',
             session_id: 'nonexistent',
           };
-        })()
+        })())
       );
 
       // Don't call ensureSession first - sendMessage should auto-create
@@ -128,7 +136,7 @@ describe('AgentManager', () => {
 
       // Mock SDK to yield an init message and a text delta
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        (async function* () {
+        mockQueryResult((async function* () {
           yield {
             type: 'system',
             subtype: 'init',
@@ -177,7 +185,7 @@ describe('AgentManager', () => {
             uuid: 'uuid-3',
             session_id: 'sdk-session-123',
           };
-        })()
+        })())
       );
 
       agentManager.ensureSession('s1', { permissionMode: 'default' });
@@ -199,7 +207,7 @@ describe('AgentManager', () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        (async function* () {
+        mockQueryResult((async function* () {
           yield {
             type: 'system',
             subtype: 'init',
@@ -266,7 +274,7 @@ describe('AgentManager', () => {
             uuid: 'uuid-5',
             session_id: 'sdk-session-456',
           };
-        })()
+        })())
       );
 
       agentManager.ensureSession('s1', { permissionMode: 'default' });
@@ -292,7 +300,7 @@ describe('AgentManager', () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        (async function* () {
+        mockQueryResult((async function* () {
           yield {
             type: 'system',
             subtype: 'init',
@@ -325,7 +333,7 @@ describe('AgentManager', () => {
             uuid: 'uuid-2',
             session_id: 'sdk-session-sp',
           };
-        })()
+        })())
       );
 
       agentManager.ensureSession('sp-test', { permissionMode: 'default' });
@@ -351,9 +359,9 @@ describe('AgentManager', () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        (async function* () {
+        mockQueryResult((async function* () {
           throw new Error('API key not found');
-        })()
+        })())
       );
 
       agentManager.ensureSession('s1', { permissionMode: 'default' });

@@ -541,6 +541,18 @@ export const ServerConfigSchema = z
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 
+// === Model Options ===
+
+export const ModelOptionSchema = z
+  .object({
+    value: z.string().openapi({ description: 'Model identifier (e.g. claude-opus-4-6)' }),
+    displayName: z.string().openapi({ description: 'Human-readable model name' }),
+    description: z.string().openapi({ description: 'Short model description' }),
+  })
+  .openapi('ModelOption');
+
+export type ModelOption = z.infer<typeof ModelOptionSchema>;
+
 // === Git Status ===
 
 export const GitStatusResponseSchema = z

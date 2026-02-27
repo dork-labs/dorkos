@@ -11,6 +11,7 @@ import configRoutes from './routes/config.js';
 import fileRoutes from './routes/files.js';
 import gitRoutes from './routes/git.js';
 import tunnelRoutes from './routes/tunnel.js';
+import modelRoutes from './routes/models.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -35,6 +36,7 @@ export function createApp() {
   app.use('/api/files', fileRoutes);
   app.use('/api/git', gitRoutes);
   app.use('/api/tunnel', tunnelRoutes);
+  app.use('/api/models', modelRoutes);
 
   // Always mounted — not behind any feature flag
   app.use('/api/agents', createAgentsRouter());

@@ -46,6 +46,14 @@ import type { StreamEvent } from '@dorkos/shared/types';
 
 const mockedQuery = vi.mocked(query);
 
+/** Add stub SDK query methods to a mock async iterable so it matches the real shape. */
+function withQueryMethods<T extends object>(obj: T): T {
+  return Object.assign(obj, {
+    supportedModels: vi.fn().mockResolvedValue([]),
+    setPermissionMode: vi.fn().mockResolvedValue(undefined),
+  });
+}
+
 describe('AgentManager interactive tools', () => {
   let manager: AgentManager;
 
@@ -197,7 +205,7 @@ describe('AgentManager interactive tools', () => {
               }),
           }),
         };
-        mockedQuery.mockReturnValue(mockAsyncIterable as unknown as ReturnType<typeof query>);
+        mockedQuery.mockReturnValue(withQueryMethods(mockAsyncIterable) as unknown as ReturnType<typeof query>);
         resolve();
       });
 
@@ -247,7 +255,7 @@ describe('AgentManager interactive tools', () => {
       const mockAsyncIterable = {
         [Symbol.asyncIterator]: () => mockIterator,
       };
-      mockedQuery.mockReturnValue(mockAsyncIterable as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(withQueryMethods(mockAsyncIterable) as unknown as ReturnType<typeof query>);
 
       expect(manager.hasSession('new-sess')).toBe(false);
 
@@ -298,9 +306,9 @@ describe('AgentManager interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'say hi')) {
@@ -361,9 +369,9 @@ describe('AgentManager interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'read file')) {
@@ -411,9 +419,9 @@ describe('AgentManager interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'read')) {
@@ -439,9 +447,9 @@ describe('AgentManager interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'hi')) {
@@ -459,9 +467,9 @@ describe('AgentManager interactive tools', () => {
       const mockIterator = {
         next: vi.fn().mockRejectedValueOnce(new Error('SDK connection failed')),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'hi')) {
@@ -494,9 +502,9 @@ describe('AgentManager interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'hi')) {
@@ -520,9 +528,9 @@ describe('AgentManager interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       // Consume the generator
       for await (const _event of manager.sendMessage('sess-1', 'hi')) {
@@ -557,9 +565,9 @@ describe('AgentManager interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator1,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       for await (const _event of manager.sendMessage('sess-1', 'first')) {
         // drain
@@ -569,9 +577,9 @@ describe('AgentManager interactive tools', () => {
       const mockIterator2 = {
         next: vi.fn().mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue({
+      mockedQuery.mockReturnValue(withQueryMethods({
         [Symbol.asyncIterator]: () => mockIterator2,
-      } as unknown as ReturnType<typeof query>);
+      }) as unknown as ReturnType<typeof query>);
 
       for await (const _event of manager.sendMessage('sess-1', 'second')) {
         // drain
@@ -616,9 +624,9 @@ describe('AgentManager interactive tools', () => {
                   })
               ),
           };
-          return {
+          return withQueryMethods({
             [Symbol.asyncIterator]: () => mockIterator,
-          } as unknown as ReturnType<typeof query>;
+          }) as unknown as ReturnType<typeof query>;
         }
       );
 
@@ -685,9 +693,9 @@ describe('AgentManager interactive tools', () => {
               })
               .mockImplementationOnce(() => new Promise(() => {})),
           };
-          return {
+          return withQueryMethods({
             [Symbol.asyncIterator]: () => mockIterator,
-          } as unknown as ReturnType<typeof query>;
+          }) as unknown as ReturnType<typeof query>;
         }
       );
 
@@ -742,9 +750,9 @@ describe('AgentManager interactive tools', () => {
               })
               .mockImplementationOnce(() => new Promise(() => {})),
           };
-          return {
+          return withQueryMethods({
             [Symbol.asyncIterator]: () => mockIterator,
-          } as unknown as ReturnType<typeof query>;
+          }) as unknown as ReturnType<typeof query>;
         }
       );
 
@@ -795,9 +803,9 @@ describe('AgentManager interactive tools', () => {
               })
               .mockImplementationOnce(() => new Promise(() => {})),
           };
-          return {
+          return withQueryMethods({
             [Symbol.asyncIterator]: () => mockIterator,
-          } as unknown as ReturnType<typeof query>;
+          }) as unknown as ReturnType<typeof query>;
         }
       );
 
@@ -844,9 +852,9 @@ describe('AgentManager interactive tools', () => {
               })
               .mockImplementationOnce(() => new Promise(() => {})),
           };
-          return {
+          return withQueryMethods({
             [Symbol.asyncIterator]: () => mockIterator,
-          } as unknown as ReturnType<typeof query>;
+          }) as unknown as ReturnType<typeof query>;
         }
       );
 
@@ -896,9 +904,9 @@ describe('AgentManager interactive tools', () => {
               })
               .mockImplementationOnce(() => new Promise(() => {})),
           };
-          return {
+          return withQueryMethods({
             [Symbol.asyncIterator]: () => mockIterator,
-          } as unknown as ReturnType<typeof query>;
+          }) as unknown as ReturnType<typeof query>;
         }
       );
 

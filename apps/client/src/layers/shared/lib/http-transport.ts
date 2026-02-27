@@ -10,6 +10,7 @@ import type {
   StreamEvent,
   TaskItem,
   ServerConfig,
+  ModelOption,
   GitStatusResponse,
   GitStatusError,
   SessionLockedError,
@@ -262,6 +263,10 @@ export class HttpTransport implements Transport {
 
   getConfig(): Promise<ServerConfig> {
     return fetchJSON<ServerConfig>(this.baseUrl, '/config');
+  }
+
+  getModels(): Promise<ModelOption[]> {
+    return fetchJSON<{ models: ModelOption[] }>(this.baseUrl, '/models').then((r) => r.models);
   }
 
   startTunnel(): Promise<{ url: string }> {

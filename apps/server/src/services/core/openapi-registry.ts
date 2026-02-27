@@ -29,6 +29,7 @@ import {
   CreateScheduleRequestSchema,
   UpdateScheduleRequestSchema,
   ListRunsQuerySchema,
+  ModelOptionSchema,
 } from '@dorkos/shared/schemas';
 import {
   RelayEnvelopeSchema,
@@ -318,6 +319,27 @@ registry.registerPath({
     404: {
       description: 'No pending question',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Models ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/models',
+  tags: ['Models'],
+  summary: 'List available Claude models',
+  description:
+    'Returns models available to the user. Serves SDK-reported models if cached, otherwise returns defaults.',
+  responses: {
+    200: {
+      description: 'List of available models',
+      content: {
+        'application/json': {
+          schema: z.object({ models: z.array(ModelOptionSchema) }),
+        },
+      },
     },
   },
 });

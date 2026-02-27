@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 69,
+  "nextNumber": 70,
   "specs": [
     {
       "number": 1,
@@ -477,6 +477,13 @@
       "title": "Relay UX Elevation — World-Class Relay Panel Experience",
       "created": "2026-02-27",
       "status": "draft"
+    },
+    {
+      "number": 69,
+      "slug": "dynamic-model-options",
+      "title": "Dynamic Model Options",
+      "created": "2026-02-27",
+      "status": "implemented"
     }
   ]
 }

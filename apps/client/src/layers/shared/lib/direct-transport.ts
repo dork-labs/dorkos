@@ -14,6 +14,7 @@ import type {
   FileListResponse,
   TaskItem,
   ServerConfig,
+  ModelOption,
   GitStatusResponse,
   GitStatusError,
   PulseSchedule,
@@ -229,6 +230,14 @@ export class DirectTransport implements Transport {
       },
       boundary: this.services.vaultRoot,
     };
+  }
+
+  async getModels(): Promise<ModelOption[]> {
+    return [
+      { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast, intelligent model for everyday tasks' },
+      { value: 'claude-haiku-4-5-20251001', displayName: 'Haiku 4.5', description: 'Fastest, most compact model' },
+      { value: 'claude-opus-4-6', displayName: 'Opus 4.6', description: 'Most capable model for complex tasks' },
+    ];
   }
 
   async startTunnel(): Promise<{ url: string }> {
