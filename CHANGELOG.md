@@ -10,8 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Elevate topology chart with ELK.js layout, zoom LOD, and enriched nodes
-- Elevate topology chart with ELK.js layout, zoom LOD, and enriched nodes
-- Elevate topology chart with ELK.js layout, zoom LOD, and enriched nodes
 - Add agent identity as first-class entity
 - Add fullscreen toggle, min-height, and overflow fixes to ResponsiveDialog
 - Add registry integrity with reconciliation, idempotent upserts, and orphan cleanup
