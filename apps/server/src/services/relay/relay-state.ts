@@ -17,3 +17,9 @@ export const setRelayEnabled = relayFlag.setEnabled;
 
 /** Return whether the Relay message bus is currently enabled. */
 export const isRelayEnabled = relayFlag.isEnabled;
+
+/** Record why Relay failed to initialize. */
+export const setRelayInitError = relayFlag.setInitError;
+
+/** Return the initialization error message, if any. */
+export const getRelayInitError = relayFlag.getInitError;

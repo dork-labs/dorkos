@@ -10,15 +10,21 @@
 interface FeatureFlag {
   setEnabled: (enabled: boolean) => void;
   isEnabled: () => boolean;
+  setInitError: (error: string) => void;
+  getInitError: () => string | undefined;
 }
 
-/** Create a runtime feature flag with get/set accessors. */
+/** Create a runtime feature flag with get/set accessors and optional init error tracking. */
 export function createFeatureFlag(): FeatureFlag {
-  const state = { enabled: false };
+  const state: { enabled: boolean; initError?: string } = { enabled: false };
   return {
     setEnabled: (enabled: boolean) => {
       state.enabled = enabled;
     },
     isEnabled: () => state.enabled,
+    setInitError: (error: string) => {
+      state.initError = error;
+    },
+    getInitError: () => state.initError,
   };
 }

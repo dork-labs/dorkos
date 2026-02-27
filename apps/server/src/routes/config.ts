@@ -5,9 +5,9 @@ import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import { UserConfigSchema, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
 import { getLatestVersion } from '../services/core/update-checker.js';
-import { isPulseEnabled } from '../services/pulse/pulse-state.js';
-import { isRelayEnabled } from '../services/relay/relay-state.js';
-import { isMeshEnabled } from '../services/mesh/mesh-state.js';
+import { isPulseEnabled, getPulseInitError } from '../services/pulse/pulse-state.js';
+import { isRelayEnabled, getRelayInitError } from '../services/relay/relay-state.js';
+import { isMeshEnabled, getMeshInitError } from '../services/mesh/mesh-state.js';
 import { getBoundary } from '../lib/boundary.js';
 import { SERVER_VERSION } from '../lib/version.js';
 
@@ -95,13 +95,16 @@ router.get('/', async (_req, res) => {
     },
     pulse: {
       enabled: isPulseEnabled(),
+      ...(getPulseInitError() && { initError: getPulseInitError() }),
     },
     relay: {
       enabled: isRelayEnabled(),
+      ...(getRelayInitError() && { initError: getRelayInitError() }),
     },
     mesh: {
       enabled: isMeshEnabled(),
       scanRoots: configManager.get('mesh')?.scanRoots ?? [],
+      ...(getMeshInitError() && { initError: getMeshInitError() }),
     },
   });
 });

@@ -11,15 +11,15 @@ import { createDorkOsToolServer } from './services/core/mcp-tool-server.js';
 import { PulseStore } from './services/pulse/pulse-store.js';
 import { SchedulerService } from './services/pulse/scheduler-service.js';
 import { createPulseRouter } from './routes/pulse.js';
-import { setPulseEnabled } from './services/pulse/pulse-state.js';
+import { setPulseEnabled, setPulseInitError } from './services/pulse/pulse-state.js';
 import { RelayCore, AdapterRegistry, SignalEmitter } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
-import { setRelayEnabled } from './services/relay/relay-state.js';
+import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
-import { setMeshEnabled } from './services/mesh/mesh-state.js';
+import { setMeshEnabled, setMeshInitError } from './services/mesh/mesh-state.js';
 import { createDb, runMigrations } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
@@ -74,9 +74,9 @@ async function start() {
       pulseStore = new PulseStore(db);
       logger.info('[Pulse] PulseStore initialized');
     } catch (err) {
-      logger.error(`[Pulse] Failed to initialize PulseStore at ${dorkHome}`, {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`[Pulse] Failed to initialize PulseStore at ${dorkHome}`, { error: msg });
+      setPulseInitError(msg);
       // Pulse failure is non-fatal: server continues without scheduler routes.
     }
   }
@@ -89,7 +89,7 @@ async function start() {
     const relayDataDir = relayConfig?.dataDir ?? path.join(dorkHome, 'relay');
     try {
       const adapterRegistry = new AdapterRegistry();
-      relayCore = new RelayCore({ dataDir: relayDataDir, adapterRegistry });
+      relayCore = new RelayCore({ dataDir: relayDataDir, adapterRegistry, db });
       await relayCore.registerEndpoint('relay.system.console');
       logger.info(`[Relay] RelayCore initialized (dataDir: ${relayDataDir})`);
 
@@ -108,9 +108,9 @@ async function start() {
       relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManager));
       logger.info('[Relay] AdapterManager initialized');
     } catch (err) {
-      logger.error(`[Relay] Failed to initialize at ${relayDataDir}`, {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`[Relay] Failed to initialize at ${relayDataDir}`, { error: msg });
+      setRelayInitError(msg);
       // Relay failure is non-fatal: server continues without relay routes.
       relayCore = undefined;
       traceStore = undefined;
@@ -149,9 +149,9 @@ async function start() {
       // Start periodic reconciliation (every 5 minutes)
       meshCore.startPeriodicReconciliation(300_000);
     } catch (err) {
-      logger.error('[Mesh] Failed to initialize MeshCore', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const meshMsg = err instanceof Error ? err.message : String(err);
+      logger.error('[Mesh] Failed to initialize MeshCore', { error: meshMsg });
+      setMeshInitError(meshMsg);
       // Mesh failure is non-fatal: server continues without mesh routes.
     }
 

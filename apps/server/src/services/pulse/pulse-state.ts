@@ -17,3 +17,9 @@ export const setPulseEnabled = pulseFlag.setEnabled;
 
 /** Return whether the Pulse scheduler is currently enabled. */
 export const isPulseEnabled = pulseFlag.isEnabled;
+
+/** Record why Pulse failed to initialize. */
+export const setPulseInitError = pulseFlag.setInitError;
+
+/** Return the initialization error message, if any. */
+export const getPulseInitError = pulseFlag.getInitError;

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 66,
+  "nextNumber": 67,
   "specs": [
     {
       "number": 1,
@@ -456,6 +456,13 @@
       "title": "Mesh Registry Integrity & Reconciliation",
       "created": "2026-02-26",
       "status": "specified"
+    },
+    {
+      "number": 66,
+      "slug": "relay-env-var-investigation",
+      "title": "Relay Initialization Failure & Feature Flag DX",
+      "created": "2026-02-26",
+      "status": "ideation"
     }
   ]
 }

@@ -157,6 +157,9 @@ export class RelayCore {
       defaultCallBudget: options?.defaultCallBudget ?? DEFAULT_CALL_BUDGET,
     };
 
+    // Ensure data directory exists before any sub-module tries to read/write files
+    fs.mkdirSync(dataDir, { recursive: true });
+
     const mailboxesDir = path.join(dataDir, 'mailboxes');
 
     this.endpointRegistry = new EndpointRegistry(dataDir);

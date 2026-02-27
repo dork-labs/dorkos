@@ -16,3 +16,9 @@ export const setMeshEnabled = meshFlag.setEnabled;
 
 /** Return whether the Mesh subsystem is currently enabled. */
 export const isMeshEnabled = meshFlag.isEnabled;
+
+/** Record why Mesh failed to initialize. */
+export const setMeshInitError = meshFlag.setInitError;
+
+/** Return the initialization error message, if any. */
+export const getMeshInitError = meshFlag.getInitError;
