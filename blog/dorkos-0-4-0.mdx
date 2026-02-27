@@ -1,13 +1,23 @@
 ---
-title: Changelog
-description: All notable changes to DorkOS, following Keep a Changelog format and Semantic Versioning.
+title: DorkOS 0.4.0
+description: Multi-agent infrastructure — Relay message bus, Mesh discovery, Agent Identity, and unified database.
+date: 2026-02-26
+author: DorkOS Team
+category: release
+tags: [release, relay, mesh, agents, infrastructure]
 ---
 
-All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+DorkOS 0.4.0 lays the foundation for multi-agent coordination. Agents can now discover each other through Mesh, communicate through Relay, and carry persistent identities — turning DorkOS from a single-agent interface into an agent operating system.
 
-## [0.4.0] - 2026-02-26
+## Highlights
 
-> Multi-agent infrastructure — Relay message bus, Mesh discovery, Agent Identity, and unified database
+**Relay Message Bus** — A full inter-agent messaging system with delivery tracing, dead-letter handling, and MCP tools. Pulse jobs and console output now route through Relay for unified message delivery. External adapters enable Telegram and webhook channels.
+
+**Mesh Agent Discovery** — Agents register themselves, discover peers, and manage access permissions through a topology graph. ELK.js-powered layout with zoom level-of-detail, health monitoring, and namespace grouping provide full observability into the agent network.
+
+**Agent Identity** — Agents are now first-class entities with persistent identities, personas, and capabilities. Each agent has a `.dork/agent.json` manifest that the SDK context builder injects into system prompts.
+
+## All Changes
 
 ### Added
 
@@ -66,68 +76,8 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Declare runtime env vars in turbo.json globalPassThroughEnv
 - Fix docs search, add blog footer and TOC sidebar
 
-## [0.3.0] - 2026-02-18
+## Install / Update
 
-### Added
-
-- Add Pulse scheduler for autonomous cron-based agent jobs with web UI, REST API, MCP tools, and SQLite persistence
-- Add runtime tunnel toggle with QR code sharing from the sidebar
-- Add blog infrastructure with Fumadocs
-- Add ADR draft/archived lifecycle with daily auto-curation and auto-extraction from specs
-- Add context builder for SDK system prompt injection
-- Add activity feed hero and marketing page sections
-
-### Changed
-
-- Refactor agent-manager to use modular context-builder pattern
-- Redesign landing page with new hero variants and content sections
-- Complete documentation overhaul — fill all stubs, add concepts section, rewrite stale guides
-
-## [0.2.0] - 2026-02-17
-
-### Added
-
-- Add marketing website and documentation site with Fumadocs integration
-- Add logging infrastructure with request middleware and CLI integration
-- Add directory boundary enforcement for API endpoint security
-- Add versioning, release, and update system
-- Add git worktree runner (gtr) for parallel development workflows
-- Add persistent config file system at `~/.dork/config.json`
-- Add ngrok tunnel integration for remote access
-- Add ESLint 9 and Prettier with FSD layer enforcement
-- Add Architecture Decision Records (ADR) system
-- Add TSDoc documentation standards for public API
-
-### Changed
-
-- Migrate client to Feature-Sliced Design architecture
-- Rename guides/ to contributing/ for self-documenting audience
-- Extract hardcoded values into centralized constants
-- Split oversized files into focused modules
-- Change default server port from 6942 to 4242
-- Centralize .env loading via dotenv-cli at monorepo root
-
-### Fixed
-
-- Fix shell eval error in release command backticks
-- Fix OpenAPI JSON generation for Vercel builds
-- Fix API docs generation when openapi.json is missing
-- Resolve React Compiler and ESLint warnings
-- Fix barrel and import paths after FSD migration
-
-## [0.1.0] - 2025-02-08
-
-### Added
-
-- Web-based chat UI for Claude Code sessions
-- REST/SSE API powered by the Claude Agent SDK
-- Tool approval and deny flows
-- AskUserQuestion interactive prompts
-- Slash command discovery from `.claude/commands/`
-- Cross-client session synchronization via file watching
-- Obsidian plugin with sidebar integration
-- ngrok tunnel support for remote access
-- OpenAPI documentation at `/api/docs` (Scalar UI)
-- CLI package (`dorkos`) for standalone usage
-- Keyboard shortcuts for navigation
-- Directory picker for working directory selection
+```
+npm install -g dorkos@0.4.0
+```

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.4.0] - 2026-02-26
+
+> Multi-agent infrastructure — Relay message bus, Mesh discovery, Agent Identity, and unified database
+
+### Added
+
 - Elevate topology chart with ELK.js layout, zoom LOD, and enriched nodes
 - Add agent identity as first-class entity
 - Add fullscreen toggle, min-height, and overflow fixes to ResponsiveDialog
@@ -132,7 +144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/dork-labs/dorkos/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dork-labs/dorkos/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dork-labs/dorkos/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/dork-labs/dorkos/releases/tag/v0.1.0
