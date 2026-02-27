@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore migration journal timestamp for 0004_ambitious_spectrum
 - Resolve unused variable warnings across server package
 - Resolve @dorkos/shared subpath imports in esbuild bundle
 - Correct Relay documentation to match implementation
