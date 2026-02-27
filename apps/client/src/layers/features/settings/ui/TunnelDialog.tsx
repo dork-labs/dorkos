@@ -141,7 +141,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="h-auto max-h-[85vh] max-w-md">
+      <ResponsiveDialogContent className="max-h-[85vh] max-w-md">
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle className="flex items-center gap-2 text-sm font-medium">
             <span

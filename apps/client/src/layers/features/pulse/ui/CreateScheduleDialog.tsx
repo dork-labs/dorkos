@@ -123,7 +123,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="max-w-lg gap-0 p-0">
+      <ResponsiveDialogContent className="max-h-[85vh] max-w-lg gap-0 p-0">
         <ResponsiveDialogHeader className="border-b px-4 py-3">
           <ResponsiveDialogTitle>
             {editSchedule ? 'Edit Schedule' : 'New Schedule'}
@@ -134,7 +134,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit} id="schedule-form">
-          <div className="space-y-5 overflow-y-auto px-4 py-5" style={{ maxHeight: 'calc(75vh - 8rem)' }}>
+          <div className="space-y-5 overflow-y-auto px-4 py-5">
             {/* ── Essential fields ── */}
             <div className="space-y-1.5">
               <Label htmlFor="schedule-name">Name *</Label>

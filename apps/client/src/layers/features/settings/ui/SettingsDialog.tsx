@@ -83,7 +83,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent data-testid="settings-dialog" className="max-w-lg gap-0 p-0">
+      <ResponsiveDialogContent data-testid="settings-dialog" className="max-h-[85vh] max-w-lg gap-0 p-0">
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
           <ResponsiveDialogTitle className="text-sm font-medium">Settings</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>

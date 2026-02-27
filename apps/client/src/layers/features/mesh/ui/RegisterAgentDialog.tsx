@@ -83,7 +83,7 @@ export function RegisterAgentDialog({ open, onOpenChange }: Props) {
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="max-w-md gap-0 p-0">
+      <ResponsiveDialogContent className="max-h-[85vh] max-w-md gap-0 p-0">
         <ResponsiveDialogHeader className="border-b px-4 py-3">
           <ResponsiveDialogTitle>Register Agent</ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
@@ -92,10 +92,7 @@ export function RegisterAgentDialog({ open, onOpenChange }: Props) {
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit} id="register-agent-form">
-          <div
-            className="space-y-5 overflow-y-auto px-4 py-5"
-            style={{ maxHeight: 'calc(75vh - 8rem)' }}
-          >
+          <div className="space-y-5 overflow-y-auto px-4 py-5">
             {/* Path */}
             <div className="space-y-1.5">
               <Label htmlFor="agent-path">Agent Path *</Label>

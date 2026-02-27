@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add fullscreen toggle, min-height, and overflow fixes to ResponsiveDialog
 - Add registry integrity with reconciliation, idempotent upserts, and orphan cleanup
 - Improve sidebar UX with shortcut, persistence, tooltips, and mobile fixes
 - Consolidate three SQLite databases into single Drizzle-managed dork.db

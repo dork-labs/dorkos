@@ -90,7 +90,7 @@ export function DirectoryPicker({ open, onOpenChange, onSelect, initialPath }: D
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="max-w-lg gap-0 overflow-hidden p-0 sm:rounded-xl">
+      <ResponsiveDialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-xl">
         {/* Header */}
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
           <ResponsiveDialogTitle className="text-sm font-medium">

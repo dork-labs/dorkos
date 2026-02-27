@@ -15,6 +15,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
+  ResponsiveDialogFullscreenToggle,
   DirectoryPicker,
   Tooltip,
   TooltipTrigger,
@@ -338,7 +339,7 @@ export function SessionSidebar() {
       />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <ResponsiveDialog open={pulseOpen} onOpenChange={setPulseOpen}>
-        <ResponsiveDialogContent className="max-w-2xl gap-0 p-0">
+        <ResponsiveDialogContent className="max-h-[85vh] max-w-2xl gap-0 p-0">
           <ResponsiveDialogHeader className="border-b px-4 py-3">
             <ResponsiveDialogTitle className="text-sm font-medium">
               Pulse Scheduler
@@ -353,7 +354,7 @@ export function SessionSidebar() {
         </ResponsiveDialogContent>
       </ResponsiveDialog>
       <ResponsiveDialog open={relayOpen} onOpenChange={setRelayOpen}>
-        <ResponsiveDialogContent className="max-w-2xl gap-0 p-0">
+        <ResponsiveDialogContent className="max-h-[85vh] max-w-2xl gap-0 p-0">
           <ResponsiveDialogHeader className="border-b px-4 py-3">
             <ResponsiveDialogTitle className="text-sm font-medium">
               Relay
@@ -368,7 +369,8 @@ export function SessionSidebar() {
         </ResponsiveDialogContent>
       </ResponsiveDialog>
       <ResponsiveDialog open={meshOpen} onOpenChange={setMeshOpen}>
-        <ResponsiveDialogContent className="max-w-2xl gap-0 p-0">
+        <ResponsiveDialogContent className="h-[85vh] max-w-2xl gap-0 p-0">
+          <ResponsiveDialogFullscreenToggle />
           <ResponsiveDialogHeader className="border-b px-4 py-3">
             <ResponsiveDialogTitle className="text-sm font-medium">
               Mesh

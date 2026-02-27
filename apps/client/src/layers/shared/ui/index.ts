@@ -62,6 +62,9 @@ export {
   ResponsiveDialogDescription,
   ResponsiveDialogFooter,
   ResponsiveDialogClose,
+  ResponsiveDialogBody,
+  ResponsiveDialogFullscreenToggle,
+  useResponsiveDialog,
 } from './responsive-dialog';
 export {
   ResponsiveDropdownMenu,
