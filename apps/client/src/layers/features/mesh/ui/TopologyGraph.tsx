@@ -24,9 +24,11 @@ import { useTopology } from '@/layers/entities/mesh';
 
 const elk = new ELK();
 
-const AGENT_NODE_WIDTH = 180;
-const AGENT_NODE_HEIGHT = 60;
-const GROUP_PADDING = 40;
+// Layout dimensions match the largest LOD (ExpandedCard: 240×~150px)
+// so nodes never overlap regardless of zoom level.
+const AGENT_NODE_WIDTH = 240;
+const AGENT_NODE_HEIGHT = 150;
+const GROUP_PADDING = 48;
 
 const NODE_TYPES: NodeTypes = {
   agent: AgentNode,
@@ -63,10 +65,10 @@ async function applyElkLayout(
           width: 0,
           height: 0,
           layoutOptions: {
-            'elk.padding': `[top=${GROUP_PADDING},left=16,bottom=16,right=16]`,
+            'elk.padding': `[top=${GROUP_PADDING},left=24,bottom=24,right=24]`,
             'elk.algorithm': 'layered',
             'elk.direction': 'RIGHT',
-            'elk.spacing.nodeNode': '40',
+            'elk.spacing.nodeNode': '60',
           },
           children,
         };
@@ -88,8 +90,8 @@ async function applyElkLayout(
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'RIGHT',
-      'elk.spacing.nodeNode': '60',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '100',
+      'elk.spacing.nodeNode': '80',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '120',
     },
     children: elkChildren,
     edges: elkEdges,
