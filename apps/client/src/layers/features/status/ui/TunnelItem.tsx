@@ -11,7 +11,6 @@ interface TunnelItemProps {
 export function TunnelItem({ tunnel }: TunnelItemProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const dotColor = tunnel.connected ? 'bg-green-500' : 'bg-gray-400';
   const hostname = tunnel.url ? new URL(tunnel.url).hostname : null;
 
   return (
@@ -19,15 +18,19 @@ export function TunnelItem({ tunnel }: TunnelItemProps) {
       <button
         onClick={() => setDialogOpen(true)}
         className="hover:text-foreground inline-flex items-center gap-1 transition-colors duration-150"
-        aria-label={tunnel.connected ? `Tunnel connected: ${hostname}` : 'Tunnel disconnected'}
-        title={tunnel.connected ? `Tunnel: ${tunnel.url}` : 'Tunnel: disconnected'}
+        aria-label={tunnel.connected ? `Remote connected: ${hostname}` : 'Remote disconnected'}
+        title={tunnel.connected ? `Remote: ${tunnel.url}` : 'Remote: disconnected'}
       >
-        <span className={cn('inline-block size-1.5 rounded-full', dotColor)} />
-        <Globe className="size-(--size-icon-xs)" />
+        <Globe
+          className={cn(
+            'size-(--size-icon-xs)',
+            tunnel.connected ? 'text-green-500 animate-pulse' : '',
+          )}
+        />
         {tunnel.connected && hostname && (
           <span className="max-w-24 truncate">{hostname}</span>
         )}
-        {!tunnel.connected && <span>Tunnel</span>}
+        {!tunnel.connected && <span>Remote</span>}
       </button>
       <TunnelDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>

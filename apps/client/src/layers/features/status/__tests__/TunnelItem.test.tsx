@@ -81,9 +81,9 @@ describe('TunnelItem', () => {
     expect(screen.getByText('abc123.ngrok-free.app')).toBeDefined();
   });
 
-  it('renders "Tunnel" text when disconnected', () => {
+  it('renders "Remote" text when disconnected', () => {
     render(<TunnelItem tunnel={makeTunnel()} />, { wrapper: createWrapper() });
-    expect(screen.getByText('Tunnel')).toBeDefined();
+    expect(screen.getByText('Remote')).toBeDefined();
   });
 
   it('does not show hostname when disconnected', () => {
@@ -96,12 +96,12 @@ describe('TunnelItem', () => {
       <TunnelItem tunnel={makeTunnel({ enabled: true, connected: true, url: 'https://abc123.ngrok-free.app' })} />,
       { wrapper: createWrapper() }
     );
-    expect(screen.getByLabelText('Tunnel connected: abc123.ngrok-free.app')).toBeDefined();
+    expect(screen.getByLabelText('Remote connected: abc123.ngrok-free.app')).toBeDefined();
   });
 
   it('has correct aria-label when disconnected', () => {
     render(<TunnelItem tunnel={makeTunnel()} />, { wrapper: createWrapper() });
-    expect(screen.getByLabelText('Tunnel disconnected')).toBeDefined();
+    expect(screen.getByLabelText('Remote disconnected')).toBeDefined();
   });
 
   it('opens dialog on click', () => {
