@@ -318,12 +318,11 @@ describe('MeshCore topology integration', () => {
       // In-memory manifest preserves custom budget
       expect(manifest.budget).toEqual({ maxHopsPerMessage: 3, maxCallsPerHour: 50 });
 
-      // After round-trip through the DB the budget falls back to defaults because
-      // the Drizzle agents schema does not store per-agent budget columns.
+      // After round-trip through the DB the budget is preserved in the budget_json column.
       const view = mesh.getTopology('*');
       const agent = view.namespaces.flatMap((ns) => ns.agents).find((a) => a.name === 'budgeted-agent');
       expect(agent).toBeDefined();
-      expect(agent!.budget).toEqual({ maxHopsPerMessage: 5, maxCallsPerHour: 100 });
+      expect(agent!.budget).toEqual({ maxHopsPerMessage: 3, maxCallsPerHour: 50 });
     } finally {
       mesh.close();
     }

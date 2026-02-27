@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 43,
+  "nextNumber": 44,
   "decisions": [
     {
       "number": 1,
@@ -374,6 +374,15 @@
       "created": "2026-02-25",
       "extractedFrom": "env-var-discipline",
       "specSlug": "env-var-discipline"
+    },
+    {
+      "number": 43,
+      "slug": "file-canonical-source-of-truth-for-mesh-registry",
+      "title": "Use Filesystem as Canonical Source of Truth for Mesh Agent Registry",
+      "status": "draft",
+      "created": "2026-02-26",
+      "extractedFrom": "mesh-registry-integrity",
+      "specSlug": "mesh-registry-integrity"
     }
   ]
 }

@@ -27,7 +27,7 @@ export type { AgentRegistryEntry } from './agent-registry.js';
 export { DenialList } from './denial-list.js';
 
 // Manifest
-export { readManifest, writeManifest } from './manifest.js';
+export { readManifest, writeManifest, removeManifest } from './manifest.js';
 
 // Namespace
 export { resolveNamespace, normalizeNamespace, validateNamespace } from './namespace-resolver.js';
@@ -42,6 +42,10 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 
 // Health
 export { computeHealthStatus } from './health.js';
+
+// Reconciler
+export { reconcile } from './reconciler.js';
+export type { ReconcileResult } from './reconciler.js';
 
 // Relay Bridge
 export { RelayBridge } from './relay-bridge.js';

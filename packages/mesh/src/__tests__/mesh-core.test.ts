@@ -5,7 +5,10 @@ import os from 'os';
 import { createTestDb } from '@dorkos/test-utils';
 import type { Db } from '@dorkos/db';
 import { MeshCore } from '../mesh-core.js';
+import { AgentRegistry } from '../agent-registry.js';
 import { writeManifest } from '../manifest.js';
+import * as manifestModule from '../manifest.js';
+import * as reconcilerModule from '../reconciler.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 // ---------------------------------------------------------------------------
@@ -129,6 +132,76 @@ describe('auto-import', () => {
     // But should be in list()
     const agents = mesh.list();
     expect(agents.some((a) => a.name === 'pre-registered-agent')).toBe(true);
+
+    mesh.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// upsertAutoImported sync behavior
+// ---------------------------------------------------------------------------
+
+describe('upsertAutoImported()', () => {
+  it('updates DB when manifest file has changed', async () => {
+    const base = await makeTempDir();
+    const projects = path.join(base, 'projects');
+    const agentDir = path.join(projects, 'my-agent');
+    await fs.mkdir(agentDir, { recursive: true });
+
+    const manifestV1 = makeManifest({ name: 'V1' });
+    await writeManifest(agentDir, manifestV1);
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    // First discover — auto-imports V1
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _c of mesh.discover([projects])) { /* drain */ }
+    let agents = mesh.list();
+    expect(agents.some((a) => a.name === 'V1')).toBe(true);
+
+    // Update manifest on disk to V2
+    const manifestV2 = makeManifest({ name: 'V2' });
+    await writeManifest(agentDir, manifestV2);
+
+    // Second discover — should sync V2 into DB
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _c of mesh.discover([projects])) { /* drain */ }
+    agents = mesh.list();
+    expect(agents.some((a) => a.name === 'V2')).toBe(true);
+
+    mesh.close();
+  });
+
+  it('handles moved folder (same ID, different path)', async () => {
+    const base = await makeTempDir();
+    const projects = path.join(base, 'projects');
+
+    // Create agent at old path
+    const oldDir = path.join(projects, 'old-location');
+    await fs.mkdir(oldDir, { recursive: true });
+    const manifest = makeManifest({ name: 'movable-agent' });
+    await writeManifest(oldDir, manifest);
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    // First discover — auto-imports at old path
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _c of mesh.discover([projects])) { /* drain */ }
+    expect(mesh.list()).toHaveLength(1);
+
+    // Move agent to new path
+    const newDir = path.join(projects, 'new-location');
+    await fs.mkdir(newDir, { recursive: true });
+    await writeManifest(newDir, manifest);
+    // Remove old manifest
+    await fs.rm(path.join(oldDir, '.dork'), { recursive: true, force: true });
+
+    // Second discover — should update path via upsert
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _c of mesh.discover([projects])) { /* drain */ }
+    const agents = mesh.list();
+    expect(agents).toHaveLength(1);
+    expect(agents[0].name).toBe('movable-agent');
 
     mesh.close();
   });
@@ -513,5 +586,195 @@ describe('namespace wiring', () => {
     expect(mockRelayCore.removeAccessRule).not.toHaveBeenCalled();
 
     mesh.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// register() compensation
+// ---------------------------------------------------------------------------
+
+describe('register() compensation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('removes manifest file when DB upsert fails', async () => {
+    const base = await makeTempDir();
+    const projects = path.join(base, 'projects');
+    const { projectA } = await setupProjects(projects);
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    // Discover to get a candidate
+    const candidates = [];
+    for await (const c of mesh.discover([projects])) {
+      candidates.push(c);
+    }
+    const candidate = candidates.find((c) => c.path === projectA);
+    expect(candidate).toBeDefined();
+
+    // Spy on removeManifest and make upsert throw
+    const removeSpy = vi.spyOn(manifestModule, 'removeManifest').mockResolvedValue(undefined);
+    vi.spyOn(AgentRegistry.prototype, 'upsert').mockImplementation(() => {
+      throw new Error('DB error');
+    });
+
+    await expect(mesh.register(candidate!)).rejects.toThrow('DB error');
+    expect(removeSpy).toHaveBeenCalledWith(candidate!.path);
+
+    mesh.close();
+  });
+
+  it('removes DB entry when Relay registration fails', async () => {
+    const base = await makeTempDir();
+    const projects = path.join(base, 'projects');
+    const { projectA } = await setupProjects(projects);
+
+    const mockRelayCore = {
+      registerEndpoint: vi.fn().mockRejectedValue(new Error('Relay error')),
+      unregisterEndpoint: vi.fn().mockResolvedValue(true),
+      addAccessRule: vi.fn(),
+      removeAccessRule: vi.fn(),
+      listAccessRules: vi.fn().mockReturnValue([]),
+    };
+
+    const mesh = new MeshCore({ db, relayCore: mockRelayCore as never, defaultScanRoot: base });
+
+    const candidates = [];
+    for await (const c of mesh.discover([projects])) {
+      candidates.push(c);
+    }
+    const candidate = candidates.find((c) => c.path === projectA);
+    expect(candidate).toBeDefined();
+
+    const removeSpy = vi.spyOn(AgentRegistry.prototype, 'remove');
+
+    await expect(mesh.register(candidate!)).rejects.toThrow('Relay error');
+    expect(removeSpy).toHaveBeenCalled();
+
+    // Agent should not be in registry after compensation
+    expect(mesh.list()).toHaveLength(0);
+
+    mesh.close();
+  });
+
+  it('succeeds on re-registration at same path', async () => {
+    const base = await makeTempDir();
+    const projects = path.join(base, 'projects');
+    const { projectA } = await setupProjects(projects);
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    const candidates = [];
+    for await (const c of mesh.discover([projects])) {
+      candidates.push(c);
+    }
+    const candidate = candidates.find((c) => c.path === projectA);
+    expect(candidate).toBeDefined();
+
+    // First registration
+    await mesh.register(candidate!);
+    // Second registration at same path should not crash
+    await expect(mesh.register(candidate!)).resolves.toBeDefined();
+
+    mesh.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reconciliation
+// ---------------------------------------------------------------------------
+
+describe('reconciliation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reconcileOnStartup() delegates to reconcile()', async () => {
+    const base = await makeTempDir();
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    const spy = vi.spyOn(reconcilerModule, 'reconcile').mockResolvedValue({
+      synced: 1,
+      unreachable: 2,
+      removed: 0,
+      discovered: 0,
+    });
+
+    const result = await mesh.reconcileOnStartup();
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(result.synced).toBe(1);
+    expect(result.unreachable).toBe(2);
+
+    mesh.close();
+  });
+
+  it('startPeriodicReconciliation() sets up an interval and stopPeriodicReconciliation() clears it', async () => {
+    const base = await makeTempDir();
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    const spy = vi.spyOn(reconcilerModule, 'reconcile').mockResolvedValue({
+      synced: 0,
+      unreachable: 0,
+      removed: 0,
+      discovered: 0,
+    });
+
+    // Use fake timers
+    vi.useFakeTimers();
+
+    mesh.startPeriodicReconciliation(1000);
+
+    // Should not have fired yet
+    expect(spy).not.toHaveBeenCalled();
+
+    // Advance past one interval
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(spy).toHaveBeenCalledOnce();
+
+    // Advance past another interval
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    // Stop and verify no more calls
+    mesh.stopPeriodicReconciliation();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+    mesh.close();
+  });
+
+  it('startPeriodicReconciliation() no-ops if already running', () => {
+    const base = '/tmp/mesh-noop-test';
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    vi.useFakeTimers();
+
+    mesh.startPeriodicReconciliation(1000);
+    // Second call should be a no-op (no error, no double interval)
+    mesh.startPeriodicReconciliation(1000);
+
+    mesh.stopPeriodicReconciliation();
+    vi.useRealTimers();
+    mesh.close();
+  });
+
+  it('close() stops periodic reconciliation', () => {
+    const base = '/tmp/mesh-close-test';
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    vi.useFakeTimers();
+
+    const spy = vi.spyOn(reconcilerModule, 'reconcile').mockResolvedValue({
+      synced: 0, unreachable: 0, removed: 0, discovered: 0,
+    });
+
+    mesh.startPeriodicReconciliation(1000);
+    mesh.close();
+
+    vi.advanceTimersByTime(5000);
+    expect(spy).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 });

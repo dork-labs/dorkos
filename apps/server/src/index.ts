@@ -135,6 +135,19 @@ async function start() {
         signalEmitter: meshSignalEmitter,
       });
       logger.info('[Mesh] MeshCore initialized (using consolidated DB)');
+
+      // Run startup reconciliation (non-fatal)
+      try {
+        const result = await meshCore.reconcileOnStartup();
+        logger.info('[Mesh] Startup reconciliation complete', result);
+      } catch (err) {
+        logger.error('[Mesh] Startup reconciliation failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      // Start periodic reconciliation (every 5 minutes)
+      meshCore.startPeriodicReconciliation(300_000);
     } catch (err) {
       logger.error('[Mesh] Failed to initialize MeshCore', {
         error: err instanceof Error ? err.message : String(err),
@@ -270,6 +283,7 @@ async function shutdown() {
     traceStore.close();
   }
   if (meshCore) {
+    meshCore.stopPeriodicReconciliation();
     meshCore.close();
   }
   await tunnelManager.stop();

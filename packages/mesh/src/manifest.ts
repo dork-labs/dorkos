@@ -54,3 +54,17 @@ export async function writeManifest(projectDir: string, manifest: AgentManifest)
   await fs.writeFile(tempPath, content, 'utf-8');
   await fs.rename(tempPath, manifestPath);
 }
+
+/**
+ * Remove the agent manifest file from a project directory.
+ * Used for compensating cleanup when registration fails after file write.
+ *
+ * @param projectPath - Absolute path to the agent's project directory
+ */
+export async function removeManifest(projectPath: string): Promise<void> {
+  try {
+    await fs.unlink(path.join(projectPath, MANIFEST_DIR, MANIFEST_FILE));
+  } catch {
+    // Best-effort cleanup — ignore if file already gone
+  }
+}

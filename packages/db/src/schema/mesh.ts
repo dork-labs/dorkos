@@ -13,10 +13,15 @@ export const agents = sqliteTable('agents', {
   description: text('description'),
   approver: text('approver'),
   status: text('status', {
-    enum: ['active', 'inactive'],
+    enum: ['active', 'inactive', 'unreachable'],
   })
     .notNull()
     .default('active'),
+  scanRoot: text('scan_root').notNull().default(''),
+  behaviorJson: text('behavior_json').notNull().default('{"responseMode":"always"}'),
+  budgetJson: text('budget_json')
+    .notNull()
+    .default('{"maxHopsPerMessage":5,"maxCallsPerHour":100}'),
   lastSeenAt: text('last_seen_at'), // ISO 8601 TEXT
   lastSeenEvent: text('last_seen_event'),
   registeredAt: text('registered_at').notNull(),

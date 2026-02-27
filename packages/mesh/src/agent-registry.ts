@@ -7,7 +7,7 @@
  *
  * @module mesh/agent-registry
  */
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, lt } from 'drizzle-orm';
 import { agents } from '@dorkos/db';
 import type { Db } from '@dorkos/db';
 import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
@@ -44,6 +44,7 @@ export interface AggregateStats {
   activeCount: number;
   inactiveCount: number;
   staleCount: number;
+  unreachableCount: number;
 }
 
 // === AgentRegistry ===
@@ -56,7 +57,7 @@ export interface AggregateStats {
  * const db = createDb(':memory:');
  * runMigrations(db);
  * const registry = new AgentRegistry(db);
- * registry.insert({ id: ulid(), name: 'My Agent', projectPath: '/projects/my-agent', ... });
+ * registry.upsert({ id: ulid(), name: 'My Agent', projectPath: '/projects/my-agent', ... });
  * const agent = registry.getByPath('/projects/my-agent');
  * ```
  */
@@ -69,13 +70,22 @@ export class AgentRegistry {
   constructor(private readonly db: Db) {}
 
   /**
-   * Insert a new agent into the registry.
+   * Insert or update an agent in the registry.
    *
-   * @param agent - The agent entry to insert (id and projectPath must be unique)
-   * @throws If project_path already exists (UNIQUE constraint)
+   * Uses ON CONFLICT(id) DO UPDATE for idempotent registration.
+   * Handles path conflicts by removing the stale entry first.
+   *
+   * @param agent - The agent entry to upsert
    */
-  insert(agent: AgentRegistryEntry): void {
+  upsert(agent: AgentRegistryEntry): void {
     const now = new Date().toISOString();
+
+    // Check for path conflict: different agent ID at same path
+    const existingAtPath = this.getByPath(agent.projectPath);
+    if (existingAtPath && existingAtPath.id !== agent.id) {
+      this.remove(existingAtPath.id);
+    }
+
     this.db.insert(agents).values({
       id: agent.id,
       name: agent.name,
@@ -84,9 +94,27 @@ export class AgentRegistry {
       runtime: agent.runtime,
       capabilities: JSON.stringify(agent.capabilities),
       namespace: agent.namespace ?? 'default',
+      scanRoot: agent.scanRoot ?? '',
+      behaviorJson: JSON.stringify(agent.behavior),
+      budgetJson: JSON.stringify(agent.budget),
       approver: agent.registeredBy,
       registeredAt: agent.registeredAt,
       updatedAt: now,
+    }).onConflictDoUpdate({
+      target: agents.id,
+      set: {
+        name: agent.name,
+        description: agent.description ?? '',
+        projectPath: agent.projectPath,
+        runtime: agent.runtime,
+        capabilities: JSON.stringify(agent.capabilities),
+        namespace: agent.namespace ?? 'default',
+        scanRoot: agent.scanRoot ?? '',
+        behaviorJson: JSON.stringify(agent.behavior),
+        budgetJson: JSON.stringify(agent.budget),
+        updatedAt: now,
+        status: 'active', // Re-registration clears unreachable
+      },
     }).run();
   }
 
@@ -151,6 +179,10 @@ export class AgentRegistry {
       description: merged.description,
       runtime: merged.runtime,
       capabilities: JSON.stringify(merged.capabilities),
+      namespace: merged.namespace,
+      scanRoot: merged.scanRoot,
+      behaviorJson: JSON.stringify(merged.behavior),
+      budgetJson: JSON.stringify(merged.budget),
       updatedAt: now,
     }).where(eq(agents.id, id)).run();
     return result.changes > 0;
@@ -222,8 +254,13 @@ export class AgentRegistry {
     let activeCount = 0;
     let inactiveCount = 0;
     let staleCount = 0;
+    let unreachableCount = 0;
 
     for (const row of rows) {
+      if (row.status === 'unreachable') {
+        unreachableCount++;
+        continue;
+      }
       const status = computeHealthStatus(row.lastSeenAt);
       if (status === 'active') activeCount++;
       else if (status === 'inactive') inactiveCount++;
@@ -235,6 +272,7 @@ export class AgentRegistry {
       activeCount,
       inactiveCount,
       staleCount,
+      unreachableCount,
     };
   }
 
@@ -252,6 +290,49 @@ export class AgentRegistry {
     return rows.map((row) => this.rowToEntry(row));
   }
 
+  /**
+   * Mark an agent as unreachable (path no longer accessible).
+   *
+   * @param id - The agent's ULID
+   * @returns `true` if the agent was updated, `false` if not found
+   */
+  markUnreachable(id: string): boolean {
+    const now = new Date().toISOString();
+    const result = this.db.update(agents).set({
+      status: 'unreachable',
+      updatedAt: now,
+    }).where(eq(agents.id, id)).run();
+    return result.changes > 0;
+  }
+
+  /**
+   * List all agents with unreachable status.
+   *
+   * @returns Array of unreachable agent entries
+   */
+  listUnreachable(): AgentRegistryEntry[] {
+    const rows = this.db.select().from(agents)
+      .where(eq(agents.status, 'unreachable'))
+      .all();
+    return rows.map((row) => this.rowToEntry(row));
+  }
+
+  /**
+   * List unreachable agents whose updatedAt is before the given ISO cutoff.
+   *
+   * @param cutoffIso - ISO 8601 timestamp; only entries updated before this are returned
+   * @returns Array of unreachable agent entries past the cutoff
+   */
+  listUnreachableBefore(cutoffIso: string): AgentRegistryEntry[] {
+    const rows = this.db.select().from(agents)
+      .where(and(
+        eq(agents.status, 'unreachable'),
+        lt(agents.updatedAt, cutoffIso),
+      ))
+      .all();
+    return rows.map((row) => this.rowToEntry(row));
+  }
+
   /** Row type returned by Drizzle select from agents table. */
   private rowToEntry(row: typeof agents.$inferSelect): AgentRegistryEntry {
     return {
@@ -260,13 +341,13 @@ export class AgentRegistry {
       description: row.description ?? '',
       runtime: row.runtime as AgentRuntime,
       capabilities: JSON.parse(row.capabilities) as string[],
-      behavior: { responseMode: 'always' },
-      budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
+      behavior: JSON.parse(row.behaviorJson),
+      budget: JSON.parse(row.budgetJson),
       namespace: row.namespace,
       registeredAt: row.registeredAt,
       registeredBy: row.approver ?? 'mesh',
       projectPath: row.projectPath,
-      scanRoot: '',
+      scanRoot: row.scanRoot,
     };
   }
 

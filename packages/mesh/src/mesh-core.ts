@@ -35,7 +35,9 @@ import { CursorStrategy } from './strategies/cursor-strategy.js';
 import { CodexStrategy } from './strategies/codex-strategy.js';
 import { scanDirectory } from './discovery-engine.js';
 import type { DiscoveryOptions } from './discovery-engine.js';
-import { readManifest, writeManifest } from './manifest.js';
+import { readManifest, writeManifest, removeManifest } from './manifest.js';
+import { reconcile } from './reconciler.js';
+import type { ReconcileResult } from './reconciler.js';
 
 /** Default registrar identifier when none is provided. */
 const DEFAULT_REGISTRAR = 'mesh';
@@ -89,6 +91,7 @@ export class MeshCore {
   private readonly defaultScanRoot: string;
   private readonly signalEmitter: SignalEmitter | undefined;
   private readonly generateUlid = monotonicFactory();
+  private reconcileTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Create a new MeshCore instance.
@@ -184,17 +187,32 @@ export class MeshCore {
       registeredBy: overrides?.registeredBy ?? approver,
     };
 
+    // Step 1: Write manifest to disk (atomic tmp+rename)
     await writeManifest(candidate.path, manifest);
 
+    // Step 2: Upsert into DB (idempotent)
     const entry: AgentRegistryEntry = {
       ...manifest,
       projectPath: candidate.path,
       namespace,
       scanRoot: effectiveScanRoot,
     };
-    this.registry.insert(entry);
+    try {
+      this.registry.upsert(entry);
+    } catch (err) {
+      // Compensate: remove manifest file
+      await removeManifest(candidate.path);
+      throw err;
+    }
 
-    await this.relayBridge.registerAgent(manifest, candidate.path, namespace, effectiveScanRoot);
+    // Step 3: Register with Relay
+    try {
+      await this.relayBridge.registerAgent(manifest, candidate.path, namespace, effectiveScanRoot);
+    } catch (err) {
+      // Compensate: remove DB entry
+      this.registry.remove(manifest.id);
+      throw err;
+    }
 
     return manifest;
   }
@@ -240,9 +258,19 @@ export class MeshCore {
       namespace,
       scanRoot: effectiveScanRoot,
     };
-    this.registry.insert(entry);
+    try {
+      this.registry.upsert(entry);
+    } catch (err) {
+      await removeManifest(projectPath);
+      throw err;
+    }
 
-    await this.relayBridge.registerAgent(manifest, projectPath, namespace, effectiveScanRoot);
+    try {
+      await this.relayBridge.registerAgent(manifest, projectPath, namespace, effectiveScanRoot);
+    } catch (err) {
+      this.registry.remove(manifest.id);
+      throw err;
+    }
 
     return manifest;
   }
@@ -540,6 +568,7 @@ export class MeshCore {
       activeCount: stats.activeCount,
       inactiveCount: stats.inactiveCount,
       staleCount: stats.staleCount,
+      unreachableCount: stats.unreachableCount,
       byRuntime,
       byProject,
     };
@@ -567,13 +596,54 @@ export class MeshCore {
     return { agent: manifest, health, relaySubject };
   }
 
+  // --- Reconciliation ---
+
+  /**
+   * Run a one-shot anti-entropy reconciliation between filesystem and DB.
+   *
+   * @returns Summary of reconciliation actions taken
+   */
+  async reconcileOnStartup(): Promise<ReconcileResult> {
+    return reconcile(this.registry, this.relayBridge, this.defaultScanRoot);
+  }
+
+  /**
+   * Start periodic background reconciliation at the given interval.
+   *
+   * No-ops if already running. The timer is unref'd so it does not
+   * prevent the Node process from exiting.
+   *
+   * @param intervalMs - Reconciliation interval in milliseconds (default: 5 minutes)
+   */
+  startPeriodicReconciliation(intervalMs = 300_000): void {
+    if (this.reconcileTimer) return;
+    this.reconcileTimer = setInterval(async () => {
+      try {
+        await reconcile(this.registry, this.relayBridge, this.defaultScanRoot);
+      } catch (err) {
+        console.error('[Mesh] Periodic reconciliation failed:', err);
+      }
+    }, intervalMs);
+    this.reconcileTimer.unref();
+  }
+
+  /**
+   * Stop periodic background reconciliation.
+   */
+  stopPeriodicReconciliation(): void {
+    if (this.reconcileTimer) {
+      clearInterval(this.reconcileTimer);
+      this.reconcileTimer = null;
+    }
+  }
+
   /**
    * No-op — the database lifecycle is managed by the caller.
    *
    * Retained for backward compatibility with existing call sites.
    */
   close(): void {
-    // DB is owned externally; nothing to close.
+    this.stopPeriodicReconciliation();
   }
 
   // --- Private helpers ---
@@ -581,21 +651,26 @@ export class MeshCore {
   /**
    * Upsert an auto-imported agent manifest into the registry.
    *
-   * If the agent is already registered (same path), it is skipped.
-   * Otherwise it is inserted and a Relay endpoint is registered.
+   * Always syncs manifest data to the DB via idempotent upsert,
+   * handling both new and previously-registered agents.
    */
   private async upsertAutoImported(manifest: AgentManifest, projectPath: string): Promise<void> {
-    // Skip if already registered at this path
-    if (this.registry.getByPath(projectPath)) return;
-
-    const namespace = manifest.namespace ?? '';
+    const namespace = resolveNamespace(
+      projectPath,
+      this.defaultScanRoot,
+      manifest.namespace,
+    );
     const entry: AgentRegistryEntry = {
       ...manifest,
       projectPath,
       namespace,
       scanRoot: this.defaultScanRoot,
     };
-    this.registry.insert(entry);
+
+    // Upsert handles both new and existing agents
+    this.registry.upsert(entry);
+
+    // Ensure Relay endpoint exists
     await this.relayBridge.registerAgent(manifest, projectPath, namespace, this.defaultScanRoot);
   }
 

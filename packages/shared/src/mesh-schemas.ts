@@ -228,6 +228,7 @@ export const MeshStatusSchema = z
     activeCount: z.number(),
     inactiveCount: z.number(),
     staleCount: z.number(),
+    unreachableCount: z.number(),
     byRuntime: z.record(z.string(), z.number()),
     byProject: z.record(z.string(), z.number()),
   })

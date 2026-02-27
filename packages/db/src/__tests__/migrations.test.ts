@@ -87,6 +87,60 @@ describe('Database Migrations', () => {
     }).toThrow(/UNIQUE/);
   });
 
+  it('agents table has scan_root column with empty string default', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    db.$client
+      .prepare(
+        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01A', 'agent1', 'claude-code', '/tmp/scan-root-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+      )
+      .run();
+
+    const row = db.$client
+      .prepare("SELECT scan_root FROM agents WHERE id = '01A'")
+      .get() as { scan_root: string };
+
+    expect(row.scan_root).toBe('');
+  });
+
+  it('agents table has behavior_json column with default responseMode', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    db.$client
+      .prepare(
+        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01B', 'agent2', 'claude-code', '/tmp/behavior-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+      )
+      .run();
+
+    const row = db.$client
+      .prepare("SELECT behavior_json FROM agents WHERE id = '01B'")
+      .get() as { behavior_json: string };
+
+    expect(JSON.parse(row.behavior_json)).toEqual({ responseMode: 'always' });
+  });
+
+  it('agents table has budget_json column with default hop and rate limits', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    db.$client
+      .prepare(
+        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01C', 'agent3', 'claude-code', '/tmp/budget-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+      )
+      .run();
+
+    const row = db.$client
+      .prepare("SELECT budget_json FROM agents WHERE id = '01C'")
+      .get() as { budget_json: string };
+
+    expect(JSON.parse(row.budget_json)).toEqual({
+      maxHopsPerMessage: 5,
+      maxCallsPerHour: 100,
+    });
+  });
+
   it('unique constraint on relay_traces.message_id is enforced', () => {
     const db = createDb(':memory:');
     runMigrations(db);

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 65,
+  "nextNumber": 66,
   "specs": [
     {
       "number": 1,
@@ -449,6 +449,13 @@
       "title": "Disciplined Environment Variable Handling",
       "created": "2026-02-25",
       "status": "ideation"
+    },
+    {
+      "number": 65,
+      "slug": "mesh-registry-integrity",
+      "title": "Mesh Registry Integrity & Reconciliation",
+      "created": "2026-02-26",
+      "status": "specified"
     }
   ]
 }
