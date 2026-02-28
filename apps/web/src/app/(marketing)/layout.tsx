@@ -3,7 +3,7 @@ import { siteConfig } from '@/config/site'
 import { MarketingShell } from './marketing-shell'
 
 const metaDescription =
-  'Your AI agents are brilliant. They just can\'t do anything when you leave. DorkOS gives them scheduling, communication, memory, and a command center. Open source. Self-hosted. You slept. They shipped.'
+  'Your AI agents are brilliant. They just can\'t do anything when you leave. DorkOS keeps them running on schedule, talking to each other, and remembering what happened. Open source. Runs on your machine. You slept. They shipped.'
 
 export const metadata: Metadata = {
   title: `${siteConfig.name} - ${siteConfig.description}`,

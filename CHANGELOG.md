@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Homepage rounds 4-5 — imagery, ELI5 language, and delight
 - Add new mobile and desktop images for marketing materials
 - Add lightweight testConnection() to TelegramAdapter and echo guard
 - Rebuild marketing homepage with narrative-driven design

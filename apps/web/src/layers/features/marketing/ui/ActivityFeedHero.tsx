@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { motion } from 'motion/react'
 import { REVEAL, STAGGER } from '../lib/motion-variants'
+import { ConsoleMockup } from './ConsoleMockup'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,38 +60,38 @@ const MODULE_LABELS: Record<ModuleId, string> = {
 const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
   // Coding & DevOps
   { module: 'agent', text: 'Agent committed 3 files to feature/auth-flow' },
-  { module: 'pulse', text: 'Pulse executed roadmap step 4 of 12' },
-  { module: 'agent', text: 'Agent reviewed PR #47 — approved with suggestions' },
-  { module: 'wing', text: 'Wing updated your context with new project patterns' },
+  { module: 'pulse', text: 'Pulse finished task 4 of 12 on your to-do list' },
+  { module: 'agent', text: 'Agent reviewed code change #47 \u2014 approved with suggestions' },
+  { module: 'wing', text: 'Wing saved your latest project notes for next time' },
   { module: 'agent', text: 'Agent deployed v2.1.3 to staging' },
-  { module: 'mesh', text: 'Mesh coordinated 3 agents on billing refactor' },
-  { module: 'agent', text: 'Agent wrote 14 unit tests — all passing' },
+  { module: 'mesh', text: 'Mesh got 3 agents working together on billing cleanup' },
+  { module: 'agent', text: 'Agent wrote 14 tests \u2014 all passing' },
   { module: 'agent', text: 'Agent resolved 2 merge conflicts automatically' },
-  { module: 'agent', text: 'Agent refactored auth module — removed 340 lines of dead code' },
-  { module: 'pulse', text: 'Pulse triaged 12 GitHub issues while you were asleep' },
+  { module: 'agent', text: 'Agent cleaned up the login code \u2014 removed 340 lines of dead code' },
+  { module: 'pulse', text: 'Pulse sorted through 12 GitHub issues while you were asleep' },
   // Business & money
-  { module: 'relay', text: 'Delivered deployment notification to relay.human.telegram.ops' },
-  { module: 'agent', text: 'Agent drafted Q2 investor update — ready for review' },
-  { module: 'relay', text: 'Processed inbound webhook from relay.webhook.github' },
-  { module: 'agent', text: 'Agent found $2,400/yr in unused AWS resources — PR open to delete' },
-  { module: 'wing', text: 'Wing compiled competitive analysis from 14 sources' },
-  { module: 'pulse', text: 'Pulse generated monthly revenue report — MRR up 23%' },
+  { module: 'relay', text: 'Sent you a Telegram: \u201CDeploy finished, all good.\u201D' },
+  { module: 'agent', text: 'Agent drafted Q2 investor update \u2014 ready for review' },
+  { module: 'relay', text: 'Received a webhook from GitHub \u2014 routed to the right agent' },
+  { module: 'agent', text: 'Agent found $2,400/yr in unused AWS resources \u2014 cleanup ready' },
+  { module: 'wing', text: 'Wing pulled together a competitive analysis from 14 sources' },
+  { module: 'pulse', text: 'Pulse generated your monthly revenue report \u2014 MRR up 23%' },
   // Life automation
-  { module: 'relay', text: 'Routed agent response to relay.human.telegram.group.support' },
+  { module: 'relay', text: 'Sent your support team a reply via Telegram' },
   { module: 'agent', text: 'Agent booked dentist appointment for Thursday 2pm' },
-  { module: 'relay', text: 'Sent order confirmation to relay.human.telegram.12345' },
+  { module: 'relay', text: 'Sent you a Telegram: \u201COrder confirmed.\u201D' },
   { module: 'wing', text: 'Wing organized 2,847 photos by date, location, and who\u2019s in them' },
-  { module: 'agent', text: 'Agent meal-prepped grocery list for the week — ordered via Instacart' },
+  { module: 'agent', text: 'Agent meal-prepped grocery list for the week \u2014 ordered via Instacart' },
   { module: 'pulse', text: 'Pulse filed your quarterly taxes 3 days before the deadline' },
   // Coordination & connectivity
   { module: 'mesh', text: 'Mesh assembled 7 agents for Operation Birthday Surprise' },
-  { module: 'pulse', text: 'Pulse started next iteration cycle' },
-  { module: 'relay', text: 'Adapter telegram-main connected — polling active' },
-  { module: 'wing', text: 'Wing has your full context — ask me anything' },
+  { module: 'pulse', text: 'Pulse kicked off the next round of tasks' },
+  { module: 'relay', text: 'Telegram adapter connected \u2014 listening for messages' },
+  { module: 'wing', text: 'Wing has your full context \u2014 ask me anything' },
   // Improvement loop
-  { module: 'loop', text: 'Loop triaged 8 signals — 3 became hypotheses' },
-  { module: 'loop', text: 'Loop validated hypothesis — conversion up 2.1% after fix' },
-  { module: 'loop', text: 'Loop dispatched next priority task to Pulse' },
+  { module: 'loop', text: 'Loop spotted 8 things worth checking \u2014 3 look promising' },
+  { module: 'loop', text: 'Loop tested a fix \u2014 conversion up 2.1%' },
+  { module: 'loop', text: 'Loop queued the next priority task for Pulse' },
 ]
 
 /** Seconds-ago values used for the initial snapshot display. */
@@ -319,7 +320,7 @@ function ActivityFeedPanel() {
           className="font-mono text-[9px] tracking-[0.06em] text-center"
           style={{ color: '#7A756A' }}
         >
-          With DorkOS running, this is your overnight log.
+          This is what your morning looks like with DorkOS.
         </p>
       </div>
     </div>
@@ -336,7 +337,7 @@ function ActivityFeedPanel() {
  */
 export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedHeroProps) {
   return (
-    <section className="relative min-h-0 md:min-h-[85vh] bg-cream-primary flex flex-col items-center justify-center px-6 py-16 overflow-hidden">
+    <section className="relative min-h-0 md:min-h-[85vh] bg-cream-primary flex flex-col items-center justify-center px-6 py-16 overflow-hidden film-grain">
       {/* Subtle graph-paper background */}
       <div
         className="absolute inset-0 pointer-events-none"
@@ -361,7 +362,7 @@ export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedH
         {/* Eyebrow */}
         <motion.div variants={REVEAL} className="mb-6">
           <p className="font-mono text-2xs tracking-[0.2em] uppercase text-brand-orange">
-            the operating system for autonomous AI agents
+            what your AI agents do when you&apos;re not looking
           </p>
         </motion.div>
 
@@ -410,6 +411,16 @@ export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedH
           >
             Simulated. Real agents log every action, in real time.
           </p>
+        </motion.div>
+
+        {/* Console mockup — desktop only, shows what DorkOS looks like */}
+        <motion.div
+          className="w-full max-w-md mx-auto mb-10"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <ConsoleMockup />
         </motion.div>
 
         {/* CTA group */}

@@ -35,9 +35,9 @@ export function IdentityClose({ email }: IdentityCloseProps) {
           </motion.p>
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
             It is what you call someone who cares too much about something most
-            people do not care about at all. Someone who has opinions about cron
-            expressions. Someone who names their agents. Someone who wakes up at
-            6am to check a CI pipeline that nobody asked them to check.
+            people do not care about at all. Someone who names their AI agents.
+            Someone who wakes up at 6am to check if the overnight tests passed
+            that nobody asked them to check.
           </motion.p>
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
             We build at 3am because we cannot stop. Not because someone is paying
@@ -54,26 +54,28 @@ export function IdentityClose({ email }: IdentityCloseProps) {
           <br />
           Thirty million users. An exit in twelve months. Warner Bros. Art Blocks.
           <br />
-          And then this — because the tools that matter most are built by the
+          And then this &mdash; because the tools that matter most are built by the
           people who need them.
         </motion.p>
 
         <motion.div variants={STAGGER} className="mb-16">
           <motion.p variants={REVEAL} className="text-warm-gray text-lg leading-[1.7]">
-            The developers building agent teams will outship everyone.
+            The people building AI agent teams will outship everyone.
           </motion.p>
           <motion.p variants={REVEAL} className="text-warm-gray-light text-base leading-[1.7]">
-            Not because they are better.
+            Not because they&apos;re smarter.
           </motion.p>
           <motion.p variants={REVEAL} className="text-charcoal text-xl md:text-[22px] font-semibold tracking-[-0.02em] leading-[1.5]">
-            Because they never stop.
+            Because their team works while they sleep, never complains,
+            <br className="hidden md:inline" />
+            {' '}and doesn&apos;t need a Slack channel to feel included.
           </motion.p>
         </motion.div>
 
         <motion.div variants={REVEAL} className="pt-8" style={{ borderTop: '1px solid rgba(139, 90, 43, 0.08)' }}>
           <div className="inline-flex items-center gap-2">
             <span className="text-warm-gray text-sm">
-              Questions, ideas, or just want to say hello —
+              Questions, ideas, or just want to say hello &mdash;
             </span>
             <AnimatePresence mode="wait">
               {revealed ? (

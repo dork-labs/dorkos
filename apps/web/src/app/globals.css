@@ -590,6 +590,34 @@ button:hover .cursor-blink,
   animation: draw-pulse 3s ease-in-out infinite;
 }
 
+/* Villain card tab bar pulse — idle and urgent variants */
+@keyframes tab-pulse-idle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes tab-pulse-urgent {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
+/* Star twinkle for timeline night sky */
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.5; }
+}
+
+/* Clock hand rotation for 3am build card */
+@keyframes clock-hour {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes clock-minute {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Reduced motion: disable all CSS and SMIL animations */
 @media (prefers-reduced-motion: reduce) {
   .architecture-dashes {
@@ -604,6 +632,13 @@ button:hover .cursor-blink,
     animation: none !important;
     stroke-dashoffset: 0;
   }
+
+  /* Villain card and star animations — disable in reduced motion */
+  [style*="tab-pulse"],
+  [style*="clock-"],
+  [style*="star-twinkle"] {
+    animation: none !important;
+  }
 }
 
 @utility noise-texture {
@@ -615,5 +650,20 @@ button:hover .cursor-blink,
     pointer-events: none;
     opacity: 0.03;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  }
+}
+
+/* Film grain — analog warmth via SVG feTurbulence filter, applied with ::after */
+@utility film-grain {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
   }
 }

@@ -16,7 +16,7 @@ const BRACKET = {
 /** Radical transparency section — honest about architecture and tradeoffs. */
 export function HonestySection() {
   return (
-    <section className="py-14 md:py-24 px-8 bg-charcoal">
+    <section className="py-14 md:py-24 px-8 bg-charcoal film-grain">
       <motion.div
         className="max-w-[600px] mx-auto text-center relative"
         initial="hidden"
@@ -35,13 +35,13 @@ export function HonestySection() {
         </motion.span>
 
         <motion.p variants={REVEAL} className="text-cream-white font-semibold text-lg leading-[1.7] mb-6">
-          DorkOS controls the orchestration layer — scheduling, memory, routing,
-          and coordination across sessions. It runs on your machine. Sessions are
-          stored locally. Tools execute in your shell.
+          DorkOS handles the boring parts &mdash; making sure your agents run on time,
+          talk to each other, and remember what happened last time. It runs on
+          your computer. Your data stays on your computer.
         </motion.p>
 
         <motion.p variants={REVEAL} className="text-cream-tertiary/70 text-lg leading-[1.7]">
-          The intelligence is Claude&apos;s. The infrastructure is yours.
+          The brains are Claude&apos;s. The control is yours.
         </motion.p>
       </motion.div>
     </section>

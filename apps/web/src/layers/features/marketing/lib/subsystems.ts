@@ -1,6 +1,6 @@
 export interface Subsystem {
   id: string
-  gap: string
+  benefit: string
   name: string
   description: string
   status: 'available' | 'coming-soon'
@@ -9,45 +9,45 @@ export interface Subsystem {
 export const subsystems: Subsystem[] = [
   {
     id: 'pulse',
-    gap: 'No schedule',
+    benefit: 'They wake up on time',
     name: 'Pulse',
-    description: 'Cron-based autonomous execution. Your agents run while you sleep.',
+    description: 'Set tasks on a timer. Your agents start working on schedule, even at 3am.',
     status: 'available',
   },
   {
     id: 'relay',
-    gap: 'No communication',
+    benefit: 'They can reach you',
     name: 'Relay',
     description:
-      'Built-in messaging. Telegram, webhooks, inter-agent channels. Your agents reach you.',
+      'Your agents send you updates \u2014 Telegram, text, whatever you use.',
     status: 'available',
   },
   {
     id: 'mesh',
-    gap: 'No coordination',
+    benefit: 'They work as a team',
     name: 'Mesh',
-    description: 'Agent discovery and network. Your agents find each other and collaborate.',
+    description: 'Your agents find each other and divide the work without you in the middle.',
     status: 'available',
   },
   {
     id: 'console',
-    gap: 'No oversight',
+    benefit: 'You see everything',
     name: 'Console',
-    description: 'Browser-based command center. You see everything, from anywhere.',
+    description: 'A dashboard that shows what every agent is doing, from anywhere.',
     status: 'available',
   },
   {
     id: 'loop',
-    gap: 'No feedback loop',
+    benefit: 'They get better on their own',
     name: 'Loop',
-    description: 'Signal, hypothesis, dispatch, measure. Your agents improve.',
+    description: 'Your agents spot what\u2019s working, test new ideas, and improve over time.',
     status: 'available',
   },
   {
     id: 'wing',
-    gap: 'No memory',
+    benefit: 'They remember everything',
     name: 'Wing',
-    description: 'Persistent context across sessions. Your agents remember.',
+    description: 'Your agents keep context across sessions. Nothing gets forgotten.',
     status: 'coming-soon',
   },
 ]

@@ -1,32 +1,69 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { motion, useInView } from 'motion/react'
+import { motion, useInView, useReducedMotion } from 'motion/react'
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
 
-/** The install command with typing animation, positioned at peak desire. */
+const SCRAMBLE_CHARS = '!@#$%&*_+-=<>?~'
+
+/**
+ * Scramble/decode effect — each position cycles through random characters
+ * before settling on the real character. Creates a "system booting" feel.
+ */
+function useTextScramble(text: string, isActive: boolean) {
+  const reducedMotion = useReducedMotion()
+  const [display, setDisplay] = useState(text)
+  const hasRun = useRef(false)
+
+  const scramble = useCallback(() => {
+    if (hasRun.current) return
+    hasRun.current = true
+
+    const chars = text.split('')
+    const settled = new Array(chars.length).fill(false)
+    let frame = 0
+
+    const interval = setInterval(() => {
+      frame++
+      const result = chars.map((char, i) => {
+        if (char === ' ') return ' '
+        // Each character settles after (i+1)*3 frames
+        const settleAt = (i + 1) * 3
+        if (frame >= settleAt) {
+          settled[i] = true
+          return char
+        }
+        return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
+      })
+
+      setDisplay(result.join(''))
+
+      if (settled.every(Boolean)) {
+        clearInterval(interval)
+      }
+    }, 30)
+
+    return () => clearInterval(interval)
+  }, [text])
+
+  useEffect(() => {
+    if (!isActive || reducedMotion) return
+    return scramble()
+  }, [isActive, reducedMotion, scramble])
+
+  return display
+}
+
+/** The install command with scramble animation, positioned at peak desire. */
 export function InstallMoment() {
   const ref = useRef<HTMLDivElement>(null)
   const isInView = useInView(ref, { once: true, amount: 0.5 })
-  const [displayText, setDisplayText] = useState('')
-  const hasAnimated = useRef(false)
   const command = 'npm install -g dorkos'
-
-  useEffect(() => {
-    if (!isInView || hasAnimated.current) return
-    hasAnimated.current = true
-    let i = 0
-    const interval = setInterval(() => {
-      i++
-      setDisplayText(command.slice(0, i))
-      if (i >= command.length) clearInterval(interval)
-    }, 50)
-    return () => clearInterval(interval)
-  }, [isInView])
+  const displayText = useTextScramble(command, isInView)
 
   return (
-    <section ref={ref} className="py-14 md:py-24 px-8 bg-cream-tertiary">
+    <section ref={ref} className="py-14 md:py-24 px-8 bg-cream-tertiary film-grain">
       <motion.div
         className="max-w-xl mx-auto text-center"
         initial="hidden"
@@ -38,7 +75,7 @@ export function InstallMoment() {
           <div className="inline-block bg-cream-secondary rounded-lg px-8 py-5">
             <p className="font-mono text-lg md:text-xl text-charcoal">
               <span style={{ color: '#7A756A' }}>$ </span>
-              {displayText || command}
+              {displayText}
               <span className="cursor-blink" aria-hidden="true" />
             </p>
           </div>
@@ -48,7 +85,7 @@ export function InstallMoment() {
           variants={REVEAL}
           className="flex flex-wrap items-center justify-center gap-2 mb-6"
         >
-          {['Claude Agent SDK', 'Open Source', 'MIT Licensed', 'Self-Hosted'].map((badge) => (
+          {['Powered by Claude', 'Open Source', 'MIT Licensed', 'Runs on Your Machine'].map((badge) => (
             <span
               key={badge}
               className="font-mono text-[9px] tracking-[0.08em] uppercase px-2 py-0.5 rounded-[3px]"
