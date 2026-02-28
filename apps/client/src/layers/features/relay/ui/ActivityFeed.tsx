@@ -1,9 +1,8 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { Inbox, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useRelayMessages } from '@/layers/entities/relay';
+import { useRelayConversations } from '@/layers/entities/relay';
 import {
-  Badge,
   Button,
   Input,
   Select,
@@ -12,9 +11,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/layers/shared/ui';
-import { MessageRow } from './MessageRow';
+import { ConversationRow } from './ConversationRow';
 import { DeadLetterSection } from './DeadLetterSection';
 import { ComposeMessageDialog } from './ComposeMessageDialog';
+import type { RelayConversation } from '@dorkos/shared/relay-schemas';
 
 interface ActivityFeedProps {
   enabled: boolean;
@@ -24,116 +24,83 @@ interface ActivityFeedProps {
   onSwitchToAdapters?: () => void;
 }
 
-type SourceType = 'telegram' | 'webhook' | 'system';
-type SourceFilter = 'all' | SourceType;
+type SourceFilter = 'all' | 'chat' | 'pulse' | 'system';
 type StatusFilter = 'all' | 'delivered' | 'failed' | 'pending';
-type DirectionType = 'inbound' | 'outbound' | 'neutral';
 
-/** Derive the adapter source from the message subject prefix. */
-function getSourceType(subject: string): SourceType {
-  if (subject.startsWith('relay.human.telegram')) return 'telegram';
-  if (subject.startsWith('relay.webhook')) return 'webhook';
+/** Derive a human-readable source category from the raw subject. */
+function getSourceCategory(subject: string): 'chat' | 'pulse' | 'system' {
+  if (subject.startsWith('relay.agent.')) return 'chat';
+  if (subject.startsWith('relay.system.pulse.')) return 'pulse';
   return 'system';
 }
 
-/** Derive the message direction from the subject and from fields. */
-function getDirection(subject: string, from: string): DirectionType {
-  if (subject.startsWith('relay.human.telegram')) return 'inbound';
-  if (from.startsWith('relay.agent.')) return 'outbound';
-  return 'neutral';
-}
-
-const SOURCE_BADGE_CONFIG: Record<SourceType, { label: string; className: string }> = {
-  telegram: {
-    label: 'TG',
-    className: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300',
-  },
-  webhook: {
-    label: 'WH',
-    className: 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-300',
-  },
-  system: {
-    label: 'SYS',
-    className: 'border-border bg-muted text-muted-foreground',
-  },
-};
-
-const DIRECTION_SYMBOL: Record<DirectionType, string> = {
-  inbound: '↓',
-  outbound: '↑',
-  neutral: '→',
-};
-
-/** Animation props for messages that appear after initial load (SSE-delivered). */
-const NEW_MESSAGE_ANIMATION = {
+/** Animation props for conversations that appear after initial load (SSE-delivered). */
+const NEW_ITEM_ANIMATION = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, height: 0 },
   transition: { duration: 0.2, ease: 'easeOut' },
 } as const;
 
-/** Animation props for history messages present on first render. */
-const HISTORY_MESSAGE_ANIMATION = {
+/** Animation props for history conversations present on first render. */
+const HISTORY_ITEM_ANIMATION = {
   initial: false,
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, height: 0 },
   transition: { duration: 0.2, ease: 'easeOut' },
 } as const;
 
-/** Apply all active filters to the message list. */
+/** Apply all active filters to the conversation list. */
 function applyFilters(
-  messages: unknown[],
+  conversations: RelayConversation[],
   sourceFilter: SourceFilter,
   statusFilter: StatusFilter,
-  subjectFilter: string,
-): unknown[] {
-  return messages.filter((msg) => {
-    const raw = msg as Record<string, unknown>;
-    const subject = (raw.subject as string) ?? '';
-    const status = (raw.status as string) ?? '';
+  searchFilter: string,
+): RelayConversation[] {
+  return conversations.filter((conv) => {
+    if (sourceFilter !== 'all' && getSourceCategory(conv.subject) !== sourceFilter) return false;
+    if (statusFilter !== 'all' && conv.status !== statusFilter) return false;
 
-    if (sourceFilter !== 'all' && getSourceType(subject) !== sourceFilter) return false;
-
-    if (statusFilter !== 'all') {
-      if (statusFilter === 'delivered' && status !== 'cur') return false;
-      if (statusFilter === 'failed' && status !== 'failed' && status !== 'dead_letter') return false;
-      if (statusFilter === 'pending' && status !== 'new') return false;
+    if (searchFilter) {
+      const q = searchFilter.toLowerCase();
+      const matchesSearch =
+        conv.from.label.toLowerCase().includes(q) ||
+        conv.to.label.toLowerCase().includes(q) ||
+        conv.preview.toLowerCase().includes(q) ||
+        conv.subject.toLowerCase().includes(q);
+      if (!matchesSearch) return false;
     }
-
-    if (subjectFilter && !subject.toLowerCase().includes(subjectFilter.toLowerCase())) return false;
 
     return true;
   });
 }
 
-/** Chronological message list with source/direction indicators and multi-filter bar. */
+/** Chronological conversation feed with source/status filters and search. */
 export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: ActivityFeedProps) {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [subjectFilter, setSubjectFilter] = useState('');
-  const { data, isLoading } = useRelayMessages(undefined, enabled);
-  const messages = data?.messages ?? [];
+  const [searchFilter, setSearchFilter] = useState('');
+  const { data, isLoading } = useRelayConversations(enabled);
+  const conversations = data?.conversations ?? [];
 
-  // Track which message IDs were present on first render so history messages
-  // are not animated — only SSE-delivered messages that arrive later get entrance animations.
+  // Track which conversation IDs were present on first render so history items
+  // are not animated — only SSE-delivered items that arrive later get entrance animations.
   const initialIdsRef = useRef<Set<string> | null>(null);
 
   useEffect(() => {
-    if (messages.length > 0 && initialIdsRef.current === null) {
-      initialIdsRef.current = new Set(
-        messages.map((m) => (m as Record<string, unknown>).id as string),
-      );
+    if (conversations.length > 0 && initialIdsRef.current === null) {
+      initialIdsRef.current = new Set(conversations.map((c) => c.id));
     }
-  }, [messages]);
+  }, [conversations]);
 
-  const hasActiveFilters = sourceFilter !== 'all' || statusFilter !== 'all' || subjectFilter !== '';
+  const hasActiveFilters = sourceFilter !== 'all' || statusFilter !== 'all' || searchFilter !== '';
 
-  const filteredMessages = applyFilters(messages, sourceFilter, statusFilter, subjectFilter);
+  const filteredConversations = applyFilters(conversations, sourceFilter, statusFilter, searchFilter);
 
   function clearFilters() {
     setSourceFilter('all');
     setStatusFilter('all');
-    setSubjectFilter('');
+    setSearchFilter('');
   }
 
   if (isLoading) {
@@ -164,9 +131,9 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="telegram">Telegram</SelectItem>
-            <SelectItem value="webhook">Webhook</SelectItem>
+            <SelectItem value="all">All sources</SelectItem>
+            <SelectItem value="chat">Chat messages</SelectItem>
+            <SelectItem value="pulse">Pulse jobs</SelectItem>
             <SelectItem value="system">System</SelectItem>
           </SelectContent>
         </Select>
@@ -176,7 +143,7 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="delivered">Delivered</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
             <SelectItem value="pending">Pending</SelectItem>
@@ -185,10 +152,10 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
 
         <Input
           className="h-9 w-44"
-          placeholder="Filter by subject..."
-          value={subjectFilter}
-          onChange={(e) => setSubjectFilter(e.target.value)}
-          aria-label="Filter by subject"
+          placeholder="Search..."
+          value={searchFilter}
+          onChange={(e) => setSearchFilter(e.target.value)}
+          aria-label="Search conversations"
         />
 
         {hasActiveFilters && (
@@ -202,7 +169,7 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
         </div>
       </div>
 
-      {filteredMessages.length === 0 && !hasActiveFilters ? (
+      {filteredConversations.length === 0 && !hasActiveFilters ? (
         <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
           <Inbox className="size-10 text-muted-foreground/50" />
           <div className="space-y-1">
@@ -217,7 +184,7 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
             </Button>
           )}
         </div>
-      ) : filteredMessages.length === 0 ? (
+      ) : filteredConversations.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
           <Search className="size-10 text-muted-foreground/50" />
           <div className="space-y-1">
@@ -233,32 +200,13 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
       ) : (
         <div className="space-y-2">
           <AnimatePresence mode="popLayout">
-            {filteredMessages.map((msg, i) => {
-              const raw = msg as Record<string, unknown>;
-              const subject = (raw.subject as string) ?? '';
-              const from = (raw.from as string) ?? '';
-              const source = getSourceType(subject);
-              const direction = getDirection(subject, from);
-              const badgeCfg = SOURCE_BADGE_CONFIG[source];
-              const msgId = (raw.id as string) ?? String(i);
-              const isNew = initialIdsRef.current !== null && !initialIdsRef.current.has(msgId);
-              const animProps = isNew ? NEW_MESSAGE_ANIMATION : HISTORY_MESSAGE_ANIMATION;
+            {filteredConversations.map((conv) => {
+              const isNew = initialIdsRef.current !== null && !initialIdsRef.current.has(conv.id);
+              const animProps = isNew ? NEW_ITEM_ANIMATION : HISTORY_ITEM_ANIMATION;
 
               return (
-                <motion.div
-                  key={msgId}
-                  {...animProps}
-                  className="relative"
-                >
-                  <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground" aria-label={direction}>
-                      {DIRECTION_SYMBOL[direction]}
-                    </span>
-                    <Badge variant="outline" className={badgeCfg.className}>
-                      {badgeCfg.label}
-                    </Badge>
-                  </div>
-                  <MessageRow message={raw} />
+                <motion.div key={conv.id} {...animProps}>
+                  <ConversationRow conversation={conv} />
                 </motion.div>
               );
             })}

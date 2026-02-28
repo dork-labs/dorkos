@@ -9,11 +9,11 @@ import '@testing-library/jest-dom/vitest';
 // Mock entity hooks
 // ---------------------------------------------------------------------------
 
-const mockUseRelayMessages = vi.fn();
+const mockUseRelayConversations = vi.fn();
 const mockUseSendRelayMessage = vi.fn(() => ({ mutate: vi.fn(), isPending: false }));
 
 vi.mock('@/layers/entities/relay', () => ({
-  useRelayMessages: (...args: unknown[]) => mockUseRelayMessages(...args),
+  useRelayConversations: (...args: unknown[]) => mockUseRelayConversations(...args),
   useSendRelayMessage: () => mockUseSendRelayMessage(),
 }));
 
@@ -24,10 +24,10 @@ vi.mock('../DeadLetterSection', () => ({
   ),
 }));
 
-// Mock MessageRow — it has its own tests; we only care it receives the message.
-vi.mock('../MessageRow', () => ({
-  MessageRow: ({ message }: { message: Record<string, unknown> }) => (
-    <div data-testid="message-row" data-subject={message.subject as string} />
+// Mock ConversationRow — it has its own tests; we only care it receives the conversation.
+vi.mock('../ConversationRow', () => ({
+  ConversationRow: ({ conversation }: { conversation: { id: string; subject: string } }) => (
+    <div data-testid="conversation-row" data-subject={conversation.subject} />
   ),
 }));
 
@@ -37,23 +37,26 @@ import { ActivityFeed } from '../ActivityFeed';
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const makeMessage = (
+const makeConversation = (
   id: string,
   subject = 'relay.system.test',
   overrides: Record<string, unknown> = {},
 ) => ({
   id,
   subject,
-  from: 'system',
-  status: 'cur',
-  createdAt: new Date().toISOString(),
-  payload: {},
+  direction: 'outbound',
+  status: 'delivered',
+  from: { label: 'System', raw: 'system' },
+  to: { label: 'Agent', raw: 'relay.agent.123' },
+  preview: '',
+  responseCount: 0,
+  sentAt: new Date().toISOString(),
   ...overrides,
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUseRelayMessages.mockReturnValue({ data: null, isLoading: false });
+  mockUseRelayConversations.mockReturnValue({ data: null, isLoading: false });
 });
 
 afterEach(cleanup);
@@ -65,7 +68,7 @@ afterEach(cleanup);
 describe('ActivityFeed', () => {
   describe('loading state', () => {
     it('shows skeleton placeholders while loading', () => {
-      mockUseRelayMessages.mockReturnValue({ data: null, isLoading: true });
+      mockUseRelayConversations.mockReturnValue({ data: null, isLoading: true });
       render(<ActivityFeed enabled={true} />);
 
       // The loading skeleton renders 3 animated placeholder divs
@@ -73,22 +76,22 @@ describe('ActivityFeed', () => {
       expect(skeletons.length).toBeGreaterThan(0);
     });
 
-    it('does not render the message list while loading', () => {
-      mockUseRelayMessages.mockReturnValue({ data: null, isLoading: true });
+    it('does not render the conversation list while loading', () => {
+      mockUseRelayConversations.mockReturnValue({ data: null, isLoading: true });
       render(<ActivityFeed enabled={true} />);
-      expect(screen.queryByTestId('message-row')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('conversation-row')).not.toBeInTheDocument();
     });
   });
 
   describe('empty state', () => {
-    it('shows the "no messages yet" state when there are no messages and no active filters', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+    it('shows the "no messages yet" state when there are no conversations and no active filters', () => {
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
       expect(screen.getByText('No messages yet')).toBeInTheDocument();
     });
 
     it('shows contextual description in the no-messages state', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
       expect(
         screen.getByText(
@@ -98,19 +101,19 @@ describe('ActivityFeed', () => {
     });
 
     it('does not show "Set up an adapter" button when onSwitchToAdapters is not provided', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
       expect(screen.queryByText('Set up an adapter')).not.toBeInTheDocument();
     });
 
     it('shows "Set up an adapter" button when onSwitchToAdapters is provided', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} onSwitchToAdapters={vi.fn()} />);
       expect(screen.getByText('Set up an adapter')).toBeInTheDocument();
     });
 
     it('calls onSwitchToAdapters when "Set up an adapter" is clicked', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       const onSwitchToAdapters = vi.fn();
       render(<ActivityFeed enabled={true} onSwitchToAdapters={onSwitchToAdapters} />);
       fireEvent.click(screen.getByText('Set up an adapter'));
@@ -118,33 +121,33 @@ describe('ActivityFeed', () => {
     });
 
     it('shows the "no messages match filters" state when filters are active and nothing matches', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
       const [sourceCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Telegram' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
       expect(screen.getByText('No messages match your filters')).toBeInTheDocument();
       expect(screen.getByText('Try adjusting your filter criteria.')).toBeInTheDocument();
     });
 
     it('shows "Clear filters" in the empty state when filters are active and nothing matches', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
       const [sourceCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Telegram' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
       expect(screen.getAllByText('Clear filters').length).toBeGreaterThanOrEqual(1);
     });
 
     it('clears filters when "Clear filters" in the empty state is clicked', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by subject...'), {
+      fireEvent.change(screen.getByPlaceholderText('Search...'), {
         target: { value: 'zzznomatch' },
       });
 
@@ -158,85 +161,109 @@ describe('ActivityFeed', () => {
     });
   });
 
-  describe('message list rendering', () => {
-    it('renders a MessageRow for each message', () => {
-      const messages = [makeMessage('msg-1'), makeMessage('msg-2'), makeMessage('msg-3')];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+  describe('conversation list rendering', () => {
+    it('renders a ConversationRow for each conversation', () => {
+      const conversations = [
+        makeConversation('conv-1'),
+        makeConversation('conv-2'),
+        makeConversation('conv-3'),
+      ];
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(3);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(3);
     });
 
-    it('renders history messages without crashing', () => {
-      const messages = [makeMessage('msg-a'), makeMessage('msg-b')];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+    it('renders history conversations without crashing', () => {
+      const conversations = [makeConversation('conv-a'), makeConversation('conv-b')];
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       expect(() => render(<ActivityFeed enabled={true} />)).not.toThrow();
-      expect(screen.getAllByTestId('message-row')).toHaveLength(2);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(2);
     });
 
-    it('renders new messages that appear after initial load', async () => {
-      const initial = [makeMessage('msg-1')];
-      mockUseRelayMessages.mockReturnValue({ data: { messages: initial }, isLoading: false });
+    it('renders new conversations that appear after initial load', async () => {
+      const initial = [makeConversation('conv-1')];
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: initial }, isLoading: false });
 
       const { rerender } = render(<ActivityFeed enabled={true} />);
-      expect(screen.getAllByTestId('message-row')).toHaveLength(1);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
 
-      // Simulate an SSE-delivered message arriving
-      const updated = [makeMessage('msg-1'), makeMessage('msg-2')];
-      mockUseRelayMessages.mockReturnValue({ data: { messages: updated }, isLoading: false });
+      // Simulate an SSE-delivered conversation arriving
+      const updated = [makeConversation('conv-1'), makeConversation('conv-2')];
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: updated }, isLoading: false });
 
       await act(async () => {
         rerender(<ActivityFeed enabled={true} />);
       });
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(2);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(2);
     });
   });
 
   describe('source filter', () => {
-    it('shows all messages when filter is "all"', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.human.telegram.inbound'),
-        makeMessage('msg-2', 'relay.webhook.hook'),
-        makeMessage('msg-3', 'relay.system.info'),
+    it('shows all conversations when filter is "all"', () => {
+      const conversations = [
+        makeConversation('conv-1', 'relay.agent.session-1'),
+        makeConversation('conv-2', 'relay.system.pulse.schedule-1'),
+        makeConversation('conv-3', 'relay.system.info'),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
-      expect(screen.getAllByTestId('message-row')).toHaveLength(3);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(3);
     });
 
-    it('filters to only telegram messages when "telegram" is selected', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.human.telegram.inbound'),
-        makeMessage('msg-2', 'relay.webhook.hook'),
-        makeMessage('msg-3', 'relay.system.info'),
+    it('filters to only chat messages when "Chat messages" is selected', () => {
+      const conversations = [
+        makeConversation('conv-1', 'relay.agent.session-1'),
+        makeConversation('conv-2', 'relay.system.pulse.schedule-1'),
+        makeConversation('conv-3', 'relay.system.info'),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
-      // There are now multiple comboboxes — target the first one (source filter)
       const [sourceCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Telegram' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(1);
-      expect(screen.getByTestId('message-row')).toHaveAttribute(
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
+      expect(screen.getByTestId('conversation-row')).toHaveAttribute(
         'data-subject',
-        'relay.human.telegram.inbound',
+        'relay.agent.session-1',
+      );
+    });
+
+    it('filters to only pulse jobs when "Pulse jobs" is selected', () => {
+      const conversations = [
+        makeConversation('conv-1', 'relay.agent.session-1'),
+        makeConversation('conv-2', 'relay.system.pulse.schedule-1'),
+        makeConversation('conv-3', 'relay.system.info'),
+      ];
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
+
+      render(<ActivityFeed enabled={true} />);
+
+      const [sourceCombobox] = screen.getAllByRole('combobox');
+      fireEvent.click(sourceCombobox);
+      fireEvent.click(screen.getByRole('option', { name: 'Pulse jobs' }));
+
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
+      expect(screen.getByTestId('conversation-row')).toHaveAttribute(
+        'data-subject',
+        'relay.system.pulse.schedule-1',
       );
     });
 
     it('shows filter-mismatch empty state when filter yields no results', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
       const [sourceCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Telegram' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
       expect(screen.getByText('No messages match your filters')).toBeInTheDocument();
     });
@@ -244,20 +271,20 @@ describe('ActivityFeed', () => {
 
   describe('status filter', () => {
     it('renders the status filter dropdown', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
       // Two comboboxes: source and status
       expect(screen.getAllByRole('combobox')).toHaveLength(2);
     });
 
-    it('filters to delivered messages (status=cur) when "Delivered" is selected', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.system.a', { status: 'cur' }),
-        makeMessage('msg-2', 'relay.system.b', { status: 'new' }),
-        makeMessage('msg-3', 'relay.system.c', { status: 'failed' }),
+    it('filters to delivered conversations when "Delivered" is selected', () => {
+      const conversations = [
+        makeConversation('conv-1', 'relay.system.a', { status: 'delivered' }),
+        makeConversation('conv-2', 'relay.system.b', { status: 'pending' }),
+        makeConversation('conv-3', 'relay.system.c', { status: 'failed' }),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
@@ -265,17 +292,17 @@ describe('ActivityFeed', () => {
       fireEvent.click(statusCombobox);
       fireEvent.click(screen.getByRole('option', { name: 'Delivered' }));
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(1);
-      expect(screen.getByTestId('message-row')).toHaveAttribute('data-subject', 'relay.system.a');
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
+      expect(screen.getByTestId('conversation-row')).toHaveAttribute('data-subject', 'relay.system.a');
     });
 
-    it('filters to failed messages (status=failed and dead_letter) when "Failed" is selected', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.system.a', { status: 'cur' }),
-        makeMessage('msg-2', 'relay.system.b', { status: 'failed' }),
-        makeMessage('msg-3', 'relay.system.c', { status: 'dead_letter' }),
+    it('filters to failed conversations when "Failed" is selected', () => {
+      const conversations = [
+        makeConversation('conv-1', 'relay.system.a', { status: 'delivered' }),
+        makeConversation('conv-2', 'relay.system.b', { status: 'failed' }),
+        makeConversation('conv-3', 'relay.system.c', { status: 'pending' }),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
@@ -283,15 +310,16 @@ describe('ActivityFeed', () => {
       fireEvent.click(statusCombobox);
       fireEvent.click(screen.getByRole('option', { name: 'Failed' }));
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(2);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
+      expect(screen.getByTestId('conversation-row')).toHaveAttribute('data-subject', 'relay.system.b');
     });
 
-    it('filters to pending messages (status=new) when "Pending" is selected', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.system.a', { status: 'new' }),
-        makeMessage('msg-2', 'relay.system.b', { status: 'cur' }),
+    it('filters to pending conversations when "Pending" is selected', () => {
+      const conversations = [
+        makeConversation('conv-1', 'relay.system.a', { status: 'pending' }),
+        makeConversation('conv-2', 'relay.system.b', { status: 'delivered' }),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
@@ -299,43 +327,52 @@ describe('ActivityFeed', () => {
       fireEvent.click(statusCombobox);
       fireEvent.click(screen.getByRole('option', { name: 'Pending' }));
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(1);
-      expect(screen.getByTestId('message-row')).toHaveAttribute('data-subject', 'relay.system.a');
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
+      expect(screen.getByTestId('conversation-row')).toHaveAttribute('data-subject', 'relay.system.a');
     });
   });
 
-  describe('subject filter', () => {
-    it('renders the subject text input', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+  describe('search filter', () => {
+    it('renders the search text input', () => {
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      expect(screen.getByPlaceholderText('Filter by subject...')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
     });
 
-    it('filters messages by subject substring (case-insensitive)', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.agent.session'),
-        makeMessage('msg-2', 'relay.system.health'),
-        makeMessage('msg-3', 'relay.agent.heartbeat'),
+    it('filters conversations by from/to labels and subject (case-insensitive)', () => {
+      const conversations = [
+        makeConversation('conv-1', 'relay.agent.session', {
+          from: { label: 'Alice', raw: 'relay.agent.alice' },
+          to: { label: 'Bob', raw: 'relay.agent.bob' },
+        }),
+        makeConversation('conv-2', 'relay.system.health', {
+          from: { label: 'System', raw: 'system' },
+          to: { label: 'Monitor', raw: 'relay.system.monitor' },
+        }),
+        makeConversation('conv-3', 'relay.agent.heartbeat', {
+          from: { label: 'Charlie', raw: 'relay.agent.charlie' },
+          to: { label: 'Alice', raw: 'relay.agent.alice' },
+        }),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by subject...'), {
-        target: { value: 'AGENT' },
+      fireEvent.change(screen.getByPlaceholderText('Search...'), {
+        target: { value: 'ALICE' },
       });
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(2);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(2);
     });
 
-    it('shows filter-mismatch empty state when subject filter matches nothing', () => {
-      const messages = [makeMessage('msg-1', 'relay.system.health')];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+    it('shows filter-mismatch empty state when search filter matches nothing', () => {
+      const conversations = [makeConversation('conv-1', 'relay.system.health')];
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by subject...'), {
+      fireEvent.change(screen.getByPlaceholderText('Search...'), {
         target: { value: 'zzznomatch' },
       });
 
@@ -345,28 +382,28 @@ describe('ActivityFeed', () => {
 
   describe('clear filters', () => {
     it('does not show "Clear filters" button when no filters are active', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
       expect(screen.queryByText('Clear filters')).not.toBeInTheDocument();
     });
 
     it('shows "Clear filters" button in filter bar when source filter is active', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
       const [sourceCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Telegram' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
       expect(screen.getAllByText('Clear filters').length).toBeGreaterThanOrEqual(1);
     });
 
-    it('shows "Clear filters" button in filter bar when subject filter is active', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+    it('shows "Clear filters" button in filter bar when search filter is active', () => {
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by subject...'), {
+      fireEvent.change(screen.getByPlaceholderText('Search...'), {
         target: { value: 'test' },
       });
 
@@ -374,85 +411,91 @@ describe('ActivityFeed', () => {
     });
 
     it('resets all filters when "Clear filters" is clicked', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.human.telegram.inbound', { status: 'new' }),
-        makeMessage('msg-2', 'relay.system.health', { status: 'cur' }),
+      const conversations = [
+        makeConversation('conv-1', 'relay.agent.session-1', { status: 'pending' }),
+        makeConversation('conv-2', 'relay.system.health', { status: 'delivered' }),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
       // Apply source filter
       const [sourceCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Telegram' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(1);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
 
       // Clear all filters
       fireEvent.click(screen.getByText('Clear filters'));
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(2);
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(2);
       expect(screen.queryByText('Clear filters')).not.toBeInTheDocument();
     });
   });
 
   describe('combined filters', () => {
     it('applies source and status filters together', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.human.telegram.inbound', { status: 'cur' }),
-        makeMessage('msg-2', 'relay.human.telegram.inbound', { status: 'new' }),
-        makeMessage('msg-3', 'relay.system.health', { status: 'cur' }),
+      const conversations = [
+        makeConversation('conv-1', 'relay.agent.session-1', { status: 'delivered' }),
+        makeConversation('conv-2', 'relay.agent.session-2', { status: 'pending' }),
+        makeConversation('conv-3', 'relay.system.health', { status: 'delivered' }),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
-      // Source: telegram
+      // Source: chat
       const [sourceCombobox, statusCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Telegram' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
       // Status: delivered
       fireEvent.click(statusCombobox);
       fireEvent.click(screen.getByRole('option', { name: 'Delivered' }));
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(1);
-      expect(screen.getByTestId('message-row')).toHaveAttribute(
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
+      expect(screen.getByTestId('conversation-row')).toHaveAttribute(
         'data-subject',
-        'relay.human.telegram.inbound',
+        'relay.agent.session-1',
       );
     });
 
-    it('applies source and subject filters together', () => {
-      const messages = [
-        makeMessage('msg-1', 'relay.human.telegram.alpha'),
-        makeMessage('msg-2', 'relay.human.telegram.beta'),
-        makeMessage('msg-3', 'relay.system.alpha'),
+    it('applies source and search filters together', () => {
+      const conversations = [
+        makeConversation('conv-1', 'relay.agent.alpha', {
+          from: { label: 'Alpha Agent', raw: 'relay.agent.alpha' },
+        }),
+        makeConversation('conv-2', 'relay.agent.beta', {
+          from: { label: 'Beta Agent', raw: 'relay.agent.beta' },
+        }),
+        makeConversation('conv-3', 'relay.system.alpha', {
+          from: { label: 'System Alpha', raw: 'relay.system.alpha' },
+        }),
       ];
-      mockUseRelayMessages.mockReturnValue({ data: { messages }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
 
       render(<ActivityFeed enabled={true} />);
 
       const [sourceCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(sourceCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Telegram' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by subject...'), {
+      fireEvent.change(screen.getByPlaceholderText('Search...'), {
         target: { value: 'alpha' },
       });
 
-      expect(screen.getAllByTestId('message-row')).toHaveLength(1);
-      expect(screen.getByTestId('message-row')).toHaveAttribute(
+      expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
+      expect(screen.getByTestId('conversation-row')).toHaveAttribute(
         'data-subject',
-        'relay.human.telegram.alpha',
+        'relay.agent.alpha',
       );
     });
   });
 
   describe('DeadLetterSection integration', () => {
     it('renders DeadLetterSection with the enabled prop', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
       const section = screen.getByTestId('dead-letter-section');
@@ -461,7 +504,7 @@ describe('ActivityFeed', () => {
     });
 
     it('passes enabled=false to DeadLetterSection when relay is disabled', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={false} />);
 
       const section = screen.getByTestId('dead-letter-section');
@@ -471,12 +514,12 @@ describe('ActivityFeed', () => {
 
   describe('deadLetterRef prop', () => {
     it('does not crash when deadLetterRef is not provided', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       expect(() => render(<ActivityFeed enabled={true} />)).not.toThrow();
     });
 
     it('attaches deadLetterRef to the dead-letter wrapper div', () => {
-      mockUseRelayMessages.mockReturnValue({ data: { messages: [] }, isLoading: false });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
 
       const ref = { current: null } as React.RefObject<HTMLDivElement | null>;
       render(<ActivityFeed enabled={true} deadLetterRef={ref} />);
