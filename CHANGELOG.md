@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove creepy eyebrow text and fix header overlap in hero
 - Resolve Vercel deployment failures
 - Infer sender label for delivered conversations
 - Wire trace store into publish pipeline for delivery tracking

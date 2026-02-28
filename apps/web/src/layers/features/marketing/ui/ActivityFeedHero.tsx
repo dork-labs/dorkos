@@ -337,7 +337,7 @@ function ActivityFeedPanel() {
  */
 export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedHeroProps) {
   return (
-    <section className="relative min-h-0 md:min-h-[85vh] bg-cream-primary flex flex-col items-center justify-center px-6 py-16 overflow-hidden film-grain">
+    <section className="relative min-h-0 md:min-h-[85vh] bg-cream-primary flex flex-col items-center justify-center px-6 pt-28 pb-16 overflow-hidden film-grain">
       {/* Subtle graph-paper background */}
       <div
         className="absolute inset-0 pointer-events-none"
@@ -359,13 +359,6 @@ export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedH
         animate="visible"
         variants={STAGGER}
       >
-        {/* Eyebrow */}
-        <motion.div variants={REVEAL} className="mb-6">
-          <p className="font-mono text-2xs tracking-[0.2em] uppercase text-brand-orange">
-            what your AI agents do when you&apos;re not looking
-          </p>
-        </motion.div>
-
         {/* Headline — full width */}
         <motion.div variants={REVEAL} className="mb-6">
           <h1
