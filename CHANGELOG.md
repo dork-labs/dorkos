@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Update search placeholder to describe filter behavior
 - Replace MessageRow with ConversationRow for human-readable activity feed
 - Show human-readable labels and message preview in dead letters
 - Add human-readable labels to endpoints and adapter descriptions

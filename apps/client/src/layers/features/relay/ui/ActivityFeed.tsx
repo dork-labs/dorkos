@@ -152,7 +152,7 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
 
         <Input
           className="h-9 w-44"
-          placeholder="Search..."
+          placeholder="Filter by agent or message..."
           value={searchFilter}
           onChange={(e) => setSearchFilter(e.target.value)}
           aria-label="Search conversations"
