@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Overhaul OG tags, share cards, SEO and AI readability
 - Add adapter-agent binding router and visual topology UI
 - Homepage rounds 4-5 — imagery, ELI5 language, and delight
 - Add new mobile and desktop images for marketing materials

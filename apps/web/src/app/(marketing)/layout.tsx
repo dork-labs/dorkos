@@ -13,6 +13,14 @@ export const metadata: Metadata = {
     description: metaDescription,
     url: '/',
     type: 'website',
+    images: [
+      {
+        url: '/opengraph-image',
+        width: 1200,
+        height: 630,
+        alt: 'DorkOS - The operating system for autonomous AI agents',
+      },
+    ],
   },
   alternates: {
     canonical: '/',

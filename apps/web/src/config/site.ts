@@ -12,8 +12,6 @@ export const siteConfig = {
   contactEmail: 'hey@dorkos.ai',
   github: 'https://github.com/dork-labs/dorkos',
   npm: 'https://www.npmjs.com/package/dorkos',
-  ogImage: '/og-image.png',
-
   /**
    * Disable the cookie consent banner across the entire site.
    * Set to `true` to hide the banner completely.

@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og'
 
 export const runtime = 'edge'
 
-export const alt = 'DorkOS - A web UI for Claude Code'
+export const alt = 'DorkOS - The operating system for autonomous AI agents'
 export const size = {
   width: 1200,
   height: 630,
@@ -14,7 +14,7 @@ export default async function Image() {
     (
       <div
         style={{
-          background: '#FFFCF7',
+          background: 'linear-gradient(135deg, #1A1A1A 0%, #2A2A2A 100%)',
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -22,87 +22,101 @@ export default async function Image() {
           alignItems: 'center',
           justifyContent: 'center',
           position: 'relative',
+          padding: '60px',
         }}
       >
-        {/* Graph paper background pattern */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage: `
-              linear-gradient(to right, rgba(139, 90, 43, 0.08) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(139, 90, 43, 0.08) 1px, transparent 1px)
-            `,
-            backgroundSize: '40px 40px',
-          }}
-        />
-
-        {/* Logo triangles */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '8px',
-            marginBottom: '40px',
-          }}
+        {/* Dorkian logo SVG -- geometric DORK lettering in white */}
+        <svg
+          width="400"
+          height="138"
+          viewBox="0 0 2325 799"
+          fill="none"
+          style={{ marginBottom: '40px' }}
         >
-          {/* Three triangles forming the DorkOS logo */}
-          <svg width="60" height="60" viewBox="0 0 100 100">
-            <polygon points="50,10 90,90 10,90" fill="#E86C3A" />
-          </svg>
-          <svg width="60" height="60" viewBox="0 0 100 100">
-            <polygon points="50,10 90,90 10,90" fill="#E86C3A" />
-          </svg>
-          <svg width="60" height="60" viewBox="0 0 100 100">
-            <polygon points="50,10 90,90 10,90" fill="#E86C3A" />
-          </svg>
-        </div>
+          <rect
+            x="50"
+            y="50"
+            width="2225"
+            height="699"
+            stroke="#FFFFFF"
+            strokeWidth="100"
+          />
+          <path
+            d="M200 599V200H492L599.5 296V491.5L492 599H200Z"
+            fill="#FFFFFF"
+          />
+          <path
+            d="M699.5 599V296.5L802.5 200H1108V497.5L1001 599H699.5Z"
+            fill="#FFFFFF"
+          />
+          <path
+            d="M1208 599V200H1616.5L1509.5 395L1616.5 599L1409 499.5L1208 599Z"
+            fill="#FFFFFF"
+          />
+          <path
+            d="M1716.5 599V200L1917.5 291.5L2125 200L2017.5 400L2125 599H1917.5H1716.5Z"
+            fill="#FFFFFF"
+          />
+        </svg>
 
-        {/* Main tagline */}
+        {/* Headline */}
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: '8px',
+            gap: '4px',
           }}
         >
           <span
             style={{
-              fontSize: '72px',
+              fontSize: '48px',
               fontWeight: 700,
-              color: '#2C2C2C',
-              letterSpacing: '-0.04em',
-              lineHeight: 1,
+              color: '#FFFFFF',
+              letterSpacing: '-0.03em',
+              lineHeight: 1.2,
             }}
           >
-            Claude Code
+            Your agents are brilliant.
           </span>
           <span
             style={{
-              fontSize: '72px',
+              fontSize: '48px',
               fontWeight: 700,
               color: '#E86C3A',
-              letterSpacing: '-0.04em',
-              lineHeight: 1,
+              letterSpacing: '-0.03em',
+              lineHeight: 1.2,
+              textAlign: 'center',
             }}
           >
-            in your browser.
+            They just can&apos;t do anything
+          </span>
+          <span
+            style={{
+              fontSize: '48px',
+              fontWeight: 700,
+              color: '#E86C3A',
+              letterSpacing: '-0.03em',
+              lineHeight: 1.2,
+            }}
+          >
+            when you leave.
           </span>
         </div>
 
-        {/* Subhead */}
+        {/* Tagline */}
         <span
           style={{
             fontSize: '24px',
-            color: '#6B6B6B',
-            marginTop: '32px',
+            color: '#9A9A9A',
+            marginTop: '24px',
             fontWeight: 300,
           }}
         >
-          A web UI for Claude Code
+          You slept. They shipped.
         </span>
 
-        {/* Retro stripes at bottom */}
+        {/* Bottom accent stripes */}
         <div
           style={{
             position: 'absolute',
@@ -113,28 +127,11 @@ export default async function Image() {
             flexDirection: 'column',
           }}
         >
-          <div style={{ height: '8px', background: '#E86C3A' }} />
-          <div style={{ height: '8px', background: '#5B8C5A' }} />
+          <div style={{ height: '4px', background: '#E86C3A' }} />
+          <div style={{ height: '4px', background: '#5B8C5A' }} />
         </div>
-
-        {/* Studio name */}
-        <span
-          style={{
-            position: 'absolute',
-            bottom: '40px',
-            fontSize: '14px',
-            fontFamily: 'monospace',
-            color: '#9A9A9A',
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-          }}
-        >
-          DorkOS
-        </span>
       </div>
     ),
-    {
-      ...size,
-    }
+    { ...size }
   )
 }

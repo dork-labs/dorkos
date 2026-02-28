@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 72,
+  "nextNumber": 74,
   "specs": [
     {
       "number": 1,
@@ -498,6 +498,20 @@
       "title": "Adapter-Agent Routing & Visual Configuration",
       "created": "2026-02-28",
       "status": "ideation"
+    },
+    {
+      "number": 72,
+      "slug": "og-seo-ai-readability-overhaul",
+      "title": "OG Tags, Share Cards, SEO & AI Readability Overhaul",
+      "created": "2026-02-28",
+      "status": "implemented"
+    },
+    {
+      "number": 73,
+      "slug": "relay-mesh-telegram-review-fixes",
+      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation",
+      "created": "2026-02-28",
+      "status": "specified"
     }
   ]
 }

@@ -44,8 +44,37 @@ export default async function BlogPost(props: {
 
   const Mdx = page.data.body
 
+  // BlogPosting JSON-LD structured data
+  const blogPostingJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: page.data.title,
+    description: page.data.description,
+    datePublished: new Date(page.data.date).toISOString(),
+    dateModified: new Date(page.data.date).toISOString(),
+    author: page.data.author
+      ? { '@type': 'Person', name: page.data.author }
+      : { '@type': 'Organization', name: siteConfig.name },
+    publisher: {
+      '@type': 'Organization',
+      name: siteConfig.name,
+      url: siteConfig.url,
+    },
+    url: `${siteConfig.url}/blog/${params.slug}`,
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': `${siteConfig.url}/blog/${params.slug}`,
+    },
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-24">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(blogPostingJsonLd).replace(/</g, '\\u003c'),
+        }}
+      />
       <div className="flex gap-12">
         <article className="min-w-0 max-w-3xl flex-1">
           <header className="mb-8">

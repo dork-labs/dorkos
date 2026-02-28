@@ -1,0 +1,29 @@
+# DorkOS
+
+> The operating system for autonomous AI agents. Scheduling, communication, memory, and a command center. Open source. Self-hosted.
+
+DorkOS is an OS-layer for AI agents that provides the scheduling, memory, communication, and coordination infrastructure that agents themselves don't provide. It runs on your machine, wraps the Claude Agent SDK, and gives your agents a web-based command center.
+
+## Core Capabilities
+
+- **Pulse Scheduler**: Cron-based scheduling for autonomous agent runs with approval workflows
+- **Relay Message Bus**: Inter-agent communication with adapter system (Telegram, Webhooks)
+- **Mesh Discovery**: Agent registry, topology visualization, and health monitoring
+- **Chat Interface**: Web UI for Claude Code with tool approval flows and slash command discovery
+- **CLI**: Install via `npm install -g dorkos` and run `dorkos` to start
+
+## Documentation
+
+- [Getting Started](https://dorkos.ai/docs/getting-started): Installation and first run
+- [Configuration](https://dorkos.ai/docs/getting-started/configuration): Server and agent configuration
+- [Pulse Scheduler](https://dorkos.ai/docs/guides/pulse-scheduler): Autonomous scheduling setup
+- [Relay Messaging](https://dorkos.ai/docs/guides/relay-messaging): Inter-agent communication
+- [Mesh Discovery](https://dorkos.ai/docs/concepts/mesh): Agent registry and topology
+- [API Reference](https://dorkos.ai/docs/api): REST API documentation
+
+## Links
+
+- Website: https://dorkos.ai
+- GitHub: https://github.com/dork-labs/dorkos
+- npm: https://www.npmjs.com/package/dorkos
+- Contact: hey@dorkos.ai
