@@ -2,6 +2,7 @@ import { Inbox, Radio } from 'lucide-react';
 import { useRelayEndpoints } from '@/layers/entities/relay';
 import { cn } from '@/layers/shared/lib';
 import { getStatusDotColor } from '../lib/status-colors';
+import { resolveSubjectLabelLocal } from '../lib/resolve-label';
 
 interface EndpointListProps {
   enabled: boolean;
@@ -74,7 +75,10 @@ export function EndpointList({ enabled, onSelectEndpoint }: EndpointListProps) {
                 aria-label={`Status: ${status}`}
               />
               <Inbox className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate font-mono text-sm font-medium">{subject}</span>
+              <div className="min-w-0 flex-1">
+                <span className="text-sm font-medium">{resolveSubjectLabelLocal(subject)}</span>
+                <p className="truncate font-mono text-xs text-muted-foreground">{subject}</p>
+              </div>
             </div>
             {description != null && (
               <p className="mt-1 text-xs text-muted-foreground">{description}</p>

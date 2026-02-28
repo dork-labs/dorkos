@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add human-readable labels to endpoints and adapter descriptions
 - Add conversations endpoint with grouped messages and human labels
 - Add subject label resolver for human-readable names
 - Enhance version update UX with two-tier indicator and popover card

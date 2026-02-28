@@ -75,7 +75,12 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
                 </Badge>
               )}
             </div>
-            <div className="text-xs text-muted-foreground">
+            {isBuiltinClaude && (
+              <p className="text-xs text-muted-foreground">
+                Handles: Chat messages, Pulse jobs
+              </p>
+            )}
+            <div className="text-xs text-muted-foreground/70">
               In: {instance.status.messageCount.inbound} | Out: {instance.status.messageCount.outbound}
               {instance.status.errorCount > 0 && ` | Errors: ${instance.status.errorCount}`}
             </div>
