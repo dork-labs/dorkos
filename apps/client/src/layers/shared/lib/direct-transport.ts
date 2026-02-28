@@ -1,5 +1,5 @@
 import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
-import type { TraceSpan, DeliveryMetrics, CatalogEntry } from '@dorkos/shared/relay-schemas';
+import type { TraceSpan, DeliveryMetrics, CatalogEntry, AdapterBinding, CreateBindingRequest, RelayConversation } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest, DiscoveryCandidate, DenialRecord, AgentHealth, MeshStatus, TopologyView, CrossNamespaceRule, UpdateAccessRuleRequest } from '@dorkos/shared/mesh-schemas';
 import type {
   StreamEvent,
@@ -366,6 +366,19 @@ export class DirectTransport implements Transport {
 
   async testRelayAdapterConnection(_type: string, _config: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
     throw new Error('Adapter management not supported in embedded mode');
+  }
+
+  // Relay bindings are not supported in embedded mode
+  async getBindings(): Promise<AdapterBinding[]> {
+    return [];
+  }
+
+  async createBinding(_input: CreateBindingRequest): Promise<AdapterBinding> {
+    throw new Error('Relay bindings are not supported in embedded mode');
+  }
+
+  async deleteBinding(_id: string): Promise<void> {
+    throw new Error('Relay bindings are not supported in embedded mode');
   }
 
   // Mesh agent discovery is not supported in embedded mode

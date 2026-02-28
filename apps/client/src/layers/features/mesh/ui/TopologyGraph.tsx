@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, useEffect } from 'react';
+import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -11,20 +11,28 @@ import {
   type Edge,
   type NodeTypes,
   type EdgeTypes,
+  type Connection,
+  type IsValidConnection,
 } from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { Loader2 } from 'lucide-react';
 import { AgentNode, type AgentNodeData } from './AgentNode';
+import { AdapterNode, type AdapterNodeData, ADAPTER_NODE_WIDTH, ADAPTER_NODE_HEIGHT } from './AdapterNode';
+import { BindingEdge, type BindingEdgeData } from './BindingEdge';
+import { BindingDialog } from './BindingDialog';
 import { NamespaceGroupNode } from './NamespaceGroupNode';
 import { CrossNamespaceEdge } from './CrossNamespaceEdge';
 import { DenyEdge } from './DenyEdge';
 import { TopologyLegend } from './TopologyLegend';
 import { getNamespaceColor } from '../lib/namespace-colors';
 import { useTopology } from '@/layers/entities/mesh';
+import { useBindings, useCreateBinding, useDeleteBinding } from '@/layers/entities/binding';
+import { useRelayAdapters, useRelayEnabled } from '@/layers/entities/relay';
+import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
 
 const elk = new ELK();
 
-// Layout dimensions match the largest LOD (ExpandedCard: 240×~150px)
+// Layout dimensions match the largest LOD (ExpandedCard: 240x~150px)
 // so nodes never overlap regardless of zoom level.
 const AGENT_NODE_WIDTH = 240;
 const AGENT_NODE_HEIGHT = 150;
@@ -32,10 +40,12 @@ const GROUP_PADDING = 48;
 
 const NODE_TYPES: NodeTypes = {
   agent: AgentNode,
+  adapter: AdapterNode,
   'namespace-group': NamespaceGroupNode,
 };
 
 const EDGE_TYPES: EdgeTypes = {
+  binding: BindingEdge,
   'cross-namespace': CrossNamespaceEdge,
   'cross-namespace-deny': DenyEdge,
 };
@@ -50,8 +60,20 @@ async function applyElkLayout(
 
   const groupNodes = nodes.filter((n) => n.type === 'namespace-group');
   const agentNodes = nodes.filter((n) => n.type === 'agent');
+  const adapterNodes = nodes.filter((n) => n.type === 'adapter');
 
-  const elkChildren = useGroups
+  // Build ELK children: adapter nodes are standalone (not inside groups)
+  const adapterElkChildren = adapterNodes.map((a) => ({
+    id: a.id,
+    width: ADAPTER_NODE_WIDTH,
+    height: ADAPTER_NODE_HEIGHT,
+    // Place adapters in the first layer (leftmost)
+    layoutOptions: {
+      'elk.layered.layering.layerConstraint': 'FIRST',
+    },
+  }));
+
+  const agentElkChildren = useGroups
     ? groupNodes.map((g) => {
         const children = agentNodes
           .filter((a) => a.parentId === g.id)
@@ -77,7 +99,13 @@ async function applyElkLayout(
         id: a.id,
         width: AGENT_NODE_WIDTH,
         height: AGENT_NODE_HEIGHT,
+        // Place agents in the last layer (rightmost) when adapters are present
+        ...(adapterNodes.length > 0
+          ? { layoutOptions: { 'elk.layered.layering.layerConstraint': 'LAST' } }
+          : {}),
       }));
+
+  const elkChildren = [...adapterElkChildren, ...agentElkChildren];
 
   const elkEdges = edges.map((edge) => ({
     id: edge.id,
@@ -112,6 +140,12 @@ async function applyElkLayout(
         },
       };
     }
+    // Adapter node — find in root children
+    if (node.type === 'adapter') {
+      const laidNode = laid.children?.find((n) => n.id === node.id);
+      if (!laidNode) return node;
+      return { ...node, position: { x: laidNode.x ?? 0, y: laidNode.y ?? 0 } };
+    }
     // Agent node — find in parent group or root
     if (useGroups && node.parentId) {
       const parentGroup = laid.children?.find((n) => n.id === node.parentId);
@@ -135,6 +169,8 @@ interface TopologyGraphProps {
 /**
  * Renders the mesh network topology as an interactive React Flow graph.
  * Agents are grouped inside namespace containers using ELK compound layout.
+ * When Relay is enabled, adapter nodes appear on the left with binding edges
+ * connecting them to agent nodes on the right.
  * Wrapped in ReactFlowProvider for fly-to selection animation via useReactFlow.
  */
 export function TopologyGraph(props: TopologyGraphProps) {
@@ -145,6 +181,15 @@ export function TopologyGraph(props: TopologyGraphProps) {
   );
 }
 
+/** Pending connection state for the BindingDialog. */
+interface PendingConnection {
+  sourceAdapterId: string;
+  sourceAdapterName: string;
+  targetAgentId: string;
+  targetAgentName: string;
+  targetAgentDir: string;
+}
+
 function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProps) {
   const { setCenter, getZoom } = useReactFlow();
   const { data: topology, isLoading, isError, refetch } = useTopology();
@@ -152,8 +197,42 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
   const namespaces = topology?.namespaces;
   const accessRules = topology?.accessRules;
 
+  // Adapter & binding data (only fetched when Relay is enabled)
+  const relayEnabled = useRelayEnabled();
+  const { data: adapters } = useRelayAdapters(relayEnabled);
+  const { data: bindings } = useBindings();
+  const { mutate: createBindingMutate } = useCreateBinding();
+  const { mutate: deleteBindingMutate } = useDeleteBinding();
+
   const [layoutedNodes, setLayoutedNodes] = useState<Node[]>([]);
   const [isLayouting, setIsLayouting] = useState(true);
+  const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
+
+  // Stable refs for callback props to prevent useMemo re-creation on each render.
+  // Without refs, new callback references cause the node/edge useMemo to recompute,
+  // which triggers the ELK layout useEffect, creating an infinite re-render loop.
+  const onOpenSettingsRef = useRef(onOpenSettings);
+  onOpenSettingsRef.current = onOpenSettings;
+  const onSelectAgentRef = useRef(onSelectAgent);
+  onSelectAgentRef.current = onSelectAgent;
+
+  /** Count bindings for a given adapter ID. */
+  const bindingCountByAdapter = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of bindings ?? []) {
+      counts.set(b.adapterId, (counts.get(b.adapterId) ?? 0) + 1);
+    }
+    return counts;
+  }, [bindings]);
+
+  const handleDeleteBinding = useCallback(
+    (edgeId: string) => {
+      // Edge IDs for bindings are prefixed with 'binding:' — extract the binding UUID
+      const bindingId = edgeId.replace(/^binding:/, '');
+      deleteBindingMutate(bindingId);
+    },
+    [deleteBindingMutate],
+  );
 
   const { rawNodes, rawEdges, legendEntries, useGroups } = useMemo(() => {
     if (!namespaces?.length)
@@ -167,6 +246,27 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
     const nodes: Node[] = [];
     const edges: Edge[] = [];
     const legend: { namespace: string; color: string }[] = [];
+
+    // --- Adapter nodes (left side) ---
+    if (relayEnabled && adapters?.length) {
+      for (const adapter of adapters) {
+        nodes.push({
+          id: `adapter:${adapter.config.id}`,
+          type: 'adapter',
+          position: { x: 0, y: 0 },
+          data: {
+            adapterName: adapter.status.displayName,
+            adapterType: adapter.config.type,
+            adapterStatus: adapter.status.state === 'connected'
+              ? 'running'
+              : adapter.status.state === 'error'
+                ? 'error'
+                : 'stopped',
+            bindingCount: bindingCountByAdapter.get(adapter.config.id) ?? 0,
+          } satisfies AdapterNodeData,
+        });
+      }
+    }
 
     // Skip group wrappers for single-namespace topologies
     const multiNamespace = namespaces.length > 1;
@@ -227,8 +327,10 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
               : undefined,
             color: (enriched.color as string | null) ?? null,
             emoji: (enriched.icon as string | null) ?? null,
-            onOpenSettings,
-            onViewHealth: onSelectAgent,
+            // Store agentDir for binding creation
+            agentDir: (enriched.dir as string | null) ?? (enriched.agentDir as string | null) ?? '',
+            onOpenSettings: (id: string) => onOpenSettingsRef.current?.(id),
+            onViewHealth: (id: string) => onSelectAgentRef.current?.(id),
           } satisfies AgentNodeData,
         };
 
@@ -238,6 +340,30 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
         }
 
         nodes.push(agentNode);
+      }
+    }
+
+    // --- Binding edges (adapter -> agent) ---
+    if (relayEnabled && bindings?.length) {
+      for (const binding of bindings) {
+        const sourceId = `adapter:${binding.adapterId}`;
+        const targetId = binding.agentId;
+        // Only create edge if both source and target nodes exist
+        const hasSource = nodes.some((n) => n.id === sourceId);
+        const hasTarget = nodes.some((n) => n.id === targetId);
+        if (!hasSource || !hasTarget) continue;
+
+        edges.push({
+          id: `binding:${binding.id}`,
+          source: sourceId,
+          target: targetId,
+          type: 'binding',
+          data: {
+            label: binding.label || undefined,
+            sessionStrategy: binding.sessionStrategy,
+            onDelete: handleDeleteBinding,
+          } satisfies BindingEdgeData,
+        });
       }
     }
 
@@ -263,17 +389,24 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
     }
 
     return { rawNodes: nodes, rawEdges: edges, legendEntries: legend, useGroups: multiNamespace };
-  }, [namespaces, accessRules, onOpenSettings, onSelectAgent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks accessed via stable refs to prevent infinite layout loop
+  }, [namespaces, accessRules, relayEnabled, adapters, bindings, bindingCountByAdapter, handleDeleteBinding]);
 
   useEffect(() => {
     let cancelled = false;
     setIsLayouting(true);
-    applyElkLayout(rawNodes, rawEdges, useGroups).then((positioned) => {
-      if (!cancelled) {
-        setLayoutedNodes(positioned);
-        setIsLayouting(false);
-      }
-    });
+    applyElkLayout(rawNodes, rawEdges, useGroups)
+      .then((positioned) => {
+        if (!cancelled) {
+          setLayoutedNodes(positioned);
+          setIsLayouting(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsLayouting(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -282,7 +415,7 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       if (node.type !== 'agent') return;
-      onSelectAgent?.(node.id);
+      onSelectAgentRef.current?.(node.id);
 
       // Compute absolute center for fly-to (handles grouped child nodes)
       let centerX = node.position.x + AGENT_NODE_WIDTH / 2;
@@ -299,8 +432,60 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
       const targetZoom = Math.max(getZoom(), 1.0);
       setCenter(centerX, centerY, { zoom: targetZoom, duration: 350 });
     },
-    [onSelectAgent, setCenter, getZoom, layoutedNodes],
+    [setCenter, getZoom, layoutedNodes],
   );
+
+  /** Only allow connections from adapter nodes to agent nodes. */
+  const isValidConnection: IsValidConnection = useCallback(
+    (connection: Edge | Connection) => {
+      const sourceNode = rawNodes.find((n) => n.id === connection.source);
+      const targetNode = rawNodes.find((n) => n.id === connection.target);
+      return sourceNode?.type === 'adapter' && targetNode?.type === 'agent';
+    },
+    [rawNodes],
+  );
+
+  /** Open the BindingDialog when a valid adapter-to-agent connection is made. */
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      const sourceNode = rawNodes.find((n) => n.id === connection.source);
+      const targetNode = rawNodes.find((n) => n.id === connection.target);
+      if (sourceNode?.type !== 'adapter' || targetNode?.type !== 'agent') return;
+
+      const adapterData = sourceNode.data as unknown as AdapterNodeData;
+      const agentData = targetNode.data as unknown as AgentNodeData;
+
+      setPendingConnection({
+        sourceAdapterId: sourceNode.id.replace(/^adapter:/, ''),
+        sourceAdapterName: adapterData.adapterName,
+        targetAgentId: targetNode.id,
+        targetAgentName: agentData.label,
+        targetAgentDir: (agentData.agentDir as string) ?? '',
+      });
+    },
+    [rawNodes],
+  );
+
+  /** Create the binding when the dialog is confirmed. */
+  const handleBindingConfirm = useCallback(
+    (opts: { sessionStrategy: SessionStrategy; label: string }) => {
+      if (!pendingConnection) return;
+      createBindingMutate({
+        adapterId: pendingConnection.sourceAdapterId,
+        agentId: pendingConnection.targetAgentId,
+        agentDir: pendingConnection.targetAgentDir,
+        sessionStrategy: opts.sessionStrategy,
+        label: opts.label,
+      });
+      setPendingConnection(null);
+    },
+    [pendingConnection, createBindingMutate],
+  );
+
+  // Determine if the canvas should allow connections (only when adapters exist)
+  const hasAdapters = relayEnabled && (adapters?.length ?? 0) > 0;
+  const hasBindings = (bindings?.length ?? 0) > 0;
+  const hasAgents = rawNodes.some((n) => n.type === 'agent');
 
   if (isLoading || isLayouting) {
     return (
@@ -351,16 +536,21 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         onNodeClick={handleNodeClick}
+        onConnect={hasAdapters ? handleConnect : undefined}
+        isValidConnection={hasAdapters ? isValidConnection : undefined}
+        nodesConnectable={hasAdapters}
         fitView
         fitViewOptions={{ duration: 400, padding: 0.15 }}
         colorMode="system"
         onlyRenderVisibleElements
-        nodesConnectable={false}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--color-border)" />
         <MiniMap
-          nodeColor={(n) => (n.data?.namespaceColor as string | undefined) ?? '#94a3b8'}
+          nodeColor={(n) => {
+            if (n.type === 'adapter') return '#6366f1'; // indigo for adapters
+            return (n.data?.namespaceColor as string | undefined) ?? '#94a3b8';
+          }}
           pannable
           zoomable
           style={{ height: 80 }}
@@ -368,6 +558,24 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
         <Controls showInteractive={false} />
         <TopologyLegend namespaces={legendEntries} />
       </ReactFlow>
+      {/* Empty state hints for adapter/binding scenarios */}
+      {relayEnabled && hasAgents && !hasAdapters && (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md bg-muted/80 px-3 py-1.5 text-xs text-muted-foreground">
+          Add adapters from the Relay panel to connect them to agents
+        </div>
+      )}
+      {hasAdapters && hasAgents && !hasBindings && (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md bg-muted/80 px-3 py-1.5 text-xs text-muted-foreground">
+          Drag from an adapter to an agent to create a binding
+        </div>
+      )}
+      <BindingDialog
+        open={!!pendingConnection}
+        onOpenChange={(open) => { if (!open) setPendingConnection(null); }}
+        adapterName={pendingConnection?.sourceAdapterName ?? ''}
+        agentName={pendingConnection?.targetAgentName ?? ''}
+        onConfirm={handleBindingConfirm}
+      />
     </div>
   );
 }

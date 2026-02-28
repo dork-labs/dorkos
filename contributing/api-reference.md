@@ -572,6 +572,65 @@ Both `type` and `config` are required.
 - `400` - Missing required fields
 - `500` - Test failed: `{ error: "Connection timeout" }`
 
+## Binding Endpoints
+
+All binding endpoints are under `/api/relay/bindings/` and require `DORKOS_RELAY_ENABLED=true`. They manage adapter-to-agent routing rules.
+
+### GET /api/relay/bindings
+
+List all adapter-agent bindings.
+
+**Responses:**
+
+- `200` - `{ bindings: AdapterBinding[] }`
+- `503` - Binding subsystem not available
+
+### GET /api/relay/bindings/:id
+
+Get a single binding by ID.
+
+**Responses:**
+
+- `200` - `{ binding: AdapterBinding }`
+- `404` - Binding not found
+- `503` - Binding subsystem not available
+
+### POST /api/relay/bindings
+
+Create a new adapter-agent binding. Zod-validated via `CreateBindingRequestSchema`.
+
+**Request body:**
+
+```json
+{
+  "adapterId": "telegram",
+  "agentId": "my-agent",
+  "agentDir": "/path/to/project",
+  "chatId": "12345",
+  "channelType": "telegram",
+  "sessionStrategy": "per-chat",
+  "label": "Telegram to project agent"
+}
+```
+
+`adapterId`, `agentId`, and `agentDir` are required. `sessionStrategy` defaults to `per-chat`. `chatId`, `channelType`, and `label` are optional.
+
+**Responses:**
+
+- `201` - `{ binding: AdapterBinding }`
+- `400` - Validation error
+- `503` - Binding subsystem not available
+
+### DELETE /api/relay/bindings/:id
+
+Delete an adapter-agent binding.
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `404` - Binding not found
+- `503` - Binding subsystem not available
+
 ## Validation Errors
 
 Invalid requests return HTTP 400 with a structured error body:

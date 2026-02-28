@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 46,
+  "nextNumber": 48,
   "decisions": [
     {
       "number": 1,
@@ -401,6 +401,24 @@
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
       "specSlug": "adapter-catalog-management"
+    },
+    {
+      "number": 46,
+      "slug": "central-binding-router-for-adapter-agent-routing",
+      "title": "Use Central BindingRouter for Adapter-Agent Routing",
+      "status": "draft",
+      "created": "2026-02-28",
+      "extractedFrom": "adapter-agent-routing",
+      "specSlug": "adapter-agent-routing"
+    },
+    {
+      "number": 47,
+      "slug": "most-specific-first-binding-resolution",
+      "title": "Use Most-Specific-First Binding Resolution Order",
+      "status": "draft",
+      "created": "2026-02-28",
+      "extractedFrom": "adapter-agent-routing",
+      "specSlug": "adapter-agent-routing"
     }
   ]
 }

@@ -104,6 +104,7 @@ async function start() {
         agentManager,
         traceStore,
         pulseStore,
+        relayCore,
       });
       await adapterManager.initialize();
       relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManager));
@@ -171,6 +172,7 @@ async function start() {
     ...(pulseStore && { pulseStore }),
     ...(relayCore && { relayCore }),
     ...(adapterManager && { adapterManager }),
+    ...(adapterManager && { bindingStore: adapterManager.getBindingStore() }),
     ...(traceStore && { traceStore }),
     ...(meshCore && { meshCore }),
   });

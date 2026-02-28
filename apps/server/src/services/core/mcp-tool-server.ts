@@ -4,6 +4,7 @@ import type { TranscriptReader } from '../session/transcript-reader.js';
 import type { PulseStore } from '../pulse/pulse-store.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../relay/adapter-manager.js';
+import type { BindingStore } from '../relay/binding-store.js';
 import type { TraceStore } from '../relay/trace-store.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { readManifest } from '@dorkos/shared/manifest';
@@ -25,6 +26,8 @@ export interface McpToolDeps {
   adapterManager?: AdapterManager;
   /** Optional TraceStore — undefined when Relay tracing is disabled */
   traceStore?: TraceStore;
+  /** Optional BindingStore — undefined when Relay bindings are not configured */
+  bindingStore?: BindingStore;
   /** Optional MeshCore — undefined when Mesh is disabled */
   meshCore?: MeshCore;
 }
@@ -385,6 +388,69 @@ export function createRelayReloadAdaptersHandler(deps: McpToolDeps) {
   };
 }
 
+// --- Binding Tools ---
+
+/** Guard that returns an error response when BindingStore is not available. */
+function requireBindingStore(deps: McpToolDeps) {
+  if (!deps.bindingStore) {
+    return jsonContent({ error: 'Relay bindings are not enabled', code: 'BINDINGS_DISABLED' }, true);
+  }
+  return null;
+}
+
+/** List all adapter-to-agent bindings. */
+export function createBindingListHandler(deps: McpToolDeps) {
+  return async () => {
+    const err = requireBindingStore(deps);
+    if (err) return err;
+    const bindings = deps.bindingStore!.getAll();
+    return jsonContent({ bindings, count: bindings.length });
+  };
+}
+
+/** Create a new adapter-to-agent binding. */
+export function createBindingCreateHandler(deps: McpToolDeps) {
+  return async (args: {
+    adapterId: string;
+    agentId: string;
+    agentDir: string;
+    sessionStrategy?: string;
+    chatId?: string;
+    channelType?: string;
+    label?: string;
+  }) => {
+    const err = requireBindingStore(deps);
+    if (err) return err;
+    try {
+      const binding = await deps.bindingStore!.create({
+        adapterId: args.adapterId,
+        agentId: args.agentId,
+        agentDir: args.agentDir,
+        sessionStrategy: (args.sessionStrategy ?? 'per-chat') as 'per-chat' | 'per-user' | 'stateless',
+        label: args.label ?? '',
+        ...(args.chatId && { chatId: args.chatId }),
+        ...(args.channelType && {
+          channelType: args.channelType as 'dm' | 'group' | 'channel' | 'thread',
+        }),
+      });
+      return jsonContent({ binding });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Create failed';
+      return jsonContent({ error: message, code: 'BINDING_CREATE_FAILED' }, true);
+    }
+  };
+}
+
+/** Delete an adapter-to-agent binding by ID. */
+export function createBindingDeleteHandler(deps: McpToolDeps) {
+  return async (args: { id: string }) => {
+    const err = requireBindingStore(deps);
+    if (err) return err;
+    const deleted = await deps.bindingStore!.delete(args.id);
+    return jsonContent({ result: deleted ? 'Deleted' : 'Not found', id: args.id });
+  };
+}
+
 // --- Trace Tools ---
 
 /** Guard that returns an error response when TraceStore is not available. */
@@ -709,6 +775,38 @@ export function createDorkOsToolServer(deps: McpToolDeps) {
       ]
     : [];
 
+  // Binding tools — only registered when bindingStore is provided
+  const bindingTools = deps.bindingStore
+    ? [
+        tool(
+          'binding_list',
+          'List all adapter-to-agent bindings.',
+          {},
+          createBindingListHandler(deps)
+        ),
+        tool(
+          'binding_create',
+          'Create a new adapter-to-agent binding. Maps an external adapter to a specific agent directory.',
+          {
+            adapterId: z.string().describe('ID of the adapter to bind'),
+            agentId: z.string().describe('Agent ID to route messages to'),
+            agentDir: z.string().describe('Filesystem path to the agent working directory'),
+            sessionStrategy: z.string().optional().describe('Session strategy: per-chat, per-user, or stateless (default per-chat)'),
+            chatId: z.string().optional().describe('Optional chat ID for targeted routing'),
+            channelType: z.string().optional().describe('Optional channel type filter: dm, group, channel, or thread'),
+            label: z.string().optional().describe('Optional human-readable label for this binding'),
+          },
+          createBindingCreateHandler(deps)
+        ),
+        tool(
+          'binding_delete',
+          'Delete an adapter-to-agent binding by ID.',
+          { id: z.string().describe('Binding UUID to delete') },
+          createBindingDeleteHandler(deps)
+        ),
+      ]
+    : [];
+
   // Trace tools — only registered when traceStore is provided
   const traceTools = deps.traceStore
     ? [
@@ -834,6 +932,7 @@ export function createDorkOsToolServer(deps: McpToolDeps) {
       ...pulseTools,
       ...relayTools,
       ...adapterTools,
+      ...bindingTools,
       ...traceTools,
       ...meshTools,
     ],

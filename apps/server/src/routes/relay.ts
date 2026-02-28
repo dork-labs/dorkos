@@ -12,6 +12,7 @@ import {
   MessageListQuerySchema,
   InboxQuerySchema,
   EndpointRegistrationSchema,
+  CreateBindingRequestSchema,
 } from '@dorkos/shared/relay-schemas';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -476,6 +477,70 @@ export function createRelayRouter(
         const message = err instanceof Error ? err.message : 'Disable failed';
         return res.status(400).json({ error: message });
       }
+    });
+
+    // --- Binding Management Routes ---
+
+    // GET /bindings — List all adapter-agent bindings
+    router.get('/bindings', (_req, res) => {
+      const bindingStore = adapterManager.getBindingStore();
+      if (!bindingStore) {
+        return res.status(503).json({ error: 'Binding subsystem not available' });
+      }
+      return res.json({ bindings: bindingStore.getAll() });
+    });
+
+    // GET /bindings/:id — Get a single binding
+    router.get('/bindings/:id', (req, res) => {
+      const bindingStore = adapterManager.getBindingStore();
+      if (!bindingStore) {
+        return res.status(503).json({ error: 'Binding subsystem not available' });
+      }
+      const binding = bindingStore.getById(req.params.id);
+      if (!binding) {
+        return res.status(404).json({ error: 'Binding not found' });
+      }
+      return res.json({ binding });
+    });
+
+    // POST /bindings — Create a new binding
+    router.post('/bindings', async (req, res) => {
+      const bindingStore = adapterManager.getBindingStore();
+      if (!bindingStore) {
+        return res.status(503).json({ error: 'Binding subsystem not available' });
+      }
+      const result = CreateBindingRequestSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      }
+      try {
+        const binding = await bindingStore.create(result.data);
+        return res.status(201).json({ binding });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Create failed';
+        return res.status(500).json({ error: message });
+      }
+    });
+
+    // DELETE /bindings/:id — Delete a binding
+    router.delete('/bindings/:id', async (req, res) => {
+      const bindingStore = adapterManager.getBindingStore();
+      if (!bindingStore) {
+        return res.status(503).json({ error: 'Binding subsystem not available' });
+      }
+      const deleted = await bindingStore.delete(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Binding not found' });
+      }
+
+      // Clean up orphaned session mappings for the deleted binding
+      const bindingRouter = adapterManager.getBindingRouter();
+      if (bindingRouter) {
+        const activeBindingIds = new Set(bindingStore.getAll().map((b) => b.id));
+        await bindingRouter.cleanupOrphanedSessions(activeBindingIds);
+      }
+
+      return res.json({ ok: true });
     });
 
     // POST /webhooks/:adapterId — Inbound webhook receiver

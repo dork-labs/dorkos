@@ -382,6 +382,8 @@ function createMockAdapterManager(): AdapterManager & { _mockWebhookAdapter: Web
     removeAdapter: vi.fn().mockResolvedValue(undefined),
     updateConfig: vi.fn().mockResolvedValue(undefined),
     testConnection: vi.fn().mockResolvedValue({ ok: true }),
+    getBindingStore: vi.fn().mockReturnValue(undefined),
+    getBindingRouter: vi.fn().mockReturnValue(undefined),
     _mockWebhookAdapter: mockWebhookAdapter,
   } as unknown as AdapterManager & { _mockWebhookAdapter: WebhookAdapter };
 }
@@ -774,6 +776,108 @@ describe('Adapter routes', () => {
       const res = await request(appNoAdapters).get('/api/relay/adapters');
 
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('Binding routes', () => {
+    const mockBinding = {
+      id: 'b-1',
+      adapterId: 'tg-main',
+      agentId: 'agent-1',
+      agentDir: '/agents/a',
+      sessionStrategy: 'per-chat' as const,
+      label: 'Test binding',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    function createMockBindingStore() {
+      return {
+        getAll: vi.fn().mockReturnValue([mockBinding]),
+        getById: vi.fn((id: string) => (id === 'b-1' ? mockBinding : undefined)),
+        create: vi.fn().mockResolvedValue(mockBinding),
+        delete: vi.fn().mockResolvedValue(true),
+      };
+    }
+
+    describe('GET /api/relay/bindings', () => {
+      it('returns 503 when binding store not available', async () => {
+        const res = await request(app).get('/api/relay/bindings');
+        expect(res.status).toBe(503);
+        expect(res.body.error).toBe('Binding subsystem not available');
+      });
+
+      it('returns 200 with bindings array', async () => {
+        const mockStore = createMockBindingStore();
+        vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
+
+        const res = await request(app).get('/api/relay/bindings');
+        expect(res.status).toBe(200);
+        expect(res.body.bindings).toHaveLength(1);
+        expect(res.body.bindings[0].id).toBe('b-1');
+      });
+    });
+
+    describe('GET /api/relay/bindings/:id', () => {
+      it('returns 404 when binding not found', async () => {
+        const mockStore = createMockBindingStore();
+        vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
+
+        const res = await request(app).get('/api/relay/bindings/nonexistent');
+        expect(res.status).toBe(404);
+      });
+
+      it('returns 200 with binding', async () => {
+        const mockStore = createMockBindingStore();
+        vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
+
+        const res = await request(app).get('/api/relay/bindings/b-1');
+        expect(res.status).toBe(200);
+        expect(res.body.binding.id).toBe('b-1');
+      });
+    });
+
+    describe('POST /api/relay/bindings', () => {
+      it('returns 400 for invalid input', async () => {
+        const mockStore = createMockBindingStore();
+        vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
+
+        const res = await request(app).post('/api/relay/bindings').send({});
+        expect(res.status).toBe(400);
+      });
+
+      it('returns 201 with created binding', async () => {
+        const mockStore = createMockBindingStore();
+        vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
+
+        const res = await request(app).post('/api/relay/bindings').send({
+          adapterId: 'tg-main',
+          agentId: 'agent-1',
+          agentDir: '/agents/a',
+        });
+        expect(res.status).toBe(201);
+        expect(res.body.binding.id).toBe('b-1');
+      });
+    });
+
+    describe('DELETE /api/relay/bindings/:id', () => {
+      it('returns 404 when binding not found', async () => {
+        const mockStore = createMockBindingStore();
+        mockStore.delete.mockResolvedValue(false);
+        vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
+
+        const res = await request(app).delete('/api/relay/bindings/nonexistent');
+        expect(res.status).toBe(404);
+      });
+
+      it('returns 200 on successful delete', async () => {
+        const mockStore = createMockBindingStore();
+        vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
+
+        const res = await request(app).delete('/api/relay/bindings/b-1');
+        expect(res.status).toBe(200);
+        expect(res.body.ok).toBe(true);
+      });
     });
   });
 });

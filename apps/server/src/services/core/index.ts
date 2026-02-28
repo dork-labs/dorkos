@@ -32,6 +32,9 @@ export {
   createRelayInboxHandler,
   createRelayListEndpointsHandler,
   createRelayRegisterEndpointHandler,
+  createBindingListHandler,
+  createBindingCreateHandler,
+  createBindingDeleteHandler,
   createDorkOsToolServer,
 } from './mcp-tool-server.js';
 export type { McpToolDeps } from './mcp-tool-server.js';

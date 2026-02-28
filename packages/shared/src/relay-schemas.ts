@@ -523,6 +523,51 @@ export const CatalogEntrySchema = z
 
 export type CatalogEntry = z.infer<typeof CatalogEntrySchema>;
 
+// === Adapter Bindings ===
+
+export const SessionStrategySchema = z
+  .enum(['per-chat', 'per-user', 'stateless'])
+  .openapi('SessionStrategy');
+
+export type SessionStrategy = z.infer<typeof SessionStrategySchema>;
+
+export const AdapterBindingSchema = z
+  .object({
+    id: z.string().uuid(),
+    adapterId: z.string(),
+    agentId: z.string(),
+    agentDir: z.string(),
+    chatId: z.string().optional(),
+    channelType: ChannelTypeSchema.optional(),
+    sessionStrategy: SessionStrategySchema.default('per-chat'),
+    label: z.string().default(''),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi('AdapterBinding');
+
+export type AdapterBinding = z.infer<typeof AdapterBindingSchema>;
+
+export const CreateBindingRequestSchema = AdapterBindingSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).openapi('CreateBindingRequest');
+
+export type CreateBindingRequest = z.infer<typeof CreateBindingRequestSchema>;
+
+export const BindingListResponseSchema = z
+  .object({
+    bindings: z.array(AdapterBindingSchema),
+  })
+  .openapi('BindingListResponse');
+
+export const BindingResponseSchema = z
+  .object({
+    binding: AdapterBindingSchema,
+  })
+  .openapi('BindingResponse');
+
 // === Conversation View ===
 
 export const SubjectLabelSchema = z

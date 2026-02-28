@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 71,
+  "nextNumber": 72,
   "specs": [
     {
       "number": 1,
@@ -491,6 +491,13 @@
       "title": "Relay Publish Pipeline Fix & Adapter System Improvements",
       "created": "2026-02-27",
       "status": "implemented"
+    },
+    {
+      "number": 71,
+      "slug": "adapter-agent-routing",
+      "title": "Adapter-Agent Routing & Visual Configuration",
+      "created": "2026-02-28",
+      "status": "ideation"
     }
   ]
 }

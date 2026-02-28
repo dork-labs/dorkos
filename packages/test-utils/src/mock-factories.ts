@@ -219,6 +219,19 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     resolveAgents: vi.fn().mockResolvedValue({}),
     createAgent: vi.fn().mockResolvedValue(mockAgent),
     updateAgentByPath: vi.fn().mockResolvedValue(mockAgent),
+    // Relay Bindings
+    getBindings: vi.fn().mockResolvedValue([]),
+    createBinding: vi.fn().mockResolvedValue({
+      id: 'mock-binding-id',
+      adapterId: 'mock-adapter',
+      agentId: 'mock-agent',
+      agentDir: '/mock/agent',
+      sessionStrategy: 'per-chat',
+      label: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }),
+    deleteBinding: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

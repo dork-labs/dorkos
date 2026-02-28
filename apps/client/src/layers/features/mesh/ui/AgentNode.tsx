@@ -33,6 +33,8 @@ export interface AgentNodeData extends Record<string, unknown> {
   behavior?: { responseMode: string };
   color?: string | null;
   emoji?: string | null;
+  /** Working directory path for the agent, used when creating bindings. */
+  agentDir?: string;
   onOpenSettings?: (agentId: string) => void;
   onViewHealth?: (agentId: string) => void;
 }

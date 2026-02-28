@@ -8,3 +8,5 @@ export { setRelayEnabled, isRelayEnabled } from './relay-state.js';
 export { AdapterManager } from './adapter-manager.js';
 export { TraceStore } from './trace-store.js';
 export type { TraceSpanUpdate, TraceSpanRow } from './trace-store.js';
+export { BindingStore } from './binding-store.js';
+export { BindingRouter } from './binding-router.js';

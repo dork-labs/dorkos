@@ -21,7 +21,7 @@ import type {
   ListRunsQuery,
 } from '@dorkos/shared/types';
 import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
-import type { TraceSpan, DeliveryMetrics, CatalogEntry, RelayConversation } from '@dorkos/shared/relay-schemas';
+import type { TraceSpan, DeliveryMetrics, CatalogEntry, RelayConversation, AdapterBinding, CreateBindingRequest } from '@dorkos/shared/relay-schemas';
 import type {
   AgentManifest,
   DiscoveryCandidate,
@@ -478,6 +478,27 @@ export class HttpTransport implements Transport {
     return fetchJSON(this.baseUrl, '/relay/adapters/test', {
       method: 'POST',
       body: JSON.stringify({ type, config }),
+    });
+  }
+
+  // --- Relay Bindings ---
+
+  getBindings(): Promise<AdapterBinding[]> {
+    return fetchJSON<{ bindings: AdapterBinding[] }>(this.baseUrl, '/relay/bindings').then(
+      (r) => r.bindings
+    );
+  }
+
+  createBinding(input: CreateBindingRequest): Promise<AdapterBinding> {
+    return fetchJSON<{ binding: AdapterBinding }>(this.baseUrl, '/relay/bindings', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((r) => r.binding);
+  }
+
+  async deleteBinding(id: string): Promise<void> {
+    await fetchJSON<{ ok: boolean }>(this.baseUrl, `/relay/bindings/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     });
   }
 

@@ -28,7 +28,7 @@ import type {
   UpdateScheduleRequest,
   ListRunsQuery,
 } from './types.js';
-import type { AdapterConfigZ, AdapterStatusZ, TraceSpan, DeliveryMetrics, CatalogEntry, RelayConversation } from './relay-schemas.js';
+import type { AdapterConfigZ, AdapterStatusZ, TraceSpan, DeliveryMetrics, CatalogEntry, RelayConversation, AdapterBinding, CreateBindingRequest } from './relay-schemas.js';
 import type {
   AgentManifest,
   DiscoveryCandidate,
@@ -191,6 +191,15 @@ export interface Transport {
   updateRelayAdapterConfig(id: string, config: Record<string, unknown>): Promise<{ ok: boolean }>;
   /** Test connectivity for an adapter type and config without registering it. */
   testRelayAdapterConnection(type: string, config: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
+
+  // --- Relay Bindings ---
+
+  /** List all adapter-agent bindings. */
+  getBindings(): Promise<AdapterBinding[]>;
+  /** Create a new adapter-agent binding. */
+  createBinding(input: CreateBindingRequest): Promise<AdapterBinding>;
+  /** Delete an adapter-agent binding by ID. */
+  deleteBinding(id: string): Promise<void>;
 
   // --- Mesh Agent Discovery ---
 

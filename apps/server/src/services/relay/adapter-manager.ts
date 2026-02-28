@@ -13,7 +13,7 @@
  * @module services/relay/adapter-manager
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join as pathJoin } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import type {
   AdapterRegistry,
@@ -41,6 +41,8 @@ import { AdaptersConfigFileSchema } from '@dorkos/shared/relay-schemas';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
+import { BindingStore } from './binding-store.js';
+import { BindingRouter, type RelayCoreLike, type AgentSessionCreator } from './binding-router.js';
 
 /**
  * Error class for adapter CRUD operations.
@@ -76,6 +78,8 @@ export interface AdapterManagerDeps {
   agentManager: ClaudeCodeAgentManagerLike;
   traceStore: TraceStoreLike;
   pulseStore?: PulseStoreLike;
+  /** Optional RelayCore for binding subsystem initialization */
+  relayCore?: RelayCoreLike;
   /** Optional MeshCore for enriching AdapterContext with agent info */
   meshCore?: {
     getAgent(id: string): { manifest: Record<string, unknown> } | undefined;
@@ -96,6 +100,8 @@ export class AdapterManager {
   private configs: AdapterConfig[] = [];
   private readonly deps: AdapterManagerDeps;
   private manifests = new Map<string, AdapterManifest>();
+  private bindingStore?: BindingStore;
+  private bindingRouter?: BindingRouter;
 
   /**
    * @param registry - The adapter registry managing adapter lifecycle
@@ -124,6 +130,52 @@ export class AdapterManager {
     await this.loadConfig();
     await this.startEnabledAdapters();
     this.startConfigWatcher();
+    await this.initBindingSubsystem();
+  }
+
+  /**
+   * Initialize the binding store and router subsystem.
+   *
+   * Creates a BindingStore and BindingRouter inside the relay data directory
+   * (derived from the adapter config path). Non-fatal: failures are logged
+   * but do not block adapter startup.
+   */
+  private async initBindingSubsystem(): Promise<void> {
+    if (!this.deps.relayCore) {
+      logger.info('[AdapterManager] relayCore not provided, skipping binding subsystem');
+      return;
+    }
+
+    const relayDir = dirname(this.configPath);
+    try {
+      this.bindingStore = new BindingStore(relayDir);
+      await this.bindingStore.init();
+      logger.info('[AdapterManager] BindingStore initialized');
+
+      // Adapt ClaudeCodeAgentManagerLike to AgentSessionCreator interface.
+      // ensureSession registers a session entry; the returned id is used by
+      // BindingRouter for relay.agent.{sessionId} republishing.
+      const agentManager = this.deps.agentManager;
+      const sessionCreator: AgentSessionCreator = {
+        async createSession(cwd: string) {
+          const id = crypto.randomUUID();
+          agentManager.ensureSession(id, { permissionMode: 'auto', cwd });
+          return { id };
+        },
+      };
+
+      this.bindingRouter = new BindingRouter({
+        bindingStore: this.bindingStore,
+        relayCore: this.deps.relayCore,
+        agentManager: sessionCreator,
+        relayDir,
+      });
+      await this.bindingRouter.init();
+      logger.info('[AdapterManager] BindingRouter initialized');
+    } catch (err) {
+      logger.warn('[AdapterManager] Failed to initialize binding subsystem:', err);
+      // Non-fatal: adapters still work, just no binding-based routing
+    }
   }
 
   /**
@@ -234,6 +286,25 @@ export class AdapterManager {
    */
   getRegistry(): AdapterRegistry {
     return this.registry;
+  }
+
+  /**
+   * Get the BindingStore for adapter-agent binding management.
+   *
+   * Returns undefined if the binding subsystem was not initialized
+   * (e.g., relayCore not provided or initialization failed).
+   */
+  getBindingStore(): BindingStore | undefined {
+    return this.bindingStore;
+  }
+
+  /**
+   * Get the BindingRouter for session lifecycle management.
+   *
+   * Returns undefined if the binding subsystem was not initialized.
+   */
+  getBindingRouter(): BindingRouter | undefined {
+    return this.bindingRouter;
   }
 
   /**
@@ -403,6 +474,9 @@ export class AdapterManager {
   /**
    * Remove an adapter instance, stop it if running, and persist the change.
    *
+   * After removal, checks for orphaned bindings (bindings referencing adapters
+   * that no longer exist) and logs a warning if any are found.
+   *
    * @param id - The adapter ID to remove
    * @throws {AdapterError} NOT_FOUND or REMOVE_BUILTIN_DENIED
    */
@@ -429,6 +503,19 @@ export class AdapterManager {
 
     this.configs.splice(index, 1);
     await this.saveConfig();
+
+    // Check for orphaned bindings after adapter removal
+    if (this.bindingStore) {
+      const knownAdapterIds = this.configs.map((c) => c.id);
+      const orphaned = this.bindingStore.getOrphaned(knownAdapterIds);
+      if (orphaned.length > 0) {
+        logger.warn(
+          `[AdapterManager] ${orphaned.length} orphaned binding(s) detected after removing adapter '${id}'. ` +
+          `Binding IDs: ${orphaned.map((b) => b.id).join(', ')}. ` +
+          `Delete them via DELETE /api/relay/bindings/:id to clean up.`,
+        );
+      }
+    }
   }
 
   /**
@@ -475,6 +562,14 @@ export class AdapterManager {
    * Should be called during server shutdown, before RelayCore shutdown.
    */
   async shutdown(): Promise<void> {
+    if (this.bindingRouter) {
+      await this.bindingRouter.shutdown();
+      this.bindingRouter = undefined;
+    }
+    if (this.bindingStore) {
+      await this.bindingStore.shutdown();
+      this.bindingStore = undefined;
+    }
     if (this.configWatcher) {
       await this.configWatcher.close();
       this.configWatcher = null;
