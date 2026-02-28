@@ -259,6 +259,24 @@ export class TelegramAdapter implements RelayAdapter {
   }
 
   /**
+   * Validate the bot token without starting the polling loop or webhook server.
+   *
+   * Calls Telegram's `getMe` API via `bot.init()`. This is enough to confirm
+   * the token is valid and the bot is reachable. Avoids starting a long-poll
+   * session that would cause a 409 Conflict when the real adapter starts.
+   */
+  async testConnection(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const bot = new Bot(this.config.token);
+      await bot.init();
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  /**
    * Start the adapter: connect the Telegram bot and register signal handlers.
    *
    * Idempotent — if the adapter is already started, returns immediately.
@@ -346,6 +364,14 @@ export class TelegramAdapter implements RelayAdapter {
   async deliver(subject: string, envelope: RelayEnvelope, _context?: AdapterContext): Promise<DeliveryResult> {
     const startTime = Date.now();
 
+    // Guard: skip messages that originated from this adapter to prevent echo.
+    // Inbound messages are published with `from: relay.human.telegram.bot`,
+    // which starts with our subject prefix. Without this guard the publish
+    // pipeline routes the message right back to deliver(), creating a loop.
+    if (envelope.from.startsWith(SUBJECT_PREFIX)) {
+      return { success: true, durationMs: Date.now() - startTime };
+    }
+
     if (!this.bot) {
       return {
         success: false,
@@ -412,22 +438,33 @@ export class TelegramAdapter implements RelayAdapter {
   }
 
   /**
-   * Start grammy bot in long-polling mode (non-blocking).
+   * Start grammy bot in long-polling mode.
    *
-   * `bot.start()` is intentionally not awaited — grammy's polling loop
-   * runs in the background and rejects its returned promise only on fatal
-   * errors. The `onStart` callback transitions state to 'connected' once
-   * the bot has confirmed its identity with the Telegram API.
+   * Calls `bot.init()` first to validate the token (calls `getMe`). This
+   * ensures invalid tokens are caught eagerly — before the polling loop
+   * starts — so that `testConnection` gets a clear rejection rather than
+   * a fire-and-forget success followed by an "Aborted delay" error when
+   * the adapter is stopped during grammY's internal retry backoff.
+   *
+   * The `bot.start()` call is still not awaited: grammy's polling loop
+   * runs in the background after init succeeds.
    *
    * @param bot - The grammy Bot instance
    */
-  private startPollingMode(bot: Bot): void {
-    // Non-blocking: polling runs in background
-    void bot.start({
+  private async startPollingMode(bot: Bot): Promise<void> {
+    // Validate the token eagerly — throws if the token is invalid
+    await bot.init();
+
+    // Non-blocking: polling runs in background after successful init.
+    // Route background errors to recordError so they surface in getStatus()
+    // instead of becoming unhandled rejections.
+    bot.start({
       drop_pending_updates: true,
       onStart: () => {
         this.status = { ...this.status, state: 'connected' };
       },
+    }).catch((err: unknown) => {
+      this.recordError(err);
     });
   }
 

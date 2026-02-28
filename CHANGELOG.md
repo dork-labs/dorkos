@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add lightweight testConnection() to TelegramAdapter and echo guard
 - Rebuild marketing homepage with narrative-driven design
 - Update search placeholder to describe filter behavior
 - Replace MessageRow with ConversationRow for human-readable activity feed

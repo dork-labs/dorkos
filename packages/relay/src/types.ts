@@ -275,6 +275,16 @@ export interface RelayAdapter {
 
   /** Current adapter status */
   getStatus(): AdapterStatus;
+
+  /**
+   * Lightweight connection test — validate credentials without starting the
+   * full adapter lifecycle (e.g., long-polling loops, webhook servers).
+   *
+   * When present, `AdapterManager.testConnection()` prefers this over the
+   * heavier `start()`/`stop()` cycle, avoiding side-effects like Telegram's
+   * 409 Conflict when a polling session lingers.
+   */
+  testConnection?(): Promise<{ ok: boolean; error?: string }>;
 }
 
 /** Current status of an external channel adapter. */

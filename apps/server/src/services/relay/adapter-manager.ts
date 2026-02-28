@@ -269,9 +269,10 @@ export class AdapterManager {
   /**
    * Test connectivity for an adapter type and config without registering it.
    *
-   * Creates a transient adapter instance, attempts to start it with a noop
-   * publisher, and returns success/failure. The adapter is always cleaned up
-   * via stop() regardless of outcome and is never added to the registry.
+   * Prefers the adapter's own `testConnection()` method when available, which
+   * validates credentials without starting long-running processes (e.g.,
+   * Telegram polling loops). Falls back to a start/stop cycle for adapters
+   * that don't implement the lightweight test path.
    *
    * @param type - The adapter type (e.g., 'telegram', 'webhook')
    * @param config - The adapter-specific configuration to test
@@ -301,7 +302,22 @@ export class AdapterManager {
         return { ok: false, error: 'Failed to create adapter instance' };
       }
 
-      // Noop publisher — test adapter is not registered in the relay
+      // Prefer lightweight testConnection() — avoids starting polling loops,
+      // webhook servers, or other long-running processes that can cause
+      // conflicts (e.g., Telegram 409) when the real adapter starts later.
+      if (adapter.testConnection) {
+        return await Promise.race([
+          adapter.testConnection(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error('Connection test timed out')),
+              CONNECTION_TEST_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+      }
+
+      // Fallback: start/stop cycle for adapters without testConnection()
       const noopRelay = {
         publish: async () => ({ messageId: '', deliveredTo: 0 }),
         onSignal: () => () => {},

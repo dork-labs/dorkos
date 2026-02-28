@@ -8,6 +8,7 @@ import type { RelayPublisher, AdapterStatus, Unsubscribe } from '../../types.js'
 const mockSendMessage = vi.fn().mockResolvedValue({ message_id: 1 });
 const mockSendChatAction = vi.fn().mockResolvedValue(true);
 const mockSetWebhook = vi.fn().mockResolvedValue(true);
+const mockBotInit = vi.fn().mockResolvedValue(undefined);
 const mockBotStart = vi.fn().mockResolvedValue(undefined);
 const mockBotStop = vi.fn().mockResolvedValue(undefined);
 const mockBotCatch = vi.fn();
@@ -37,6 +38,10 @@ vi.mock('grammy', () => {
     catch(handler: (err: unknown) => void) {
       capturedErrorHandler = handler;
       mockBotCatch(handler);
+    }
+
+    async init() {
+      return mockBotInit();
     }
 
     async start(opts?: { drop_pending_updates?: boolean; onStart?: () => void }) {
@@ -375,6 +380,30 @@ describe('TelegramAdapter', () => {
     expect(adapter.getStatus().lastError).toContain('Relay unavailable');
   });
 
+  // --- Echo guard ---
+
+  it('deliver() skips messages originating from this adapter (echo prevention)', async () => {
+    await adapter.start(mockRelay);
+
+    const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Echo!' });
+    // Override 'from' to simulate the adapter's own inbound publish
+    envelope.from = 'relay.human.telegram.bot';
+
+    const result = await adapter.deliver('relay.human.telegram.12345', envelope);
+    expect(result.success).toBe(true);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('deliver() allows messages from non-telegram sources', async () => {
+    await adapter.start(mockRelay);
+
+    const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Agent reply' });
+    // from is 'relay.agent.backend' — should NOT be filtered
+    const result = await adapter.deliver('relay.human.telegram.12345', envelope);
+    expect(result.success).toBe(true);
+    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Agent reply');
+  });
+
   // --- Outbound delivery ---
 
   it('deliver() sends a Telegram message to the correct chat', async () => {
@@ -502,6 +531,29 @@ describe('TelegramAdapter', () => {
 
     // Error count should NOT be incremented for typing signal failures
     expect(adapter.getStatus().errorCount).toBe(0);
+  });
+
+  // --- testConnection() ---
+
+  it('testConnection() returns ok when init succeeds', async () => {
+    const result = await adapter.testConnection();
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('testConnection() returns error when init fails', async () => {
+    mockBotInit.mockRejectedValueOnce(new Error('Unauthorized: invalid token'));
+    const result = await adapter.testConnection();
+    expect(result).toEqual({ ok: false, error: 'Unauthorized: invalid token' });
+  });
+
+  it('testConnection() does NOT start the polling loop', async () => {
+    await adapter.testConnection();
+    expect(mockBotStart).not.toHaveBeenCalled();
+  });
+
+  it('testConnection() does not alter adapter state', async () => {
+    await adapter.testConnection();
+    expect(adapter.getStatus().state).toBe('disconnected');
   });
 
   // --- Webhook mode ---
