@@ -13,6 +13,8 @@ vi.mock('@xyflow/react', () => ({
   Handle: ({ position }: { position: string }) => (
     <div data-testid={`handle-${position}`} />
   ),
+  useStore: (selector: (s: unknown) => unknown) =>
+    selector({ transform: [0, 0, 1] }),
   Position: {
     Left: 'left',
     Right: 'right',

@@ -256,6 +256,7 @@ export const TelegramAdapterConfigSchema = z
     mode: z.enum(['polling', 'webhook']).default('polling'),
     webhookUrl: z.string().url().optional(),
     webhookPort: z.number().int().positive().optional(),
+    webhookSecret: z.string().min(1).optional(),
   })
   .openapi('TelegramAdapterConfig');
 

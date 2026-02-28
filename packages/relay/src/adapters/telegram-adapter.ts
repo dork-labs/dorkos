@@ -19,6 +19,7 @@
  *
  * @module relay/adapters/telegram-adapter
  */
+import crypto from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { Bot, webhookCallback } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
@@ -203,6 +204,15 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
       description: 'Port for the webhook HTTP server.',
       showWhen: { field: 'mode', equals: 'webhook' },
     },
+    {
+      key: 'webhookSecret',
+      label: 'Webhook Secret',
+      type: 'password',
+      required: false,
+      placeholder: 'Auto-generated if empty',
+      description: 'Secret token for validating incoming webhook requests from Telegram.',
+      showWhen: { field: 'mode', equals: 'webhook' },
+    },
   ],
   setupInstructions:
     'Open Telegram and search for **@BotFather**. Send `/newbot`, choose a name and username. Copy the token provided.',
@@ -235,11 +245,18 @@ export class TelegramAdapter implements RelayAdapter {
   readonly subjectPrefix = SUBJECT_PREFIX;
   readonly displayName: string;
 
+  /** Reconnection delay schedule (ms) for polling mode — exponential backoff. */
+  private static readonly RECONNECT_DELAYS = [5_000, 10_000, 30_000, 60_000, 60_000];
+
+  /** Maximum inbound message content length (32 KB). */
+  private static readonly MAX_CONTENT_LENGTH = 32_768;
+
   private readonly config: TelegramAdapterConfig;
   private bot: Bot | null = null;
   private webhookServer: Server | null = null;
   private relay: RelayPublisher | null = null;
   private signalUnsub: Unsubscribe | null = null;
+  private reconnectAttempts = 0;
 
   private status: AdapterStatus = {
     state: 'disconnected',
@@ -346,7 +363,13 @@ export class TelegramAdapter implements RelayAdapter {
     } finally {
       this.bot = null;
       this.relay = null;
-      this.status = { ...this.status, state: 'disconnected' };
+      this.reconnectAttempts = 0;
+      this.status = {
+        state: 'disconnected',
+        messageCount: this.status.messageCount,
+        errorCount: this.status.errorCount,
+        // startedAt intentionally omitted — cleared on stop
+      };
     }
   }
 
@@ -456,23 +479,57 @@ export class TelegramAdapter implements RelayAdapter {
     await bot.init();
 
     // Non-blocking: polling runs in background after successful init.
-    // Route background errors to recordError so they surface in getStatus()
-    // instead of becoming unhandled rejections.
+    // Route background errors to handlePollingError for reconnection.
     bot.start({
       drop_pending_updates: true,
       onStart: () => {
+        this.reconnectAttempts = 0;
         this.status = { ...this.status, state: 'connected' };
       },
     }).catch((err: unknown) => {
-      this.recordError(err);
+      this.handlePollingError(err);
     });
+  }
+
+  /**
+   * Handle a polling error and attempt reconnection with exponential backoff.
+   *
+   * Records the error, then schedules a reconnection attempt if the adapter
+   * has not been stopped externally and the max attempt count has not been reached.
+   *
+   * @param err - The error from the polling loop
+   */
+  private handlePollingError(err: unknown): void {
+    this.recordError(err);
+
+    if (this.reconnectAttempts >= TelegramAdapter.RECONNECT_DELAYS.length) {
+      return;
+    }
+
+    const delay = TelegramAdapter.RECONNECT_DELAYS[this.reconnectAttempts]!;
+    this.reconnectAttempts++;
+
+    setTimeout(() => {
+      // If the adapter was stopped externally, do not reconnect
+      if (this.status.state === 'disconnected') return;
+
+      // Create a fresh bot instance for the reconnection attempt
+      const newBot = new Bot(this.config.token);
+      newBot.api.config.use(autoRetry());
+      newBot.on('message', (ctx) => this.handleInboundMessage(ctx));
+      newBot.catch((e) => this.recordError(e));
+      this.bot = newBot;
+
+      this.startPollingMode(newBot).catch((e) => this.handlePollingError(e));
+    }, delay);
   }
 
   /**
    * Start grammy bot in webhook mode using a node:http server.
    *
-   * Registers the webhook URL with Telegram, creates an HTTP server using
-   * grammy's `webhookCallback`, and starts listening on the configured port.
+   * Registers the webhook URL with Telegram (including a secret token for
+   * request validation), creates an HTTP server using grammy's
+   * `webhookCallback`, and starts listening on the configured port.
    * The server is stored in `webhookServer` for graceful shutdown in `stop()`.
    *
    * @param bot - The grammy Bot instance
@@ -486,11 +543,21 @@ export class TelegramAdapter implements RelayAdapter {
       );
     }
 
-    await bot.api.setWebhook(webhookUrl);
+    // Auto-generate secret if not provided in config
+    const secret = this.config.webhookSecret ?? crypto.randomUUID();
+
+    await bot.api.setWebhook(webhookUrl, { secret_token: secret });
 
     const port = webhookPort ?? DEFAULT_WEBHOOK_PORT;
-    const handler = webhookCallback(bot, 'http');
+    const handler = webhookCallback(bot, 'http', { secretToken: secret });
     const server = createServer(handler);
+
+    // Harden the HTTP server with timeout and size limits
+    server.headersTimeout = 10_000;
+    server.requestTimeout = 30_000;
+    server.maxHeadersCount = 50;
+    server.keepAliveTimeout = 5_000;
+
     this.webhookServer = server;
 
     await new Promise<void>((resolve, reject) => {
@@ -529,8 +596,11 @@ export class TelegramAdapter implements RelayAdapter {
     const isGroup = isGroupChat(chat.type);
     const subject = buildSubject(chat.id, isGroup);
 
-    const text = message.text ?? message.caption ?? '';
-    if (!text) return; // Skip non-text messages (photos, stickers, etc.) without caption
+    const rawText = message.text ?? message.caption ?? '';
+    if (!rawText) return; // Skip non-text messages (photos, stickers, etc.) without caption
+
+    // Cap inbound content to prevent oversized payloads from reaching the relay
+    const text = rawText.slice(0, TelegramAdapter.MAX_CONTENT_LENGTH);
 
     const senderName = from
       ? [from.first_name, from.last_name].filter(Boolean).join(' ') ||

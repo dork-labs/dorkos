@@ -568,7 +568,10 @@ describe('TelegramAdapter', () => {
 
     await webhookAdapter.start(mockRelay);
 
-    expect(mockSetWebhook).toHaveBeenCalledWith('https://example.com/webhook');
+    expect(mockSetWebhook).toHaveBeenCalledWith(
+      'https://example.com/webhook',
+      expect.objectContaining({ secret_token: expect.any(String) }),
+    );
 
     await webhookAdapter.stop();
   });
@@ -592,5 +595,130 @@ describe('TelegramAdapter', () => {
     status.errorCount = 999;
 
     expect(adapter.getStatus().errorCount).toBe(0);
+  });
+
+  // --- C3: Webhook secret token ---
+
+  it('webhook mode: passes secret_token to setWebhook and webhookCallback', async () => {
+    const { webhookCallback } = await import('grammy');
+
+    const webhookAdapter = new TelegramAdapter('tg-webhook', {
+      token: 'test-token',
+      mode: 'webhook',
+      webhookUrl: 'https://example.com/webhook',
+      webhookPort: 8443,
+      webhookSecret: 'my-fixed-secret',
+    });
+
+    await webhookAdapter.start(mockRelay);
+
+    // setWebhook should receive the secret_token option
+    expect(mockSetWebhook).toHaveBeenCalledWith(
+      'https://example.com/webhook',
+      { secret_token: 'my-fixed-secret' },
+    );
+
+    // webhookCallback should receive the secretToken option
+    expect(webhookCallback).toHaveBeenCalledWith(
+      expect.anything(),
+      'http',
+      { secretToken: 'my-fixed-secret' },
+    );
+
+    await webhookAdapter.stop();
+  });
+
+  it('webhook mode: auto-generates secret when webhookSecret is not provided', async () => {
+    const webhookAdapter = new TelegramAdapter('tg-webhook', {
+      token: 'test-token',
+      mode: 'webhook',
+      webhookUrl: 'https://example.com/webhook',
+      webhookPort: 8443,
+    });
+
+    await webhookAdapter.start(mockRelay);
+
+    // Should still pass a secret_token (auto-generated)
+    expect(mockSetWebhook).toHaveBeenCalledWith(
+      'https://example.com/webhook',
+      expect.objectContaining({ secret_token: expect.any(String) }),
+    );
+
+    // The auto-generated secret should be non-empty
+    const calledSecret = mockSetWebhook.mock.calls[0][1].secret_token as string;
+    expect(calledSecret.length).toBeGreaterThan(0);
+
+    await webhookAdapter.stop();
+  });
+
+  // --- I7: Polling reconnection with exponential backoff ---
+
+  it('reconnects with backoff when polling fails', async () => {
+    vi.useFakeTimers();
+
+    // First bot.start() rejects to simulate a polling failure
+    let startCallCount = 0;
+    mockBotStart.mockImplementation(async (opts?: { onStart?: () => void }) => {
+      startCallCount++;
+      if (startCallCount === 1) {
+        // First call: succeeds initially then "crashes" — simulate with rejection
+        if (opts?.onStart) opts.onStart();
+        // After the polling loop "starts", simulate a late rejection
+        throw new Error('Polling connection lost');
+      }
+      // Subsequent reconnect calls succeed
+      if (opts?.onStart) opts.onStart();
+    });
+
+    await adapter.start(mockRelay);
+
+    // Allow the .catch() handler on bot.start() to execute
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Error should have been recorded
+    expect(adapter.getStatus().errorCount).toBe(1);
+
+    // Advance past first reconnect delay (5000ms)
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    // The adapter should attempt to reconnect (new bot created and init called)
+    // Initial init(1) + reconnect init(2)
+    expect(mockBotInit).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  // --- D3: startedAt cleared on stop ---
+
+  it('stop() clears startedAt from status', async () => {
+    await adapter.start(mockRelay);
+    expect(adapter.getStatus().startedAt).toBeDefined();
+
+    await adapter.stop();
+    expect(adapter.getStatus().startedAt).toBeUndefined();
+  });
+
+  // --- D4: Inbound content capped at 32KB ---
+
+  it('caps inbound message content at MAX_CONTENT_LENGTH (32KB)', async () => {
+    await adapter.start(mockRelay);
+
+    const longText = 'X'.repeat(40_000);
+    const ctx = createInboundCtx({ text: longText });
+    await capturedMessageHandler!(ctx);
+
+    const publishedPayload = vi.mocked(mockRelay.publish).mock.calls[0][1] as { content: string };
+    expect(publishedPayload.content.length).toBe(32_768);
+  });
+
+  it('does not truncate inbound content under 32KB', async () => {
+    await adapter.start(mockRelay);
+
+    const normalText = 'Hello world';
+    const ctx = createInboundCtx({ text: normalText });
+    await capturedMessageHandler!(ctx);
+
+    const publishedPayload = vi.mocked(mockRelay.publish).mock.calls[0][1] as { content: string };
+    expect(publishedPayload.content).toBe('Hello world');
   });
 });

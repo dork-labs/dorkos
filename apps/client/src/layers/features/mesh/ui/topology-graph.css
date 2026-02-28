@@ -1,0 +1,49 @@
+/* React Flow topology graph custom styles */
+.topology-container .react-flow {
+  --xy-background-pattern-dots-color-default: var(--color-border);
+  --xy-node-background-color-default: var(--color-card);
+  --xy-node-border-default: 1px solid var(--color-border);
+  --xy-node-boxshadow-hover-default: 0 0 0 2px var(--color-primary);
+  --xy-node-boxshadow-selected-default: 0 0 0 2px var(--color-primary);
+  --xy-edge-stroke-default: var(--color-border);
+  --xy-edge-stroke-width-default: 1.5;
+}
+
+/* Hide connection handles at rest, reveal on hover/select/connecting */
+.topology-container .react-flow__handle {
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.topology-container .react-flow__node:hover .react-flow__handle,
+.topology-container .react-flow__node.selected .react-flow__handle,
+.topology-container .react-flow.connecting .react-flow__handle {
+  opacity: 1;
+}
+
+/* Drag-to-connect: dim adapter nodes (source), highlight agent nodes (targets) */
+.topology-container.is-connecting .react-flow__node-adapter {
+  opacity: 0.4;
+  transition: opacity 150ms ease-out;
+}
+
+.topology-container.is-connecting .react-flow__node-agent {
+  transition: box-shadow 150ms ease-out;
+}
+
+.topology-container .react-flow__connection .react-flow__connection-path {
+  stroke-dasharray: 6 3;
+  animation: marching-ants 0.5s linear infinite;
+}
+
+@keyframes marching-ants {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topology-container .react-flow__connection .react-flow__connection-path {
+    animation: none;
+  }
+}

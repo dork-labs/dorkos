@@ -8,6 +8,7 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
   writeFile: vi.fn().mockResolvedValue(undefined),
   mkdir: vi.fn().mockResolvedValue(undefined),
+  rename: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock chokidar
@@ -83,7 +84,7 @@ vi.mock('@dorkos/relay', async () => {
   };
 });
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rename } from 'node:fs/promises';
 import chokidar from 'chokidar';
 
 const VALID_CONFIG = JSON.stringify({
@@ -253,10 +254,11 @@ describe('AdapterManager', () => {
       await manager.enable('wh-github');
 
       expect(writeFile).toHaveBeenCalledWith(
-        configPath,
+        `${configPath}.tmp`,
         expect.stringContaining('"enabled": true'),
         'utf-8',
       );
+      expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
       expect(registry.register).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'wh-github' }),
       );
@@ -279,10 +281,11 @@ describe('AdapterManager', () => {
       await manager.disable('tg-main');
 
       expect(writeFile).toHaveBeenCalledWith(
-        configPath,
+        `${configPath}.tmp`,
         expect.stringContaining('"enabled": false'),
         'utf-8',
       );
+      expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
       expect(registry.unregister).toHaveBeenCalledWith('tg-main');
     });
 
@@ -686,6 +689,48 @@ describe('AdapterManager', () => {
 
       vi.useRealTimers();
     });
+
+    it('clears timeout timer on successful testConnection()', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+      await manager.testConnection('telegram', {
+        token: 'test-token',
+        mode: 'polling',
+      });
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      clearTimeoutSpy.mockRestore();
+    });
+
+    it('clears timeout timer on successful fallback start/stop', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+      const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
+      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
+        id,
+        subjectPrefix: 'relay.human.telegram',
+        displayName: `Telegram (${id})`,
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: vi.fn().mockReturnValue({
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        }),
+        // No testConnection — forces fallback
+      }));
+
+      await manager.testConnection('telegram', { token: 't', mode: 'polling' });
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      clearTimeoutSpy.mockRestore();
+    });
   });
 
   describe('addAdapter()', () => {
@@ -700,10 +745,11 @@ describe('AdapterManager', () => {
       });
 
       expect(writeFile).toHaveBeenCalledWith(
-        configPath,
+        `${configPath}.tmp`,
         expect.stringContaining('"wh-new"'),
         'utf-8',
       );
+      expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
       const adapters = manager.listAdapters();
       expect(adapters).toHaveLength(1);
       expect(adapters[0].config.id).toBe('wh-new');
@@ -945,6 +991,33 @@ describe('AdapterManager', () => {
         expect(err).toBeInstanceOf(AdapterError);
         expect((err as AdapterError).code).toBe('NOT_FOUND');
       }
+    });
+  });
+
+  describe('saveConfig atomicity (via addAdapter)', () => {
+    it('writes to a tmp file first, then renames to the final path', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await manager.initialize();
+      vi.clearAllMocks();
+
+      await manager.addAdapter('webhook', 'wh-atomic', {
+        inbound: { subject: 'relay.webhook.test', secret: 'secret-16-chars!!' },
+        outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+      });
+
+      // writeFile should write to tmp path
+      expect(writeFile).toHaveBeenCalledWith(
+        `${configPath}.tmp`,
+        expect.any(String),
+        'utf-8',
+      );
+      // rename should move tmp to final path
+      expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
+
+      // rename should be called after writeFile
+      const writeOrder = vi.mocked(writeFile).mock.invocationCallOrder[0];
+      const renameOrder = vi.mocked(rename).mock.invocationCallOrder[0];
+      expect(renameOrder).toBeGreaterThan(writeOrder);
     });
   });
 

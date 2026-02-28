@@ -7,15 +7,19 @@ import {
   BackgroundVariant,
   MiniMap,
   Controls,
+  applyNodeChanges,
+  applyEdgeChanges,
   type Node,
   type Edge,
   type NodeTypes,
   type EdgeTypes,
+  type NodeChange,
+  type EdgeChange,
   type Connection,
   type IsValidConnection,
 } from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Globe, RotateCcw } from 'lucide-react';
 import { AgentNode, type AgentNodeData } from './AgentNode';
 import { AdapterNode, type AdapterNodeData, ADAPTER_NODE_WIDTH, ADAPTER_NODE_HEIGHT } from './AdapterNode';
 import { BindingEdge, type BindingEdgeData } from './BindingEdge';
@@ -29,6 +33,8 @@ import { useTopology } from '@/layers/entities/mesh';
 import { useBindings, useCreateBinding, useDeleteBinding } from '@/layers/entities/binding';
 import { useRelayAdapters, useRelayEnabled } from '@/layers/entities/relay';
 import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
+import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
+import './topology-graph.css';
 
 const elk = new ELK();
 
@@ -164,6 +170,10 @@ interface TopologyGraphProps {
   onSelectAgent?: (agentId: string) => void;
   /** Called when the Settings action is triggered from the NodeToolbar. */
   onOpenSettings?: (agentId: string) => void;
+  /** Called to switch to the Discovery tab from the empty state. */
+  onGoToDiscovery?: () => void;
+  /** Called when the Chat action is triggered from the NodeToolbar. */
+  onOpenChat?: (agentDir: string) => void;
 }
 
 /**
@@ -181,6 +191,30 @@ export function TopologyGraph(props: TopologyGraphProps) {
   );
 }
 
+/** Empty state shown when no agents have been discovered yet. */
+function TopologyEmptyState({ onGoToDiscovery }: { onGoToDiscovery?: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+      <Globe className="size-10 text-muted-foreground/50" />
+      <div>
+        <h3 className="text-sm font-medium">No agents discovered yet</h3>
+        <p className="mt-1 max-w-[240px] text-xs text-muted-foreground">
+          Discover agents from your workspace to see them on the topology graph.
+        </p>
+      </div>
+      {onGoToDiscovery && (
+        <button
+          type="button"
+          onClick={onGoToDiscovery}
+          className="mt-1 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+        >
+          Go to Discovery
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** Pending connection state for the BindingDialog. */
 interface PendingConnection {
   sourceAdapterId: string;
@@ -190,7 +224,7 @@ interface PendingConnection {
   targetAgentDir: string;
 }
 
-function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProps) {
+function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, onOpenChat }: TopologyGraphProps) {
   const { setCenter, getZoom } = useReactFlow();
   const { data: topology, isLoading, isError, refetch } = useTopology();
 
@@ -205,8 +239,13 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
   const { mutate: deleteBindingMutate } = useDeleteBinding();
 
   const [layoutedNodes, setLayoutedNodes] = useState<Node[]>([]);
+  const [layoutedEdges, setLayoutedEdges] = useState<Edge[]>([]);
   const [isLayouting, setIsLayouting] = useState(true);
   const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
+  // Track drag-to-connect state for visual feedback
+  const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
+  // Track whether user has manually dragged any nodes (for Reset Layout button)
+  const [hasDraggedNodes, setHasDraggedNodes] = useState(false);
 
   // Stable refs for callback props to prevent useMemo re-creation on each render.
   // Without refs, new callback references cause the node/edge useMemo to recompute,
@@ -215,6 +254,13 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
   onOpenSettingsRef.current = onOpenSettings;
   const onSelectAgentRef = useRef(onSelectAgent);
   onSelectAgentRef.current = onSelectAgent;
+  const onOpenChatRef = useRef(onOpenChat);
+  onOpenChatRef.current = onOpenChat;
+
+  // Track manual position overrides from user drag (session-only, not persisted)
+  const manualPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // Counter to force re-layout when reset is clicked
+  const [layoutVersion, setLayoutVersion] = useState(0);
 
   /** Count bindings for a given adapter ID. */
   const bindingCountByAdapter = useMemo(() => {
@@ -225,14 +271,69 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
     return counts;
   }, [bindings]);
 
+  /** Extract binding UUID from a binding edge ID. */
+  const extractBindingId = useCallback((edgeId: string) => edgeId.replace(/^binding:/, ''), []);
+
+  /** Delete a binding by its edge ID. Used by both edge change handler and BindingEdge UI. */
   const handleDeleteBinding = useCallback(
     (edgeId: string) => {
-      // Edge IDs for bindings are prefixed with 'binding:' — extract the binding UUID
-      const bindingId = edgeId.replace(/^binding:/, '');
-      deleteBindingMutate(bindingId);
+      deleteBindingMutate(extractBindingId(edgeId));
     },
-    [deleteBindingMutate],
+    [deleteBindingMutate, extractBindingId],
   );
+
+  /**
+   * Handle node changes (drag, selection) in controlled mode.
+   * React Flow requires this for ANY node interactivity when using controlled `nodes` prop.
+   */
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setLayoutedNodes((prev) => applyNodeChanges(changes, prev));
+    },
+    [],
+  );
+
+  /** Capture manual position when user finishes dragging a node. */
+  const handleNodeDragStop = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      manualPositions.current.set(node.id, node.position);
+      setHasDraggedNodes(true);
+    },
+    [],
+  );
+
+  /**
+   * Handle edge changes (selection, removal via keyboard) in controlled mode.
+   * Intercepts `remove` changes for binding edges to delete via API instead of local state.
+   */
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      // Intercept binding edge removals — delete via API, don't apply locally
+      const nonBindingChanges: EdgeChange[] = [];
+      for (const change of changes) {
+        if (change.type === 'remove') {
+          const edgeId = change.id;
+          if (edgeId.startsWith('binding:')) {
+            deleteBindingMutate(extractBindingId(edgeId));
+            continue; // Skip — API deletion triggers data refetch
+          }
+        }
+        nonBindingChanges.push(change);
+      }
+      // Apply non-binding changes (selection, etc.) to local state
+      if (nonBindingChanges.length > 0) {
+        setLayoutedEdges((prev) => applyEdgeChanges(nonBindingChanges, prev));
+      }
+    },
+    [deleteBindingMutate, extractBindingId],
+  );
+
+  /** Clear all manual position overrides and re-run ELK layout. */
+  const handleResetLayout = useCallback(() => {
+    manualPositions.current.clear();
+    setHasDraggedNodes(false);
+    setLayoutVersion((v) => v + 1);
+  }, []);
 
   const { rawNodes, rawEdges, legendEntries, useGroups } = useMemo(() => {
     if (!namespaces?.length)
@@ -278,8 +379,8 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
       const groupId = `group:${ns.namespace}`;
 
       const activeCount = ns.agents.filter((a) => {
-        const health = (a as Record<string, unknown>).healthStatus;
-        return health === 'active';
+        const typedAgent = a as TopologyAgent;
+        return typedAgent.healthStatus === 'active';
       }).length;
 
       if (multiNamespace) {
@@ -297,7 +398,7 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
       }
 
       for (const agent of ns.agents) {
-        const enriched = agent as Record<string, unknown>;
+        const typedAgent = agent as TopologyAgent & { dir?: string; agentDir?: string };
         const agentNode: Node = {
           id: agent.id,
           type: 'agent',
@@ -305,17 +406,16 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
           data: {
             label: agent.name,
             runtime: agent.runtime,
-            healthStatus:
-              (enriched.healthStatus as AgentNodeData['healthStatus']) ?? 'stale',
+            healthStatus: typedAgent.healthStatus ?? 'stale',
             capabilities: agent.capabilities ?? [],
             namespace: ns.namespace,
             namespaceColor: color,
             description: agent.description || undefined,
-            relayAdapters: (enriched.relayAdapters as string[]) ?? [],
-            relaySubject: (enriched.relaySubject as string | null) ?? null,
-            pulseScheduleCount: (enriched.pulseScheduleCount as number) ?? 0,
-            lastSeenAt: (enriched.lastSeenAt as string | null) ?? null,
-            lastSeenEvent: (enriched.lastSeenEvent as string | null) ?? null,
+            relayAdapters: typedAgent.relayAdapters ?? [],
+            relaySubject: typedAgent.relaySubject ?? null,
+            pulseScheduleCount: typedAgent.pulseScheduleCount ?? 0,
+            lastSeenAt: typedAgent.lastSeenAt ?? null,
+            lastSeenEvent: typedAgent.lastSeenEvent ?? null,
             budget: agent.budget
               ? {
                   maxHopsPerMessage: agent.budget.maxHopsPerMessage,
@@ -325,12 +425,13 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
             behavior: agent.behavior
               ? { responseMode: agent.behavior.responseMode }
               : undefined,
-            color: (enriched.color as string | null) ?? null,
-            emoji: (enriched.icon as string | null) ?? null,
+            color: typedAgent.color ?? null,
+            emoji: typedAgent.icon ?? null,
             // Store agentDir for binding creation
-            agentDir: (enriched.dir as string | null) ?? (enriched.agentDir as string | null) ?? '',
+            agentDir: typedAgent.dir ?? typedAgent.agentDir ?? '',
             onOpenSettings: (id: string) => onOpenSettingsRef.current?.(id),
             onViewHealth: (id: string) => onSelectAgentRef.current?.(id),
+            onOpenChat: (_id: string, dir: string) => onOpenChatRef.current?.(dir),
           } satisfies AgentNodeData,
         };
 
@@ -358,6 +459,7 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
           source: sourceId,
           target: targetId,
           type: 'binding',
+          deletable: true,
           data: {
             label: binding.label || undefined,
             sessionStrategy: binding.sessionStrategy,
@@ -384,12 +486,12 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
         target: targetId,
         type: isDeny ? 'cross-namespace-deny' : 'cross-namespace',
         animated: !isDeny,
+        deletable: false,
         data: { label: `${rule.sourceNamespace} \u203a ${rule.targetNamespace}` },
       });
     }
 
     return { rawNodes: nodes, rawEdges: edges, legendEntries: legend, useGroups: multiNamespace };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks accessed via stable refs to prevent infinite layout loop
   }, [namespaces, accessRules, relayEnabled, adapters, bindings, bindingCountByAdapter, handleDeleteBinding]);
 
   useEffect(() => {
@@ -398,7 +500,13 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
     applyElkLayout(rawNodes, rawEdges, useGroups)
       .then((positioned) => {
         if (!cancelled) {
-          setLayoutedNodes(positioned);
+          // Merge manual position overrides from user drags
+          const merged = positioned.map((node) => {
+            const manual = manualPositions.current.get(node.id);
+            return manual ? { ...node, position: manual } : node;
+          });
+          setLayoutedNodes(merged);
+          setLayoutedEdges(rawEdges);
           setIsLayouting(false);
         }
       })
@@ -410,7 +518,8 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
     return () => {
       cancelled = true;
     };
-  }, [rawNodes, rawEdges, useGroups]);
+    // layoutVersion triggers re-layout when "Reset Layout" is clicked
+  }, [rawNodes, rawEdges, useGroups, layoutVersion]);
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -452,15 +561,15 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
       const targetNode = rawNodes.find((n) => n.id === connection.target);
       if (sourceNode?.type !== 'adapter' || targetNode?.type !== 'agent') return;
 
-      const adapterData = sourceNode.data as unknown as AdapterNodeData;
-      const agentData = targetNode.data as unknown as AgentNodeData;
+      const adapterData = sourceNode.data as AdapterNodeData;
+      const agentData = targetNode.data as AgentNodeData;
 
       setPendingConnection({
         sourceAdapterId: sourceNode.id.replace(/^adapter:/, ''),
         sourceAdapterName: adapterData.adapterName,
         targetAgentId: targetNode.id,
         targetAgentName: agentData.label,
-        targetAgentDir: (agentData.agentDir as string) ?? '',
+        targetAgentDir: agentData.agentDir ?? '',
       });
     },
     [rawNodes],
@@ -482,6 +591,23 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
     [pendingConnection, createBindingMutate],
   );
 
+  /** Track when a drag-to-connect starts from an adapter. */
+  const handleConnectStart = useCallback(
+    (_: MouseEvent | TouchEvent, params: { nodeId: string | null }) => {
+      if (!params.nodeId) return;
+      const sourceNode = rawNodes.find((n) => n.id === params.nodeId);
+      if (sourceNode?.type === 'adapter') {
+        setConnectingFrom(params.nodeId);
+      }
+    },
+    [rawNodes],
+  );
+
+  /** Clear drag-to-connect state when connection ends. */
+  const handleConnectEnd = useCallback(() => {
+    setConnectingFrom(null);
+  }, []);
+
   // Determine if the canvas should allow connections (only when adapters exist)
   const hasAdapters = relayEnabled && (adapters?.length ?? 0) > 0;
   const hasBindings = (bindings?.length ?? 0) > 0;
@@ -500,6 +626,7 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
         <span>Failed to load topology</span>
         <button
+          type="button"
           onClick={() => refetch()}
           className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
         >
@@ -510,35 +637,40 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
   }
 
   if (!rawNodes.length) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        No agents discovered yet
-      </div>
-    );
+    return <TopologyEmptyState onGoToDiscovery={onGoToDiscovery} />;
   }
 
+  // Count nodes for a11y summary
+  const agentCount = rawNodes.filter((n) => n.type === 'agent').length;
+  const adapterCount = rawNodes.filter((n) => n.type === 'adapter').length;
+  const bindingCount = rawEdges.filter((e) => e.type === 'binding').length;
+
   return (
-    <div className="topology-container absolute inset-0">
-      <style>{`
-        .topology-container .react-flow {
-          --xy-background-pattern-dots-color-default: var(--color-border);
-          --xy-node-background-color-default: var(--color-card);
-          --xy-node-border-default: 1px solid var(--color-border);
-          --xy-node-boxshadow-hover-default: 0 0 0 2px var(--color-primary);
-          --xy-node-boxshadow-selected-default: 0 0 0 2px var(--color-primary);
-          --xy-edge-stroke-default: var(--color-border);
-          --xy-edge-stroke-width-default: 1.5;
-        }
-      `}</style>
+    <div
+      className={`topology-container absolute inset-0${connectingFrom ? ' is-connecting' : ''}`}
+      role="img"
+      aria-roledescription="network topology graph"
+    >
+      {/* Screen-reader summary */}
+      <div className="sr-only">
+        Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} adapter{adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}
+      </div>
       <ReactFlow
         nodes={layoutedNodes}
-        edges={rawEdges}
+        edges={layoutedEdges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={handleEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeDragStop={handleNodeDragStop}
         onConnect={hasAdapters ? handleConnect : undefined}
+        onConnectStart={hasAdapters ? handleConnectStart : undefined}
+        onConnectEnd={hasAdapters ? handleConnectEnd : undefined}
         isValidConnection={hasAdapters ? isValidConnection : undefined}
         nodesConnectable={hasAdapters}
+        nodesFocusable
+        edgesFocusable
         fitView
         fitViewOptions={{ duration: 400, padding: 0.15 }}
         colorMode="system"
@@ -549,13 +681,31 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings }: TopologyGraphProp
         <MiniMap
           nodeColor={(n) => {
             if (n.type === 'adapter') return '#6366f1'; // indigo for adapters
-            return (n.data?.namespaceColor as string | undefined) ?? '#94a3b8';
+            // Color-code agents by health status
+            const health = n.data?.healthStatus as string | undefined;
+            if (health === 'active') return '#22c55e'; // green
+            if (health === 'inactive') return '#f59e0b'; // amber
+            return '#94a3b8'; // gray for stale/unknown
           }}
           pannable
           zoomable
+          className="!bg-card/80 !backdrop-blur-sm"
           style={{ height: 80 }}
         />
         <Controls showInteractive={false} />
+        {hasDraggedNodes && (
+          <div className="absolute bottom-2 left-2 z-10">
+            <button
+              type="button"
+              onClick={handleResetLayout}
+              title="Reset Layout"
+              className="flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+            >
+              <RotateCcw className="size-3" />
+              Reset Layout
+            </button>
+          </div>
+        )}
         <TopologyLegend namespaces={legendEntries} />
       </ReactFlow>
       {/* Empty state hints for adapter/binding scenarios */}

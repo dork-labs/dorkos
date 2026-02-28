@@ -40,6 +40,18 @@ vi.mock('@/layers/entities/mesh', () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Mock session entities (useDirectoryState needed by MeshPanel for chat nav)
+// ---------------------------------------------------------------------------
+
+const mockSetDir = vi.fn();
+vi.mock('@/layers/entities/session', () => ({
+  useDirectoryState: () => [null, mockSetDir],
+  useSessionId: () => [null, vi.fn()],
+  useSessions: () => ({ data: [], isLoading: false }),
+  useDefaultCwd: () => {},
+}));
+
+// ---------------------------------------------------------------------------
 // Mock @radix-ui/react-tabs to render all tab panels simultaneously.
 // ---------------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useState, useCallback } from 'react';
 import { Loader2, Network, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Tabs, TabsList, TabsTrigger, TabsContent, FeatureDisabledState } from '@/layers/shared/ui';
@@ -10,6 +10,7 @@ import {
   useUnregisterAgent,
 } from '@/layers/entities/mesh';
 import type { AgentManifest, DenialRecord } from '@dorkos/shared/mesh-schemas';
+import { useDirectoryState } from '@/layers/entities/session';
 import { MeshStatsHeader } from './MeshStatsHeader';
 import { AgentHealthDetail } from './AgentHealthDetail';
 import { TopologyPanel } from './TopologyPanel';
@@ -147,6 +148,16 @@ export function MeshPanel() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('topology');
 
+  const [, setDir] = useDirectoryState();
+
+  /** Navigate to agent's working directory to start a chat session. */
+  const handleOpenChat = useCallback(
+    (agentDir: string) => {
+      setDir(agentDir);
+    },
+    [setDir],
+  );
+
   const hasAgents = agents.length > 0;
   // Only show Mode A (discovery flow) when we *know* there are no agents.
   // An error state is distinct: we can't tell if agents exist, so don't
@@ -233,6 +244,7 @@ export function MeshPanel() {
                 >
                   <LazyTopologyGraph
                     onSelectAgent={setSelectedAgentId}
+                    onOpenChat={handleOpenChat}
                     // onOpenSettings omitted — requires agent projectPath which isn't
                     // exposed in the topology data yet. Settings button in NodeToolbar
                     // hides itself when this callback is absent.

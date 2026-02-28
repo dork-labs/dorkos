@@ -496,4 +496,153 @@ describe('TopologyGraph', () => {
       expect(whNode?.data.bindingCount).toBe(0);
     });
   });
+
+  describe('namespace group nodes (multi-namespace)', () => {
+    const multiNamespaceTopology = {
+      namespaces: [
+        {
+          namespace: 'production',
+          agentCount: 1,
+          agents: [
+            {
+              id: 'agent-prod-1',
+              name: 'ProdBuilder',
+              runtime: 'claude-code',
+              capabilities: ['deploy'],
+              healthStatus: 'active',
+              dir: '/projects/prod',
+            },
+          ],
+        },
+        {
+          namespace: 'staging',
+          agentCount: 1,
+          agents: [
+            {
+              id: 'agent-stg-1',
+              name: 'StageTester',
+              runtime: 'claude-code',
+              capabilities: ['test'],
+              healthStatus: 'stale',
+              dir: '/projects/staging',
+            },
+          ],
+        },
+      ],
+      accessRules: [
+        { sourceNamespace: 'staging', targetNamespace: 'production', action: 'allow' },
+        { sourceNamespace: 'production', targetNamespace: 'staging', action: 'deny' },
+      ],
+    };
+
+    it('creates namespace-group nodes for multi-namespace topologies', async () => {
+      setupDefaults({ topology: multiNamespaceTopology, relayEnabled: false, adapters: [], bindings: [] });
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      expect(screen.getByTestId('node-group:production')).toBeInTheDocument();
+      expect(screen.getByTestId('node-group:staging')).toBeInTheDocument();
+    });
+
+    it('sets parentId on agent nodes in multi-namespace topologies', async () => {
+      setupDefaults({ topology: multiNamespaceTopology, relayEnabled: false, adapters: [], bindings: [] });
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; parentId?: string; extent?: string }>;
+      const prodAgent = nodes.find((n) => n.id === 'agent-prod-1');
+      const stgAgent = nodes.find((n) => n.id === 'agent-stg-1');
+
+      expect(prodAgent?.parentId).toBe('group:production');
+      expect(prodAgent?.extent).toBe('parent');
+      expect(stgAgent?.parentId).toBe('group:staging');
+      expect(stgAgent?.extent).toBe('parent');
+    });
+
+    it('does not create namespace-group nodes for single-namespace topologies', async () => {
+      setupDefaults({ relayEnabled: false, adapters: [], bindings: [] });
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; type: string }>;
+      const groupNodes = nodes.filter((n) => n.type === 'namespace-group');
+      expect(groupNodes).toHaveLength(0);
+    });
+
+    it('does not set parentId on agent nodes in single-namespace topologies', async () => {
+      setupDefaults({ relayEnabled: false, adapters: [], bindings: [] });
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; parentId?: string }>;
+      const agentNodes = nodes.filter((n) => !n.id.startsWith('group:') && !n.id.startsWith('adapter:'));
+      for (const agent of agentNodes) {
+        expect(agent.parentId).toBeUndefined();
+      }
+    });
+
+    it('creates no spoke edges — agents are visually inside groups', async () => {
+      setupDefaults({ topology: multiNamespaceTopology, relayEnabled: false, adapters: [], bindings: [] });
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      const edges = capturedReactFlowProps.edges as Array<{ id: string; type: string }>;
+      // No namespace-internal (spoke) edges should exist
+      const spokeEdges = edges.filter((e) => e.type === 'namespace-internal');
+      expect(spokeEdges).toHaveLength(0);
+    });
+
+    it('creates cross-namespace edges connecting group nodes', async () => {
+      setupDefaults({ topology: multiNamespaceTopology, relayEnabled: false, adapters: [], bindings: [] });
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      const edges = capturedReactFlowProps.edges as Array<{
+        id: string;
+        type: string;
+        source: string;
+        target: string;
+      }>;
+      const crossEdges = edges.filter((e) => e.type === 'cross-namespace');
+      const denyEdges = edges.filter((e) => e.type === 'cross-namespace-deny');
+
+      expect(crossEdges).toHaveLength(1);
+      expect(crossEdges[0].source).toBe('group:staging');
+      expect(crossEdges[0].target).toBe('group:production');
+
+      expect(denyEdges).toHaveLength(1);
+      expect(denyEdges[0].source).toBe('group:production');
+      expect(denyEdges[0].target).toBe('group:staging');
+    });
+
+    it('registers namespace-group in node types', async () => {
+      setupDefaults();
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      const nodeTypes = capturedReactFlowProps.nodeTypes as Record<string, unknown>;
+      expect(nodeTypes).toHaveProperty('namespace-group');
+    });
+  });
 });

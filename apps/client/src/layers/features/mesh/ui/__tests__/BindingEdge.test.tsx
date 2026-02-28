@@ -16,6 +16,8 @@ vi.mock('@xyflow/react', () => ({
     <div data-testid="edge-label-renderer">{children}</div>
   ),
   getBezierPath: () => ['M0,0 C50,0 50,100 100,100', 50, 50],
+  useStore: (selector: (s: unknown) => unknown) =>
+    selector({ transform: [0, 0, 1] }),
   Position: {
     Left: 'left',
     Right: 'right',
@@ -65,57 +67,70 @@ describe('BindingEdge', () => {
       expect(screen.getByTestId('edge-path-binding-edge-1')).toBeInTheDocument();
     });
 
-    it('renders the label renderer wrapper', () => {
-      render(<BindingEdge {...BASE_EDGE_PROPS} />);
-      expect(screen.getByTestId('edge-label-renderer')).toBeInTheDocument();
+    it('does not render label at rest (hover-to-reveal)', () => {
+      render(<BindingEdge {...BASE_EDGE_PROPS} data={{}} />);
+      expect(screen.queryByTestId('edge-label-renderer')).not.toBeInTheDocument();
     });
   });
 
   describe('label display', () => {
-    it('shows explicit label when provided', () => {
+    it('shows explicit label when selected', () => {
       render(
         <BindingEdge
           {...BASE_EDGE_PROPS}
+          selected
           data={{ label: 'Customer Support', sessionStrategy: 'per-chat' }}
         />,
       );
       expect(screen.getByText('Customer Support')).toBeInTheDocument();
     });
 
-    it('falls back to sessionStrategy when no label', () => {
+    it('falls back to sessionStrategy when no label and selected', () => {
       render(
         <BindingEdge
           {...BASE_EDGE_PROPS}
+          selected
           data={{ sessionStrategy: 'per-user' }}
         />,
       );
       expect(screen.getByText('per-user')).toBeInTheDocument();
     });
 
-    it('falls back to "Binding" when neither label nor sessionStrategy provided', () => {
-      render(<BindingEdge {...BASE_EDGE_PROPS} data={{}} />);
+    it('falls back to "Binding" when neither label nor sessionStrategy and selected', () => {
+      render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{}} />);
       expect(screen.getByText('Binding')).toBeInTheDocument();
     });
 
-    it('shows "Binding" when data is undefined', () => {
-      render(<BindingEdge {...BASE_EDGE_PROPS} />);
+    it('shows "Binding" when data is undefined and selected', () => {
+      render(<BindingEdge {...BASE_EDGE_PROPS} selected />);
       expect(screen.getByText('Binding')).toBeInTheDocument();
     });
   });
 
   describe('delete button', () => {
-    it('renders delete button when onDelete is provided', () => {
+    it('renders delete button when selected and onDelete is provided', () => {
       render(
         <BindingEdge
           {...BASE_EDGE_PROPS}
+          selected
           data={{ onDelete: vi.fn() }}
         />,
       );
       expect(screen.getByRole('button', { name: /delete binding/i })).toBeInTheDocument();
     });
 
+    it('does not render delete button when not selected even with onDelete', () => {
+      render(
+        <BindingEdge
+          {...BASE_EDGE_PROPS}
+          data={{ onDelete: vi.fn() }}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: /delete binding/i })).not.toBeInTheDocument();
+    });
+
     it('does not render delete button when onDelete is absent', () => {
-      render(<BindingEdge {...BASE_EDGE_PROPS} data={{}} />);
+      render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{}} />);
       expect(screen.queryByRole('button', { name: /delete binding/i })).not.toBeInTheDocument();
     });
 
@@ -124,6 +139,7 @@ describe('BindingEdge', () => {
       render(
         <BindingEdge
           {...BASE_EDGE_PROPS}
+          selected
           data={{ onDelete }}
         />,
       );

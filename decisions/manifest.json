@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 48,
+  "nextNumber": 49,
   "decisions": [
     {
       "number": 1,
@@ -419,6 +419,15 @@
       "created": "2026-02-28",
       "extractedFrom": "adapter-agent-routing",
       "specSlug": "adapter-agent-routing"
+    },
+    {
+      "number": 48,
+      "slug": "adopt-llms-txt-for-ai-readability",
+      "title": "Adopt llms.txt for AI Agent Discoverability",
+      "status": "draft",
+      "created": "2026-02-28",
+      "extractedFrom": "og-seo-ai-readability-overhaul",
+      "specSlug": "og-seo-ai-readability-overhaul"
     }
   ]
 }

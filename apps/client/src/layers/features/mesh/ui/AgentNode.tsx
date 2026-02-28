@@ -4,12 +4,12 @@ import {
   Position,
   NodeToolbar,
   type NodeProps,
-  useStore,
-  type ReactFlowState,
 } from '@xyflow/react';
-import { Zap, Clock, Settings, Heart, Copy } from 'lucide-react';
+import { Zap, Clock, Settings, Heart, Copy, MessageCircle } from 'lucide-react';
 import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
+import { useLodBand } from '../lib/use-lod-band';
 import { toast } from 'sonner';
+import { cn } from '@/layers/shared/lib';
 import { Badge } from '@/layers/shared/ui/badge';
 
 /**
@@ -37,6 +37,7 @@ export interface AgentNodeData extends Record<string, unknown> {
   agentDir?: string;
   onOpenSettings?: (agentId: string) => void;
   onViewHealth?: (agentId: string) => void;
+  onOpenChat?: (agentId: string, agentDir: string) => void;
 }
 
 const STATUS_COLORS: Record<AgentNodeData['healthStatus'], string> = {
@@ -44,11 +45,6 @@ const STATUS_COLORS: Record<AgentNodeData['healthStatus'], string> = {
   inactive: 'bg-amber-500',
   stale: 'bg-zinc-400',
 };
-
-const ZOOM_COMPACT = 0.6;
-const ZOOM_EXPANDED = 1.2;
-
-const zoomSelector = (s: ReactFlowState) => s.transform[2];
 
 /** Convert an ISO timestamp to a relative time string like "2m ago" or "3d ago". */
 function relativeTime(isoString: string): string {
@@ -76,13 +72,20 @@ function resolveBorderColor(d: AgentNodeData): string | undefined {
   return d.color ?? d.namespaceColor ?? undefined;
 }
 
+/** CSS transition classes for smooth LOD crossfades. */
+const LOD_TRANSITION = 'transition-[opacity,transform] duration-200 ease-out';
+
 /** Compact pill rendered when zoom < 0.6 (~120x28px). */
-function CompactPill({ d, dotColor }: { d: AgentNodeData; dotColor: string }) {
+function CompactPill({ d, dotColor, selected }: { d: AgentNodeData; dotColor: string; selected?: boolean }) {
   const borderColor = resolveBorderColor(d);
 
   return (
     <div
-      className="flex w-[120px] items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 shadow-sm transition-all duration-150 ease-in-out"
+      className={cn(
+        'flex w-[120px] items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 shadow-sm',
+        LOD_TRANSITION,
+        selected && 'ring-2 ring-primary',
+      )}
       style={borderColor ? { borderLeft: `3px solid ${borderColor}` } : undefined}
     >
       <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
@@ -101,10 +104,12 @@ function DefaultCard({
   d,
   dotColor,
   prefersReducedMotion,
+  selected,
 }: {
   d: AgentNodeData;
   dotColor: string;
   prefersReducedMotion: boolean;
+  selected?: boolean;
 }) {
   const borderColor = resolveBorderColor(d);
   const hasRelay = d.relayAdapters && d.relayAdapters.length > 0;
@@ -113,12 +118,16 @@ function DefaultCard({
 
   return (
     <div
-      className="w-[200px] rounded-lg border bg-card px-3 py-2 shadow-sm transition-all duration-150 ease-in-out"
+      className={cn(
+        'w-[200px] rounded-lg border bg-card px-3 py-2 shadow-sm hover:shadow-md',
+        LOD_TRANSITION,
+        selected && 'ring-2 ring-primary',
+      )}
       style={borderColor ? { borderLeft: `3px solid ${borderColor}` } : undefined}
     >
       <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
 
-      {/* Header row: health dot + name + runtime icon */}
+      {/* Header row: health dot + name + type badge */}
       <div className="flex items-center gap-2">
         <span className="relative flex shrink-0">
           <span className={`h-2.5 w-2.5 rounded-full ${dotColor}`} />
@@ -130,13 +139,16 @@ function DefaultCard({
           {d.emoji ? `${d.emoji} ` : ''}
           {d.label}
         </span>
-        <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
-          {d.runtime}
+        <Badge variant="outline" className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+          Agent
         </Badge>
       </div>
 
-      {/* Capability badges */}
+      {/* Runtime + capability badges */}
       <div className="mt-1 flex flex-wrap gap-1">
+        <Badge variant="secondary" className="text-[10px]">
+          {d.runtime}
+        </Badge>
         {d.capabilities.slice(0, 3).map((cap) => (
           <Badge key={cap} variant="outline" className="text-[10px]">
             {cap}
@@ -172,10 +184,12 @@ function ExpandedCard({
   d,
   dotColor,
   prefersReducedMotion,
+  selected,
 }: {
   d: AgentNodeData;
   dotColor: string;
   prefersReducedMotion: boolean;
+  selected?: boolean;
 }) {
   const borderColor = resolveBorderColor(d);
   const hasRelay = d.relayAdapters && d.relayAdapters.length > 0;
@@ -184,7 +198,11 @@ function ExpandedCard({
 
   return (
     <div
-      className="w-[240px] rounded-lg border bg-card px-3 py-2 shadow-sm transition-all duration-150 ease-in-out"
+      className={cn(
+        'w-[240px] rounded-lg border bg-card px-3 py-2 shadow-sm hover:shadow-md',
+        LOD_TRANSITION,
+        selected && 'ring-2 ring-primary',
+      )}
       style={borderColor ? { borderLeft: `3px solid ${borderColor}` } : undefined}
     >
       <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
@@ -201,13 +219,16 @@ function ExpandedCard({
           {d.emoji ? `${d.emoji} ` : ''}
           {d.label}
         </span>
-        <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
-          {d.runtime}
+        <Badge variant="outline" className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+          Agent
         </Badge>
       </div>
 
-      {/* Capability badges */}
+      {/* Runtime + capability badges */}
       <div className="mt-1 flex flex-wrap gap-1">
+        <Badge variant="secondary" className="text-[10px]">
+          {d.runtime}
+        </Badge>
         {d.capabilities.slice(0, 3).map((cap) => (
           <Badge key={cap} variant="outline" className="text-[10px]">
             {cap}
@@ -293,7 +314,7 @@ function ToolbarButton({
 function AgentNodeComponent({ data, selected, id }: NodeProps) {
   const d = data as unknown as AgentNodeData;
   const dotColor = STATUS_COLORS[d.healthStatus] ?? STATUS_COLORS.stale;
-  const zoom = useStore(zoomSelector);
+  const band = useLodBand();
 
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -312,33 +333,38 @@ function AgentNodeComponent({ data, selected, id }: NodeProps) {
           <ToolbarButton icon={Heart} label="Health" onClick={() => d.onViewHealth?.(id)} />
         )}
         <ToolbarButton icon={Copy} label="Copy ID" onClick={handleCopyId} />
+        {d.onOpenChat && d.agentDir && (
+          <ToolbarButton icon={MessageCircle} label="Chat" onClick={() => d.onOpenChat?.(id, d.agentDir ?? '')} />
+        )}
       </div>
     </NodeToolbar>
   );
 
-  if (zoom < ZOOM_COMPACT) {
+  const ariaLabel = `Agent: ${d.label}, status ${d.healthStatus}`;
+
+  if (band === 'compact') {
     return (
-      <>
+      <div aria-label={ariaLabel}>
         {toolbar}
-        <CompactPill d={d} dotColor={dotColor} />
-      </>
+        <CompactPill d={d} dotColor={dotColor} selected={selected} />
+      </div>
     );
   }
 
-  if (zoom > ZOOM_EXPANDED) {
+  if (band === 'expanded') {
     return (
-      <>
+      <div aria-label={ariaLabel}>
         {toolbar}
-        <ExpandedCard d={d} dotColor={dotColor} prefersReducedMotion={prefersReducedMotion} />
-      </>
+        <ExpandedCard d={d} dotColor={dotColor} prefersReducedMotion={prefersReducedMotion} selected={selected} />
+      </div>
     );
   }
 
   return (
-    <>
+    <div aria-label={ariaLabel}>
       {toolbar}
-      <DefaultCard d={d} dotColor={dotColor} prefersReducedMotion={prefersReducedMotion} />
-    </>
+      <DefaultCard d={d} dotColor={dotColor} prefersReducedMotion={prefersReducedMotion} selected={selected} />
+    </div>
   );
 }
 

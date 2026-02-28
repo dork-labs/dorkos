@@ -3,7 +3,8 @@
  *
  * Composes all sub-modules (EndpointRegistry, SubscriptionRegistry,
  * MaildirStore, SqliteIndex, DeadLetterQueue, AccessControl, SignalEmitter,
- * budget-enforcer) into a single cohesive API surface.
+ * DeliveryPipeline, AdapterDelivery, WatcherManager, budget-enforcer)
+ * into a single cohesive API surface.
  *
  * The publish pipeline validates subjects, checks access control, builds
  * envelopes with budget constraints, delivers to matching endpoints via
@@ -20,8 +21,8 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { monotonicFactory } from 'ulidx';
 import { createDb, runMigrations } from '@dorkos/db';
 import { validateSubject, matchesPattern } from './subject-matcher.js';
-import { enforceBudget, createDefaultBudget } from './budget-enforcer.js';
-import { EndpointRegistry } from './endpoint-registry.js';
+import { createDefaultBudget } from './budget-enforcer.js';
+import { EndpointRegistry, hashSubject } from './endpoint-registry.js';
 import { SubscriptionRegistry } from './subscription-registry.js';
 import { MaildirStore } from './maildir-store.js';
 import { SqliteIndex } from './sqlite-index.js';
@@ -30,8 +31,11 @@ import { AccessControl } from './access-control.js';
 import { SignalEmitter } from './signal-emitter.js';
 import { checkRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from './rate-limiter.js';
 import { CircuitBreakerManager, DEFAULT_CB_CONFIG } from './circuit-breaker.js';
-import { checkBackpressure, DEFAULT_BP_CONFIG } from './backpressure.js';
-import type { RelayEnvelope, RelayBudget, Signal } from '@dorkos/shared/relay-schemas';
+import { DEFAULT_BP_CONFIG } from './backpressure.js';
+import { DeliveryPipeline } from './delivery-pipeline.js';
+import { AdapterDelivery } from './adapter-delivery.js';
+import { WatcherManager } from './watcher-manager.js';
+import type { RelayEnvelope, Signal } from '@dorkos/shared/relay-schemas';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import type {
   RateLimitConfig,
@@ -95,16 +99,6 @@ export interface PublishResult {
   adapterResult?: DeliveryResult;
 }
 
-/** Internal result from delivering to a single endpoint. */
-interface EndpointDeliveryResult {
-  delivered: boolean;
-  rejected?: {
-    endpointHash: string;
-    reason: 'backpressure' | 'circuit_open' | 'rate_limited' | 'budget_exceeded';
-  };
-  pressure?: number;
-}
-
 // === RelayCore ===
 
 /**
@@ -141,7 +135,9 @@ export class RelayCore {
   private readonly deadLetterQueue: DeadLetterQueue;
   private readonly accessControl: AccessControl;
   private readonly signalEmitter: SignalEmitter;
-  private readonly watchers = new Map<string, FSWatcher>();
+  private readonly deliveryPipeline: DeliveryPipeline;
+  private readonly adapterDelivery: AdapterDelivery;
+  private readonly watcherManager: WatcherManager;
   private readonly generateUlid = monotonicFactory();
   private readonly opts: ResolvedOptions;
   private rateLimitConfig: RateLimitConfig;
@@ -198,6 +194,29 @@ export class RelayCore {
       ...DEFAULT_BP_CONFIG,
       ...options?.reliability?.backpressure,
     };
+
+    // Compose extracted sub-modules
+    this.deliveryPipeline = new DeliveryPipeline(
+      {
+        sqliteIndex: this.sqliteIndex,
+        maildirStore: this.maildirStore,
+        subscriptionRegistry: this.subscriptionRegistry,
+        circuitBreaker: this.circuitBreaker,
+        signalEmitter: this.signalEmitter,
+        deadLetterQueue: this.deadLetterQueue,
+      },
+      this.backpressureConfig,
+    );
+    this.adapterDelivery = new AdapterDelivery(
+      options?.adapterRegistry,
+      this.sqliteIndex,
+    );
+    this.watcherManager = new WatcherManager(
+      this.maildirStore,
+      this.subscriptionRegistry,
+      this.sqliteIndex,
+      this.circuitBreaker,
+    );
 
     // Config hot-reload: load from disk then watch for changes
     this.configPath = path.join(dataDir, 'config.json');
@@ -321,7 +340,7 @@ export class RelayCore {
     const mailboxPressure: Record<string, number> = {};
 
     for (const endpoint of matchingEndpoints) {
-      const result = await this.deliverToEndpoint(endpoint, envelope);
+      const result = await this.deliveryPipeline.deliverToEndpoint(endpoint, envelope);
       if (result.delivered) deliveredTo++;
       if (result.rejected) rejected.push(result.rejected);
       if (result.pressure !== undefined) mailboxPressure[endpoint.hash] = result.pressure;
@@ -330,14 +349,37 @@ export class RelayCore {
     // 7. Deliver to matching adapter (unified fan-out — always attempted)
     let adapterResult: DeliveryResult | null = null;
     if (this.adapterRegistry) {
-      adapterResult = await this.deliverToAdapter(subject, envelope);
+      adapterResult = await this.adapterDelivery.deliver(
+        subject,
+        envelope,
+        this.adapterContextBuilder,
+      );
       if (adapterResult?.success) deliveredTo++;
+    }
+
+    // 7b. Dispatch to matching subscription handlers (direct fast-path).
+    // When Maildir endpoints exist, subscriptions are already dispatched via
+    // dispatchToSubscribers() inside deliverToEndpoint(). This block only
+    // fires when there are NO matching Maildir endpoints, enabling
+    // BindingRouter and other subscribers to intercept messages published
+    // to subjects with no registered endpoint (e.g., relay.human.telegram.*).
+    let subscriberCount = 0;
+    if (matchingEndpoints.length === 0) {
+      const subscribers = this.subscriptionRegistry.getSubscribers(subject);
+      for (const handler of subscribers) {
+        try {
+          await handler(envelope);
+          subscriberCount++;
+        } catch {
+          // Subscription handler errors are non-fatal for publish()
+        }
+      }
+      deliveredTo += subscriberCount;
     }
 
     // 8. Dead-letter only when NO delivery targets matched at all
     // Reliability rejections (backpressure, circuit_open) are NOT dead-lettered
-    if (deliveredTo === 0 && matchingEndpoints.length === 0) {
-      const { hashSubject } = await import('./endpoint-registry.js');
+    if (deliveredTo === 0 && matchingEndpoints.length === 0 && subscriberCount === 0) {
       const subjectHash = hashSubject(subject);
       await this.maildirStore.ensureMaildir(subjectHash);
 
@@ -434,7 +476,7 @@ export class RelayCore {
     this.assertOpen();
     const info = await this.endpointRegistry.registerEndpoint(subject);
     await this.maildirStore.ensureMaildir(info.hash);
-    await this.startWatcher(info);
+    await this.watcherManager.startWatcher(info);
     return info;
   }
 
@@ -448,7 +490,7 @@ export class RelayCore {
     this.assertOpen();
     const endpoint = this.endpointRegistry.getEndpoint(subject);
     if (endpoint) {
-      this.stopWatcher(endpoint.hash);
+      this.watcherManager.stopWatcher(endpoint.hash);
     }
     return this.endpointRegistry.unregisterEndpoint(subject);
   }
@@ -621,10 +663,7 @@ export class RelayCore {
     this.closed = true;
 
     // Stop all endpoint watchers
-    for (const [hash, watcher] of this.watchers) {
-      await watcher.close();
-      this.watchers.delete(hash);
-    }
+    await this.watcherManager.closeAll();
 
     // Stop config watcher
     if (this.configWatcher) {
@@ -664,297 +703,6 @@ export class RelayCore {
   }
 
   /**
-   * Deliver an envelope to a single endpoint.
-   *
-   * Pipeline order:
-   * 1. Backpressure check — rejects if mailbox is full, emits warning signal
-   * 2. Circuit breaker check — rejects if breaker is OPEN for this endpoint
-   * 3. Budget enforcement — rejects expired/over-hop/over-call messages to DLQ
-   * 4. Maildir delivery — writes envelope file, records CB success/failure
-   * 5. SQLite indexing + synchronous handler dispatch
-   *
-   * All return paths include `pressure` so the publish() aggregator can
-   * build the `mailboxPressure` map for every endpoint.
-   *
-   * @param endpoint - The target endpoint
-   * @param envelope - The envelope to deliver
-   * @returns An EndpointDeliveryResult with delivery status, rejection info, and pressure
-   */
-  private async deliverToEndpoint(
-    endpoint: EndpointInfo,
-    envelope: RelayEnvelope,
-  ): Promise<EndpointDeliveryResult> {
-    // 1. Backpressure check (before circuit breaker and budget)
-    const newCount = this.sqliteIndex.countNewByEndpoint(endpoint.hash);
-    const bpResult = checkBackpressure(newCount, this.backpressureConfig);
-
-    if (bpResult.pressure >= this.backpressureConfig.pressureWarningAt) {
-      this.signalEmitter.emit(endpoint.subject, {
-        type: 'backpressure',
-        state: bpResult.allowed ? 'warning' : 'critical',
-        endpointSubject: endpoint.subject,
-        timestamp: new Date().toISOString(),
-        data: { pressure: bpResult.pressure, currentSize: bpResult.currentSize },
-      });
-    }
-
-    if (!bpResult.allowed) {
-      return {
-        delivered: false,
-        rejected: { endpointHash: endpoint.hash, reason: 'backpressure' },
-        pressure: bpResult.pressure,
-      };
-    }
-
-    // 2. Circuit breaker check (after backpressure, before budget)
-    const cbResult = this.circuitBreaker.check(endpoint.hash);
-    if (!cbResult.allowed) {
-      return {
-        delivered: false,
-        rejected: { endpointHash: endpoint.hash, reason: 'circuit_open' },
-        pressure: bpResult.pressure,
-      };
-    }
-
-    // 3. Budget enforcement
-    const budgetResult = enforceBudget(envelope, endpoint.subject);
-    if (!budgetResult.allowed) {
-      await this.deadLetterQueue.reject(
-        endpoint.hash,
-        envelope,
-        budgetResult.reason ?? 'budget enforcement failed',
-      );
-      return {
-        delivered: false,
-        rejected: { endpointHash: endpoint.hash, reason: 'budget_exceeded' },
-        pressure: bpResult.pressure,
-      };
-    }
-
-    // Build the envelope with updated budget for this specific delivery
-    const deliveryEnvelope: RelayEnvelope = {
-      ...envelope,
-      budget: budgetResult.updatedBudget!,
-    };
-
-    // 4. Deliver to Maildir
-    const deliverResult = await this.maildirStore.deliver(endpoint.hash, deliveryEnvelope);
-    if (!deliverResult.ok) {
-      this.circuitBreaker.recordFailure(endpoint.hash);
-      await this.deadLetterQueue.reject(
-        endpoint.hash,
-        envelope,
-        `delivery failed: ${deliverResult.error}`,
-      );
-      return { delivered: false, pressure: bpResult.pressure };
-    }
-
-    // Record successful delivery for circuit breaker
-    this.circuitBreaker.recordSuccess(endpoint.hash);
-
-    // Index in SQLite
-    this.sqliteIndex.insertMessage({
-      id: deliverResult.messageId,
-      subject: deliveryEnvelope.subject,
-      endpointHash: endpoint.hash,
-      status: 'pending',
-      createdAt: deliveryEnvelope.createdAt,
-      expiresAt: deliveryEnvelope.budget.ttl
-        ? new Date(deliveryEnvelope.budget.ttl).toISOString()
-        : null,
-    });
-
-    // Synchronous fast-path: dispatch to matching subscription handlers
-    // This avoids relying on chokidar timing for locally-published messages
-    await this.dispatchToSubscribers(endpoint, deliverResult.messageId, deliveryEnvelope);
-
-    return { delivered: true, pressure: bpResult.pressure };
-  }
-
-  /** Adapter delivery timeout in milliseconds. */
-  private static readonly ADAPTER_TIMEOUT_MS = 30_000;
-
-  /**
-   * Deliver a message to a matching adapter with timeout protection,
-   * SQLite indexing, and error handling.
-   *
-   * @param subject - The target subject
-   * @param envelope - The relay envelope to deliver
-   * @returns DeliveryResult or null if no adapter matched
-   */
-  private async deliverToAdapter(
-    subject: string,
-    envelope: RelayEnvelope,
-  ): Promise<DeliveryResult | null> {
-    if (!this.adapterRegistry) return null;
-
-    const context = this.adapterContextBuilder?.(subject);
-
-    try {
-      const deliveryPromise = this.adapterRegistry.deliver(subject, envelope, context);
-
-      const result = await Promise.race([
-        deliveryPromise,
-        new Promise<DeliveryResult>((_, reject) =>
-          setTimeout(
-            () => reject(new Error('adapter delivery timeout (30s)')),
-            RelayCore.ADAPTER_TIMEOUT_MS,
-          ),
-        ),
-      ]);
-
-      // Index adapter-delivered messages in SQLite for audit trail
-      if (result && result.success) {
-        const { hashSubject } = await import('./endpoint-registry.js');
-        const subjectHash = hashSubject(subject);
-        this.sqliteIndex.insertMessage({
-          id: envelope.id,
-          subject,
-          endpointHash: `adapter:${subjectHash}`,
-          status: 'delivered',
-          createdAt: envelope.createdAt,
-          expiresAt: null,
-        });
-      }
-
-      return result;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.warn('RelayCore: adapter delivery failed:', errorMessage);
-      return {
-        success: false,
-        error: errorMessage,
-        deadLettered: false,
-        durationMs: undefined,
-      };
-    }
-  }
-
-  /**
-   * Dispatch a delivered envelope to all matching subscription handlers.
-   *
-   * Claims the message from `new/` to `cur/`, invokes all handlers,
-   * then completes (removes from `cur/`) on success or moves to `failed/`
-   * on error.
-   *
-   * @param endpoint - The endpoint that received the message
-   * @param messageId - The Maildir-assigned message ID (ULID filename)
-   * @param envelope - The delivered envelope
-   */
-  private async dispatchToSubscribers(
-    endpoint: EndpointInfo,
-    messageId: string,
-    envelope: RelayEnvelope,
-  ): Promise<void> {
-    const handlers = this.subscriptionRegistry.getSubscribers(endpoint.subject);
-    if (handlers.length === 0) return;
-
-    // Claim the message (move from new/ to cur/)
-    const claimResult = await this.maildirStore.claim(endpoint.hash, messageId);
-    if (!claimResult.ok) return;
-
-    try {
-      await Promise.all(handlers.map((handler) => handler(claimResult.envelope)));
-
-      // All handlers succeeded — complete the message
-      await this.maildirStore.complete(endpoint.hash, messageId);
-      this.sqliteIndex.updateStatus(messageId, 'delivered');
-    } catch (err) {
-      // Handler failed — move to failed/ and record for circuit breaker
-      const reason = err instanceof Error ? err.message : String(err);
-      await this.maildirStore.fail(endpoint.hash, messageId, reason);
-      this.sqliteIndex.updateStatus(messageId, 'failed');
-      this.circuitBreaker.recordFailure(endpoint.hash);
-    }
-  }
-
-  /**
-   * Start a chokidar watcher on an endpoint's `new/` directory.
-   *
-   * When a new file is created in `new/`, the watcher reads the envelope,
-   * finds matching subscription handlers, and dispatches to them. After
-   * successful handler invocation, the message is claimed and completed.
-   * On handler error, the message is moved to `failed/`.
-   *
-   * Returns a promise that resolves once the watcher is ready and
-   * actively monitoring the directory.
-   *
-   * @param endpoint - The endpoint to watch
-   */
-  private startWatcher(endpoint: EndpointInfo): Promise<void> {
-    if (this.watchers.has(endpoint.hash)) return Promise.resolve();
-
-    const newDir = path.join(endpoint.maildirPath, 'new');
-    const watcher = chokidar.watch(newDir, {
-      persistent: true,
-      ignoreInitial: true,
-    });
-
-    watcher.on('add', (filePath: string) => {
-      void this.handleNewMessage(endpoint, filePath);
-    });
-
-    this.watchers.set(endpoint.hash, watcher);
-
-    // Wait for the watcher to be fully ready before returning
-    return new Promise<void>((resolve) => {
-      watcher.on('ready', () => resolve());
-    });
-  }
-
-  /**
-   * Handle a new message file appearing in an endpoint's `new/` directory.
-   *
-   * Reads the envelope, finds matching subscription handlers, invokes them,
-   * then claims and completes the message. On handler error, the message
-   * is moved to `failed/`.
-   *
-   * @param endpoint - The endpoint that received the message
-   * @param filePath - The path to the new message file
-   */
-  private async handleNewMessage(endpoint: EndpointInfo, filePath: string): Promise<void> {
-    // Extract message ID from filename (strip .json extension)
-    const filename = path.basename(filePath);
-    if (!filename.endsWith('.json')) return;
-    const messageId = filename.slice(0, -5);
-
-    // Find matching subscription handlers
-    const handlers = this.subscriptionRegistry.getSubscribers(endpoint.subject);
-    if (handlers.length === 0) return;
-
-    // Claim the message (move from new/ to cur/)
-    const claimResult = await this.maildirStore.claim(endpoint.hash, messageId);
-    if (!claimResult.ok) return;
-
-    // Invoke all handlers
-    try {
-      await Promise.all(handlers.map((handler) => handler(claimResult.envelope)));
-
-      // All handlers succeeded — complete the message (remove from cur/)
-      await this.maildirStore.complete(endpoint.hash, messageId);
-      this.sqliteIndex.updateStatus(messageId, 'delivered');
-    } catch (err) {
-      // Handler failed — move to failed/
-      const reason = err instanceof Error ? err.message : String(err);
-      await this.maildirStore.fail(endpoint.hash, messageId, reason);
-      this.sqliteIndex.updateStatus(messageId, 'failed');
-    }
-  }
-
-  /**
-   * Stop the chokidar watcher for an endpoint.
-   *
-   * @param endpointHash - The hash of the endpoint whose watcher to stop
-   */
-  private stopWatcher(endpointHash: string): void {
-    const watcher = this.watchers.get(endpointHash);
-    if (watcher) {
-      void watcher.close();
-      this.watchers.delete(endpointHash);
-    }
-  }
-
-  /**
    * Load reliability configuration from the config file on disk.
    *
    * Reads `{dataDir}/config.json`, parses the `reliability` key with
@@ -972,6 +720,8 @@ export class RelayCore {
         this.rateLimitConfig = { ...DEFAULT_RATE_LIMIT_CONFIG, ...parsed.data.rateLimit };
         this.circuitBreaker.updateConfig({ ...DEFAULT_CB_CONFIG, ...parsed.data.circuitBreaker });
         this.backpressureConfig = { ...DEFAULT_BP_CONFIG, ...parsed.data.backpressure };
+        // Propagate updated backpressure config to the delivery pipeline
+        this.deliveryPipeline.setBackpressureConfig(this.backpressureConfig);
       }
     } catch {
       // File doesn't exist or is invalid — keep current config

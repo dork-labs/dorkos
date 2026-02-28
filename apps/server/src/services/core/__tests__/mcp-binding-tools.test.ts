@@ -3,8 +3,37 @@ import {
   createBindingListHandler,
   createBindingCreateHandler,
   createBindingDeleteHandler,
+  createDorkOsToolServer,
   type McpToolDeps,
 } from '../mcp-tool-server.js';
+
+vi.mock('@dorkos/shared/manifest', () => ({
+  readManifest: vi.fn(),
+}));
+
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  createSdkMcpServer: vi.fn((config: Record<string, unknown>) => config),
+  tool: vi.fn(
+    (
+      name: string,
+      desc: string,
+      schema: Record<string, unknown>,
+      handler: (...args: unknown[]) => unknown,
+    ) => ({
+      name,
+      description: desc,
+      schema,
+      handler,
+    }),
+  ),
+}));
+
+/** Passthrough shape returned by mocked createSdkMcpServer */
+interface MockServer {
+  name: string;
+  version: string;
+  tools: { name: string; description: string }[];
+}
 
 /** Create a mock BindingStore with default stubs. */
 function makeMockBindingStore(overrides?: Record<string, unknown>) {
@@ -173,6 +202,29 @@ describe('Binding MCP Tools', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.result).toBe('Not found');
       expect(data.id).toBe('nonexistent');
+    });
+  });
+
+  describe('tool registration', () => {
+    it('includes binding tools when bindingStore is provided', () => {
+      const store = makeMockBindingStore();
+      const server = createDorkOsToolServer(
+        makeMockDeps(store),
+      ) as unknown as MockServer;
+      const toolNames = server.tools.map((t) => t.name);
+      expect(toolNames).toContain('binding_list');
+      expect(toolNames).toContain('binding_create');
+      expect(toolNames).toContain('binding_delete');
+    });
+
+    it('excludes binding tools when bindingStore is undefined', () => {
+      const server = createDorkOsToolServer(
+        makeMockDeps(),
+      ) as unknown as MockServer;
+      const toolNames = server.tools.map((t) => t.name);
+      expect(toolNames).not.toContain('binding_list');
+      expect(toolNames).not.toContain('binding_create');
+      expect(toolNames).not.toContain('binding_delete');
     });
   });
 });

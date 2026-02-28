@@ -39,6 +39,8 @@ export interface BindingRouterDeps {
   relayCore: RelayCoreLike;
   agentManager: AgentSessionCreator;
   relayDir: string;
+  /** Maps a platform type (e.g., 'telegram') to the adapter instance ID from config. */
+  resolveAdapterInstanceId?: (platformType: string) => string | undefined;
 }
 
 /**
@@ -47,8 +49,13 @@ export interface BindingRouterDeps {
  * for ClaudeCodeAdapter to handle.
  */
 export class BindingRouter {
+  /** Maximum number of session mappings before LRU eviction kicks in. */
+  private static readonly MAX_SESSIONS = 10_000;
+
   /** Maps `bindingId:context` to sessionId for session reuse. */
   private sessionMap: Map<string, string> = new Map();
+  /** In-flight session creation promises, keyed the same as sessionMap. */
+  private inFlight = new Map<string, Promise<string>>();
   private readonly sessionMapPath: string;
   private unsubscribe?: Unsubscribe;
 
@@ -59,8 +66,11 @@ export class BindingRouter {
   /** Load persisted session map, subscribe to inbound messages. */
   async init(): Promise<void> {
     await this.loadSessionMap();
+    // Use `>` wildcard to match one-or-more remaining tokens.
+    // `relay.human.*` only matches 3-token subjects, but adapter subjects
+    // like `relay.human.telegram.123456` have 4+ tokens.
     this.unsubscribe = this.deps.relayCore.subscribe(
-      'relay.human.*',
+      'relay.human.>',
       this.handleInbound.bind(this),
     );
     logger.info(`BindingRouter initialized with ${this.sessionMap.size} persisted session(s)`);
@@ -89,31 +99,38 @@ export class BindingRouter {
   }
 
   private async handleInbound(envelope: RelayEnvelope): Promise<void> {
-    const { adapterId, chatId, channelType } = this.parseSubject(envelope.subject);
-    if (!adapterId) {
-      logger.warn(`BindingRouter: could not parse subject '${envelope.subject}'`);
-      return;
-    }
+    try {
+      const { adapterId, chatId, channelType } = this.parseSubject(envelope.subject);
+      if (!adapterId) {
+        logger.warn(`BindingRouter: could not parse subject '${envelope.subject}'`);
+        return;
+      }
 
-    const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
-    if (!binding) {
+      const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
+      if (!binding) {
+        logger.info(
+          `BindingRouter: no binding for adapter=${adapterId} chat=${chatId}, skipping`,
+        );
+        return;
+      }
+
+      const sessionId = await this.resolveSession(binding, chatId, envelope);
+
+      await this.deps.relayCore.publish(`relay.agent.${sessionId}`, envelope.payload, {
+        from: envelope.from,
+        replyTo: envelope.replyTo,
+        budget: envelope.budget,
+      });
+
       logger.info(
-        `BindingRouter: no binding for adapter=${adapterId} chat=${chatId}, skipping`,
+        `BindingRouter: routed ${envelope.subject} → relay.agent.${sessionId} (binding=${binding.id})`,
       );
-      return;
+    } catch (err) {
+      logger.error(
+        `BindingRouter: failed to route ${envelope.subject}:`,
+        err instanceof Error ? err.message : err,
+      );
     }
-
-    const sessionId = await this.resolveSession(binding, chatId, envelope);
-
-    await this.deps.relayCore.publish(`relay.agent.${sessionId}`, envelope.payload, {
-      from: envelope.from,
-      replyTo: envelope.replyTo,
-      budget: envelope.budget,
-    });
-
-    logger.info(
-      `BindingRouter: routed ${envelope.subject} → relay.agent.${sessionId} (binding=${binding.id})`,
-    );
   }
 
   private async resolveSession(
@@ -146,10 +163,38 @@ export class BindingRouter {
   private async getOrCreateSession(key: string, binding: AdapterBinding): Promise<string> {
     const existing = this.sessionMap.get(key);
     if (existing) return existing;
-    const sessionId = await this.createNewSession(binding);
-    this.sessionMap.set(key, sessionId);
-    await this.saveSessionMap();
-    return sessionId;
+
+    // Deduplicate concurrent session creation for the same key
+    const pending = this.inFlight.get(key);
+    if (pending) return pending;
+
+    const promise = (async () => {
+      const sessionId = await this.createNewSession(binding);
+      this.sessionMap.set(key, sessionId);
+      this.inFlight.delete(key);
+      this.evictOldestSessions();
+      await this.saveSessionMap();
+      return sessionId;
+    })();
+
+    this.inFlight.set(key, promise);
+    return promise;
+  }
+
+  /**
+   * Evict oldest session map entries when size exceeds MAX_SESSIONS.
+   *
+   * Uses Map insertion order as a proxy for LRU — oldest entries are evicted first.
+   */
+  private evictOldestSessions(): void {
+    const excess = this.sessionMap.size - BindingRouter.MAX_SESSIONS;
+    if (excess <= 0) return;
+    const keys = this.sessionMap.keys();
+    for (let i = 0; i < excess; i++) {
+      const { value } = keys.next();
+      if (value) this.sessionMap.delete(value);
+    }
+    logger.info(`BindingRouter: evicted ${excess} oldest session mapping(s)`);
   }
 
   private async createNewSession(binding: AdapterBinding): Promise<string> {
@@ -160,7 +205,13 @@ export class BindingRouter {
   /**
    * Parse a relay subject into adapter routing components.
    *
-   * Expected pattern: `relay.human.{adapterId}.{chatId}`
+   * Expected patterns:
+   * - `relay.human.{platformType}.{chatId}` (DM)
+   * - `relay.human.{platformType}.group.{chatId}` (group chat — chatId may be negative)
+   *
+   * The platform type (e.g., 'telegram') is resolved to the adapter instance ID
+   * via the `resolveAdapterInstanceId` dependency. Falls back to the raw
+   * platform type when no resolver is provided.
    */
   private parseSubject(subject: string): {
     adapterId?: string;
@@ -169,11 +220,28 @@ export class BindingRouter {
   } {
     const parts = subject.split('.');
     if (parts[0] !== 'relay' || parts[1] !== 'human') return {};
-    return {
-      adapterId: parts[2],
-      chatId: parts[3],
-      channelType: undefined, // extracted from envelope metadata if present
-    };
+
+    const platformType = parts[2];
+    if (!platformType) return {};
+
+    // Resolve platform type → adapter instance ID (e.g., 'telegram' → 'tg-bot-1')
+    const adapterId =
+      this.deps.resolveAdapterInstanceId?.(platformType) ?? platformType;
+
+    // Remaining tokens form the chat context
+    const remaining = parts.slice(3);
+    let chatId: string | undefined;
+    let channelType: string | undefined;
+
+    if (remaining.length >= 2 && remaining[0] === 'group') {
+      channelType = 'group';
+      // Join remaining tokens to handle negative group IDs (e.g., '-123456')
+      chatId = remaining.slice(1).join('.');
+    } else if (remaining.length >= 1) {
+      chatId = remaining.join('.');
+    }
+
+    return { adapterId, chatId, channelType };
   }
 
   private async loadSessionMap(): Promise<void> {

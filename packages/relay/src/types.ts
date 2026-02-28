@@ -364,6 +364,8 @@ export interface TelegramAdapterConfig {
   mode: 'polling' | 'webhook';
   webhookUrl?: string;
   webhookPort?: number;
+  /** Secret token for validating incoming webhook requests from Telegram. Auto-generated if omitted. */
+  webhookSecret?: string;
 }
 
 /** Configuration for the generic webhook adapter. */

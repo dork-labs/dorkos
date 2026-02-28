@@ -54,9 +54,9 @@ describe('BindingRouter', () => {
     vi.restoreAllMocks();
   });
 
-  it('subscribes to relay.human.* on init', () => {
+  it('subscribes to relay.human.> on init', () => {
     expect(mockRelayCore.subscribe).toHaveBeenCalledWith(
-      'relay.human.*',
+      'relay.human.>',
       expect.any(Function),
     );
   });
@@ -330,6 +330,186 @@ describe('BindingRouter', () => {
     it('returns 0 when no orphaned sessions exist', async () => {
       const removed = await router.cleanupOrphanedSessions(new Set());
       expect(removed).toBe(0);
+    });
+  });
+
+  describe('error handling (C2)', () => {
+    it('catches and logs errors when publish() throws', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue({
+        id: 'bind-1',
+        adapterId: 'telegram',
+        agentId: 'agent-a',
+        agentDir: '/agents/a',
+        sessionStrategy: 'per-chat',
+        label: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      vi.mocked(mockRelayCore.publish).mockRejectedValue(new Error('publish failed'));
+
+      // Should NOT throw — error is caught internally
+      await expect(
+        capturedHandler!({
+          id: 'msg-1',
+          subject: 'relay.human.telegram.123',
+          payload: 'hi',
+          from: 'tg',
+          budget: { ttlMs: 60000, maxHops: 5, callBudget: 10 },
+          createdAt: '2026-01-01T00:00:00.000Z',
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('catches and logs errors when createSession() throws', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue({
+        id: 'bind-1',
+        adapterId: 'telegram',
+        agentId: 'agent-a',
+        agentDir: '/agents/a',
+        sessionStrategy: 'per-chat',
+        label: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      vi.mocked(mockAgentManager.createSession).mockRejectedValue(
+        new Error('session creation failed'),
+      );
+
+      await expect(
+        capturedHandler!({
+          id: 'msg-1',
+          subject: 'relay.human.telegram.123',
+          payload: 'hi',
+          from: 'tg',
+          budget: { ttlMs: 60000, maxHops: 5, callBudget: 10 },
+          createdAt: '2026-01-01T00:00:00.000Z',
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('concurrent session creation (C1)', () => {
+    it('deduplicates concurrent calls for same key', async () => {
+      // Make createSession slow so concurrent calls overlap
+      let resolveSession!: (value: { id: string }) => void;
+      vi.mocked(mockAgentManager.createSession).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSession = resolve;
+          }),
+      );
+
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue({
+        id: 'bind-1',
+        adapterId: 'telegram',
+        agentId: 'agent-a',
+        agentDir: '/agents/a',
+        sessionStrategy: 'per-chat',
+        label: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const envelope = {
+        id: 'msg-1',
+        subject: 'relay.human.telegram.123',
+        payload: 'hi',
+        from: 'tg',
+        budget: { ttlMs: 60000, maxHops: 5, callBudget: 10 },
+        createdAt: '2026-01-01T00:00:00.000Z',
+      };
+
+      // Fire two concurrent calls before the session resolves
+      const p1 = capturedHandler!(envelope);
+      const p2 = capturedHandler!(envelope);
+
+      // Resolve the single session creation
+      resolveSession({ id: 'session-deduped' });
+      await p1;
+      await p2;
+
+      // createSession should only be called ONCE despite two concurrent requests
+      expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+      // Both should publish to the same session
+      expect(mockRelayCore.publish).toHaveBeenCalledTimes(2);
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        'relay.agent.session-deduped',
+        'hi',
+        expect.any(Object),
+      );
+    });
+  });
+
+  describe('session map eviction (I6)', () => {
+    it('evicts oldest entries when exceeding MAX_SESSIONS', async () => {
+      // Pre-populate the session map via loading from disk
+      const entries: [string, string][] = [];
+      for (let i = 0; i < 10_000; i++) {
+        entries.push([`bind-old:chat:${i}`, `session-${i}`]);
+      }
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify(entries));
+
+      const evictionRouter = new BindingRouter({
+        bindingStore: mockBindingStore as BindingStore,
+        relayCore: mockRelayCore,
+        agentManager: mockAgentManager,
+        relayDir: '/tmp/relay',
+      });
+      await evictionRouter.init();
+
+      const evictionHandler = (mockRelayCore.subscribe as ReturnType<typeof vi.fn>).mock.calls.at(
+        -1,
+      )?.[1] as typeof capturedHandler;
+
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue({
+        id: 'bind-new',
+        adapterId: 'telegram',
+        agentId: 'agent-a',
+        agentDir: '/agents/a',
+        sessionStrategy: 'per-chat',
+        label: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      // This should trigger eviction of the oldest entry
+      await evictionHandler!({
+        id: 'msg-new',
+        subject: 'relay.human.telegram.new-chat',
+        payload: 'hi',
+        from: 'tg',
+        budget: { ttlMs: 60000, maxHops: 5, callBudget: 10 },
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      // The session map should still be at MAX_SESSIONS (oldest evicted)
+      // Verify by checking that routing to bind-old:chat:0 creates a new session
+      // (it was evicted)
+      vi.mocked(mockAgentManager.createSession).mockClear();
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue({
+        id: 'bind-old',
+        adapterId: 'telegram',
+        agentId: 'agent-a',
+        agentDir: '/agents/a',
+        sessionStrategy: 'per-chat',
+        label: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      await evictionHandler!({
+        id: 'msg-evicted',
+        subject: 'relay.human.telegram.0',
+        payload: 'hi',
+        from: 'tg',
+        budget: { ttlMs: 60000, maxHops: 5, callBudget: 10 },
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      // Should create a new session because the old entry was evicted
+      expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+
+      await evictionRouter.shutdown();
     });
   });
 

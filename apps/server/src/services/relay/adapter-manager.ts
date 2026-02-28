@@ -12,7 +12,7 @@
  *
  * @module services/relay/adapter-manager
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { dirname, join as pathJoin } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import type {
@@ -72,6 +72,15 @@ const CONFIG_STABILITY_THRESHOLD_MS = 150;
 
 /** Chokidar poll interval for write-finish detection (ms). */
 const CONFIG_POLL_INTERVAL_MS = 50;
+
+/** Default status for adapters that are not currently running. */
+function defaultAdapterStatus(): AdapterStatus {
+  return {
+    state: 'disconnected',
+    messageCount: { inbound: 0, outbound: 0 },
+    errorCount: 0,
+  };
+}
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterManagerDeps {
@@ -169,6 +178,12 @@ export class AdapterManager {
         relayCore: this.deps.relayCore,
         agentManager: sessionCreator,
         relayDir,
+        // Resolve platform type (e.g., 'telegram') → adapter instance ID
+        // by matching against configured adapter types in the registry.
+        resolveAdapterInstanceId: (platformType: string) => {
+          const match = this.configs.find((c) => c.type === platformType && c.enabled);
+          return match?.id;
+        },
       });
       await this.bindingRouter.init();
       logger.info('[AdapterManager] BindingRouter initialized');
@@ -243,11 +258,7 @@ export class AdapterManager {
   listAdapters(): Array<{ config: AdapterConfig; status: AdapterStatus }> {
     return this.configs.map((config) => {
       const adapter = this.registry.get(config.id);
-      const status: AdapterStatus = adapter?.getStatus() ?? {
-        state: 'disconnected',
-        messageCount: { inbound: 0, outbound: 0 },
-        errorCount: 0,
-      };
+      const status: AdapterStatus = adapter?.getStatus() ?? defaultAdapterStatus();
       const manifest = this.manifests.get(config.type);
       const maskedConfig = {
         ...config,
@@ -271,11 +282,7 @@ export class AdapterManager {
     if (!config) return undefined;
 
     const adapter = this.registry.get(id);
-    const status: AdapterStatus = adapter?.getStatus() ?? {
-      state: 'disconnected',
-      messageCount: { inbound: 0, outbound: 0 },
-      errorCount: 0,
-    };
+    const status: AdapterStatus = adapter?.getStatus() ?? defaultAdapterStatus();
     return { config, status };
   }
 
@@ -321,10 +328,10 @@ export class AdapterManager {
     if (!subject.startsWith('relay.agent.')) return undefined;
 
     const segments = subject.split('.');
-    const agentId = segments[2];
-    if (!agentId) return undefined;
+    const sessionId = segments[2]; // relay.agent.{sessionId}
+    if (!sessionId) return undefined;
 
-    const agentInfo = this.deps.meshCore.getAgent(agentId);
+    const agentInfo = this.deps.meshCore.getAgent(sessionId);
     if (!agentInfo) return undefined;
 
     const manifest = agentInfo.manifest;
@@ -377,15 +384,20 @@ export class AdapterManager {
       // webhook servers, or other long-running processes that can cause
       // conflicts (e.g., Telegram 409) when the real adapter starts later.
       if (adapter.testConnection) {
-        return await Promise.race([
-          adapter.testConnection(),
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error('Connection test timed out')),
-              CONNECTION_TEST_TIMEOUT_MS,
-            ),
-          ),
-        ]);
+        let timer: NodeJS.Timeout;
+        try {
+          return await Promise.race([
+            adapter.testConnection(),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error('Connection test timed out')),
+                CONNECTION_TEST_TIMEOUT_MS,
+              );
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer!);
+        }
       }
 
       // Fallback: start/stop cycle for adapters without testConnection()
@@ -394,15 +406,20 @@ export class AdapterManager {
         onSignal: () => () => {},
       };
 
-      await Promise.race([
-        adapter.start(noopRelay),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error('Connection test timed out')),
-            CONNECTION_TEST_TIMEOUT_MS,
-          ),
-        ),
-      ]);
+      let fallbackTimer: NodeJS.Timeout;
+      try {
+        await Promise.race([
+          adapter.start(noopRelay),
+          new Promise<never>((_, reject) => {
+            fallbackTimer = setTimeout(
+              () => reject(new Error('Connection test timed out')),
+              CONNECTION_TEST_TIMEOUT_MS,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(fallbackTimer!);
+      }
 
       return { ok: true };
     } catch (err) {
@@ -614,11 +631,13 @@ export class AdapterManager {
    */
   private async saveConfig(): Promise<void> {
     await mkdir(dirname(this.configPath), { recursive: true });
+    const tmpPath = `${this.configPath}.tmp`;
     await writeFile(
-      this.configPath,
+      tmpPath,
       JSON.stringify({ adapters: this.configs }, null, 2),
       'utf-8',
     );
+    await rename(tmpPath, this.configPath);
   }
 
   /**
