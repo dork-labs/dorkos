@@ -27,7 +27,7 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | Git Hooks    | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers  | 3     | `.mcp.json`                                                                |
 | ADRs         | 53    | `decisions/`                                                               |
-| Guides       | 19    | `contributing/` (18 guides + INDEX.md)                                           |
+| Guides       | 18    | `contributing/` (17 guides + INDEX.md)                                           |
 
 ## Component Types
 
@@ -231,7 +231,7 @@ Project-wide documentation? ─────────────► CLAUDE.md
 ├── settings.json          # Hooks, permissions, environment
 ├── settings.local.json    # Local overrides, MCP servers
 │
-├── commands/              # Slash commands (56 total)
+├── commands/              # Slash commands (47 total)
 │   ├── adr/               # Architecture Decision Records
 │   ├── app/               # Application maintenance
 │   ├── spec/              # Specification workflow
@@ -239,11 +239,15 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   ├── debug/             # Debugging commands
 │   ├── docs/              # Documentation maintenance
 │   ├── system/            # Harness maintenance
+│   ├── changelog/         # Changelog management
+│   ├── research/          # Research library management
 │   ├── cc/                # Claude Code configuration
 │   │   ├── notify/        # Notification sounds
 │   │   └── ide/           # IDE color schemes
 │   ├── template/          # Upstream template management
 │   ├── worktree/          # Git worktree management
+│   ├── browsertest.md     # Browser test execution
+│   ├── browsertest:maintain.md  # Browser test health audit
 │   ├── ideate.md          # Feature ideation
 │   ├── ideate-to-spec.md  # Ideation → specification
 │   └── review-recent-work.md
