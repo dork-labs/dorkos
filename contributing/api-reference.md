@@ -53,7 +53,8 @@ Event types are documented in the `StreamEventType` enum in the OpenAPI spec. Th
 
 **Responses:**
 
-- `200` - SSE stream with `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `error`, `done` events
+- `200` - SSE stream (when `DORKOS_RELAY_ENABLED` is false). Event types: `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`
+- `202` - JSON receipt (when `DORKOS_RELAY_ENABLED` is true). See [POST /sessions/:id/messages (Relay Mode)](#post-apisessionsidmessages-relay-mode) below.
 - `409` - Session locked by another client. Response body: `{ error: 'Session locked', code: 'SESSION_LOCKED', lockedBy: string, lockedAt: string }`
 
 ### GET /api/sessions/:id/stream
@@ -74,6 +75,9 @@ Persistent SSE connection for session sync. Broadcasts updates when the session'
 
 - `sync_connected` - Sent on initial connection. Data: `{ sessionId: string }`
 - `sync_update` - Sent when JSONL file changes. Data: `{ sessionId: string, timestamp: string }`
+- `relay_message` - (Relay mode) Response chunk from a Relay-dispatched agent session. Contains a nested `StreamEvent`.
+- `relay_receipt` - (Relay mode) Delivery confirmation for a published Relay message.
+- `message_delivered` - (Relay mode) Notification that a message reached its target agent.
 
 **Usage:** Clients should close the connection when no longer viewing the session.
 
@@ -151,6 +155,25 @@ The `warnings` field is only present when the patch includes keys listed in `SEN
   "error": "Request body must be a JSON object"
 }
 ```
+
+## Feature Flags
+
+Some route groups are guarded by environment variable feature flags. When a flag is disabled, the router is not mounted and all requests to those paths return 404.
+
+| Flag                       | Default | Guards                              |
+| -------------------------- | ------- | ----------------------------------- |
+| `DORKOS_RELAY_ENABLED`     | `false` | `/api/relay/*` routes               |
+| `DORKOS_MESH_ENABLED`      | `false` | `/api/mesh/*` routes                |
+
+Both flags also control the behavior of `POST /api/sessions/:id/messages`:
+- When `DORKOS_RELAY_ENABLED=true`, the endpoint returns 202 + receipt instead of an SSE stream.
+
+Other relevant environment variables:
+
+| Variable              | Default | Description                                                  |
+| --------------------- | ------- | ------------------------------------------------------------ |
+| `DORKOS_PORT`         | `4242`  | Express server port                                          |
+| `DORKOS_CORS_ORIGIN`  | `*`     | CORS `Access-Control-Allow-Origin` value. Set to a specific origin (e.g. `https://app.example.com`) to restrict cross-origin requests. |
 
 ## Agent Endpoints
 
@@ -630,6 +653,221 @@ Delete an adapter-agent binding.
 - `200` - `{ ok: true }`
 - `404` - Binding not found
 - `503` - Binding subsystem not available
+
+## Mesh Endpoints
+
+All mesh endpoints are under `/api/mesh/` and require `DORKOS_MESH_ENABLED=true`. When disabled, the mesh router is not mounted and requests return 404.
+
+Mesh manages an in-memory registry of discovered agent peers. Agents heartbeat to maintain their presence and query the topology to find collaborators.
+
+### POST /api/mesh/discover
+
+Trigger peer discovery for a given working directory. Scans for `.dork/agent.json` files in ancestor and sibling directories.
+
+**Request body:**
+
+```json
+{
+  "cwd": "/path/to/project"
+}
+```
+
+**Responses:**
+
+- `200` - `{ candidates: DiscoveryCandidate[] }`
+- `400` - Missing `cwd`
+
+### POST /api/mesh/agents
+
+Register an agent in the mesh.
+
+**Request body:** `AgentManifest` (from `@dorkos/shared/mesh-schemas`)
+
+```json
+{
+  "id": "agent-abc123",
+  "name": "backend-agent",
+  "cwd": "/path/to/project",
+  "runtime": "claude-code"
+}
+```
+
+**Responses:**
+
+- `201` - Registered `AgentManifest`
+- `400` - Validation error
+
+### GET /api/mesh/agents
+
+List all registered agents in the mesh.
+
+**Responses:**
+
+- `200` - `{ agents: AgentManifest[] }`
+
+### PATCH /api/mesh/agents/:id
+
+Update a registered agent's manifest fields.
+
+**Request body:** Partial `AgentManifest`
+
+**Responses:**
+
+- `200` - Updated `AgentManifest`
+- `400` - Validation error
+- `404` - Agent not found
+
+### DELETE /api/mesh/agents/:id
+
+Unregister an agent from the mesh.
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `404` - Agent not found
+
+### GET /api/mesh/agents/:id/access
+
+Get the access control list for an agent — which other agents are permitted to communicate with it.
+
+**Responses:**
+
+- `200` - `{ allowedAgents: string[] }`
+- `404` - Agent not found
+
+### GET /api/mesh/agents/:id/health
+
+Get health status for a registered agent.
+
+**Responses:**
+
+- `200` - `AgentHealth` object:
+
+```json
+{
+  "agentId": "agent-abc123",
+  "status": "healthy",
+  "lastHeartbeat": "2026-02-25T10:00:00Z",
+  "uptimeSeconds": 3600
+}
+```
+
+- `404` - Agent not found
+
+### POST /api/mesh/agents/:id/heartbeat
+
+Record a heartbeat for a registered agent. Agents should call this periodically to maintain their presence in the mesh. Stale agents (no heartbeat within the configured TTL) are removed from active topology.
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `404` - Agent not found
+
+### GET /api/mesh/topology
+
+Get the full mesh topology — all registered agents and their peer relationships.
+
+**Responses:**
+
+- `200` - `{ agents: AgentManifest[], edges: { from: string, to: string }[] }`
+
+### PUT /api/mesh/topology/access
+
+Update access control rules for the topology. Defines which agents may communicate with which.
+
+**Request body:**
+
+```json
+{
+  "rules": [
+    { "from": "agent-abc123", "to": "agent-def456" }
+  ]
+}
+```
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `400` - Validation error
+
+### POST /api/mesh/deny
+
+Add an agent to the deny list. Denied agents cannot communicate with any mesh member.
+
+**Request body:**
+
+```json
+{
+  "agentId": "agent-abc123",
+  "reason": "Unauthorized access attempt"
+}
+```
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `400` - Missing `agentId`
+
+### GET /api/mesh/denied
+
+List all denied agents.
+
+**Responses:**
+
+- `200` - `{ denied: DenialRecord[] }`
+
+### DELETE /api/mesh/denied/:agentId
+
+Remove an agent from the deny list.
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `404` - Agent not in deny list
+
+### GET /api/mesh/status
+
+Get overall mesh status — counts of registered, healthy, and denied agents.
+
+**Responses:**
+
+- `200` - `MeshStatus` object:
+
+```json
+{
+  "totalAgents": 5,
+  "healthyAgents": 4,
+  "deniedAgents": 1,
+  "lastDiscoveryAt": "2026-02-25T10:00:00Z"
+}
+```
+
+## Models Endpoint
+
+### GET /api/models
+
+Returns the list of Claude models supported by the Agent SDK. Uses the SDK's `supportedModels()` function and includes display names and descriptions for each model.
+
+No feature flag required — always mounted.
+
+**Responses:**
+
+- `200` - Array of model descriptors:
+
+```json
+[
+  {
+    "id": "claude-opus-4-5",
+    "name": "Claude Opus 4.5",
+    "description": "Most capable model for complex tasks"
+  },
+  {
+    "id": "claude-sonnet-4-5",
+    "name": "Claude Sonnet 4.5",
+    "description": "Balanced performance and speed"
+  }
+]
+```
 
 ## Validation Errors
 

@@ -606,6 +606,226 @@ logger.info('Connected to Telegram');
 console.error(`Authentication failed (token length: ${this.config.token.length})`);
 ```
 
+## Adapter Catalog
+
+Every adapter type exposes an `AdapterManifest` that describes its metadata and configuration schema. The catalog is the authoritative source for the adapter setup UI and for API consumers that need to discover available adapter types.
+
+### AdapterManifest Schema
+
+```typescript
+interface AdapterManifest {
+  type: string;                        // Unique type key (e.g., 'telegram', 'webhook')
+  displayName: string;                 // Human-readable name shown in UI
+  description: string;                 // Short description of the adapter
+  iconEmoji?: string;                  // Optional emoji for visual identification
+  category: 'messaging' | 'automation' | 'internal' | 'custom';
+  docsUrl?: string;                    // Link to external documentation
+  builtin: boolean;                    // True for adapters shipped with @dorkos/relay
+  configFields: ConfigField[];         // Ordered list of configuration fields
+  setupSteps?: AdapterSetupStep[];     // Optional multi-step setup wizard definition
+  setupInstructions?: string;          // Optional markdown instructions rendered before fields
+  multiInstance: boolean;              // Whether multiple instances of this type can coexist
+}
+```
+
+### ConfigField Schema
+
+Each entry in `configFields` defines one configurable parameter for the adapter:
+
+```typescript
+interface ConfigField {
+  key: string;           // Config object key (e.g., 'token', 'mode')
+  label: string;         // Human-readable label shown in the UI
+  type: ConfigFieldType; // Input type (see below)
+  required: boolean;     // Whether the field must have a value
+  default?: string | number | boolean;  // Default value
+  placeholder?: string;  // Input placeholder text
+  description?: string;  // Helper text shown below the field
+  options?: ConfigFieldOption[];  // Required when type is 'select'
+  section?: string;      // Optional grouping label
+  showWhen?: {           // Conditional display rule
+    field: string;       // Key of another field
+    equals: string | boolean | number;  // Value that triggers visibility
+  };
+}
+
+type ConfigFieldType = 'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea' | 'url';
+```
+
+`password` fields are treated as secrets: their values are masked in API responses (replaced with `'***'`) and are preserved when a partial config update is submitted with the field omitted or still masked.
+
+### CatalogEntry
+
+The catalog API returns one entry per known adapter type:
+
+```typescript
+interface CatalogEntry {
+  manifest: AdapterManifest;     // Static metadata and config field definitions
+  instances: CatalogInstance[];  // Zero or more configured instances of this type
+}
+
+interface CatalogInstance {
+  id: string;
+  enabled: boolean;
+  status: AdapterStatus;
+  config?: Record<string, unknown>;  // Masked config (secrets replaced with '***')
+}
+```
+
+Built-in manifests are registered automatically on server startup. Plugin manifests are registered when the plugin is first loaded via dynamic import (see [Dynamic Plugin Loading](#dynamic-plugin-loading) below).
+
+### Runtime Config Updates
+
+The `AdapterManager.updateConfig(id, newConfig)` method merges a partial config patch into an existing adapter's stored configuration. Password fields (`type: 'password'`) that arrive with the value `'***'` are silently discarded, preserving the real secret on disk. After merging, the adapter is stopped and restarted in-place.
+
+The `Transport` interface exposes `updateConfig(patch)` to allow client code (including the Obsidian plugin's `DirectTransport`) to persist user config changes without needing direct filesystem access:
+
+```typescript
+interface Transport {
+  /** Partially update the persisted user config. */
+  updateConfig(patch: Record<string, unknown>): Promise<void>;
+  // ... other methods
+}
+```
+
+## Dynamic Plugin Loading
+
+Adapters can be loaded at runtime from npm packages or local files. The plugin loader (`packages/relay/src/adapter-plugin-loader.ts`) handles discovery and validation.
+
+### Factory-Function Convention
+
+A third-party adapter package must export a **default factory function** that accepts a config object and returns a `RelayAdapter` instance. It may also export a `getManifest()` function for catalog integration:
+
+```typescript
+// my-relay-adapter/index.ts (or main entry from package.json)
+import type { RelayAdapter } from '@dorkos/relay';
+import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
+
+export default function createMyAdapter(config: Record<string, unknown>): RelayAdapter {
+  return new MyAdapter(config);
+}
+
+export function getManifest(): AdapterManifest {
+  return {
+    type: 'my-adapter',
+    displayName: 'My Adapter',
+    description: 'Bridges My Platform into Relay',
+    category: 'messaging',
+    builtin: false,
+    multiInstance: true,
+    configFields: [
+      { key: 'apiKey', label: 'API Key', type: 'password', required: true },
+      { key: 'region', label: 'Region', type: 'select', required: true,
+        options: [{ label: 'US', value: 'us' }, { label: 'EU', value: 'eu' }] },
+    ],
+  };
+}
+```
+
+If `getManifest()` is absent or fails validation, a minimal fallback manifest is generated automatically and the adapter still loads.
+
+### Plugin Config Entry
+
+Add the adapter to `~/.dork/relay/adapters.json` with `"type": "plugin"` and a `plugin` source:
+
+```json
+{
+  "adapters": [
+    {
+      "id": "my-adapter-1",
+      "type": "plugin",
+      "enabled": true,
+      "plugin": { "package": "my-relay-adapter" },
+      "config": { "apiKey": "sk-...", "region": "us" }
+    },
+    {
+      "id": "local-dev",
+      "type": "plugin",
+      "enabled": true,
+      "plugin": { "path": "./adapters/my-local-adapter.js" },
+      "config": {}
+    }
+  ]
+}
+```
+
+`plugin.package` is resolved via Node's module resolution relative to the process CWD. `plugin.path` is resolved relative to the directory containing `adapters.json` when the path is not absolute.
+
+Loading errors are non-fatal: the failing adapter is skipped with a warning and remaining adapters continue to load.
+
+## Adapter-Agent Bindings
+
+The binding subsystem routes inbound adapter messages to specific Claude Code sessions. It consists of two services: `BindingStore` (persistence) and `BindingRouter` (runtime routing).
+
+### BindingStore
+
+Bindings are persisted in `~/.dork/relay/bindings.json` and hot-reloaded via chokidar when the file changes externally. The store is the source of truth for all routing decisions.
+
+Each binding links one adapter instance to one agent working directory:
+
+```typescript
+interface AdapterBinding {
+  id: string;             // UUID, assigned on creation
+  adapterId: string;      // Matches an adapter config id (e.g., 'my-telegram')
+  agentId: string;        // Agent identity ID for display purposes
+  projectPath: string;    // Working directory passed to AgentManager.createSession()
+  chatId?: string;        // Optional: restrict to a specific chat/user ID
+  channelType?: 'dm' | 'group';  // Optional: restrict to a channel type
+  sessionStrategy: 'per-chat' | 'per-user' | 'stateless';
+  label: string;          // Human-readable label shown in the UI
+  createdAt: string;      // ISO 8601 timestamp
+  updatedAt: string;      // ISO 8601 timestamp
+}
+```
+
+### Resolution Scoring (Most-Specific-First)
+
+When an inbound message arrives from an adapter, `BindingStore.resolve()` picks the best matching binding using a scoring algorithm:
+
+| Criteria matched                            | Score |
+| ------------------------------------------- | ----- |
+| adapterId + chatId + channelType            | 7     |
+| adapterId + chatId                          | 5     |
+| adapterId + channelType                     | 3     |
+| adapterId only (wildcard / catch-all)        | 1     |
+| explicit mismatch on chatId or channelType  | 0 (excluded) |
+
+The binding with the highest score is selected. If no binding matches, the message is dropped (no dead-letter — the adapter is simply not bound to any agent).
+
+**Example:** Two bindings for the same Telegram adapter — one catch-all and one for a specific group — will correctly route group messages to the specific binding and DMs to the catch-all:
+
+```json
+[
+  { "adapterId": "my-telegram", "sessionStrategy": "per-chat", "label": "default" },
+  { "adapterId": "my-telegram", "chatId": "-1001234567890", "channelType": "group",
+    "sessionStrategy": "per-user", "label": "project-team-group" }
+]
+```
+
+### Session Strategies
+
+The `sessionStrategy` field on each binding controls how Claude Code sessions are created for incoming messages:
+
+| Strategy    | Behavior                                                                              |
+| ----------- | ------------------------------------------------------------------------------------- |
+| `per-chat`  | One persistent session per chat ID. All messages in the same chat reuse the same session. This is the default. |
+| `per-user`  | One persistent session per user (extracted from envelope metadata, falling back to chatId). Useful when the same user can message from multiple chats. |
+| `stateless` | A fresh session is created for every inbound message. No session history is carried across messages. |
+
+Session mappings for `per-chat` and `per-user` strategies are persisted to `~/.dork/relay/sessions.json` and restored on server restart. The map is capped at 10,000 entries with LRU eviction. Orphaned session entries (whose binding no longer exists) are removed on startup.
+
+### BindingRouter
+
+`BindingRouter` subscribes to `relay.human.>` and handles the routing pipeline:
+
+1. Parse the inbound subject to extract `platformType` and `chatId` (e.g., `relay.human.telegram.123456` → `telegram`, `123456`)
+2. Resolve platform type to an adapter instance ID via `resolveAdapterInstanceId()`
+3. Call `BindingStore.resolve()` to find the best binding
+4. Resolve or create a session ID based on the binding's `sessionStrategy`
+5. Republish the payload to `relay.agent.{sessionId}` for `ClaudeCodeAdapter` to handle
+
+Agent responses published back to `relay.human.*` subjects are detected by checking `envelope.from.startsWith('agent:')` and are skipped to prevent routing loops.
+
 ## Creating a Custom Adapter
 
 Here's a minimal example implementing a hypothetical Slack adapter:
@@ -765,5 +985,10 @@ export class SlackAdapter implements RelayAdapter {
 
 - `packages/relay/src/adapter-registry.ts` — AdapterRegistry lifecycle management
 - `packages/relay/src/types.ts` — RelayAdapter interface and config types
-- `apps/server/src/services/relay/adapter-manager.ts` — Server-side hot-reload and persistence
-- `packages/shared/relay-schemas.ts` — StandardPayload and RelayEnvelope schemas
+- `packages/relay/src/adapter-plugin-loader.ts` — Dynamic plugin loading from npm and local paths
+- `apps/server/src/services/relay/adapter-manager.ts` — Server-side hot-reload, catalog, and updateConfig
+- `apps/server/src/services/relay/adapter-factory.ts` — Adapter instantiation per config type
+- `apps/server/src/services/relay/binding-store.ts` — Binding persistence and resolution scoring
+- `apps/server/src/services/relay/binding-router.ts` — Runtime routing from relay.human.> to relay.agent.*
+- `packages/shared/src/relay-schemas.ts` — AdapterManifest, ConfigField, AdapterBinding, and all Relay Zod schemas
+- `packages/shared/src/transport.ts` — Transport interface including updateConfig()

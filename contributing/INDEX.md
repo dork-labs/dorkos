@@ -27,6 +27,8 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `parallel-execution.md` | Parallel agent execution patterns, batching | `.claude/agents/\|\.claude/commands/` |
 | `relay-adapters.md` | Adapter interface, lifecycle, testing | `packages/relay/src/adapters/\|adapter-registry\|adapter-manager` |
 | `adapter-catalog.md` | AdapterManifest, ConfigField, plugin manifests, catalog API | `AdapterManifest\|ConfigField\|adapter-plugin-loader\|adapters/catalog` |
+| `browser-testing.md` | Playwright test suite, AI-assisted test authoring, Page Object Models, manifest | `apps/e2e/\|playwright.config\|browsertest` |
+| `environment-variables.md` | env.ts validation pattern, boolFlag helper, complete env var reference | `env.ts\|process\.env\|globalPassThroughEnv` |
 
 ## Pattern Syntax
 
@@ -53,6 +55,10 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `animations.md` | 2026-02-17 | Claude | Fixed path references |
 | `styling-theming.md` | 2026-02-17 | Claude | Fixed path references |
 | `parallel-execution.md` | 2026-02-17 | Claude | Current |
+| `relay-adapters.md` | 2026-02-17 | Claude | Current |
+| `adapter-catalog.md` | 2026-02-17 | Claude | Current |
+| `browser-testing.md` | 2026-03-01 | Claude | Added to index |
+| `environment-variables.md` | 2026-03-01 | Claude | Added to index |
 
 ## External Docs Coverage
 

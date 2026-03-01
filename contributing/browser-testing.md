@@ -41,20 +41,28 @@ cd apps/e2e && PWDEBUG=1 npx playwright test tests/chat/send-message.spec.ts
 apps/e2e/
 ├── playwright.config.ts      # Multi-server config (Vite + Express)
 ├── manifest.json              # Test registry + run history (AI health tracking)
+├── GOTCHAS.md                 # Known anti-patterns and hard-won lessons
+├── BROWSER_TEST_PLAN.md       # Manual + automated test coverage checklist
 ├── fixtures/
 │   └── index.ts               # Extended test with DorkOS fixtures
 ├── pages/                     # Page Object Models
 │   ├── BasePage.ts            # Common navigation helpers
 │   ├── ChatPage.ts            # Chat interactions
 │   ├── SessionSidebarPage.ts  # Session sidebar
-│   └── SettingsPage.ts        # Settings dialog
+│   ├── SettingsPage.ts        # Settings dialog
+│   ├── PulsePage.ts           # Pulse scheduler dialog
+│   ├── MeshPage.ts            # Mesh agent discovery dialog
+│   └── RelayPage.ts           # Relay messaging dialog
 ├── reporters/
 │   └── manifest-reporter.ts   # Custom reporter updating manifest.json
 └── tests/                     # Test specs organized by feature
     ├── smoke/                 # @smoke — critical path, no SDK
     ├── chat/                  # @integration — requires ANTHROPIC_API_KEY
     ├── session-list/
-    └── settings/
+    ├── settings/
+    ├── pulse/                 # Pulse scheduler tests
+    ├── mesh/                  # Mesh discovery tests
+    └── relay/                 # Relay messaging tests
 ```
 
 ## Writing Tests
@@ -66,6 +74,18 @@ Always import `test` and `expect` from the custom fixtures, never directly from 
 ```typescript
 import { test, expect } from '../../fixtures';
 ```
+
+The fixture file (`fixtures/index.ts`) provides seven pre-instantiated Page Objects:
+
+| Fixture | Class | Auto-navigates? |
+|---------|-------|-----------------|
+| `basePage` | `BasePage` | No |
+| `chatPage` | `ChatPage` | Yes — calls `goto()` which navigates and ensures a session is active |
+| `sessionSidebar` | `SessionSidebarPage` | No |
+| `settingsPage` | `SettingsPage` | No |
+| `pulsePage` | `PulsePage` | No — call `pulsePage.open()` to open the dialog |
+| `meshPage` | `MeshPage` | No — call `meshPage.open()` to open the dialog |
+| `relayPage` | `RelayPage` | No — call `relayPage.open()` to open the dialog |
 
 ### Use Page Object Models
 
@@ -81,12 +101,27 @@ test('sends a message', async ({ chatPage }) => {
 });
 ```
 
+For panel-based features (Pulse, Mesh, Relay), call `open()` first:
+
+```typescript
+test('pulse dialog opens @smoke', async ({ basePage, pulsePage }) => {
+  await basePage.goto();
+  await pulsePage.open();
+  await expect(pulsePage.heading).toBeVisible();
+  await pulsePage.close();
+});
+```
+
+**Panel open caveat**: The sidebar footer buttons (Settings, Relay, Mesh, Pulse, Theme) are intercepted by the main content area's pointer events in some viewport configurations. The `PulsePage`, `MeshPage`, and `RelayPage` `open()` methods work around this by using `page.evaluate()` to dispatch a JS click directly on the button element. Do not replace this with a standard `click()` call.
+
 ### Selector Strategy
 
 Priority order:
 1. `getByRole()` — Semantic, resilient to UI changes
 2. `data-testid` — Stable contract between test and implementation
 3. CSS class — Last resort, fragile
+
+**Known role quirk**: The chat message input uses `combobox` role (not `textbox`) with the name `"Message Claude..."`. Always use `page.getByRole('combobox', { name: /message claude/i })` — the `ChatPage` POM handles this automatically.
 
 ### Wait Strategy
 
@@ -173,6 +208,8 @@ The manifest is automatically updated by the custom reporter after each test run
 ## Adding New Tests
 
 ### Manual
+
+Before writing new tests, read `apps/e2e/GOTCHAS.md` for known anti-patterns and consult `apps/e2e/BROWSER_TEST_PLAN.md` for feature coverage gaps.
 
 1. Create a POM if the feature needs one (in `pages/`)
 2. Register the POM as a fixture in `fixtures/index.ts`

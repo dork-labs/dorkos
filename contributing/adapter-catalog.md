@@ -246,11 +246,184 @@ interface CatalogInstance {
 
 This allows the UI to show both "available adapter types" and "running instances" in a single view.
 
+## AdapterManagerDeps
+
+`AdapterManager` accepts a `AdapterManagerDeps` object for dependency injection:
+
+```typescript
+interface AdapterManagerDeps {
+  agentManager: ClaudeCodeAgentManagerLike;
+  traceStore: TraceStoreLike;
+  pulseStore?: PulseStoreLike;
+  /** Optional RelayCore for binding subsystem initialization */
+  relayCore?: RelayCoreLike;
+  /** Optional MeshCore for enriching AdapterContext with agent info */
+  meshCore?: {
+    getAgent(id: string): { manifest: Record<string, unknown> } | undefined;
+  };
+}
+```
+
+- `agentManager` and `traceStore` are required. `pulseStore` is optional but needed for Pulse-aware adapters (e.g., ClaudeCodeAdapter schedule dispatching).
+- When `relayCore` is provided, `AdapterManager` initializes the full binding subsystem (`BindingStore` + `BindingRouter`) during `initialize()`. When omitted, the binding subsystem is skipped and binding API endpoints return 503.
+- `meshCore` is optional; when provided, the adapter context passed to each adapter's `deliver()` call is enriched with agent manifest data for the resolved agent.
+
+## Adapter-Agent Bindings
+
+Bindings route inbound adapter messages to specific agent sessions. They are the mechanism by which external messages (e.g., a Telegram chat) are directed to a particular Claude Code session.
+
+### AdapterBinding Schema
+
+Defined as `AdapterBindingSchema` in `packages/shared/src/relay-schemas.ts`.
+
+| Field             | Type              | Required | Description                                                                 |
+| ----------------- | ----------------- | -------- | --------------------------------------------------------------------------- |
+| `id`              | `string` (UUID)   | Yes      | Auto-generated binding identifier                                           |
+| `adapterId`       | `string`          | Yes      | ID of the adapter instance this binding applies to                          |
+| `agentId`         | `string`          | Yes      | ID of the target agent (from `.dork/agent.json`)                            |
+| `projectPath`     | `string`          | Yes      | Filesystem path used as the working directory for new agent sessions        |
+| `chatId`          | `string`          | No       | Narrow to a specific chat/conversation ID (e.g., Telegram chat ID)          |
+| `channelType`     | `string`          | No       | Narrow to a channel type: `'dm'`, `'group'`, or `'channel'`                |
+| `sessionStrategy` | `SessionStrategy` | No       | How agent sessions are reused (default: `'per-chat'`)                       |
+| `label`           | `string`          | No       | Human-readable label shown in the topology graph (default: `''`)            |
+| `createdAt`       | `string`          | Yes      | ISO 8601 timestamp (set by server on creation)                              |
+| `updatedAt`       | `string`          | Yes      | ISO 8601 timestamp (set by server on creation)                              |
+
+### Session Strategies
+
+The `sessionStrategy` field controls how `BindingRouter` maps inbound messages to Claude Code sessions:
+
+| Strategy    | Behavior                                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `per-chat`  | One session per `chatId`. Messages from the same chat always resume the same session. **Default.**                           |
+| `per-user`  | One session per `userId` (from envelope metadata). Multiple chats from the same user share a single session.                 |
+| `stateless` | A new session is created for every inbound message. No session state is reused. Useful for stateless command-style workflows. |
+
+Sessions are persisted across server restarts in `~/.dork/relay/sessions.json`. The session map uses LRU eviction when the size exceeds 10,000 entries.
+
+### Binding Resolution (Most-Specific-First)
+
+`BindingStore.resolve()` scores all bindings for an adapter and returns the highest-scoring match:
+
+| Match criteria                                 | Score |
+| ---------------------------------------------- | ----- |
+| `adapterId` + `chatId` + `channelType`         | 7     |
+| `adapterId` + `chatId`                         | 5     |
+| `adapterId` + `channelType`                    | 3     |
+| `adapterId` only (wildcard — matches all chats)| 1     |
+| No match                                       | —     |
+
+An explicit `chatId` or `channelType` that does not match the inbound message is an immediate disqualifier (score 0). This means a wildcard binding (adapterId only) will match all messages from an adapter unless a more-specific binding applies.
+
+### BindingRouter Service
+
+`BindingRouter` (`apps/server/src/services/relay/binding-router.ts`) is the central routing service for adapter-to-agent message delivery. It:
+
+1. Subscribes to `relay.human.>` (all inbound human messages, including multi-token subjects like `relay.human.telegram.123456`).
+2. Parses the subject to extract `platformType`, `chatId`, and `channelType`.
+3. Resolves the platform type to an adapter instance ID via the optional `resolveAdapterInstanceId` dependency.
+4. Calls `BindingStore.resolve()` with the extracted components.
+5. Determines or creates the target agent session based on `sessionStrategy`.
+6. Republishes the envelope to `relay.agent.{sessionId}` for `ClaudeCodeAdapter` to handle.
+
+Agent response messages (where `envelope.from` starts with `'agent:'`) are ignored to prevent feedback loops.
+
+Subject format parsed by BindingRouter:
+
+```
+relay.human.{platformType}.{chatId}              # DM
+relay.human.{platformType}.group.{chatId}        # group chat
+```
+
+### Binding HTTP API
+
+All binding endpoints are mounted under `/api/relay` and require `DORKOS_RELAY_ENABLED=true`.
+
+| Method   | Path                 | Description                                  |
+| -------- | -------------------- | -------------------------------------------- |
+| `GET`    | `/api/relay/bindings`        | List all bindings                    |
+| `POST`   | `/api/relay/bindings`        | Create a new binding                 |
+| `GET`    | `/api/relay/bindings/:id`    | Get a single binding by ID           |
+| `DELETE` | `/api/relay/bindings/:id`    | Delete a binding (cleans up orphaned sessions) |
+
+**Create binding request body** (`CreateBindingRequest`):
+
+```json
+{
+  "adapterId": "telegram-1",
+  "agentId": "my-agent",
+  "projectPath": "/home/user/my-project",
+  "chatId": "123456789",
+  "channelType": "dm",
+  "sessionStrategy": "per-chat",
+  "label": "My Telegram binding"
+}
+```
+
+Fields `chatId`, `channelType`, and `label` are optional. `sessionStrategy` defaults to `'per-chat'`.
+
+When a binding is deleted, `BindingRouter.cleanupOrphanedSessions()` is called automatically to remove stale session map entries for the deleted binding.
+
+### Topology Graph (UI)
+
+Bindings are visualised in the Mesh Topology Graph (`features/mesh/`) as `BindingEdge` components connecting adapter nodes to agent nodes. The `BindingDialog` component provides a form for creating and deleting bindings directly from the graph view. Client-side hooks are in `entities/binding/`.
+
+## Adapter Delivery Observability
+
+### Publish Pipeline Fan-Out
+
+When `RelayCore.publish()` is called, delivery proceeds through the following steps in order:
+
+1. Envelope assembly (ID, timestamps, budget)
+2. Endpoint validation and rate-limit check (per-sender, before fan-out)
+3. Maildir delivery to all matching registered endpoints in parallel
+4. Adapter delivery (step 7) — always attempted in parallel with Maildir delivery
+5. Subscription handler dispatch (step 7b) — fires for subjects with no registered Maildir endpoints, enabling `BindingRouter` to intercept `relay.human.*` messages
+6. Dead-letter if no delivery targets matched
+7. Trace span insertion (best-effort)
+
+### Adapter Delivery Timeout
+
+Adapter `deliver()` calls are wrapped in a 30-second timeout by `AdapterDelivery` (`packages/relay/src/adapter-delivery.ts`):
+
+```typescript
+static readonly TIMEOUT_MS = 30_000; // 30 seconds
+```
+
+If the adapter does not resolve within 30 seconds, the promise is rejected with `'adapter delivery timeout (30s)'` and a `DeliveryResult` with `success: false` is returned. This result propagates back through the `PublishResult` as `adapterResult` for observability.
+
+### DeliveryResult
+
+Adapters return `DeliveryResult` from their `deliver()` method:
+
+```typescript
+interface DeliveryResult {
+  success: boolean;
+  /** Error message if delivery failed */
+  error?: string;
+  /** Whether a dead letter was created for this failure */
+  deadLettered?: boolean;
+  /** Response message ID if the adapter published a reply */
+  responseMessageId?: string;
+  /** Delivery duration in milliseconds */
+  durationMs?: number;
+}
+```
+
+The `PublishResult` returned by `RelayCore.publish()` includes `adapterResult` when adapter delivery was attempted, giving callers full visibility into the adapter delivery outcome alongside the Maildir endpoint delivery counts.
+
+Adapter delivery is indexed in SQLite (`~/.dork/relay/index.db`) under the subject hash prefixed with `adapter:` for audit-trail purposes — separate from Maildir endpoint entries.
+
 ## Related
 
-- `packages/shared/src/relay-schemas.ts` — Zod schemas for all catalog types
+- `packages/shared/src/relay-schemas.ts` — Zod schemas for all catalog types (`AdapterBindingSchema`, `SessionStrategySchema`, `CreateBindingRequestSchema`)
 - `packages/relay/src/adapter-plugin-loader.ts` — Plugin loading and manifest extraction
 - `packages/relay/src/adapters/` — Built-in adapter implementations and manifests
-- `apps/server/src/routes/relay.ts` — Adapter management API endpoints
+- `packages/relay/src/adapter-delivery.ts` — Adapter delivery with 30s timeout and SQLite indexing
+- `packages/relay/src/delivery-pipeline.ts` — Maildir endpoint delivery pipeline
+- `apps/server/src/services/relay/binding-store.ts` — Binding CRUD and most-specific-first resolution
+- `apps/server/src/services/relay/binding-router.ts` — Inbound message routing service
+- `apps/server/src/services/relay/adapter-manager.ts` — Adapter lifecycle and binding subsystem init
+- `apps/server/src/routes/relay.ts` — Adapter management and binding API endpoints
 - `contributing/relay-adapters.md` — Adapter interface, lifecycle, and authoring guide
 - `contributing/api-reference.md` — Full endpoint documentation

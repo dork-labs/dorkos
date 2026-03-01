@@ -14,18 +14,22 @@ The Agent SDK is fully integrated via `agent-manager.ts` (session orchestration)
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with four apps and four shared packages:
+This is a Turborepo monorepo with five apps and seven shared packages:
 
 ```
 dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
 │   ├── server/           # @dorkos/server - Express API (tsc, NodeNext)
-│   ├── web/              # @dorkos/web - Marketing site & docs (Next.js 16, Fumadocs)
-│   └── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
+│   ├── site/             # @dorkos/site - Marketing site & docs (Next.js 16, Fumadocs)
+│   ├── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
+│   └── e2e/              # @dorkos/e2e - Playwright browser tests
 ├── packages/
 │   ├── cli/              # dorkos - Publishable npm CLI (esbuild bundle)
 │   ├── shared/           # @dorkos/shared - Zod schemas, types (JIT .ts exports)
+│   ├── db/               # @dorkos/db - Drizzle ORM schemas (SQLite)
+│   ├── relay/            # @dorkos/relay - Inter-agent message bus
+│   ├── mesh/             # @dorkos/mesh - Agent discovery & registry
 │   ├── typescript-config/ # @dorkos/typescript-config - Shared tsconfig presets
 │   └── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
 ├── decisions/            # Architecture Decision Records (ADRs)
@@ -46,7 +50,7 @@ dotenv -- turbo dev --filter=@dorkos/server   # Express server only (loads .env)
 dotenv -- turbo dev --filter=@dorkos/client   # Vite dev server only (loads .env)
 pnpm test              # Vitest across client + server (loads .env)
 pnpm test -- --run     # Vitest single run
-pnpm build             # Build all apps (client Vite + server tsc + web Next.js + obsidian plugin)
+pnpm build             # Build all apps (client Vite + server tsc + site Next.js + obsidian plugin)
 pnpm typecheck         # Type-check all packages
 turbo build --filter=@dorkos/obsidian-plugin  # Build Obsidian plugin only
 pnpm --filter=dorkos run build   # Build CLI package (esbuild bundles server+client+CLI)
@@ -73,7 +77,7 @@ DorkOS uses a **hexagonal architecture** with a `Transport` interface (`packages
 
 ### Server (`apps/server/src/`)
 
-Express server on port `DORKOS_PORT` (default 4242). All endpoints that accept `cwd`, `path`, or `dir` parameters enforce directory boundary validation via `lib/boundary.ts`, returning 403 for paths outside the configured boundary (default: home directory). Twelve route groups:
+Express server on port `DORKOS_PORT` (default 4242). CORS is configured in `app.ts` via `buildCorsOrigin()`: defaults to localhost on `DORKOS_PORT` and `VITE_PORT` (4241); set `DORKOS_CORS_ORIGIN` to a comma-separated list of origins (or `*`) to override. All endpoints that accept `cwd`, `path`, or `dir` parameters enforce directory boundary validation via `lib/boundary.ts`, returning 403 for paths outside the configured boundary (default: home directory). Thirteen route groups:
 
 - **`routes/sessions.ts`** - Session listing (from SDK transcripts), session creation, SSE message streaming, message history, tool approve/deny endpoints
 - **`routes/commands.ts`** - Slash command listing via `CommandRegistryService`, which scans `.claude/commands/` using gray-matter frontmatter parsing
@@ -87,14 +91,17 @@ Express server on port `DORKOS_PORT` (default 4242). All endpoints that accept `
 - **`routes/relay.ts`** - Relay inter-agent messaging (POST/GET messages, GET/POST/DELETE endpoints, GET inbox, GET dead-letters, GET metrics, GET stream SSE), adapter catalog management (GET /adapters/catalog, POST /adapters, DELETE /adapters/:id, PATCH /adapters/:id/config, POST /adapters/test), and binding management (GET/POST/DELETE /bindings, GET /bindings/:id). Feature-flag guarded via `relay-state.ts`
 - **`routes/mesh.ts`** - Mesh agent discovery and registry (POST /discover, POST/GET/PATCH/DELETE /agents, GET /agents/:id/access, GET /agents/:id/health, POST /agents/:id/heartbeat, GET /topology, PUT /topology/access, POST /deny, GET/DELETE /denied, GET /status). Feature-flag guarded via `mesh-state.ts`. Factory: `createMeshRouter(meshCore)`
 - **`routes/agents.ts`** - Agent identity CRUD (GET/POST/PATCH /agents/current for per-CWD agent identity, POST /agents/resolve for batch path→agent resolution). Always mounted (no feature flag). Reads/writes `.dork/agent.json` manifest files via `@dorkos/shared/manifest`
+- **`routes/models.ts`** - GET /api/models — returns available Claude models via `agentManager.getSupportedModels()`
 
-Twenty-eight services (+ 1 lib utility):
+Twenty-eight services (+ 2 lib utilities + 1 env module):
 
 - **`services/agent-manager.ts`** - Manages Claude Agent SDK sessions. Calls `query()` with streaming, delegates event mapping to `sdk-event-mapper.ts`. Injects runtime context via `context-builder.ts` into `systemPrompt: { type: 'preset', preset: 'claude_code', append }`. Tracks active sessions in-memory with 30-minute timeout. All sessions use `resume: sessionId` for SDK continuity. Accepts optional `cwd` constructor param (used by Obsidian plugin). Injects MCP tool servers via `setMcpServers()`.
 - **`services/agent-types.ts`** - `AgentSession` and `ToolState` interfaces, plus `createToolState()` factory. Shared by agent-manager, sdk-event-mapper, and interactive-handlers.
 - **`services/sdk-event-mapper.ts`** - Pure async generator `mapSdkMessage()` that transforms SDK messages (`stream_event`, `tool_use_summary`, `result`, `system/init`) into DorkOS `StreamEvent` types.
 - **`services/context-builder.ts`** - `buildSystemPromptAppend(cwd)` — gathers runtime context (env info, git status, agent identity/persona) and formats as XML blocks (`<env>`, `<git_status>`, `<agent_identity>`, `<agent_persona>`) for the SDK `systemPrompt.append`. Never throws. Agent persona injection is conditional on `personaEnabled` flag in the agent manifest.
 - **`lib/sdk-utils.ts`** - `makeUserPrompt()` (wraps string as `AsyncIterable<SDKUserMessage>`) and `resolveClaudeCliPath()` (Claude CLI path resolution for Electron compatibility).
+- **`lib/resolve-root.ts`** - Single source of truth for the server's default working directory. Exports `DEFAULT_CWD`: prefers `DORKOS_DEFAULT_CWD` env var, falls back to repo root resolved from the file's own location. Consumed by routes and services that need the default CWD.
+- **`env.ts`** - Zod-validated environment module. Parses and type-validates all server env vars at startup; exits with a clear error if required vars are missing or invalid. Exports a typed `env` object consumed throughout the server. Each app has its own `env.ts` (`apps/client/src/env.ts`, `apps/site/src/env.ts`, `packages/cli/src/env.ts`) with app-specific schemas.
 - **`services/transcript-reader.ts`** - Single source of truth for session data. Reads SDK JSONL transcript files from `~/.claude/projects/{slug}/`. Provides `listSessions()` (scans directory, extracts metadata), `getSession()` (single session metadata), and `readTranscript()` (full message history). Extracts titles from first user message, permission mode from init message, timestamps from file stats.
 - **`services/transcript-parser.ts`** - Parses SDK JSONL transcript lines into structured `HistoryMessage` objects. Handles content blocks (text, tool_use, tool_result), question prompts, and model metadata extraction.
 - **`services/session-broadcaster.ts`** - Manages cross-client session synchronization. Watches JSONL transcript files via chokidar for changes (including CLI writes). Maintains SSE connections with passive clients via `registerClient()`. Broadcasts `sync_update` events when files change. Debounces rapid writes (100ms). Uses incremental byte-offset reading via `transcriptReader.readFromOffset()`. Graceful shutdown closes all watchers and connections.
@@ -222,7 +229,7 @@ When a session is opened, the client fetches message history via GET `/api/sessi
 
 ### Vault Root Resolution
 
-**Standalone server:** Resolves repo root from `apps/server/dist/` upward to the repository root.
+**Standalone server:** `lib/resolve-root.ts` exports `DEFAULT_CWD` — prefers `DORKOS_DEFAULT_CWD` env var, falls back to the repo root resolved upward from `apps/server/dist/`. This is the single source of truth for the server's default working directory.
 
 **Obsidian plugin:** `CopilotView` computes `repoRoot = path.resolve(vaultPath, '..')` (vault is `workspace/`, repo root is its parent). This is passed to `AgentManager(repoRoot)` and `CommandRegistryService(repoRoot)`.
 
@@ -266,7 +273,7 @@ Two documentation systems exist side-by-side:
 | `contributing/` | Internal devs & Claude Code agents | Markdown | Deep implementation details, code patterns, FSD layers |
 | `docs/` | External users & integrators | MDX (Fumadocs) | Task-oriented guides, API reference, getting started |
 
-The `docs/` directory contains MDX content structured for [Fumadocs](https://fumadocs.dev) consumption. The `apps/web` workspace (`@dorkos/web`) is a Next.js 16 marketing site that renders these docs via fumadocs-mdx at `/docs/*`, plus an OpenAPI-powered API reference at `/docs/api/*`. Deployed to Vercel with turbo-ignore for smart rebuild skipping. The `docs/api/openapi.json` is generated by `pnpm docs:export-api` and gitignored.
+The `docs/` directory contains MDX content structured for [Fumadocs](https://fumadocs.dev) consumption. The `apps/site` workspace (`@dorkos/site`) is a Next.js 16 marketing site that renders these docs via fumadocs-mdx at `/docs/*`, plus an OpenAPI-powered API reference at `/docs/api/*`. Deployed to Vercel with turbo-ignore for smart rebuild skipping. The `docs/api/openapi.json` is generated by `pnpm docs:export-api` and gitignored.
 
 ## Testing
 

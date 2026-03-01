@@ -41,6 +41,30 @@ dorkos config path
 # /custom/path/config.json
 ```
 
+## Runtime Data File Locations
+
+DorkOS writes several runtime data files under `~/.dork/` in addition to `config.json`. The root directory is overridden by `DORK_HOME`.
+
+| Path                             | Purpose                                                       |
+| -------------------------------- | ------------------------------------------------------------- |
+| `~/.dork/config.json`            | Persistent user config (this document)                        |
+| `~/.dork/pulse.db`               | SQLite database for Pulse scheduler state (WAL mode)          |
+| `~/.dork/schedules.json`         | JSON snapshot of Pulse schedules (alongside pulse.db)         |
+| `~/.dork/logs/dorkos.log`        | NDJSON server log with daily rotation                         |
+| `~/.dork/relay/adapters.json`    | Relay adapter config — hot-reloaded by AdapterManager         |
+| `~/.dork/relay/index.db`         | SQLite index for Relay message delivery and trace data         |
+| `~/.dork/relay/bindings.json`    | Adapter-to-agent binding definitions — hot-reloaded at runtime |
+| `~/.dork/relay/sessions.json`    | Binding session map persisted across server restarts          |
+| `~/.dork/relay/`                 | Relay Maildir message store (subdirectories per subject)      |
+
+### Relay config (`~/.dork/relay/adapters.json`)
+
+The Relay subsystem reads adapter configuration from `~/.dork/relay/adapters.json`. This file is watched with chokidar and hot-reloaded whenever it changes — no server restart is required. Each entry follows the adapter manifest format: a `type` field matching a registered adapter, plus a `config` object whose shape is defined by the adapter's `ConfigField` schema. Sensitive config fields (marked `sensitive: true` in the manifest) are masked to `***` in API responses.
+
+### Relay bindings (`~/.dork/relay/bindings.json`)
+
+Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The file is also hot-reloaded via chokidar. Bindings map inbound adapter messages to specific agent CWDs using a most-specific-first resolution strategy. The companion file `~/.dork/relay/sessions.json` stores the active session map so that per-chat and per-user session strategies survive server restarts.
+
 ## Settings Reference
 
 | Key               | Type                           | Default   | Description                                |
@@ -54,6 +78,14 @@ dorkos config path
 | `tunnel.auth`     | string \| null                 | `null`    | HTTP basic auth for tunnel, `user:pass` format (sensitive) |
 | `logging.level`   | `"fatal"` \| `"error"` \| `"warn"` \| `"info"` \| `"debug"` \| `"trace"` | `"info"` | Log verbosity level |
 | `ui.theme`        | `"light"` \| `"dark"` \| `"system"` | `"system"` | UI color theme                           |
+
+The following settings are controlled exclusively by environment variables and have no corresponding config file key or CLI flag:
+
+| Environment Variable    | Default  | Description                                                |
+| ----------------------- | -------- | ---------------------------------------------------------- |
+| `DORKOS_RELAY_ENABLED`  | `false`  | Enable the Relay message bus subsystem                     |
+| `DORKOS_MESH_ENABLED`   | `false`  | Enable the Mesh agent discovery subsystem                  |
+| `DORKOS_CORS_ORIGIN`    | `*`      | CORS allowed origin for the Express server                 |
 
 The config file also contains a `version` field (always `1`) used for schema migrations.
 
@@ -185,6 +217,39 @@ The UI color theme. Options: `light`, `dark`, or `system` (follows OS preference
 ```bash
 dorkos config set ui.theme dark
 ```
+
+### DORKOS_RELAY_ENABLED
+
+Feature flag that enables the Relay message bus subsystem. When `true`, the server mounts the `/api/relay` routes, starts the `RelayCore`, and activates Relay-backed session messaging (POST `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}` instead of calling AgentManager directly).
+
+```bash
+export DORKOS_RELAY_ENABLED=true
+dorkos
+```
+
+There is no config file key for this setting. It must be set as an environment variable.
+
+### DORKOS_MESH_ENABLED
+
+Feature flag that enables the Mesh agent discovery subsystem. When `true`, the server mounts the `/api/mesh` routes and activates the MeshCore registry.
+
+```bash
+export DORKOS_MESH_ENABLED=true
+dorkos
+```
+
+There is no config file key for this setting. It must be set as an environment variable.
+
+### DORKOS_CORS_ORIGIN
+
+Configures the `Access-Control-Allow-Origin` header on the Express server. Defaults to `*` (all origins) when unset. Set this to a specific origin in production deployments to restrict cross-origin access.
+
+```bash
+export DORKOS_CORS_ORIGIN=https://myapp.example.com
+dorkos
+```
+
+There is no config file key for this setting. It must be set as an environment variable.
 
 ## Precedence
 

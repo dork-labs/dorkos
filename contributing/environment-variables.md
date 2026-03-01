@@ -12,10 +12,12 @@ Each app and package now exports a typed, validated `env` object from a local `e
 
 | App / Package    | env.ts path                              | Env vars covered                                                                                                                                                 |
 | ---------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN |
+| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
 | `apps/client`    | `apps/client/src/env.ts`                 | MODE, DEV (Vite built-ins)                                                                                                                                       |
-| `apps/web`       | `apps/web/src/env.ts`                    | NODE_ENV, NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST                                                                                                      |
+| `apps/site`      | `apps/site/src/env.ts`                   | NODE_ENV, NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST                                                                                                      |
 | `packages/cli`   | `packages/cli/src/env.ts`                | NODE_ENV, DORK_HOME, LOG_LEVEL                                                                                                                                   |
+
+¹ `DORKOS_CORS_ORIGIN` is read via direct `process.env` access in `app.ts` rather than through `env.ts` and is not yet migrated to the Zod schema.
 
 ## How to Add a New Env Var
 
@@ -99,6 +101,7 @@ To add a new `VITE_*` var:
 | DORKOS_PULSE_ENABLED      | server         | boolean           | `false`                   | Enable the Pulse scheduler subsystem                                        |
 | DORKOS_RELAY_ENABLED      | server         | boolean           | `false`                   | Enable the Relay inter-agent message bus                                    |
 | DORKOS_MESH_ENABLED       | server         | boolean           | `false`                   | Enable the Mesh agent discovery registry                                    |
+| DORKOS_CORS_ORIGIN        | server         | string \| undefined | —                       | CORS allowed origin(s). `*` for wildcard; comma-separated list for multiple origins. Defaults to localhost on DORKOS_PORT and VITE_PORT. Read via direct `process.env` in `app.ts`, not yet in `env.ts`. |
 | TUNNEL_ENABLED            | server         | boolean           | `false`                   | Enable ngrok tunnel on startup                                              |
 | TUNNEL_PORT               | server         | number \| undefined | —                       | Port to expose via ngrok (defaults to DORKOS_PORT)                          |
 | TUNNEL_AUTH               | server         | string \| undefined | —                       | Basic auth credentials for the tunnel (`user:password`)                     |
@@ -106,9 +109,9 @@ To add a new `VITE_*` var:
 | NGROK_AUTHTOKEN           | server         | string \| undefined | —                       | ngrok authentication token                                                  |
 | MODE                      | client         | string enum       | `development`             | Vite build mode                                                             |
 | DEV                       | client         | boolean           | `false`                   | True when running in Vite dev server                                        |
-| NODE_ENV                  | web            | string enum       | `development`             | Runtime environment mode                                                    |
-| NEXT_PUBLIC_POSTHOG_KEY   | web            | string \| undefined | —                       | PostHog analytics project API key                                           |
-| NEXT_PUBLIC_POSTHOG_HOST  | web            | string            | `https://app.posthog.com` | PostHog analytics ingestion host                                            |
+| NODE_ENV                  | site           | string enum       | `development`             | Runtime environment mode                                                    |
+| NEXT_PUBLIC_POSTHOG_KEY   | site           | string \| undefined | —                       | PostHog analytics project API key                                           |
+| NEXT_PUBLIC_POSTHOG_HOST  | site           | string            | `https://app.posthog.com` | PostHog analytics ingestion host                                            |
 | NODE_ENV                  | cli            | string enum       | `development`             | Runtime environment mode                                                    |
 | DORK_HOME                 | cli            | string \| undefined | —                       | Config/storage directory (displayed in `dorkos config` output)             |
 | LOG_LEVEL                 | cli            | string \| undefined | —                       | CLI logging verbosity                                                       |
