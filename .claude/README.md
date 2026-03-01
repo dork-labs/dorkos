@@ -21,7 +21,7 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | ------------ | ----- | -------------------------------------------------------------------------- |
 | Commands     | 56    | `.claude/commands/`                                                        |
 | Agents       | 5     | `.claude/agents/`                                                          |
-| Skills       | 12    | `.claude/skills/`                                                          |
+| Skills       | 11    | `.claude/skills/`                                                          |
 | Rules        | 8     | `.claude/rules/`                                                           |
 | Claude Hooks | 10    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
 | Git Hooks    | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
@@ -41,7 +41,6 @@ Slash commands are triggered explicitly by typing `/command`. They're expanded p
 | `git/`       | commit, push                                                              | Version control with validation                                                         |
 | `debug/`     | browser, types, test, api, data, logs, rubber-duck, performance           | Systematic debugging                                                                    |
 | `docs/`      | reconcile, status                                                         | Documentation drift detection, health dashboard                                         |
-| `roadmap/`   | show, add, open, validate, analyze, prioritize, enrich, next, work, clear | Product roadmap management                                                              |
 | `adr/`       | create, list, from-spec, curate                                           | Architecture Decision Records                                                           |
 | `system/`    | ask, update, review, learn, release                                       | Harness maintenance                                                                     |
 | `app/`       | upgrade, cleanup                                                          | Application dependency and code management                                              |
@@ -90,7 +89,6 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 | `debugging-systematically`     | Debugging methodology, troubleshooting patterns | Investigating bugs, tracing issues                                 |
 | `designing-frontend`           | Calm Tech design language, UI decisions         | Planning UI, reviewing designs, hierarchy decisions                |
 | `styling-with-tailwind-shadcn` | Tailwind CSS v4, Shadcn UI implementation       | Writing styles, building components, theming                       |
-| `managing-roadmap-moscow`      | MoSCoW prioritization, roadmap utilities        | Product planning, prioritization decisions                         |
 | `writing-developer-guides`     | Developer guide structure for AI agents         | Creating/updating files in contributing/                                 |
 | `orchestrating-parallel-work`  | Parallel agent execution, batch scheduling      | Coordinating multiple concurrent tasks, optimizing task ordering   |
 | `writing-changelogs`           | Human-friendly changelog entries, release notes | Populating changelog, preparing releases                           |
@@ -159,7 +157,6 @@ All documentation lives in `contributing/`:
 | `animations.md`                      | Motion library patterns                                             |
 | `styling-theming.md`                 | Tailwind v4, dark mode, Shadcn                                      |
 | `parallel-execution.md`              | Parallel agent execution patterns, batching                         |
-| `autonomous-roadmap-execution.md`    | Autonomous workflow, `/roadmap:work`                                |
 | `browser-testing.md`                 | Browser test patterns, Playwright MCP, test architecture            |
 | `relay-adapters.md`                  | Relay adapter system, adapter lifecycle, plugin contracts            |
 | `environment-variables.md`           | Env var reference, Turbo passthrough, dotenv patterns               |
@@ -239,7 +236,6 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   ├── git/               # Version control
 │   ├── debug/             # Debugging commands
 │   ├── docs/              # Documentation maintenance
-│   ├── roadmap/           # Product roadmap
 │   ├── system/            # Harness maintenance
 │   ├── cc/                # Claude Code configuration
 │   │   ├── notify/        # Notification sounds
@@ -259,14 +255,13 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   ├── product-manager.md
 │   └── research-expert.md
 │
-├── skills/                # Reusable expertise (12 total)
+├── skills/                # Reusable expertise (11 total)
 │   ├── browser-testing/
 │   ├── clarifying-requirements/
 │   ├── debugging-systematically/
 │   ├── designing-frontend/
 │   ├── executing-specs/
 │   ├── styling-with-tailwind-shadcn/
-│   ├── managing-roadmap-moscow/
 │   ├── organizing-fsd-architecture/
 │   ├── writing-adrs/
 │   ├── writing-developer-guides/
@@ -309,16 +304,6 @@ Project-wide documentation? ─────────────► CLAUDE.md
 /debug:logs [search-term]      # Server log analysis
 /debug:rubber-duck [problem]   # Structured problem articulation
 /debug:performance [area]      # Performance issues
-```
-
-### Roadmap Management
-
-```
-/roadmap:show                  # Display summary
-/roadmap:open                  # Open visualization
-/roadmap:add <title>           # Add new item
-/roadmap:prioritize            # Get suggestions
-/roadmap:analyze               # Full health check
 ```
 
 ### Harness Maintenance
@@ -490,14 +475,6 @@ CLAUDE.md is the **primary source of truth** for project context. This README do
 ### With Developer Guides
 
 Developer guides in `contributing/` provide detailed patterns. Skills often reference these guides for comprehensive documentation while keeping SKILL.md concise.
-
-### With Roadmap
-
-The roadmap system (`/roadmap/*`) integrates with the spec workflow:
-
-- Roadmap items link to specifications
-- `/ideate --roadmap-id` connects ideation to roadmap
-- Status updates flow bidirectionally
 
 ## Troubleshooting
 
