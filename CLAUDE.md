@@ -14,7 +14,7 @@ The Agent SDK is fully integrated via `agent-manager.ts` (session orchestration)
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with five apps and four shared packages:
+This is a Turborepo monorepo with four apps and four shared packages:
 
 ```
 dorkos/
