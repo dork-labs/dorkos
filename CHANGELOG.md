@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore code block padding after opting out of fumadocs dark theme
 - Update debug commands for .dork directory and fix ADR/README inventory
 ---
 

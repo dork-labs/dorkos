@@ -46,6 +46,9 @@ export default function BlogLayout({ children }: { children: ReactNode }) {
           '--color-fd-background': 'var(--cream-primary)',
           '--color-fd-card': 'var(--cream-primary)',
           '--color-fd-border': 'var(--warm-gray-light)',
+          // Restore code block padding excluded by not-fumadocs-codeblock
+          '--padding-left': '1rem',
+          '--padding-right': '1rem',
         } as React.CSSProperties}
       >
         {children}
