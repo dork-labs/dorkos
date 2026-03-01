@@ -1,3 +1,12 @@
+---
+title: "DorkOS Mesh: Architecture Analogies & Design Borrowings"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [mesh, architecture, analogies, service-mesh, ipc, pubsub]
+feature_slug: mesh-core-library
+---
+
 # DorkOS Mesh: Architecture Analogies & Design Borrowings
 
 **Date**: 2026-02-24

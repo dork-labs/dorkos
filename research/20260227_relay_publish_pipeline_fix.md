@@ -1,3 +1,12 @@
+---
+title: "Relay Publish Pipeline Fix: Message Bus Patterns and Adapter Delivery Research"
+date: 2026-02-27
+type: implementation
+status: archived
+tags: [relay, publish, pipeline, adapter, delivery, bug-fix]
+feature_slug: relay-publish-pipeline-fix
+---
+
 # Relay Publish Pipeline Fix: Message Bus Patterns and Adapter Delivery Research
 
 ## Research Summary

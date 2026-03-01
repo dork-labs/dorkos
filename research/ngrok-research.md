@@ -1,3 +1,12 @@
+---
+title: "@ngrok/ngrok Node.js SDK Research"
+date: 2026-02-12
+type: implementation
+status: archived
+tags: [ngrok, tunnel, nodejs, sdk]
+feature_slug: ngrok-tunnel
+---
+
 # @ngrok/ngrok Node.js SDK Research
 
 **Note**: This research was compiled from training data (knowledge cutoff: January 2025) due to web search tool limitations. Please verify critical details against current official documentation at https://ngrok.com/docs/integrations/javascript/ and https://github.com/ngrok/ngrok-javascript

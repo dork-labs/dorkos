@@ -1,3 +1,12 @@
+---
+title: "DorkOS Config File System Research"
+date: 2026-02-16
+type: implementation
+status: archived
+tags: [config, cli, conf, json, persistence, validation]
+feature_slug: dorkos-config-file-system
+---
+
 # DorkOS Config File System Research
 
 **Research Date**: 2026-02-16

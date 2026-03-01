@@ -1,3 +1,12 @@
+---
+title: "Scheduler Dashboard UI Best Practices"
+date: 2026-02-22
+type: external-best-practices
+status: active
+tags: [scheduler, dashboard, ui, ux, cron, run-history]
+feature_slug: pulse-ui-overhaul
+---
+
 # Scheduler Dashboard UI Best Practices
 
 **Date**: 2026-02-22

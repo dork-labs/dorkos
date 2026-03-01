@@ -1,3 +1,12 @@
+---
+title: "Mesh Network Topology and Access Control"
+date: 2026-02-25
+type: internal-architecture
+status: archived
+tags: [mesh, topology, access-control, namespace, acl, elk]
+feature_slug: mesh-network-topology
+---
+
 # Research: Mesh Network Topology and Access Control
 
 **Date**: 2026-02-25

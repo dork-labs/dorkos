@@ -1,3 +1,12 @@
+---
+title: "Mesh Registry Integrity — Research Findings"
+date: 2026-02-26
+type: internal-architecture
+status: active
+tags: [mesh, registry, integrity, reconciliation, filesystem]
+feature_slug: mesh-registry-integrity
+---
+
 # Mesh Registry Integrity — Research Findings
 
 **Date**: 2026-02-26

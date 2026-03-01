@@ -1,3 +1,12 @@
+---
+title: "MCP Tool Injection Patterns for DorkOS Agent Manager"
+date: 2026-02-17
+type: implementation
+status: archived
+tags: [mcp, tool-injection, agent-manager, sdk, claude-agent-sdk]
+feature_slug: dynamic-mcp-tools
+---
+
 # MCP Tool Injection Patterns for DorkOS Agent Manager
 
 **Feature**: dynamic-mcp-tools

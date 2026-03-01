@@ -1,3 +1,12 @@
+---
+title: "Loop MVP: The Autonomous Improvement Engine (v0.4)"
+date: 2026-02-18
+type: exploratory
+status: superseded
+superseded_by: research/loop-litepaper.md
+tags: [loop, autonomous-improvement, mvp, ideation, agent-orchestration]
+---
+
 # Loop MVP: The Autonomous Improvement Engine
 **Version:** 0.4 (MVP Scope)
 **Author:** Dorian Collier

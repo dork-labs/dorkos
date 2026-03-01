@@ -1,3 +1,13 @@
+---
+title: "Drizzle ORM SQLite Driver Options"
+date: 2026-02-25
+type: implementation
+status: active
+tags: [drizzle, sqlite, better-sqlite3, libsql, driver, orm]
+feature_slug: db-drizzle-consolidation
+searches_performed: 14
+---
+
 # Drizzle ORM SQLite Driver Options — Research Report
 
 **Date:** 2026-02-25

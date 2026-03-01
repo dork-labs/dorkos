@@ -1,3 +1,12 @@
+---
+title: "Claude Code Architecture — Technical Truth"
+date: 2026-02-17
+type: implementation
+status: archived
+tags: [claude-code, architecture, marketing, agent-sdk]
+feature_slug: context-builder-agent-refactor
+---
+
 # Claude Code Architecture — Technical Truth
 
 **Date**: 2026-02-17

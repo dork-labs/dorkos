@@ -1,3 +1,11 @@
+---
+title: "Anthropic ToS Compliance Research"
+date: 2026-02-15
+type: strategic
+status: active
+tags: [anthropic, tos, compliance, oauth, api-usage, policy]
+---
+
 # Anthropic ToS Compliance Research
 
 **Date**: 2026-02-15

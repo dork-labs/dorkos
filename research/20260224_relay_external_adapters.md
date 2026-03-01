@@ -1,3 +1,12 @@
+---
+title: "Relay External Adapters — Telegram, Webhook, Plugin Architecture"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [relay, adapters, telegram, webhook, plugin, grammy]
+feature_slug: relay-external-adapters
+---
+
 # Research: Relay External Adapters — Telegram, Webhook, Plugin Architecture
 
 **Date:** 2026-02-24

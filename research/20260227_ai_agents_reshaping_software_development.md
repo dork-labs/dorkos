@@ -1,3 +1,11 @@
+---
+title: "AI Agents Reshaping Software Development: A Research Brief for Marketing Copy"
+date: 2026-02-27
+type: strategic
+status: active
+tags: [ai-agents, software-development, marketing, trends, narrative]
+---
+
 # AI Agents Reshaping Software Development: A Research Brief for Marketing Copy
 
 **Research Mode:** Deep Research

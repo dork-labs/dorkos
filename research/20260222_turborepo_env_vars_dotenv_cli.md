@@ -1,3 +1,11 @@
+---
+title: "Turborepo + dotenv-cli: Environment Variable Handling Research"
+date: 2026-02-22
+type: implementation
+status: active
+tags: [turborepo, env-vars, dotenv, strict-mode, passthrough, build]
+---
+
 # Turborepo + dotenv-cli: Environment Variable Handling Research
 
 **Date**: 2026-02-22

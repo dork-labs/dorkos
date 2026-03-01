@@ -1,3 +1,11 @@
+---
+title: "Agent Communication Use Cases & Multi-Agent Ecosystem Research"
+date: 2026-02-27
+type: strategic
+status: active
+tags: [agents, communication, use-cases, relay, mesh, ecosystem]
+---
+
 # Agent Communication Use Cases & Multi-Agent Ecosystem Research
 
 **Date:** 2026-02-27

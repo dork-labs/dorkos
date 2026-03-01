@@ -1,3 +1,12 @@
+---
+title: "Marketing Page UI Visualization Libraries Research"
+date: 2026-02-28
+type: external-best-practices
+status: active
+tags: [marketing, visualization, libraries, animation, three-js, canvas]
+feature_slug: dynamic-motion-enhancements
+---
+
 # Marketing Page UI Visualization Libraries Research
 
 **Date**: 2026-02-28

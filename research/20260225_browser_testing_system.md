@@ -1,3 +1,12 @@
+---
+title: "Browser Testing System — Research Findings"
+date: 2026-02-25
+type: implementation
+status: active
+tags: [browser-testing, playwright, e2e, testing, mcp]
+feature_slug: browser-testing-system
+---
+
 # Browser Testing System — Research Findings
 
 **Date**: 2026-02-25

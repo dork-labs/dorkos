@@ -1,3 +1,12 @@
+---
+title: "Torq: The Autonomous Improvement Engine (v0.2)"
+date: 2026-02-18
+type: exploratory
+status: superseded
+superseded_by: research/loop-litepaper.md
+tags: [torq, loop, autonomous-improvement, litepaper, ideation]
+---
+
 # Torq: The Autonomous Improvement Engine
 
 **Working title — name TBD**

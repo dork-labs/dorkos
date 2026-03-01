@@ -1,3 +1,11 @@
+---
+title: "Loop: The Autonomous Improvement Engine (Litepaper)"
+date: 2026-02-18
+type: exploratory
+status: active
+tags: [loop, autonomous-improvement, litepaper, agent-orchestration, feedback-loop]
+---
+
 # Loop: The Autonomous Improvement Engine
 
 **By Dorian Collier**

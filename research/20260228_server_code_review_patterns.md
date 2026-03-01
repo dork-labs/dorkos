@@ -1,3 +1,12 @@
+---
+title: "Server Code Review Patterns Research"
+date: 2026-02-28
+type: implementation
+status: archived
+tags: [code-review, patterns, express, typescript, server, remediation]
+feature_slug: server-review-remediation-r3
+---
+
 # Server Code Review Patterns Research
 
 **Date**: 2026-02-28

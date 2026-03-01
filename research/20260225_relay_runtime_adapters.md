@@ -1,3 +1,12 @@
+---
+title: "Relay Runtime Adapters — Unified Adapter System & ClaudeCodeAdapter"
+date: 2026-02-25
+type: internal-architecture
+status: archived
+tags: [relay, adapters, claude-code-adapter, binding-router, plugin]
+feature_slug: relay-runtime-adapters
+---
+
 # Research: Relay Runtime Adapters — Unified Adapter System & Claude Code Runtime Adapter
 
 **Date:** 2026-02-25

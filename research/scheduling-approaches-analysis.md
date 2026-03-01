@@ -1,3 +1,12 @@
+---
+title: "Job Scheduler Approaches for Node.js/TypeScript Desktop Applications"
+date: 2026-02-17
+type: internal-architecture
+status: archived
+tags: [scheduler, nodejs, croner, sqlite, desktop, cron]
+feature_slug: pulse-scheduler
+---
+
 # Job Scheduler Approaches for Node.js/TypeScript Desktop Applications
 
 **Research Date**: 2026-02-17

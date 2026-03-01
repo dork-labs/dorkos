@@ -1,3 +1,12 @@
+---
+title: "Agents as First-Class Entity in DorkOS"
+date: 2026-02-26
+type: internal-architecture
+status: active
+tags: [agents, identity, persona, manifest, dork-agent-json, mesh]
+feature_slug: agents-first-class-entity
+---
+
 # Research: Agents as First-Class Entity in DorkOS
 
 **Date**: 2026-02-26

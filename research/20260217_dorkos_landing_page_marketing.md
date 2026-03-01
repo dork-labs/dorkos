@@ -1,3 +1,14 @@
+---
+title: "DorkOS Landing Page Marketing Research"
+date: 2026-02-17
+type: strategic
+status: active
+tags: [marketing, landing-page, copy, positioning, design]
+feature_slug: update-homepage-brand-foundation
+searches_performed: 16
+sources_count: 25
+---
+
 # DorkOS Landing Page Research
 **Date:** 2026-02-17
 **Research Mode:** Deep Research

@@ -1,3 +1,11 @@
+---
+title: "PGlite: Sharing a Single Instance Across Multiple Consumers"
+date: 2026-02-25
+type: exploratory
+status: archived
+tags: [pglite, postgres, shared-instance, worker, database]
+---
+
 # PGlite: Sharing a Single Instance Across Multiple Consumers
 
 **Research Date:** 2026-02-25

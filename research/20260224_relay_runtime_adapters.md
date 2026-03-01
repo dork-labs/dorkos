@@ -1,3 +1,13 @@
+---
+title: "Relay Runtime Adapters — Plugin System Design (v1)"
+date: 2026-02-24
+type: internal-architecture
+status: superseded
+superseded_by: research/20260225_relay_runtime_adapters.md
+tags: [relay, adapters, plugin, dynamic-import, factory]
+feature_slug: relay-runtime-adapters
+---
+
 # Research: Relay Runtime Adapters — Plugin System Design
 
 **Feature**: relay-runtime-adapters

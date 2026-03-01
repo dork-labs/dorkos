@@ -1,3 +1,12 @@
+---
+title: "Code Remediation Patterns Research"
+date: 2026-03-01
+type: implementation
+status: archived
+tags: [code-review, remediation, express, file-watcher, route-params, typescript]
+feature_slug: relay-mesh-review-remediation-r3
+---
+
 # Code Remediation Patterns Research
 
 **Date:** March 1, 2026

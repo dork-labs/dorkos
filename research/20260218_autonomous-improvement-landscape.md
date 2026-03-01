@@ -1,3 +1,11 @@
+---
+title: "Autonomous Improvement Landscape — Research Report"
+date: 2026-02-18
+type: exploratory
+status: archived
+tags: [autonomous-improvement, agent-orchestration, mcp, scientific-method, feedback-loop]
+---
+
 # Autonomous Improvement Landscape — Research Report
 
 **Date**: 2026-02-18

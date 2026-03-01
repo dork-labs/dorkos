@@ -1,3 +1,12 @@
+---
+title: "Pulse Scheduler — Design Research"
+date: 2026-02-18
+type: internal-architecture
+status: active
+tags: [pulse, scheduler, sqlite, cron, ux, run-log, agent]
+feature_slug: pulse-scheduler
+---
+
 # Pulse Scheduler — Design Research
 
 **Date:** 2026-02-18

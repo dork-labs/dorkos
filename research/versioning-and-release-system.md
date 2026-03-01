@@ -1,3 +1,12 @@
+---
+title: "Versioning & Release System Research"
+date: 2026-02-16
+type: implementation
+status: archived
+tags: [versioning, release, changelog, semver, npm]
+feature_slug: versioning-release-system
+---
+
 # Research: Versioning & Release System
 
 ## Source

@@ -1,3 +1,13 @@
+---
+title: "World-Class Developer Documentation: Research Findings"
+date: 2026-02-17
+type: external-best-practices
+status: archived
+tags: [documentation, developer-docs, ux, information-architecture, fumadocs]
+feature_slug: world-class-documentation
+searches_performed: 18
+---
+
 # World-Class Developer Documentation: Research Findings for DorkOS
 
 **Date:** 2026-02-17

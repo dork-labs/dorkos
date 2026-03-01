@@ -1,3 +1,12 @@
+---
+title: "Claude Agent SDK — Capabilities Research"
+date: 2026-02-17
+type: implementation
+status: archived
+tags: [claude-agent-sdk, mcp, tools, query, system-prompt]
+feature_slug: dynamic-mcp-tools
+---
+
 # Claude Agent SDK — Capabilities Research
 
 **Date:** 2026-02-17

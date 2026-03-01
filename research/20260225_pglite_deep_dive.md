@@ -1,3 +1,11 @@
+---
+title: "PGlite Deep Dive Research"
+date: 2026-02-25
+type: exploratory
+status: archived
+tags: [pglite, postgres, wasm, sqlite, database, embedded]
+---
+
 # PGlite Deep Dive Research
 
 **Date:** 2026-02-25

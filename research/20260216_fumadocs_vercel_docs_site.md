@@ -1,3 +1,13 @@
+---
+title: "Fumadocs + Vercel Documentation Site"
+date: 2026-02-16
+type: implementation
+status: archived
+tags: [fumadocs, vercel, docs, next-js, mdx]
+feature_slug: documentation-infrastructure
+searches_performed: 14
+---
+
 # Fumadocs + Vercel Documentation Site — Research Report
 
 **Date**: 2026-02-16

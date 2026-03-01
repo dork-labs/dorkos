@@ -1,3 +1,13 @@
+---
+title: "Claude Agent SDK — Context Injection & Runtime Context Best Practices"
+date: 2026-02-18
+type: implementation
+status: archived
+tags: [claude-agent-sdk, context-injection, system-prompt, append, hooks]
+feature_slug: context-builder-agent-refactor
+sources_count: 8
+---
+
 # Claude Agent SDK — Context Injection & Runtime Context Best Practices
 
 **Research date:** 2026-02-18

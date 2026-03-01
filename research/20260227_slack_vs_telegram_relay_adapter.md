@@ -1,3 +1,12 @@
+---
+title: "Slack vs Telegram Bot API: Relay Adapter Comparison"
+date: 2026-02-27
+type: internal-architecture
+status: archived
+tags: [slack, telegram, adapter, comparison, relay, grammy]
+feature_slug: relay-external-adapters
+---
+
 # Slack vs Telegram Bot API: Relay Adapter Comparison
 
 **Research Date:** 2026-02-27

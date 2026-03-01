@@ -1,3 +1,12 @@
+---
+title: "Mesh Topology Elevation — Research Findings"
+date: 2026-02-26
+type: external-best-practices
+status: active
+tags: [mesh, topology, elk-js, xyflow, layout, visualization]
+feature_slug: mesh-topology-elevation
+---
+
 # Mesh Topology Elevation — Research Findings
 
 **Date**: 2026-02-26

@@ -1,3 +1,13 @@
+---
+title: "Graph Topology Visualization UI — World-Class Patterns & Best Practices"
+date: 2026-02-28
+type: external-best-practices
+status: active
+tags: [topology, visualization, graph, ux, xyflow, react-flow, minimap]
+feature_slug: mesh-topology-elevation
+searches_performed: 14
+---
+
 # Graph Topology Visualization UI — World-Class Patterns & Best Practices
 
 **Date:** 2026-02-28

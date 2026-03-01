@@ -1,3 +1,12 @@
+---
+title: "@dorkos/mesh Core Library Research"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [mesh, discovery, bfs, agent-manifest, sqlite, registry]
+feature_slug: mesh-core-library
+---
+
 # Research: @dorkos/mesh Core Library
 
 **Date**: 2026-02-24

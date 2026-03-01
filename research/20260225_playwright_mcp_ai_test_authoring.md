@@ -1,3 +1,12 @@
+---
+title: "Playwright MCP — AI-Driven Test Authoring Research"
+date: 2026-02-25
+type: external-best-practices
+status: active
+tags: [playwright, mcp, ai, test-authoring, browser-testing]
+feature_slug: browser-testing-system
+---
+
 # Playwright MCP — AI-Driven Test Authoring Research
 
 **Date:** 2026-02-25

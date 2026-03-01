@@ -1,3 +1,12 @@
+---
+title: "Mesh Panel UX Overhaul — Research Report"
+date: 2026-02-25
+type: external-best-practices
+status: active
+tags: [mesh, panel, ux, overhaul, progressive-disclosure, ui]
+feature_slug: mesh-panel-ux-overhaul
+---
+
 # Mesh Panel UX Overhaul — Research Report
 
 **Feature**: mesh-panel-ux-overhaul

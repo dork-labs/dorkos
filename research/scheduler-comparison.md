@@ -1,3 +1,12 @@
+---
+title: "Scheduler Feature Research: Comprehensive Comparison"
+date: 2026-02-17
+type: internal-architecture
+status: archived
+tags: [scheduler, comparison, croner, sqlite, nanoclaw, openclaw]
+feature_slug: pulse-scheduler
+---
+
 # Scheduler Feature Research: Comprehensive Comparison
 
 **Date**: 2026-02-17 (updated)

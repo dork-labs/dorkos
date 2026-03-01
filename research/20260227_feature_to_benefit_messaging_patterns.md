@@ -1,3 +1,11 @@
+---
+title: "Feature-to-Benefit Messaging: How the World's Best Brands Do It in Practice"
+date: 2026-02-27
+type: strategic
+status: active
+tags: [marketing, copywriting, feature-benefit, messaging, positioning]
+---
+
 # Feature-to-Benefit Messaging: How the World's Best Brands Do It in Practice
 
 **Research Date:** 2026-02-27

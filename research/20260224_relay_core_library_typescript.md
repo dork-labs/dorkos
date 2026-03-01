@@ -1,3 +1,14 @@
+---
+title: "@dorkos/relay — Core Messaging Library (TypeScript)"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [relay, messaging, nats, pubsub, typescript, ulid, maildir, sqlite]
+feature_slug: relay-core-library
+searches_performed: 16
+sources_count: 35
+---
+
 # Research: @dorkos/relay — Core Messaging Library (TypeScript)
 
 **Date**: 2026-02-24

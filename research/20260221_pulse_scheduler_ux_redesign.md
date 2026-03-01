@@ -1,3 +1,12 @@
+---
+title: "Pulse Scheduler UI/UX Redesign Research"
+date: 2026-02-21
+type: external-best-practices
+status: active
+tags: [pulse, scheduler, ux, redesign, calm-tech, cron-builder]
+feature_slug: pulse-ui-overhaul
+---
+
 # Pulse Scheduler UI/UX Redesign Research
 
 **Date**: 2026-02-21

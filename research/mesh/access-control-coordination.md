@@ -1,3 +1,12 @@
+---
+title: "DorkOS Mesh: Access Control, Authorization, and Coordination Safety"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [mesh, access-control, authorization, acl, trust, safety]
+feature_slug: mesh-network-topology
+---
+
 # DorkOS Mesh: Access Control, Authorization, and Coordination Safety
 
 **Research Date:** 2026-02-24

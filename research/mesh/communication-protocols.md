@@ -1,3 +1,14 @@
+---
+title: "DorkOS Mesh: Agent-to-Agent Communication Protocols"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [mesh, communication, protocols, agent-to-agent, relay, mcp]
+feature_slug: mesh-core-library
+searches_performed: 18
+sources_count: 40
+---
+
 # DorkOS Mesh: Agent-to-Agent Communication Protocols
 
 **Research Date:** 2026-02-24

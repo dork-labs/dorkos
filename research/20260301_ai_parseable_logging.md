@@ -1,3 +1,12 @@
+---
+title: "AI-Parseable Log Design: Research Findings"
+date: 2026-03-01
+type: external-best-practices
+status: active
+tags: [logging, ai-parseable, structured-logs, design, patterns]
+feature_slug: logging-infrastructure
+---
+
 # AI-Parseable Log Design: Research Findings
 
 **Date**: 2026-03-01

@@ -1,3 +1,12 @@
+---
+title: "Post-Feature Release Preparation: Relay + Mesh for DorkOS"
+date: 2026-02-25
+type: implementation
+status: active
+tags: [release, relay, mesh, preparation, changelog, versioning]
+feature_slug: relay-release-preparation
+---
+
 # Post-Feature Release Preparation: Relay + Mesh for DorkOS
 
 **Date:** 2026-02-25

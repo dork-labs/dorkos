@@ -1,3 +1,12 @@
+---
+title: "DorkOS Logging System Code Review"
+date: 2026-03-01
+type: internal-architecture
+status: active
+tags: [logging, code-review, analysis, logger, structured-logs]
+feature_slug: logging-infrastructure
+---
+
 # DorkOS Logging System Code Review
 
 **Date:** 2026-03-01

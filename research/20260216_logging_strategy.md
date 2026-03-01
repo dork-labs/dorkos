@@ -1,3 +1,12 @@
+---
+title: "Logging Strategy Research — DorkOS"
+date: 2026-02-16
+type: internal-architecture
+status: active
+tags: [logging, express, react, cli, pino, winston, structured-logs]
+feature_slug: logging-infrastructure
+---
+
 # Logging Strategy Research — DorkOS
 
 **Date**: 2026-02-16

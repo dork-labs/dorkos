@@ -1,3 +1,12 @@
+---
+title: "Linear Domain Model: Comprehensive Research"
+date: 2026-02-18
+type: exploratory
+status: archived
+tags: [linear, domain-model, issue-tracking, webhook, sdk]
+searches_performed: 18
+---
+
 # Linear Domain Model: Comprehensive Research
 
 **Date**: 2026-02-18

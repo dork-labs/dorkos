@@ -1,3 +1,12 @@
+---
+title: "Mesh Observability & Lifecycle — Research Findings"
+date: 2026-02-25
+type: internal-architecture
+status: archived
+tags: [mesh, observability, lifecycle, health, xyflow, react-flow, signals]
+feature_slug: mesh-observability-lifecycle
+---
+
 # Mesh Observability & Lifecycle — Research Findings
 
 **Date**: 2026-02-25

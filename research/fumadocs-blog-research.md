@@ -1,3 +1,12 @@
+---
+title: "Adding a Blog to a Next.js + Fumadocs Site"
+date: 2026-02-18
+type: implementation
+status: archived
+tags: [fumadocs, blog, next-js, mdx, release-notes]
+feature_slug: world-class-release-notes
+---
+
 # Research: Adding a Blog to a Next.js + Fumadocs Site
 
 **Date:** 2026-02-18

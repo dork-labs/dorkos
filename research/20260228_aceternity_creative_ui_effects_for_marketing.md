@@ -1,3 +1,12 @@
+---
+title: "Creative UI Effects Research: Aceternity UI and the Effect Ecosystem"
+date: 2026-02-28
+type: external-best-practices
+status: active
+tags: [aceternity, ui-effects, marketing, animations, motion, design]
+feature_slug: dynamic-motion-enhancements
+---
+
 # Creative UI Effects Research: Aceternity UI and the Effect Ecosystem
 
 **Research Date**: 2026-02-28

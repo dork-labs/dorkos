@@ -1,3 +1,12 @@
+---
+title: "Pulse Scheduler V2 — Research Report"
+date: 2026-02-21
+type: implementation
+status: active
+tags: [pulse, v2, enhancements, directory-picker, notifications, cron-builder]
+feature_slug: pulse-v2-enhancements
+---
+
 # Pulse Scheduler V2 — Research Report
 
 **Date**: 2026-02-21

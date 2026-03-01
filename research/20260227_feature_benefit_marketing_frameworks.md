@@ -1,3 +1,11 @@
+---
+title: "Feature-to-Benefit Marketing Frameworks: A Comprehensive Analysis"
+date: 2026-02-27
+type: strategic
+status: active
+tags: [marketing, frameworks, feature-benefit, jobs-to-be-done, positioning]
+---
+
 # Feature-to-Benefit Marketing Frameworks: A Comprehensive Analysis
 
 **Research Date:** 2026-02-27

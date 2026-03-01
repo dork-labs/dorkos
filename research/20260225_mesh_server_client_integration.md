@@ -1,3 +1,12 @@
+---
+title: "Mesh Server/Client Integration Best Practices"
+date: 2026-02-25
+type: internal-architecture
+status: archived
+tags: [mesh, server, client, integration, react, sse]
+feature_slug: mesh-server-client-integration
+---
+
 # Research: Mesh Server/Client Integration Best Practices
 
 **Date**: 2026-02-25

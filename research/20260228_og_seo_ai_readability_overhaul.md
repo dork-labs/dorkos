@@ -1,3 +1,12 @@
+---
+title: "OG Tags, SEO Metadata & AI Agent Readability Overhaul — Research Report"
+date: 2026-02-28
+type: implementation
+status: archived
+tags: [og-tags, seo, ai-readability, llms-txt, meta, next-js]
+feature_slug: og-seo-ai-readability-overhaul
+---
+
 # OG Tags, SEO Metadata & AI Agent Readability Overhaul — Research Report
 
 **Feature slug**: `og-seo-ai-readability-overhaul`

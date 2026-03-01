@@ -1,3 +1,12 @@
+---
+title: "CLI Self-Update Command Patterns"
+date: 2026-02-17
+type: implementation
+status: archived
+tags: [cli, self-update, npm, update-notifier, versioning]
+feature_slug: versioning-release-system
+---
+
 # CLI Self-Update Command Patterns
 
 **Date**: 2026-02-17

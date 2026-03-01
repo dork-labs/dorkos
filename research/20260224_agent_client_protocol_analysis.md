@@ -1,3 +1,12 @@
+---
+title: "Agent Client Protocol (ACP) Analysis for DorkOS"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [acp, protocol, agent-client, relay, messaging]
+feature_slug: relay-server-client-integration
+---
+
 # Agent Client Protocol (ACP) Analysis for DorkOS
 
 **Date:** 2026-02-24

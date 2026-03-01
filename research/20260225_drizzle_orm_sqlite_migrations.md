@@ -1,3 +1,12 @@
+---
+title: "Drizzle ORM SQLite Migration System — Production Validation Research"
+date: 2026-02-25
+type: implementation
+status: active
+tags: [drizzle, sqlite, migrations, production, schema]
+feature_slug: db-drizzle-consolidation
+---
+
 # Drizzle ORM SQLite Migration System — Production Validation Research
 
 **Date:** 2026-02-25

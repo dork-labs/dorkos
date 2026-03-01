@@ -1,3 +1,12 @@
+---
+title: "Adapter-Agent Routing — Visual Binding System"
+date: 2026-02-28
+type: internal-architecture
+status: active
+tags: [adapter, routing, binding, visual, xyflow, mesh]
+feature_slug: adapter-agent-routing
+---
+
 # Research: Adapter-Agent Routing — Visual Binding System
 
 **Date**: 2026-02-28

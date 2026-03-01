@@ -1,3 +1,12 @@
+---
+title: "Adapter Catalog Management: Research Findings"
+date: 2026-02-27
+type: internal-architecture
+status: active
+tags: [adapter, catalog, management, config-field, manifest, ui]
+feature_slug: adapter-catalog-management
+---
+
 # Adapter Catalog Management: Research Findings
 
 **Date**: 2026-02-27

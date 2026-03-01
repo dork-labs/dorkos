@@ -1,3 +1,11 @@
+---
+title: "Embedded PostgreSQL for Desktop Apps & CLI Tools"
+date: 2026-02-25
+type: exploratory
+status: archived
+tags: [postgres, embedded, desktop, cli, pglite, sqlite]
+---
+
 # Embedded PostgreSQL for Desktop Apps & CLI Tools
 
 **Research Date**: 2026-02-25

@@ -1,3 +1,12 @@
+---
+title: "Relay Advanced Reliability — Research Report"
+date: 2026-02-24
+type: internal-architecture
+status: active
+tags: [relay, reliability, rate-limiting, circuit-breaker, sliding-window, dead-letter]
+feature_slug: relay-advanced-reliability
+---
+
 # Relay Advanced Reliability — Research Report
 
 **Date**: 2026-02-24

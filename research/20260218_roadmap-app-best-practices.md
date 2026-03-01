@@ -1,3 +1,13 @@
+---
+title: "Roadmap App Best Practices Research"
+date: 2026-02-18
+type: external-best-practices
+status: active
+tags: [roadmap, product, ux, public-roadmap, linear]
+feature_slug: roadmap-standalone-app
+searches_performed: 10
+---
+
 # Roadmap App Best Practices Research
 
 **Date**: 2026-02-18

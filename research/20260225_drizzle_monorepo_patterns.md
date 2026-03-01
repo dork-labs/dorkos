@@ -1,3 +1,12 @@
+---
+title: "Drizzle ORM in Turborepo Monorepo — Research Report"
+date: 2026-02-25
+type: implementation
+status: active
+tags: [drizzle, turborepo, monorepo, packages-db, shared-schema]
+feature_slug: db-drizzle-consolidation
+---
+
 # Drizzle ORM in Turborepo Monorepo — Research Report
 
 **Date:** 2026-02-25

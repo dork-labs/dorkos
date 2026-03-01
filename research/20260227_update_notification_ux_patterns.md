@@ -1,3 +1,11 @@
+---
+title: "Update Notification UX Patterns: Research Report"
+date: 2026-02-27
+type: external-best-practices
+status: active
+tags: [update-notification, ux, cli, update-notifier, versioning]
+---
+
 # Update Notification UX Patterns: Research Report
 
 **Date**: 2026-02-27

@@ -1,3 +1,12 @@
+---
+title: "Fumadocs Layout Configuration Research"
+date: 2026-02-17
+type: implementation
+status: archived
+tags: [fumadocs, layout, configuration, docs-site, next-js]
+feature_slug: documentation-infrastructure
+---
+
 # Fumadocs Layout Configuration Research
 
 **Date**: 2026-02-17

@@ -1,3 +1,13 @@
+---
+title: "DorkOS Mesh: Service Discovery & Agent Discovery Patterns"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [mesh, discovery, service-discovery, agent, filesystem, bfs]
+feature_slug: mesh-core-library
+searches_performed: 14
+---
+
 # DorkOS Mesh: Service Discovery & Agent Discovery Patterns
 
 **Research Date:** 2026-02-24

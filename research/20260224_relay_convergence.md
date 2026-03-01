@@ -1,3 +1,12 @@
+---
+title: "Relay Convergence — Patterns and Best Practices"
+date: 2026-02-24
+type: internal-architecture
+status: active
+tags: [relay, convergence, pulse, console, sse, receipt]
+feature_slug: relay-convergence
+---
+
 # Research: Relay Convergence — Patterns and Best Practices
 
 **Date:** 2026-02-24

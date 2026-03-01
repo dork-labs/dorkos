@@ -1,3 +1,12 @@
+---
+title: "Disciplined Environment Variable Handling in TypeScript Monorepos"
+date: 2026-02-25
+type: implementation
+status: active
+tags: [env-vars, zod, validation, turborepo, typescript, monorepo]
+feature_slug: env-var-discipline
+---
+
 # Research: Disciplined Environment Variable Handling in TypeScript Monorepos
 
 **Date**: 2026-02-25

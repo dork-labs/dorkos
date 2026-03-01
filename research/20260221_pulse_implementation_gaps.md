@@ -1,3 +1,12 @@
+---
+title: "Pulse Feature Implementation Gaps — Research Report"
+date: 2026-02-21
+type: implementation
+status: active
+tags: [pulse, scheduler, implementation, gaps, sqlite, croner]
+feature_slug: pulse-completion-gaps
+---
+
 # Pulse Feature Implementation Gaps — Research Report
 
 **Date:** 2026-02-21

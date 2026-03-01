@@ -1,3 +1,11 @@
+---
+title: "Multi-Session Agent Management, Remote Interaction, Scheduling, and Notification Research"
+date: 2026-02-27
+type: internal-architecture
+status: active
+tags: [multi-session, remote, scheduling, notifications, relay, mesh]
+---
+
 # Multi-Session Agent Management, Remote Interaction, Scheduling, and Notification Research
 
 **Date**: 2026-02-27

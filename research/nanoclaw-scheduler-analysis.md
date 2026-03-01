@@ -1,3 +1,12 @@
+---
+title: "NanoClaw Scheduler Architecture Analysis"
+date: 2026-02-17
+type: internal-architecture
+status: archived
+tags: [scheduler, nanoclaw, sqlite, cron, agent-runtime]
+feature_slug: pulse-scheduler
+---
+
 # NanoClaw Scheduler Architecture Analysis
 
 **Date**: 2026-02-17

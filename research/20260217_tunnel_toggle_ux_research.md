@@ -1,3 +1,13 @@
+---
+title: "Tunnel Toggle Feature — Research Findings"
+date: 2026-02-17
+type: external-best-practices
+status: active
+tags: [tunnel, ngrok, toggle, ux, settings, ui]
+feature_slug: tunnel-toggle-ui
+searches_performed: 14
+---
+
 # Tunnel Toggle Feature — Research Findings
 
 **Date:** 2026-02-17

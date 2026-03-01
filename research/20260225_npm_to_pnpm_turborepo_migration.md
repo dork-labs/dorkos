@@ -1,3 +1,12 @@
+---
+title: "npm to pnpm Migration Guide for Turborepo Monorepos"
+date: 2026-02-25
+type: implementation
+status: archived
+tags: [pnpm, npm, turborepo, monorepo, migration]
+feature_slug: monorepo-turborepo-migration
+---
+
 # npm to pnpm Migration Guide for Turborepo Monorepos
 
 **Date:** 2026-02-25

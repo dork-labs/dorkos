@@ -1,3 +1,13 @@
+---
+title: "Configurable Directory Boundary/Sandbox Implementation"
+date: 2026-02-16
+type: implementation
+status: archived
+tags: [directory-boundary, sandbox, path-traversal, express, security]
+feature_slug: directory-boundary-enforcement
+searches_performed: 13
+---
+
 # Research: Configurable Directory Boundary/Sandbox Implementation
 
 **Date**: 2026-02-16

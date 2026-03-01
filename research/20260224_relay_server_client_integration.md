@@ -1,3 +1,12 @@
+---
+title: "Relay Server-Client Integration Research"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [relay, server, client, sse, integration, react]
+feature_slug: relay-server-client-integration
+---
+
 # Research: Relay Server-Client Integration
 
 **Date**: 2026-02-24

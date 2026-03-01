@@ -1,3 +1,11 @@
+---
+title: "Competitive Marketing Analysis: OpenClaw vs. Codex vs. DorkOS"
+date: 2026-02-17
+type: strategic
+status: active
+tags: [competitive-analysis, marketing, positioning, openclaw, codex]
+---
+
 # Competitive Marketing Analysis: OpenClaw vs. Codex vs. DorkOS
 
 **Date:** 2026-02-17

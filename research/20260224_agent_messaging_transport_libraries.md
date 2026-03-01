@@ -1,3 +1,12 @@
+---
+title: "Agent Messaging Transport Libraries for Node.js/TypeScript"
+date: 2026-02-24
+type: internal-architecture
+status: archived
+tags: [messaging, transport, nats, redis, pubsub, relay]
+feature_slug: relay-core-library
+---
+
 # Agent Messaging Transport Libraries for Node.js/TypeScript
 
 **Date:** 2026-02-24

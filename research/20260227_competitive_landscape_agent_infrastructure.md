@@ -1,3 +1,11 @@
+---
+title: "Competitive Landscape: AI Agent Operating System Infrastructure"
+date: 2026-02-27
+type: strategic
+status: active
+tags: [competitive-analysis, agent-infrastructure, market, positioning, agent-os]
+---
+
 # Competitive Landscape: AI Agent Operating System Infrastructure
 
 **Research Date:** 2026-02-27

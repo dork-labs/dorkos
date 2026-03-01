@@ -1,3 +1,11 @@
+---
+title: "Autonomous Improvement Engine — Naming Research"
+date: 2026-02-18
+type: exploratory
+status: archived
+tags: [naming, branding, loop, torq, autonomous-improvement]
+---
+
 # Naming Research: Autonomous Continuous Improvement Engine
 
 **Date**: 2026-02-18
