@@ -1,5 +1,5 @@
 ---
-number: 46
+number: 51
 title: Inject Agent Persona via Context Builder System Prompt
 status: draft
 created: 2026-02-26
@@ -7,7 +7,7 @@ spec: agents-first-class-entity
 superseded-by: null
 ---
 
-# 46. Inject Agent Persona via Context Builder System Prompt
+# 51. Inject Agent Persona via Context Builder System Prompt
 
 ## Status
 

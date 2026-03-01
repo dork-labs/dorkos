@@ -19,15 +19,15 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 
 | Component    | Count | Location                                                                   |
 | ------------ | ----- | -------------------------------------------------------------------------- |
-| Commands     | 54    | `.claude/commands/`                                                        |
+| Commands     | 56    | `.claude/commands/`                                                        |
 | Agents       | 5     | `.claude/agents/`                                                          |
-| Skills       | 11    | `.claude/skills/`                                                          |
+| Skills       | 12    | `.claude/skills/`                                                          |
 | Rules        | 8     | `.claude/rules/`                                                           |
-| Claude Hooks | 9     | `.claude/hooks/`, configured in `.claude/settings.json`                    |
+| Claude Hooks | 10    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
 | Git Hooks    | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers  | 3     | `.mcp.json`                                                                |
-| ADRs         | 5     | `decisions/`                                                               |
-| Guides       | 15    | `contributing/` (14 guides + INDEX.md)                                           |
+| ADRs         | 53    | `decisions/`                                                               |
+| Guides       | 19    | `contributing/` (18 guides + INDEX.md)                                           |
 
 ## Component Types
 
@@ -42,13 +42,14 @@ Slash commands are triggered explicitly by typing `/command`. They're expanded p
 | `debug/`     | browser, types, test, api, data, logs, rubber-duck, performance           | Systematic debugging                                                                    |
 | `docs/`      | reconcile, status                                                         | Documentation drift detection, health dashboard                                         |
 | `roadmap/`   | show, add, open, validate, analyze, prioritize, enrich, next, work, clear | Product roadmap management                                                              |
-| `adr/`       | create, list, from-spec                                                   | Architecture Decision Records                                                           |
+| `adr/`       | create, list, from-spec, curate                                           | Architecture Decision Records                                                           |
 | `system/`    | ask, update, review, learn, release                                       | Harness maintenance                                                                     |
 | `app/`       | upgrade, cleanup                                                          | Application dependency and code management                                              |
 | `cc/notify/` | on, off, status                                                           | Notification sounds                                                                     |
 | `cc/ide/`    | set, reset                                                                | VS Code color schemes                                                                   |
 | `template/`  | check, update                                                             | Upstream template updates                                                               |
 | `worktree/`  | create, list, remove                                                      | Git worktree management                                                                 |
+| `browsertest/` | (root), maintain                                                        | Browser test execution, maintenance, health audit                                       |
 | root         | ideate, ideate-to-spec, review-recent-work                                | Feature development                                                                     |
 
 ### Agents (Tool-Invoked)
@@ -96,6 +97,7 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 | `organizing-fsd-architecture`  | Feature-Sliced Design layer placement, imports  | Structuring client code, creating features, reviewing architecture |
 | `executing-specs`              | Parallel spec implementation, incremental persistence | Orchestrating `/spec:execute` with batch result tracking           |
 | `writing-adrs`                 | Architecture Decision Records, decision signals | Creating ADRs, extracting decisions from specs, ADR quality        |
+| `browser-testing`              | Browser test methodology, Playwright patterns   | Writing and maintaining DorkOS browser tests                       |
 
 ### Rules (Path-Triggered)
 
@@ -126,6 +128,7 @@ Git hooks (post-commit, etc.) are separate and live in `.claude/git-hooks/`. Ins
 | `PostToolUse`      | typecheck-changed, lint-changed, check-any-changed, test-changed | Validate code after edits                                                                          |
 | `UserPromptSubmit` | thinking-level                                                   | Adjust Claude's thinking mode based on prompt complexity                                           |
 | `Stop`             | create-checkpoint, check-docs-changed, autonomous-check          | Session cleanup, checkpoint creation, doc reminders, prevent premature stop during autonomous work |
+| `SessionStart`     | check-adr-curation                                               | Remind about draft ADRs needing curation                                                           |
 
 ### MCP Servers
 
@@ -157,6 +160,10 @@ All documentation lives in `contributing/`:
 | `styling-theming.md`                 | Tailwind v4, dark mode, Shadcn                                      |
 | `parallel-execution.md`              | Parallel agent execution patterns, batching                         |
 | `autonomous-roadmap-execution.md`    | Autonomous workflow, `/roadmap:work`                                |
+| `browser-testing.md`                 | Browser test patterns, Playwright MCP, test architecture            |
+| `relay-adapters.md`                  | Relay adapter system, adapter lifecycle, plugin contracts            |
+| `environment-variables.md`           | Env var reference, Turbo passthrough, dotenv patterns               |
+| `adapter-catalog.md`                 | Adapter catalog management, setup wizard, config fields             |
 
 Skills often reference these guides for detailed patterns while keeping SKILL.md files concise.
 
@@ -225,7 +232,7 @@ Project-wide documentation? ─────────────► CLAUDE.md
 ├── settings.json          # Hooks, permissions, environment
 ├── settings.local.json    # Local overrides, MCP servers
 │
-├── commands/              # Slash commands (52 total)
+├── commands/              # Slash commands (56 total)
 │   ├── adr/               # Architecture Decision Records
 │   ├── app/               # Application maintenance
 │   ├── spec/              # Specification workflow
@@ -252,7 +259,8 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   ├── product-manager.md
 │   └── research-expert.md
 │
-├── skills/                # Reusable expertise (11 total)
+├── skills/                # Reusable expertise (12 total)
+│   ├── browser-testing/
 │   ├── clarifying-requirements/
 │   ├── debugging-systematically/
 │   ├── designing-frontend/
@@ -333,7 +341,7 @@ Several commands use parallel background agents for efficiency. This pattern pro
 | `/ideate`         | Parallel research         | `Explore` + `research-expert` run simultaneously           |
 | `/spec:execute`   | Dependency-aware batching | Tasks grouped by dependencies, each batch runs in parallel |
 | `/spec:decompose` | Analysis + disk output    | Background agent writes `03-tasks.json` to disk; main context creates tasks |
-| `/debug:api`      | Parallel diagnostics      | Component, action, DAL agents investigate simultaneously   |
+| `/debug:api`      | Parallel diagnostics      | Component, route, service agents investigate simultaneously|
 | `/debug:browser`  | Parallel diagnostics      | Visual, console, network, accessibility checks in parallel |
 
 ### How It Works

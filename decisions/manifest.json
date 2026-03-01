@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 49,
+  "nextNumber": 54,
   "decisions": [
     {
       "number": 1,
@@ -428,6 +428,51 @@
       "created": "2026-02-28",
       "extractedFrom": "og-seo-ai-readability-overhaul",
       "specSlug": "og-seo-ai-readability-overhaul"
+    },
+    {
+      "number": 49,
+      "slug": "extract-manifest-io-to-shared-package",
+      "title": "Extract Agent Manifest I/O to Shared Package",
+      "status": "draft",
+      "created": "2026-02-26",
+      "extractedFrom": "agents-first-class-entity",
+      "specSlug": "agents-first-class-entity"
+    },
+    {
+      "number": 50,
+      "slug": "agent-identity-independent-of-mesh",
+      "title": "Agent Identity Independent of Mesh Feature Flag",
+      "status": "draft",
+      "created": "2026-02-26",
+      "extractedFrom": "agents-first-class-entity",
+      "specSlug": "agents-first-class-entity"
+    },
+    {
+      "number": 51,
+      "slug": "persona-injection-via-context-builder",
+      "title": "Inject Agent Persona via Context Builder System Prompt",
+      "status": "draft",
+      "created": "2026-02-26",
+      "extractedFrom": "agents-first-class-entity",
+      "specSlug": "agents-first-class-entity"
+    },
+    {
+      "number": 52,
+      "slug": "replace-dagre-with-elkjs-for-topology-layout",
+      "title": "Replace dagre with ELK.js for Topology Layout",
+      "status": "draft",
+      "created": "2026-02-26",
+      "extractedFrom": "mesh-topology-elevation",
+      "specSlug": "mesh-topology-elevation"
+    },
+    {
+      "number": 53,
+      "slug": "server-side-topology-enrichment",
+      "title": "Server-Side Cross-Subsystem Topology Enrichment",
+      "status": "draft",
+      "created": "2026-02-26",
+      "extractedFrom": "mesh-topology-elevation",
+      "specSlug": "mesh-topology-elevation"
     }
   ]
 }

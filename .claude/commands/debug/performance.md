@@ -164,8 +164,11 @@ wc -l src/**/*.tsx | sort -rn | head -20
 # Build with analysis (if configured)
 pnpm build
 
-# Check output size
-ls -la .next/static/chunks/*.js | sort -k5 -rn | head -10
+# Check Vite client bundle output size
+ls -la apps/client/dist/assets/*.js | sort -k5 -rn | head -10
+
+# Check server bundle output size (if CLI built)
+ls -la packages/cli/dist/server/*.js 2>/dev/null | sort -k5 -rn | head -10
 ```
 
 2. Check for large dependencies:
@@ -187,38 +190,43 @@ rg "from 'date-fns'" src/ --type ts
 # import { format } from 'date-fns'
 ```
 
-### 3.3 Database/API Performance
+### 3.3 Server/API Performance
 
 **Symptoms**: Slow data loading, API timeouts
 
 **Investigation Steps**:
 
-1. Check for N+1 queries in server logs:
+1. Check server logs for slow requests:
 
 ```bash
-grep -i "prisma" ".logs/$(ls -t .logs/ | head -1)" | grep -i "select" | head -30
+DORK_HOME="apps/server/.temp/.dork"
+LOG="$DORK_HOME/logs/dorkos.log"
+
+# Find slow requests or errors in NDJSON logs
+tail -500 "$LOG" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if obj.get('level', 0) >= 40:
+            print(f\"[{obj.get('time','')}] {obj.get('tag','?')}: {obj.get('msg','')}\"[:200])
+    except: pass
+" | tail -30
 ```
 
-2. Look for missing includes in Prisma queries:
+2. Check SQLite query performance:
 
 ```bash
-# Find Prisma queries without includes
-rg "prisma\.\w+\.find" src/layers/entities/ --type ts -A 3
+# Check database size and table row counts
+DB="$DORK_HOME/dork.db"
+sqlite3 "$DB" "SELECT 'pulse_runs', COUNT(*) FROM pulse_runs UNION ALL SELECT 'relay_index', COUNT(*) FROM relay_index UNION ALL SELECT 'relay_traces', COUNT(*) FROM relay_traces;"
 ```
 
-3. Common N+1 pattern:
+3. Look for service-layer bottlenecks:
 
-```typescript
-// BAD: N+1 query
-const users = await prisma.user.findMany();
-for (const user of users) {
-  const posts = await prisma.post.findMany({ where: { userId: user.id } });
-}
-
-// GOOD: Single query with include
-const users = await prisma.user.findMany({
-  include: { posts: true },
-});
+```bash
+# Find service files that do heavy computation
+rg "for.*await|Promise\.all|readdir|readFile" apps/server/src/services/ --type ts -l
 ```
 
 ### 3.4 Memory Leaks
@@ -354,32 +362,27 @@ import _ from 'lodash';
 import map from 'lodash-es/map';
 ```
 
-### 5.3 Database Query Fixes
+### 5.3 Server/Database Fixes
 
-**Add includes:**
+**Add SQLite indexes for frequent queries:**
 
-```typescript
-// Before: N+1
-const accounts = await prisma.account.findMany();
-// Then separately fetching transactions for each
-
-// After: Single query
-const accounts = await prisma.account.findMany({
-  include: { transactions: true },
-});
+```sql
+CREATE INDEX IF NOT EXISTS idx_relay_index_subject ON relay_index(subject);
+CREATE INDEX IF NOT EXISTS idx_pulse_runs_schedule ON pulse_runs(schedule_id);
 ```
 
-**Add indexes in schema:**
+**Batch operations instead of loops:**
 
-```prisma
-model Transaction {
-  id        String   @id
-  accountId String
-  date      DateTime
-
-  @@index([accountId])
-  @@index([date])
+```typescript
+// BAD: Sequential file reads
+for (const id of sessionIds) {
+  const transcript = await readTranscript(id);
 }
+
+// GOOD: Parallel with concurrency limit
+const results = await Promise.all(
+  sessionIds.map(id => readTranscript(id))
+);
 ```
 
 ### 5.4 Memory Leak Fixes

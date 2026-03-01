@@ -321,8 +321,8 @@ AskUserQuestion:
 
 - **Component tests**: Use `@testing-library/react`
 - **Hook tests**: Use `renderHook` from testing-library
-- **API tests**: Mock fetch/axios, test DAL functions
-- **Server Action tests**: Mock Prisma, test business logic
+- **Service tests**: Mock `fs/promises` and `better-sqlite3`, test business logic
+- **Route tests**: Mock services, test Zod validation and Express route handlers
 
 ### Jest/Vitest Matchers
 

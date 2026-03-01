@@ -117,7 +117,7 @@ Steps to reproduce:
 ### Project Data Flow
 
 ```
-Component → TanStack Query → API Route → DAL → Prisma → Database
+Component → TanStack Query → Transport → Express Route → Service → Data Store (SQLite/JSONL/JSON)
 ```
 
 Debug from the outside in or inside out:
@@ -126,46 +126,57 @@ Debug from the outside in or inside out:
 
 - User sees wrong data
 - Check component receives correct data
-- Check query returns correct data
-- Check API returns correct data
-- Check DAL returns correct data
-- Check database has correct data
+- Check TanStack Query returns correct data
+- Check Express route returns correct data
+- Check service returns correct data
+- Check data store has correct data
 
 **Inside-out** (start at source):
 
-- Verify database has correct data (use MCP database tools)
-- Verify DAL query is correct
-- Verify API transforms correctly
-- Verify query caches correctly
+- Verify data store has correct data (SQLite, JSONL transcripts, JSON state files)
+- Verify service reads/writes correctly
+- Verify Express route transforms correctly
+- Verify TanStack Query caches correctly
 - Verify component renders correctly
 
 ### Layer-Specific Checks
 
-| Layer          | What to Check                              | Tools                  |
-| -------------- | ------------------------------------------ | ---------------------- |
-| Component      | Props received, render conditions, state   | Browser DevTools       |
-| TanStack Query | Cache key, staleTime, enabled, queryFn     | React Query Devtools   |
-| API Route      | Auth, request parsing, response format     | Network tab, logs      |
-| DAL            | Auth check, Prisma query, error handling   | Server logs            |
-| Prisma         | Query syntax, includes, where clauses      | Logs, explain          |
-| Database       | Data exists, correct values, relationships | **MCP database tools** |
+| Layer          | What to Check                                | Tools                        |
+| -------------- | -------------------------------------------- | ---------------------------- |
+| Component      | Props received, render conditions, state     | Browser DevTools             |
+| TanStack Query | Cache key, staleTime, enabled, queryFn       | React Query Devtools         |
+| Express Route  | Zod validation, boundary check, feature flag | Network tab, server logs     |
+| Service        | Business logic, error handling               | Server logs (NDJSON)         |
+| Data Store     | SQLite tables, JSONL files, JSON state       | `sqlite3`, `/debug:data`     |
 
-### Database Verification (Ground Truth)
+### Data Store Verification (Ground Truth)
 
-When debugging data issues, verify the **actual database state** using MCP tools:
+When debugging data issues, verify the **actual data** using direct inspection:
 
-```
-mcp__mcp-dev-db__get_table_details: { table: "[table_name]" }
-mcp__mcp-dev-db__execute_sql_select: { sql: "SELECT * FROM [table] WHERE [condition] LIMIT 10" }
+```bash
+DORK_HOME="apps/server/.temp/.dork"
+
+# SQLite queries
+sqlite3 -header -column "$DORK_HOME/dork.db" "SELECT * FROM [table] LIMIT 10;"
+
+# Relay state files
+cat "$DORK_HOME/relay/adapters.json" | python3 -m json.tool
+cat "$DORK_HOME/relay/bindings.json" | python3 -m json.tool
+
+# Server config
+cat "$DORK_HOME/config.json" | python3 -m json.tool
+
+# Server logs (NDJSON)
+tail -20 "$DORK_HOME/logs/dorkos.log" | python3 -m json.tool
 ```
 
 This establishes **ground truth**:
 
-- If data exists in DB but not in UI → Issue is in application layers
-- If data missing from DB → Issue is in write operation
-- If data is wrong in DB → Issue is in mutation logic
+- If data exists in store but not in UI → Issue is in application layers
+- If data missing from store → Issue is in write operation
+- If data is wrong in store → Issue is in mutation logic
 
-**Requires**: `MCP_DEV_ONLY_DB_ACCESS=true` in `.env.local`
+Use `/debug:data` for detailed data inspection or `/debug:logs` for server log analysis.
 
 ## Common Bug Patterns
 
@@ -308,8 +319,8 @@ When to escalate:
 ## References
 
 - `/debug:browser` — Visual and interaction debugging
-- `/debug:api` — Data flow debugging (Component → Query → DAL → DB)
-- `/debug:data` — Direct database inspection with MCP tools
+- `/debug:api` — Data flow debugging (Component → Query → Route → Service → DB)
+- `/debug:data` — Direct database and state file inspection
 - `/debug:test` — Test failure debugging
 - `/debug:rubber-duck` — Guided problem articulation
 - `/debug:logs` — Server log analysis

@@ -1,5 +1,5 @@
 ---
-number: 45
+number: 50
 title: Agent Identity Independent of Mesh Feature Flag
 status: draft
 created: 2026-02-26
@@ -7,7 +7,7 @@ spec: agents-first-class-entity
 superseded-by: null
 ---
 
-# 45. Agent Identity Independent of Mesh Feature Flag
+# 50. Agent Identity Independent of Mesh Feature Flag
 
 ## Status
 

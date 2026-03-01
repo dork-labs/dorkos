@@ -1,5 +1,5 @@
 ---
-number: 48
+number: 53
 title: Server-Side Cross-Subsystem Topology Enrichment
 status: draft
 created: 2026-02-26
@@ -7,7 +7,7 @@ spec: mesh-topology-elevation
 superseded-by: null
 ---
 
-# 48. Server-Side Cross-Subsystem Topology Enrichment
+# 53. Server-Side Cross-Subsystem Topology Enrichment
 
 ## Status
 

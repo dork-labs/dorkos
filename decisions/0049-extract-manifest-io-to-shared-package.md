@@ -1,5 +1,5 @@
 ---
-number: 44
+number: 49
 title: Extract Agent Manifest I/O to Shared Package
 status: draft
 created: 2026-02-26
@@ -7,7 +7,7 @@ spec: agents-first-class-entity
 superseded-by: null
 ---
 
-# 44. Extract Agent Manifest I/O to Shared Package
+# 49. Extract Agent Manifest I/O to Shared Package
 
 ## Status
 

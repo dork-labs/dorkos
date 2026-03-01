@@ -334,10 +334,10 @@ AskUserQuestion:
 
 This project uses:
 
-- **Zod schemas** for runtime validation (`z.infer<typeof schema>`)
-- **Prisma types** from `@/generated/prisma`
-- **TanStack Query** with typed hooks
-- **Server Actions** with typed returns
+- **Zod schemas** for runtime validation (`z.infer<typeof schema>`) in `packages/shared/src/schemas.ts`, `relay-schemas.ts`, `mesh-schemas.ts`
+- **better-sqlite3** with manual type assertions (no ORM types)
+- **TanStack Query** with typed hooks in `apps/client/src/layers/entities/*/model/`
+- **Express routes** with Zod-validated request bodies (`schema.safeParse(req.body)`)
 
 ## Important Behaviors
 

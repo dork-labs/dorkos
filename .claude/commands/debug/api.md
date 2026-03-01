@@ -1,31 +1,38 @@
 ---
-description: Debug API and data flow issues by tracing through Component → TanStack Query → Server Action → DAL → Prisma
+description: Debug API and data flow issues by tracing through Component -> TanStack Query -> Express Route -> Service -> SQLite/JSONL
 argument-hint: '[endpoint-or-feature] [--url <url>]'
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__playwright__browser_snapshot, mcp__playwright__browser_navigate, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__mcp-dev-db__health, mcp__mcp-dev-db__get_schema_overview, mcp__mcp-dev-db__get_table_details, mcp__mcp-dev-db__execute_sql_select, mcp__mcp-dev-db__explain_query, mcp__mcp-dev-db__validate_sql
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__playwright__browser_snapshot, mcp__playwright__browser_navigate, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__context7__resolve-library-id, mcp__context7__query-docs
 ---
 
 # API & Data Flow Debugging
 
-Debug data-related issues by systematically tracing through the project's data flow layers. This command helps with API failures, data mismatches, stale cache, and server action errors.
+Debug data-related issues by systematically tracing through the project's data flow layers. This command helps with API failures, data mismatches, stale cache, and service errors.
 
 ## Project Data Flow Architecture
 
 ```
-┌─────────────────┐
-│  React Component │  ← UI displays data
-├─────────────────┤
-│  TanStack Query  │  ← Client-side caching & fetching
-├─────────────────┤
-│  API Route (GET) │  ← HTTP endpoint for reads
-│  Server Action   │  ← Direct calls for mutations
-├─────────────────┤
-│  DAL (entities/) │  ← Data Access Layer with auth
-├─────────────────┤
-│  Prisma Client   │  ← Database ORM
-├─────────────────┤
-│  PostgreSQL      │  ← Neon database
-└─────────────────┘
++-------------------+
+|  React Component  |  <- UI displays data (FSD layers)
++-------------------+
+|  TanStack Query   |  <- Client-side caching & fetching
++-------------------+
+|  Transport Layer  |  <- HttpTransport (REST/SSE) or DirectTransport (Obsidian)
++-------------------+
+|  Express Route    |  <- HTTP endpoints (Zod validation, boundary checks)
++-------------------+
+|  Service Layer    |  <- Business logic (agent-manager, binding-router, etc.)
++-------------------+
+|  Data Store       |  <- SQLite (dork.db) + JSONL transcripts + JSON state files
++-------------------+
 ```
+
+### Key Differences from Typical Projects
+
+- **No Prisma/PostgreSQL** — Uses SQLite (better-sqlite3, WAL mode) and JSON files
+- **No server actions** — All mutations go through Express REST endpoints
+- **Transport abstraction** — Client uses `Transport` interface, not direct fetch
+- **SDK transcripts** — Sessions are derived from JSONL files on disk, not a database
+- **Feature-flag guarded** — Relay/Mesh/Pulse endpoints return 503 when disabled
 
 ## Arguments
 
@@ -38,8 +45,6 @@ Parse `$ARGUMENTS`:
 ## Phase 1: Issue Identification
 
 ### 1.1 Gather Information
-
-If no description provided:
 
 ```
 AskUserQuestion:
@@ -54,8 +59,8 @@ AskUserQuestion:
       description: "Data doesn't update after changes"
     - label: "API error"
       description: "Getting error responses from the server"
-    - label: "Server action failing"
-      description: "Mutation/form submission not working"
+    - label: "Relay/Mesh/Pulse issue"
+      description: "Subsystem-specific data problem"
 ```
 
 ### 1.2 Identify the Layer
@@ -69,31 +74,14 @@ AskUserQuestion:
       description: "Component not rendering data correctly"
     - label: "TanStack Query"
       description: "Caching, refetching, or query issues"
-    - label: "API Route"
-      description: "HTTP endpoint returning wrong data"
-    - label: "Server Action"
-      description: "Mutation not working correctly"
-    - label: "Database"
-      description: "Data in DB is wrong or query is incorrect"
+    - label: "Express Route"
+      description: "HTTP endpoint returning wrong data or errors"
+    - label: "Service Layer"
+      description: "Business logic or data processing issue"
+    - label: "Data Store"
+      description: "SQLite, JSONL, or JSON file has wrong data"
     - label: "Not sure"
       description: "Need help identifying the layer"
-```
-
-### 1.3 Get Timing Context
-
-```
-AskUserQuestion:
-  question: "When did this issue start?"
-  header: "Timeline"
-  options:
-    - label: "After recent code changes"
-      description: "Started after modifying code"
-    - label: "After database changes"
-      description: "Started after schema migration or data update"
-    - label: "Intermittent"
-      description: "Happens sometimes, not always"
-    - label: "Always"
-      description: "Never worked correctly"
 ```
 
 ## Phase 2: Initial Assessment
@@ -110,158 +98,52 @@ mcp__playwright__browser_network_requests: { includeStatic: false }
 ### 2.2 Check Server Logs
 
 ```bash
-# Get latest dev server log
-LATEST_LOG=$(ls -t .logs/ 2>/dev/null | head -1)
-if [ -n "$LATEST_LOG" ]; then
-  echo "=== Recent Server Logs ==="
-  grep -E "error|failed|POST|GET|prisma" ".logs/$LATEST_LOG" | tail -30
-fi
+DORK_HOME="apps/server/.temp/.dork"
+LOG="$DORK_HOME/logs/dorkos.log"
+
+# Recent errors and warnings (NDJSON format)
+tail -200 "$LOG" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if obj.get('level', 0) >= 40:
+            print(f\"[{obj.get('time','')}] {obj.get('msg','')}\"[:200])
+    except: pass
+" | tail -20
 ```
 
 ### 2.3 Identify the Data Path
 
 Based on the feature, trace the data flow:
 
-1. **Find the component** displaying/mutating the data
-2. **Find the TanStack Query hook** or server action call
-3. **Find the API route** (for queries) or server action (for mutations)
-4. **Find the DAL function** in `entities/*/api/`
-5. **Find the Prisma query** in the DAL function
+1. **Find the component** displaying/mutating the data (FSD layer structure)
+2. **Find the TanStack Query hook** in `entities/*/model/` or `features/*/model/`
+3. **Find the Express route** in `apps/server/src/routes/`
+4. **Find the service** in `apps/server/src/services/`
+5. **Find the data store** (SQLite table, JSONL file, or JSON state file)
 
-## Phase 3: Parallel Layer Investigation
-
-When the issue layer is unclear, launch parallel diagnostic agents to investigate multiple layers simultaneously.
-
-### 3.0 Launch Parallel Diagnostics (Optional)
-
-If user selected "Not sure" for problem layer, run diagnostics in parallel:
-
-```
-# Launch all diagnostic agents simultaneously
-component_agent = Task(
-  description: "Trace component data flow",
-  prompt: """
-    Investigate the frontend layer for the data issue.
-
-    1. Find React components displaying the affected data
-    2. Check how data is being fetched (useQuery, server action)
-    3. Look for rendering conditions that might hide data
-    4. Check error boundaries and loading states
-    5. Verify data shape matches expected interface
-
-    Return findings in this format:
-    ## Component Layer Findings
-    **Component**: [file path]
-    **Data Source**: [useQuery/server action/props]
-    **Issue Found**: [Yes/No]
-    **Details**: [explanation]
-    **Confidence**: [High/Medium/Low]
-  """,
-  subagent_type: "react-tanstack-expert",
-  run_in_background: true
-)
-
-action_agent = Task(
-  description: "Check server actions and API routes",
-  prompt: """
-    Investigate the server action/API layer for the data issue.
-
-    1. Find the server action or API route handling this data
-    2. Check for 'use server' directive and proper exports
-    3. Verify Zod validation passes
-    4. Check revalidatePath/revalidateTag calls
-    5. Look for error handling issues
-
-    Return findings in this format:
-    ## Server Action Layer Findings
-    **File**: [file path]
-    **Function**: [function name]
-    **Issue Found**: [Yes/No]
-    **Details**: [explanation]
-    **Confidence**: [High/Medium/Low]
-  """,
-  subagent_type: "general-purpose",
-  run_in_background: true
-)
-
-dal_agent = Task(
-  description: "Check DAL and database queries",
-  prompt: """
-    Investigate the DAL and database layer for the data issue.
-
-    1. Find the DAL function in entities/*/api/
-    2. Check auth (getCurrentUser/requireAuth)
-    3. Verify Prisma query is correct
-    4. Check include/select clauses
-    5. Look for proper error handling
-
-    Return findings in this format:
-    ## DAL Layer Findings
-    **File**: [file path]
-    **Function**: [function name]
-    **Issue Found**: [Yes/No]
-    **Details**: [explanation]
-    **Confidence**: [High/Medium/Low]
-  """,
-  subagent_type: "prisma-expert",
-  run_in_background: true
-)
-
-# Display progress
-print("🔍 Running parallel diagnostics across all layers...")
-print("   → Component layer investigation")
-print("   → Server action/API layer investigation")
-print("   → DAL/Database layer investigation")
-
-# Collect results
-component_result = TaskOutput(task_id: component_agent.id, block: true)
-print("   ✅ Component layer complete")
-
-action_result = TaskOutput(task_id: action_agent.id, block: true)
-print("   ✅ Server action layer complete")
-
-dal_result = TaskOutput(task_id: dal_agent.id, block: true)
-print("   ✅ DAL layer complete")
-
-# Synthesize findings
-print("\n📊 Diagnostic Summary:")
-# Present findings from each layer, highlight where issues were found
-```
-
-**Benefits**:
-
-- 3x faster than sequential investigation
-- Each agent uses specialized expertise
-- Parallel context usage instead of single overloaded context
+## Phase 3: Layer Investigation
 
 ### 3.1 Frontend Layer
-
-Check the React component:
 
 ```
 Read the component file.
 Look for:
-- How is data being fetched? (useQuery, server action)
+- How is data being fetched? (useQuery hook from entities/)
 - How is data being displayed?
 - Are there conditional renders that might hide data?
 - Is there error handling?
+- Does the Transport context provide the right transport?
 ```
-
-Questions to ask:
-
-- Is the component receiving the data?
-- Is the data in the expected shape?
-- Are there rendering conditions blocking display?
 
 ### 3.2 TanStack Query Layer
 
-Check the query configuration:
-
 ```
-Read the query hook file.
+Read the query hook file in entities/*/model/.
 Look for:
 - queryKey: Is it unique and correct?
-- queryFn: Is it calling the right endpoint?
+- queryFn: Does it call the right transport method?
 - staleTime: Is caching too aggressive?
 - enabled: Is the query enabled when it should be?
 - select: Is data being transformed correctly?
@@ -269,102 +151,78 @@ Look for:
 
 Common TanStack Query issues:
 
-| Issue               | Symptom                 | Fix                               |
-| ------------------- | ----------------------- | --------------------------------- |
-| Stale data          | Old data after mutation | Invalidate queries after mutation |
-| Cache key collision | Wrong data displayed    | Make queryKey more specific       |
-| Query disabled      | No fetch occurs         | Check `enabled` condition         |
-| Infinite loading    | Never resolves          | Check queryFn for errors          |
+| Issue | Symptom | Fix |
+|---|---|---|
+| Stale data | Old data after mutation | Invalidate queries after mutation |
+| Cache key collision | Wrong data displayed | Make queryKey more specific |
+| Query disabled | No fetch occurs | Check `enabled` condition |
+| Infinite loading | Never resolves | Check queryFn for errors |
+| Missing invalidation | Data stale after action | Add `queryClient.invalidateQueries()` |
 
-### 3.3 API Route Layer (GET requests)
-
-Check the route handler:
+### 3.3 Express Route Layer
 
 ```
-Read the API route file in src/app/api/.
+Read the route file in apps/server/src/routes/.
 Look for:
-- Is auth being checked?
-- Is the DAL function being called correctly?
+- Is Zod validation passing? (schema.safeParse)
+- Is the boundary check passing? (validateBoundary)
+- Is the feature flag enabled? (isRelayEnabled, isMeshEnabled)
+- Is the service being called correctly?
 - Is the response format correct?
-- Are errors being handled?
 ```
 
-### 3.4 Server Action Layer (Mutations)
+Key route files:
 
-Check the server action:
+| Route File | Endpoints |
+|---|---|
+| `routes/sessions.ts` | Session CRUD, SSE streaming, messages |
+| `routes/relay.ts` | Relay messaging, adapters, bindings |
+| `routes/mesh.ts` | Mesh discovery, agents, topology |
+| `routes/pulse.ts` | Schedules, runs, triggers |
+| `routes/agents.ts` | Agent identity CRUD |
+| `routes/config.ts` | Server configuration |
+
+### 3.4 Service Layer
 
 ```
-Read the server action file.
+Read the service file.
 Look for:
-- 'use server' directive present?
-- Input validation with Zod?
-- DAL function being called?
-- revalidatePath/revalidateTag after mutation?
-- Error handling and return format?
+- Is data being read/written correctly?
+- Are errors being handled and propagated?
+- Is the service properly initialized?
+- Are dependencies injected correctly?
 ```
 
-Common server action issues:
+### 3.5 Data Store Layer (Ground Truth)
 
-| Issue                | Symptom                   | Fix                            |
-| -------------------- | ------------------------- | ------------------------------ |
-| Missing revalidation | Data stale after mutation | Add `revalidatePath()`         |
-| Validation failure   | Action returns error      | Check Zod schema matches input |
-| Auth failure         | 401/403 errors            | Check `requireAuth()` call     |
-| Silent failure       | No response               | Check return statement         |
+Check actual data in SQLite and state files:
 
-### 3.5 DAL Layer
+```bash
+DORK_HOME="apps/server/.temp/.dork"
 
-Check the Data Access Layer function:
+# SQLite queries for common data
+sqlite3 -header -column "$DORK_HOME/dork.db" "SELECT * FROM [table] LIMIT 10;"
 
-```
-Read the DAL file in src/layers/entities/*/api/.
-Look for:
-- Auth check (getCurrentUser/requireAuth)?
-- Correct Prisma query?
-- Proper error handling?
-- Return type matches expected?
+# Relay state files
+cat "$DORK_HOME/relay/adapters.json" | python3 -m json.tool
+cat "$DORK_HOME/relay/bindings.json" | python3 -m json.tool
+
+# Server config
+cat "$DORK_HOME/config.json" | python3 -m json.tool
 ```
 
-### 3.6 Prisma Layer
+For session data, check SDK transcripts:
 
-Check the database query:
-
-```
-Read the Prisma query in the DAL.
-Look for:
-- Correct model being queried?
-- Where clause correct?
-- Include/select covering needed fields?
-- Sorting/pagination correct?
+```bash
+# List recent session transcripts
+ls -lt ~/.claude/projects/*/  2>/dev/null | head -10
 ```
 
-### 3.7 Database Layer (Direct Verification)
+This establishes **ground truth**:
 
-Use MCP database tools to verify actual data state:
-
-```
-# Check if MCP database server is available
-mcp__mcp-dev-db__health: {}
-
-# Get table structure and sample data
-mcp__mcp-dev-db__get_table_details: { table: "[table_name]" }
-
-# Query actual data
-mcp__mcp-dev-db__execute_sql_select: {
-  sql: "SELECT * FROM [table] WHERE [condition] LIMIT 10"
-}
-```
-
-This is the **ground truth** - if data exists here but not in the UI, the issue is in the application layers above.
-
-Key checks:
-
-- Does the record exist in the database?
-- Are foreign key relationships intact?
-- Are timestamps correct (created_at, updated_at)?
-- Are nullable fields unexpectedly NULL?
-
-**Note**: Requires `MCP_DEV_ONLY_DB_ACCESS=true` in `.env.local`
+- If data exists in DB/files but not in UI -> Issue is in application layers
+- If data missing from store -> Issue is in write operation
+- If data is wrong in store -> Issue is in mutation logic
 
 ## Phase 4: Specific Debugging Scenarios
 
@@ -372,75 +230,73 @@ Key checks:
 
 Debugging checklist:
 
-1. [ ] Check network tab for request
-2. [ ] Check server logs for errors
-3. [ ] Verify API route exists and handles GET
-4. [ ] Check DAL function returns data
-5. [ ] Verify Prisma query finds records
+1. [ ] Check network tab for request (is it being made?)
+2. [ ] Check server logs for errors (NDJSON in `.dork/logs/`)
+3. [ ] Verify Express route exists and handles the request method
+4. [ ] Check feature flag is enabled (relay, mesh, pulse)
+5. [ ] Verify service returns data
 6. [ ] Check TanStack Query is enabled
 
 ### 4.2 Stale Data After Mutation
 
 Debugging checklist:
 
-1. [ ] Check server action calls `revalidatePath()` or `revalidateTag()`
+1. [ ] Check mutation endpoint returns success
 2. [ ] Verify TanStack Query invalidation: `queryClient.invalidateQueries()`
 3. [ ] Check queryKey matches between query and invalidation
-4. [ ] Verify mutation is actually succeeding
+4. [ ] Look for `onSuccess` callbacks that invalidate related queries
+5. [ ] Check if data is cached in Zustand store instead of TanStack Query
 
-### 4.3 Wrong Data Shape
+### 4.3 Feature Returns 503
 
-```
-AskUserQuestion:
-  question: "Where is the data shape mismatch?"
-  header: "Shape Issue"
-  options:
-    - label: "API returns wrong shape"
-      description: "Response doesn't match expected interface"
-    - label: "Prisma returns wrong shape"
-      description: "Database query missing fields"
-    - label: "Transform issue"
-      description: "Data is being incorrectly transformed"
-    - label: "Type mismatch"
-      description: "TypeScript types don't match actual data"
-```
+This means the feature flag is disabled:
 
-### 4.4 API Errors
+```bash
+DORK_HOME="apps/server/.temp/.dork"
 
-Check error details:
-
-```
-mcp__playwright__browser_network_requests: { includeStatic: false }
+# Check which features are enabled
+cat "$DORK_HOME/config.json" | python3 -c "
+import sys, json
+cfg = json.load(sys.stdin)
+print(f\"Relay: {cfg.get('relay', {}).get('enabled', False)}\")
+print(f\"Pulse: {cfg.get('scheduler', {}).get('enabled', False)}\")
+print(f\"Mesh: {cfg.get('mesh', {}).get('enabled', False)}\")
+"
 ```
 
-Common API errors:
+### 4.4 API Returns 403
 
-| Status | Meaning      | Check                          |
-| ------ | ------------ | ------------------------------ |
-| 400    | Bad Request  | Request body/params validation |
-| 401    | Unauthorized | Auth token/session             |
-| 403    | Forbidden    | User permissions               |
-| 404    | Not Found    | Route exists, resource ID      |
-| 500    | Server Error | Server logs, Prisma errors     |
+Boundary violation — the requested path is outside the configured boundary:
+
+```bash
+# Check boundary setting
+cat "$DORK_HOME/config.json" | python3 -c "
+import sys, json
+cfg = json.load(sys.stdin)
+print(f\"Boundary: {cfg.get('server', {}).get('boundary', 'default (home dir)')}\")
+"
+```
+
+### 4.5 Session Lock (409)
+
+Another client has the session locked:
+
+```bash
+# Check server logs for lock information
+tail -100 "$DORK_HOME/logs/dorkos.log" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if 'lock' in obj.get('msg', '').lower():
+            print(json.dumps(obj, indent=2))
+    except: pass
+"
+```
 
 ## Phase 5: Fix Implementation
 
-### 5.1 Confirm Fix Approach
-
-```
-AskUserQuestion:
-  question: "Based on my analysis, the issue is at the [LAYER] layer. How should we proceed?"
-  header: "Fix Approach"
-  options:
-    - label: "Fix the identified issue"
-      description: "Implement the fix I described"
-    - label: "Investigate more"
-      description: "I want to understand the issue better first"
-    - label: "Different approach"
-      description: "I have a different idea for the fix"
-```
-
-### 5.2 Plan the Fix
+### 5.1 Plan the Fix
 
 ```
 TodoWrite:
@@ -456,16 +312,20 @@ TodoWrite:
       status: "pending"
 ```
 
-### 5.3 Make Changes
+### 5.2 Verify the Fix
 
-For each change:
-
-1. **Read the file first**
-2. **Make targeted edits**
-3. **Follow project DAL patterns** - auth checks, error handling
-4. **Add cache invalidation** if mutation
-
-### 5.4 Verify the Fix
+```bash
+# Check server logs for new errors
+tail -20 "$DORK_HOME/logs/dorkos.log" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if obj.get('level', 0) >= 40:
+            print(json.dumps(obj, indent=2))
+    except: pass
+"
+```
 
 If browser URL provided:
 
@@ -475,111 +335,66 @@ mcp__playwright__browser_snapshot: {}
 mcp__playwright__browser_network_requests: { includeStatic: false }
 ```
 
-Check:
-
-- Data loads correctly
-- No console errors
-- Network requests succeed
-
 ## Phase 6: Wrap-Up
-
-### 6.1 Summarize
 
 ```markdown
 ## Data Issue Resolved
 
 **Problem**: [Original issue description]
-**Layer**: [Where the bug was - Component/Query/API/DAL/Prisma]
+**Layer**: [Where the bug was — Component/Query/Route/Service/Store]
 **Root Cause**: [Why the issue occurred]
 **Solution**: [What was changed]
 **Files Modified**: [List of files]
-```
-
-### 6.2 Cache Considerations
-
-If caching was involved, note:
-
-- What cache invalidation was added
-- What staleTime/cacheTime settings apply
-- When data will refresh
-
-### 6.3 Offer Next Steps
-
-```
-AskUserQuestion:
-  question: "What would you like to do next?"
-  header: "Next Steps"
-  options:
-    - label: "Test another scenario"
-      description: "Verify data flow in different conditions"
-    - label: "Check related endpoints"
-      description: "Debug similar data issues"
-    - label: "Add error handling"
-      description: "Improve error handling in this flow"
-    - label: "Commit the fix"
-      description: "Run /git:commit to save changes"
-    - label: "Done"
-      description: "I'm satisfied with the fix"
 ```
 
 ## Quick Reference
 
 ### Project File Locations
 
-| Layer          | Location                                               |
-| -------------- | ------------------------------------------------------ |
-| Components     | `src/layers/features/*/ui/` or `src/layers/widgets/*/` |
-| TanStack Query | `src/layers/features/*/model/`                         |
-| API Routes     | `src/app/api/*/route.ts`                               |
-| Server Actions | `src/app/actions/` or `src/layers/features/*/api/`     |
-| DAL Queries    | `src/layers/entities/*/api/queries.ts`                 |
-| DAL Mutations  | `src/layers/entities/*/api/mutations.ts`               |
-| Prisma Schema  | `prisma/schema.prisma`                                 |
+| Layer | Location |
+|---|---|
+| Components | `apps/client/src/layers/features/*/ui/` |
+| TanStack Query hooks | `apps/client/src/layers/entities/*/model/` |
+| Zustand store | `apps/client/src/layers/shared/model/app-store.ts` |
+| Transport interface | `packages/shared/src/transport.ts` |
+| Express routes | `apps/server/src/routes/` |
+| Services | `apps/server/src/services/` |
+| Zod schemas | `packages/shared/src/schemas.ts`, `relay-schemas.ts`, `mesh-schemas.ts` |
+| SQLite DB | `{DORK_HOME}/dork.db` |
+| Session transcripts | `~/.claude/projects/{slug}/*.jsonl` |
+| Relay state | `{DORK_HOME}/relay/` |
+| Server config | `{DORK_HOME}/config.json` |
+| Server logs | `{DORK_HOME}/logs/dorkos.log` |
+
+### Common Express Route Patterns
+
+```typescript
+// Zod validation
+const parsed = Schema.safeParse(req.body);
+if (!parsed.success) return res.status(400).json({ error: 'Validation failed', details: parsed.error.format() });
+
+// Boundary check
+if (!validateBoundary(req.body.path)) return res.status(403).json({ error: 'Path outside boundary' });
+
+// Feature flag guard
+if (!isRelayEnabled()) return res.status(503).json({ error: 'Relay is not enabled' });
+```
 
 ### TanStack Query Patterns
 
 ```typescript
 // Invalidate after mutation
-queryClient.invalidateQueries({ queryKey: ['accounts'] });
+queryClient.invalidateQueries({ queryKey: ['sessions'] });
 
-// Optimistic update
-onMutate: async (newData) => {
-  await queryClient.cancelQueries({ queryKey });
-  const previous = queryClient.getQueryData(queryKey);
-  queryClient.setQueryData(queryKey, newData);
-  return { previous };
-};
-```
-
-### Server Action Patterns
-
-```typescript
-'use server';
-import { revalidatePath } from 'next/cache';
-
-export async function createItem(data: FormData) {
-  const validated = schema.safeParse(Object.fromEntries(data));
-  if (!validated.success) return { error: validated.error };
-
-  const result = await createItemDAL(validated.data);
-  revalidatePath('/items'); // Don't forget this!
-  return result;
-}
+// Check if query is fetching
+const { data, isLoading, error } = useQuery({ queryKey: ['key'], queryFn: fn });
 ```
 
 ## Important Behaviors
 
 1. **ALWAYS** trace through all layers before fixing
-2. **CHECK** server logs for errors
-3. **VERIFY** data exists in database (Prisma Studio)
-4. **ENSURE** cache invalidation after mutations
-5. **FOLLOW** project DAL patterns - never call Prisma directly
+2. **CHECK** server logs (NDJSON in `.dork/logs/`) for errors
+3. **VERIFY** data exists in data store (SQLite, JSON files, JSONL)
+4. **ENSURE** TanStack Query invalidation after mutations
+5. **CHECK** feature flags before investigating subsystem routes
 6. **TEST** both success and error states
-
-## Edge Cases
-
-- **Race conditions**: Multiple concurrent requests
-- **Optimistic updates**: Rollback on failure
-- **Pagination**: Cursor vs offset issues
-- **Relationships**: Include clauses for nested data
-- **Soft deletes**: Check for deleted records being returned

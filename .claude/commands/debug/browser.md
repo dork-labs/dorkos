@@ -27,12 +27,12 @@ AskUserQuestion:
   question: "What URL should I navigate to?"
   header: "URL"
   options:
-    - label: "localhost:3000"
-      description: "Home page"
-    - label: "localhost:3000/accounts"
-      description: "Accounts page"
-    - label: "localhost:3000/transactions"
-      description: "Transactions page"
+    - label: "localhost:4241"
+      description: "Vite dev client (proxies /api to server)"
+    - label: "localhost:6942"
+      description: "Express API server directly"
+    - label: "localhost:4243"
+      description: "Roadmap app"
 ```
 
 **If description not provided or vague**, ask about issue type:
@@ -78,15 +78,25 @@ AskUserQuestion:
 
 ```bash
 # Check if dev server is running
-if ! curl -s http://localhost:3000 > /dev/null 2>&1; then
-  echo "⚠️  Dev server not responding. Check that 'pnpm dev' is running."
+DORKOS_PORT="${DORKOS_PORT:-4242}"
+if ! curl -s "http://localhost:$DORKOS_PORT/api/health" > /dev/null 2>&1; then
+  echo "⚠️  Dev server not responding on port $DORKOS_PORT. Check that 'pnpm dev' is running."
 fi
 
-# Check latest dev server log for errors
-LATEST_LOG=$(ls -t .logs/ 2>/dev/null | head -1)
-if [ -n "$LATEST_LOG" ]; then
-  echo "📋 Recent server log entries:"
-  grep -i "error\|failed\|exception" ".logs/$LATEST_LOG" | tail -10
+# Check server logs for recent errors (NDJSON format)
+DORK_HOME="apps/server/.temp/.dork"
+LOG="$DORK_HOME/logs/dorkos.log"
+if [ -f "$LOG" ]; then
+  echo "📋 Recent server errors:"
+  tail -100 "$LOG" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if obj.get('level', 0) >= 50:
+            print(f\"[{obj.get('time','')}] {obj.get('tag','?')}: {obj.get('msg','')}\"[:200])
+    except: pass
+" | tail -10
 fi
 ```
 
@@ -102,8 +112,18 @@ mcp__playwright__browser_network_requests: { includeStatic: false }
 ### 2.3 Check Dev Server Logs
 
 ```bash
-# Read latest log for context
-cat ".logs/$(ls -t .logs/ | head -1)" | tail -50
+DORK_HOME="apps/server/.temp/.dork"
+LOG="$DORK_HOME/logs/dorkos.log"
+
+# Recent log entries (NDJSON format)
+tail -50 "$LOG" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        print(f\"[{obj.get('time','')}] [{obj.get('level',0)}] {obj.get('tag','?')}: {obj.get('msg','')}\"[:200])
+    except: pass
+"
 ```
 
 ### 2.4 Classify Issue Type
@@ -348,13 +368,24 @@ mcp__playwright__browser_network_requests: { includeStatic: false }
 2. **Check server logs for API errors:**
 
 ```bash
-grep -E "POST|GET|error|failed" ".logs/$(ls -t .logs/ | head -1)" | tail -20
+DORK_HOME="apps/server/.temp/.dork"
+tail -200 "$DORK_HOME/logs/dorkos.log" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        msg = obj.get('msg', '')
+        if obj.get('level', 0) >= 40 or 'error' in msg.lower() or 'failed' in msg.lower():
+            print(f\"[{obj.get('time','')}] {obj.get('tag','?')}: {msg}\"[:200])
+    except: pass
+" | tail -20
 ```
 
 3. **Trace data flow in code:**
    - Find the component displaying the data
-   - Find the TanStack Query hook or server action
-   - Find the DAL function
+   - Find the TanStack Query hook in `entities/*/model/`
+   - Find the Express route in `apps/server/src/routes/`
+   - Find the service in `apps/server/src/services/`
    - Check for cache invalidation issues
 
 ### For Responsive Issues
@@ -570,7 +601,7 @@ Use specialized agents when needed:
 | -------------------- | ----------------------- |
 | Complex CSS/layout   | `react-tanstack-expert` |
 | Type errors found    | `typescript-expert`     |
-| Database/API issues  | `prisma-expert`         |
+| Data flow issues     | Use `/debug:api`        |
 | Deep research needed | `research-expert`       |
 | Multi-file search    | `code-search`           |
 

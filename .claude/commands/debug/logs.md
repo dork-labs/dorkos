@@ -1,20 +1,32 @@
 ---
 description: Analyze server logs to diagnose errors, exceptions, and unexpected behavior
-argument-hint: '[search-term] [--tail <lines>]'
+argument-hint: '[search-term] [--tail <lines>] [--level <level>] [--tag <tag>]'
 allowed-tools: Read, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion
 ---
 
 # Server Log Analysis
 
-Systematically analyze server logs from the `.logs/` directory to diagnose errors, exceptions, API failures, and unexpected behavior. This command helps correlate log entries with code paths.
+Systematically analyze server logs from the `.dork/logs/` directory to diagnose errors, exceptions, API failures, and unexpected behavior. DorkOS uses **NDJSON structured logging** — each line is a JSON object that can be filtered with `jq`.
 
-## Project Logging
+## Log System Overview
 
-The dev server outputs logs to `.logs/` with timestamped filenames:
+- **Format**: NDJSON (newline-delimited JSON)
+- **Active log**: `{DORK_HOME}/logs/dorkos.log`
+- **Rotation**: Daily (`dorkos.YYYY-MM-DD.log`) + size-based within a day (`dorkos.YYYY-MM-DD.N.log`)
+- **Fields**: `level`, `time`, `msg`, `tag` (optional), plus arbitrary context fields
+- **Levels**: `fatal` (60), `error` (50), `warn` (40), `info` (30), `debug` (20), `trace` (10)
 
-- **Location**: `.logs/`
-- **Format**: `YYYY-MM-DD_HH-MM-SS.log`
-- **Latest log**: `ls -t .logs/ | head -1`
+### DORK_HOME Location
+
+The `.dork` directory location depends on the environment:
+
+| Environment | Location | How |
+|---|---|---|
+| Development | `apps/server/.temp/.dork/` | Auto-detected when `NODE_ENV !== 'production'` |
+| Production (CLI) | `~/.dork/` | Default, or `DORK_HOME` env var |
+| Custom | Any path | Set `DORK_HOME` env var |
+
+Resolution logic is in `apps/server/src/lib/dork-home.ts`.
 
 ## Arguments
 
@@ -22,20 +34,24 @@ Parse `$ARGUMENTS`:
 
 - If argument is a search term, grep for it in logs
 - If `--tail <lines>` provided, show last N lines
+- If `--level <level>` provided, filter by log level (error, warn, info, debug)
+- If `--tag <tag>` provided, filter by component tag
 - If empty, analyze latest log for errors
 
 ## Phase 1: Log Collection
 
-### 1.1 Identify Log File
+### 1.1 Identify Log Location and Files
 
 ```bash
-# Find the latest log file
-LATEST_LOG=$(ls -t .logs/ 2>/dev/null | head -1)
-echo "Latest log: .logs/$LATEST_LOG"
+# Dev environment default
+DORK_HOME="apps/server/.temp/.dork"
 
-# Show log file stats
-ls -la ".logs/$LATEST_LOG"
-wc -l ".logs/$LATEST_LOG"
+# List available log files (newest first)
+ls -lt "$DORK_HOME/logs/" 2>/dev/null
+
+# Show active log size
+ls -la "$DORK_HOME/logs/dorkos.log" 2>/dev/null
+wc -l "$DORK_HOME/logs/dorkos.log" 2>/dev/null
 ```
 
 ### 1.2 Clarify Analysis Scope
@@ -46,131 +62,186 @@ AskUserQuestion:
   header: "Analysis Type"
   options:
     - label: "Recent errors"
-      description: "Find all errors and exceptions in recent logs"
-    - label: "Specific request"
-      description: "I'll provide details about a specific request to trace"
+      description: "Find all errors and warnings in recent logs"
+    - label: "Specific component"
+      description: "Filter by component tag (e.g., Relay, Mesh, Pulse, AgentManager)"
     - label: "API failures"
-      description: "Find failed API requests (4xx/5xx responses)"
-    - label: "Database issues"
-      description: "Find Prisma/database related errors"
+      description: "Find failed HTTP requests and route errors"
+    - label: "Subsystem issues"
+      description: "Focus on Relay, Mesh, or Pulse subsystem logs"
     - label: "Full log review"
       description: "Review the entire recent log"
 ```
 
-### 1.3 Time Context
+## Phase 2: Log Analysis with NDJSON
 
-```
-AskUserQuestion:
-  question: "What time range are you interested in?"
-  header: "Time Range"
-  options:
-    - label: "Just now"
-      description: "Last few minutes"
-    - label: "Last hour"
-      description: "Within the past hour"
-    - label: "Today's session"
-      description: "Since I started the dev server"
-    - label: "Specific time"
-      description: "I'll tell you the approximate time"
-```
-
-## Phase 2: Log Analysis
-
-### 2.1 Find Errors and Exceptions
+### 2.1 Find Errors and Warnings
 
 ```bash
-# Search for errors in latest log
-grep -i -E "error|exception|failed|fatal|critical" ".logs/$(ls -t .logs/ | head -1)" | tail -50
+DORK_HOME="apps/server/.temp/.dork"
+LOG="$DORK_HOME/logs/dorkos.log"
+
+# All errors (level 50+)
+cat "$LOG" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if obj.get('level', 0) >= 50:
+            print(f\"[{obj.get('time','')}] {obj.get('tag','?')} {obj.get('msg','')}\"[:200])
+    except: pass
+" | tail -30
+
+# All warnings (level 40+)
+cat "$LOG" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if obj.get('level', 0) >= 40:
+            print(f\"[{obj.get('time','')}] [{obj.get('level')}] {obj.get('tag','?')}: {obj.get('msg','')}\"[:200])
+    except: pass
+" | tail -50
 ```
 
-### 2.2 Find API Request Failures
+### 2.2 Filter by Component Tag
+
+Common tags in the codebase:
+
+| Tag | Component |
+|---|---|
+| `DB` | Database initialization |
+| `Startup` | Server startup sequence |
+| `Pulse` | Pulse scheduler |
+| `Relay` | Relay message bus |
+| `Mesh` | Mesh agent discovery |
+| `AgentManager` | Claude SDK sessions |
+| `BindingRouter` | Adapter-agent routing |
+| `AdapterManager` | Adapter lifecycle |
+| `SessionBroadcaster` | Cross-client sync |
+| `ConfigManager` | Configuration |
+| `Request` | HTTP request logging |
+| `Error` | Error handler middleware |
 
 ```bash
-# Find HTTP error responses
-grep -E "HTTP/[0-9.]+ [45][0-9]{2}" ".logs/$(ls -t .logs/ | head -1)" | tail -30
-
-# Find specific status codes
-grep -E "status.*[45][0-9]{2}|[45][0-9]{2}.*status" ".logs/$(ls -t .logs/ | head -1)" | tail -30
+# Filter by specific tag
+cat "$LOG" | python3 -c "
+import sys, json
+tag = 'Relay'  # Change to desired tag
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if tag.lower() in obj.get('msg', '').lower() or obj.get('tag','') == tag:
+            print(json.dumps(obj, indent=2))
+    except: pass
+" | tail -100
 ```
 
-### 2.3 Find Database/Prisma Issues
+### 2.3 Filter by Time Range
 
 ```bash
-# Search for Prisma errors
-grep -i -E "prisma|database|postgres|neon|query|constraint" ".logs/$(ls -t .logs/ | head -1)" | grep -i -E "error|failed|exception" | tail -20
+# Logs from last N minutes
+cat "$LOG" | python3 -c "
+import sys, json
+from datetime import datetime, timedelta, timezone
+cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if obj.get('time', '') >= cutoff:
+            print(f\"[{obj.get('time','')}] {obj.get('tag','?')}: {obj.get('msg','')}\"[:200])
+    except: pass
+"
 ```
 
-### 2.4 Find Specific Patterns
-
-If user provided a search term:
+### 2.4 Search for Specific Patterns
 
 ```bash
-grep -i "[search-term]" ".logs/$(ls -t .logs/ | head -1)" | tail -50
+# Search by keyword in message
+cat "$LOG" | python3 -c "
+import sys, json
+term = 'SEARCH_TERM'
+for line in sys.stdin:
+    try:
+        obj = json.loads(line)
+        if term.lower() in json.dumps(obj).lower():
+            print(json.dumps(obj, indent=2))
+    except: pass
+" | tail -50
 ```
 
 ## Phase 3: Error Classification
 
-### 3.1 Classify Errors Found
+### 3.1 DorkOS-Specific Error Patterns
 
-Common error categories:
+| Category | Log Pattern | Typical Cause |
+|---|---|---|
+| **Relay delivery** | `ClaudeCodeAdapter: envelope .* has no replyTo` | Missing replyTo field in relay message |
+| **Binding failure** | `BindingRouter: failed to persist session map` | File system error writing sessions.json |
+| **Adapter error** | `AdapterManager: adapter .* failed` | Adapter start/stop lifecycle issue |
+| **SDK error** | `AgentManager: SDK query failed` | Claude Agent SDK call failure |
+| **Mesh discovery** | `Mesh: scan failed` | Discovery scan error |
+| **Pulse execution** | `Pulse: run .* failed` | Scheduled task execution failure |
+| **DB error** | `DB: migration failed` | Database schema issue |
+| **Boundary violation** | `403.*boundary` | Path outside configured boundary |
+| **Session lock** | `SESSION_LOCKED` | Concurrent write attempt |
 
-| Category              | Pattern                         | Typical Cause          |
-| --------------------- | ------------------------------- | ---------------------- |
-| **Unhandled Promise** | `UnhandledPromiseRejection`     | Missing await or catch |
-| **Type Error**        | `TypeError`                     | Null/undefined access  |
-| **Prisma Error**      | `PrismaClientKnownRequestError` | Query/constraint issue |
-| **Auth Error**        | `UnauthorizedError`, `401`      | Session/token issue    |
-| **Validation Error**  | `ZodError`, `ValidationError`   | Invalid input data     |
-| **Module Error**      | `ModuleNotFoundError`           | Import path issue      |
-| **Connection Error**  | `ECONNREFUSED`, `timeout`       | Network/DB connection  |
+### 3.2 Correlate with State Files
 
-### 3.2 Ask About Error Priority
+When log errors reference subsystem state, cross-reference with data files:
 
-If multiple errors found:
+```bash
+DORK_HOME="apps/server/.temp/.dork"
 
-```
-AskUserQuestion:
-  question: "I found multiple errors. Which would you like to investigate?"
-  header: "Error Focus"
-  options:
-    - label: "Most recent"
-      description: "Focus on the latest error"
-    - label: "Most frequent"
-      description: "Focus on the error that occurs most often"
-    - label: "Most severe"
-      description: "Focus on fatal/critical errors first"
-    - label: "Specific error"
-      description: "I'll tell you which one"
+# Check relay adapter config
+cat "$DORK_HOME/relay/adapters.json" | python3 -m json.tool
+
+# Check active bindings
+cat "$DORK_HOME/relay/bindings.json" | python3 -m json.tool
+
+# Check session mappings
+cat "$DORK_HOME/relay/sessions.json" 2>/dev/null | python3 -m json.tool
+
+# Check server config
+cat "$DORK_HOME/config.json" | python3 -m json.tool
 ```
 
 ## Phase 4: Root Cause Investigation
 
-### 4.1 Extract Error Context
+### 4.1 Extract Full Error Context
 
-For a specific error, extract:
+For a specific error, get surrounding log lines:
 
-- **Timestamp**: When did it occur?
-- **Request context**: What endpoint/action was called?
-- **Stack trace**: Where in the code did it happen?
-- **Input data**: What data was being processed?
+```bash
+# Get 5 lines before and 10 lines after a pattern
+grep -n "ERROR_PATTERN" "$LOG" | head -1 | cut -d: -f1 | xargs -I{} sed -n '$(({}>=5?{}-5:1)),$(({} + 10))p' "$LOG"
+```
+
+Or use the Read tool with line offsets on the log file for precise context.
 
 ### 4.2 Trace to Code
 
-Based on stack trace or error message:
+Based on the component tag and error message:
 
-```
-Find the file and line number from the error.
-Read the relevant code section.
-Understand the context that caused the error.
-```
+1. Tags map to source files (e.g., `Relay` -> `packages/relay/src/`, `BindingRouter` -> `apps/server/src/services/relay/binding-router.ts`)
+2. Search for the error message text in source code
+3. Read the relevant code section
 
-### 4.3 Check Related Logs
+### 4.3 Check SQLite Database State
 
-Look for context before/after the error:
+For Pulse/Relay/Mesh errors, query the consolidated database:
 
 ```bash
-# Get lines around the error
-grep -B 5 -A 10 "[error-pattern]" ".logs/$(ls -t .logs/ | head -1)"
+DORK_HOME="apps/server/.temp/.dork"
+
+# Check recent pulse runs for failures
+sqlite3 "$DORK_HOME/dork.db" "SELECT id, schedule_id, status, error, started_at FROM pulse_runs WHERE status = 'failed' ORDER BY started_at DESC LIMIT 10;"
+
+# Check relay message traces
+sqlite3 "$DORK_HOME/dork.db" "SELECT message_id, status, adapter_id, error, created_at FROM relay_traces ORDER BY created_at DESC LIMIT 10;"
+
+# Check registered agents
+sqlite3 "$DORK_HOME/dork.db" "SELECT id, name, namespace, health_status FROM agents LIMIT 10;"
 ```
 
 ### 4.4 Correlate with Recent Changes
@@ -183,83 +254,9 @@ git log --oneline -10
 git diff --name-only HEAD~3
 ```
 
-## Phase 5: Common Error Patterns
+## Phase 5: Fix Guidance
 
-### 5.1 Unhandled Promise Rejection
-
-**Log Pattern**: `UnhandledPromiseRejectionWarning` or `unhandledRejection`
-
-**Common Causes**:
-
-- Missing `await` on async function
-- Missing `.catch()` on promise
-- Async error not propagated
-
-**Fix Pattern**:
-
-```typescript
-// Add try/catch
-try {
-  await riskyOperation();
-} catch (error) {
-  console.error('Operation failed:', error);
-  throw error; // or handle appropriately
-}
-```
-
-### 5.2 Prisma Constraint Error
-
-**Log Pattern**: `PrismaClientKnownRequestError`, `P2002` (unique), `P2003` (foreign key)
-
-**Common Causes**:
-
-- Duplicate unique value
-- Missing related record
-- Invalid foreign key
-
-**Debugging**:
-
-```bash
-# Check the constraint name in the error
-grep -i "constraint" ".logs/$(ls -t .logs/ | head -1)"
-```
-
-### 5.3 Auth/Session Error
-
-**Log Pattern**: `401`, `UnauthorizedError`, `session`
-
-**Common Causes**:
-
-- Expired session
-- Missing auth token
-- `requireAuth()` failing
-
-**Check**:
-
-- Is user authenticated?
-- Is session cookie present?
-- Is session valid in database?
-
-### 5.4 Timeout Error
-
-**Log Pattern**: `ETIMEDOUT`, `timeout`, `ECONNREFUSED`
-
-**Common Causes**:
-
-- Database connection pool exhausted
-- External API slow/down
-- Network issues
-
-**Debugging**:
-
-```bash
-# Check for connection patterns
-grep -i -E "connect|timeout|refused" ".logs/$(ls -t .logs/ | head -1)" | tail -20
-```
-
-## Phase 6: Fix Guidance
-
-### 6.1 Determine Fix Approach
+### 5.1 Determine Fix Approach
 
 ```
 AskUserQuestion:
@@ -270,39 +267,21 @@ AskUserQuestion:
       description: "Let me fix the identified issue"
     - label: "Add better logging"
       description: "Add more context to help debug this"
-    - label: "Add error handling"
-      description: "Add proper error handling around this code"
+    - label: "Check subsystem state"
+      description: "Inspect relay/mesh/pulse state files and database"
     - label: "Investigate more"
       description: "I need more information before fixing"
 ```
 
-### 6.2 Plan the Fix
+## Phase 6: Wrap-Up
 
-```
-TodoWrite:
-  todos:
-    - content: "Analyze error logs and identify root cause"
-      activeForm: "Analyzing error logs"
-      status: "completed"
-    - content: "Trace error to source code"
-      activeForm: "Tracing to source code"
-      status: "pending"
-    - content: "Implement fix"
-      activeForm: "Implementing fix"
-      status: "pending"
-    - content: "Verify error no longer occurs"
-      activeForm: "Verifying fix"
-      status: "pending"
-```
-
-## Phase 7: Wrap-Up
-
-### 7.1 Summarize
+### 6.1 Summarize
 
 ```markdown
 ## Log Analysis Complete
 
 **Error Found**: [Error type and message]
+**Component**: [Tag/subsystem where error originated]
 **Timestamp**: [When it occurred]
 **Location**: [File:line where error originated]
 **Root Cause**: [Why the error occurred]
@@ -310,90 +289,77 @@ TodoWrite:
 **Files Modified**: [List of files, if any]
 ```
 
-### 7.2 Monitoring Recommendation
-
-Suggest improvements:
-
-- Better error logging in the affected area
-- Alerting for critical errors
-- Error tracking setup
-
-### 7.3 Offer Next Steps
-
-```
-AskUserQuestion:
-  question: "What would you like to do next?"
-  header: "Next Steps"
-  options:
-    - label: "Fix the identified issue"
-      description: "Implement the fix I described"
-    - label: "Analyze more logs"
-      description: "Look for other issues"
-    - label: "Add error handling"
-      description: "Improve error handling in affected code"
-    - label: "Tail logs live"
-      description: "Watch logs in real-time for new errors"
-    - label: "Done"
-      description: "I have the information I need"
-```
-
 ## Quick Reference
 
-### Log Search Commands
+### NDJSON Log Parsing Commands
 
 ```bash
-# Latest log file
-LATEST=".logs/$(ls -t .logs/ | head -1)"
+DORK_HOME="apps/server/.temp/.dork"
+LOG="$DORK_HOME/logs/dorkos.log"
 
-# All errors
-grep -i error "$LATEST" | tail -50
+# Pretty-print last 5 log entries
+tail -5 "$LOG" | python3 -m json.tool
 
-# Specific time range (if timestamps in logs)
-grep "2025-12-10 14:" "$LATEST"
+# Count entries by level
+cat "$LOG" | python3 -c "
+import sys, json
+from collections import Counter
+levels = Counter()
+for line in sys.stdin:
+    try: levels[json.loads(line).get('level', 'unknown')] += 1
+    except: pass
+for level, count in levels.most_common():
+    print(f'{level}: {count}')
+"
 
-# Count error types
-grep -i error "$LATEST" | cut -d: -f3 | sort | uniq -c | sort -rn
+# Follow live logs (pretty-printed)
+tail -f "$LOG" | while read line; do echo "$line" | python3 -m json.tool 2>/dev/null || echo "$line"; done
 
-# Follow live logs
-tail -f "$LATEST"
+# Extract unique tags
+cat "$LOG" | python3 -c "
+import sys, json, re
+tags = set()
+for line in sys.stdin:
+    try:
+        msg = json.loads(line).get('msg', '')
+        m = re.match(r'\[(\w+)\]', msg)
+        if m: tags.add(m.group(1))
+        tag = json.loads(line).get('tag', '')
+        if tag: tags.add(tag)
+    except: pass
+print('\n'.join(sorted(tags)))
+"
 ```
 
-### Common Prisma Error Codes
+### Log File Locations
 
-| Code  | Meaning                          |
-| ----- | -------------------------------- |
-| P2002 | Unique constraint violation      |
-| P2003 | Foreign key constraint violation |
-| P2025 | Record not found                 |
-| P2014 | Required relation violation      |
-| P2021 | Table does not exist             |
+| File | Purpose |
+|---|---|
+| `{DORK_HOME}/logs/dorkos.log` | Active log file |
+| `{DORK_HOME}/logs/dorkos.YYYY-MM-DD.log` | Daily rotated logs |
+| `{DORK_HOME}/logs/dorkos.YYYY-MM-DD.N.log` | Size-rotated within a day |
+| `{DORK_HOME}/config.json` | Server configuration |
+| `{DORK_HOME}/dork.db` | SQLite database (pulse, relay, mesh) |
+| `{DORK_HOME}/relay/adapters.json` | Adapter configurations |
+| `{DORK_HOME}/relay/bindings.json` | Adapter-agent bindings |
+| `{DORK_HOME}/relay/sessions.json` | Active session mappings |
 
 ### HTTP Status Codes
 
-| Code | Meaning                      |
-| ---- | ---------------------------- |
-| 400  | Bad Request - Invalid input  |
-| 401  | Unauthorized - Auth required |
-| 403  | Forbidden - No permission    |
-| 404  | Not Found - Resource missing |
-| 409  | Conflict - Resource conflict |
-| 500  | Internal Server Error        |
-| 502  | Bad Gateway - Upstream error |
-| 503  | Service Unavailable          |
+| Code | Meaning |
+|---|---|
+| 400 | Bad Request - Zod validation failure |
+| 403 | Forbidden - Boundary violation |
+| 404 | Not Found - Resource missing |
+| 409 | Conflict - Session locked |
+| 500 | Internal Server Error |
 
 ## Important Behaviors
 
-1. **ALWAYS** check the latest log file first
-2. **CORRELATE** timestamps with when the issue occurred
-3. **READ** full stack traces to understand error origin
-4. **TRACE** to source code to understand context
-5. **CHECK** recent git changes if error is new
-6. **PRESERVE** log files when debugging complex issues
-7. **ADD** better logging if current logs are insufficient
-
-## Edge Cases
-
-- **Large log files**: Use `tail` and `grep` to narrow down
-- **Multiple log files**: Check if error spans multiple sessions
-- **Missing timestamps**: Add timestamps to logging
-- **Sensitive data in logs**: Be careful not to expose secrets
+1. **ALWAYS** resolve the correct DORK_HOME path first
+2. **PARSE** logs as NDJSON — never plain-text grep for structured data
+3. **CORRELATE** timestamps with when the issue occurred
+4. **CHECK** component tags to narrow which subsystem is involved
+5. **CROSS-REFERENCE** with state files (adapters.json, bindings.json, dork.db)
+6. **READ** full error context including surrounding log lines
+7. **TRACE** to source code using the component tag mapping
