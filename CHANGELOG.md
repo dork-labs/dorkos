@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Upgrade timeline beam with Aceternity-inspired SVG tracing
 - Replace dorkian logos with new dork logos and update references
 - Enhance WelcomeStep with dynamic gradient effects
 - Add agent discovery scroll fix image and enhance CLI build configuration
