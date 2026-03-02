@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Adjust beam visibility range in TimelineSection
 ---
 
 ## [0.6.0] - 2026-03-02

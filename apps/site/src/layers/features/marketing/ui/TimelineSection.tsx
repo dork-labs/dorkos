@@ -12,8 +12,8 @@ const MODULE_NAMES = ['PULSE', 'RELAY', 'MESH', 'CONSOLE', 'WING', 'LOOP', 'ENGI
  * With offset ['start end', 'end start'], content is viewable roughly in the 0.15–0.7 range.
  * Beam completes within this window so all dots activate while visible.
  */
-const BEAM_START = 0.12
-const BEAM_END = 0.65
+const BEAM_START = 0.45 //0.12
+const BEAM_END = 0.7 //0.65
 const BEAM_SPAN = BEAM_END - BEAM_START
 
 /**
