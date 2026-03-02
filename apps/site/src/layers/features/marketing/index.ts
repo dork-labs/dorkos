@@ -8,6 +8,7 @@ export { SubsystemsSection } from './ui/SubsystemsSection'
 export { HonestySection } from './ui/HonestySection'
 export { InstallMoment } from './ui/InstallMoment'
 export { IdentityClose } from './ui/IdentityClose'
+export { FAQSection } from './ui/FAQSection'
 
 // UI components — chrome
 export { MarketingNav } from './ui/MarketingNav'
@@ -38,6 +39,7 @@ export { useCases } from './lib/use-cases'
 export { villainCards } from './lib/villain-cards'
 export { subsystems } from './lib/subsystems'
 export { timelineEntries } from './lib/timeline-entries'
+export { faqItems } from './lib/faq-items'
 
 // Motion
 export { SPRING, VIEWPORT, REVEAL, STAGGER, SCALE_IN, DRAW_PATH } from './lib/motion-variants'
@@ -49,3 +51,4 @@ export type { UseCase } from './lib/use-cases'
 export type { VillainCard } from './lib/villain-cards'
 export type { Subsystem, Integration } from './lib/subsystems'
 export type { TimelineEntry } from './lib/timeline-entries'
+export type { FaqItem } from './lib/faq-items'

@@ -9,6 +9,7 @@ import {
   HonestySection,
   InstallMoment,
   IdentityClose,
+  FAQSection,
   MarketingNav,
   MarketingHeader,
   MarketingFooter,
@@ -65,6 +66,8 @@ export default function HomePage() {
         <HonestySection />
 
         <IdentityClose email={siteConfig.contactEmail} />
+
+        <FAQSection />
 
         <InstallMoment />
       </main>
