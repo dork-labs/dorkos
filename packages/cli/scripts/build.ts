@@ -73,7 +73,7 @@ async function buildCLI() {
     target: 'node18',
     format: 'esm',
     outfile: path.join(OUT, 'bin/cli.js'),
-    external: ['dotenv', '../server/index.js', 'conf', '@inquirer/prompts'],
+    external: ['dotenv', '../server/index.js', 'conf', '@inquirer/prompts', '@ngrok/ngrok'],
     plugins: [{
       name: 'resolve-monorepo-imports',
       setup(build) {
