@@ -5,7 +5,7 @@ export const philosophyItems: PhilosophyItem[] = [
     number: '01',
     title: 'Autonomous',
     description:
-      'AI that works without you. The Heartbeat keeps shipping.',
+      'AI that keeps your ideas moving. The Heartbeat keeps shipping.',
   },
   {
     number: '02',

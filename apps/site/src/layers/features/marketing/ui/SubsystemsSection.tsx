@@ -28,7 +28,7 @@ export function SubsystemsSection() {
           variants={REVEAL}
           className="text-[24px] md:text-[28px] font-medium text-charcoal tracking-[-0.02em] leading-[1.3] text-center mb-12"
         >
-          The anatomy of a teammate who doesn&apos;t need managing.
+          The anatomy of your agent team.
         </motion.p>
 
         <motion.div variants={STAGGER} className="space-y-0">

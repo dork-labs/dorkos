@@ -21,8 +21,8 @@ export const villainCards: VillainCard[] = [
   {
     id: 'tab-graveyard',
     label: 'The Tab Graveyard',
-    body: 'Ten agents. Ten terminals. One is waiting for approval. One finished twenty minutes ago. One is quietly breaking something.\n\nYou are the only thread between them.',
-    solution: "What if you weren\u2019t the only thing holding it together?",
+    body: 'Ten agents. Ten terminals. One is waiting for approval. One finished twenty minutes ago. One is quietly breaking something.\n\nThere\u2019s no coordination layer between them.',
+    solution: "What if they could coordinate themselves?",
   },
   
 ]

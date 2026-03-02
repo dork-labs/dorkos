@@ -41,7 +41,7 @@ export const timelineEntries: TimelineEntry[] = [
     headline: 'Two agents almost step on each other. They sort it out.',
     paragraphs: [
       'The agent that fixed the tests notices the other agent is working in the same service. [MESH] sends a heads-up \u2014 one waits for the other to merge first, avoiding a conflict.',
-      'No human involved. No terminal open.',
+      'Automatically. No terminal open.',
     ],
   },
   {
@@ -55,10 +55,10 @@ export const timelineEntries: TimelineEntry[] = [
   {
     id: '704am',
     time: '7:04 AM',
-    headline: 'You\u2019ve been awake four minutes. Your team worked eight hours.',
+    headline: 'You\u2019ve been awake four minutes. The system you designed worked eight hours.',
     paragraphs: [
       'You approve two changes. You request a revision on the third. You queue two more tasks for the day.',
-      'Your agents have been productive for eight hours. You have been awake for four minutes.',
+      'The system you designed has been productive for eight hours. You\u2019ve been awake for four minutes.',
     ],
   },
 ]

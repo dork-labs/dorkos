@@ -43,7 +43,7 @@ export const subsystems: Subsystem[] = [
     id: 'mesh',
     benefit: 'Connects agents to each other',
     name: 'Mesh',
-    description: 'Your agents find each other and divide the work without you in the middle.',
+    description: 'Your agents find each other and coordinate the work automatically.',
     status: 'available',
     integrations: [
       { label: 'Claude Code', icon: Terminal, status: 'live' },

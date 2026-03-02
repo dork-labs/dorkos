@@ -7,7 +7,7 @@ export interface UseCase {
 export const useCases: UseCase[] = [
   {
     id: 'ship-while-you-sleep',
-    title: 'Ship while you sleep',
+    title: 'Ship around the clock',
     description:
       'Pulse executes your roadmap autonomously. Wake up to PRs, not TODO lists.',
   },
@@ -39,6 +39,6 @@ export const useCases: UseCase[] = [
     id: 'continuous-improvement',
     title: 'AI that improves itself',
     description:
-      'Loop closes the feedback loop — turning signals into hypotheses, hypotheses into tasks, and outcomes into the next iteration. Your system gets better while you sleep.',
+      'Loop closes the feedback loop — turning signals into hypotheses, hypotheses into tasks, and outcomes into the next iteration. Your system gets better on its own.',
   },
 ]
