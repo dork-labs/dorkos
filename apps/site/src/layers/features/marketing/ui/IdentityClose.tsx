@@ -46,29 +46,24 @@ export function IdentityClose({ email }: IdentityCloseProps) {
           </motion.p>
         </motion.div>
 
-        <motion.p
-          variants={REVEAL}
-          className="text-warm-gray-light text-sm leading-[1.8] mb-12"
-        >
-          One developer. Section 8 housing. Library books. Code before graduation.
-          <br />
-          Thirty million users. An exit in twelve months. Warner Bros. Art Blocks.
-          <br />
-          And then this &mdash; because the tools that matter most are built by the
-          people who need them.
-        </motion.p>
 
         <motion.div variants={STAGGER} className="mb-16">
-          <motion.p variants={REVEAL} className="text-warm-gray text-lg leading-[1.7]">
-            The people building AI agent teams will outship everyone.
-          </motion.p>
-          <motion.p variants={REVEAL} className="text-warm-gray-light text-base leading-[1.7]">
-            Not because they&apos;re smarter.
+          <motion.p variants={REVEAL} className="text-warm-gray font-semibold text-lg leading-[1.7]">
+            You&apos;ve always had more ideas than hours.
           </motion.p>
           <motion.p variants={REVEAL} className="text-charcoal text-xl md:text-[22px] font-semibold tracking-[-0.02em] leading-[1.5]">
-            Because their team works while they sleep, never complains,
-            <br className="hidden md:inline" />
-            {' '}and doesn&apos;t need a Slack channel to feel included.
+            That ratio just changed.
+          </motion.p>
+          <motion.p variants={REVEAL} className="text-warm-gray font-semibold text-sm mt-6 italic">
+            &mdash;{' '}
+            <a
+              href="https://doriancollier.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-brand-orange transition-smooth"
+            >
+              Dorkian
+            </a>
           </motion.p>
         </motion.div>
 
