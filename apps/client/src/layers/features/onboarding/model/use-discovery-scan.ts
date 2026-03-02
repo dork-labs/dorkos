@@ -1,18 +1,18 @@
 import { useState, useCallback, useRef } from 'react';
 
-/** A discovered project with AI agent markers. */
-export interface DiscoveryCandidate {
+/** Progress snapshot emitted during scanning. */
+export interface ScanProgress {
+  scannedDirs: number;
+  foundAgents: number;
+}
+
+/** A discovered project as returned by the scan SSE endpoint. */
+export interface ScanCandidate {
   path: string;
   name: string;
   markers: string[];
   gitBranch: string | null;
   gitRemote: string | null;
-}
-
-/** Progress snapshot emitted during scanning. */
-export interface ScanProgress {
-  scannedDirs: number;
-  foundAgents: number;
 }
 
 /** Options for starting a discovery scan. */
@@ -27,9 +27,13 @@ export interface ScanOptions {
  *
  * Manages candidates, progress, and scanning state. The scan endpoint
  * returns an SSE stream with `candidate`, `progress`, and `complete` events.
+ *
+ * Note: This hook uses raw `fetch()` because the discovery endpoint uses
+ * SSE streaming (POST + progressive events), which the Transport abstraction
+ * does not support. The relative `/api/` URL works via Vite's dev proxy.
  */
 export function useDiscoveryScan() {
-  const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
+  const [candidates, setCandidates] = useState<ScanCandidate[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +103,7 @@ export function useDiscoveryScan() {
   function handleEvent(type: string, data: unknown) {
     switch (type) {
       case 'candidate':
-        setCandidates((prev) => [...prev, data as DiscoveryCandidate]);
+        setCandidates((prev) => [...prev, data as ScanCandidate]);
         setProgress((prev) =>
           prev ? { ...prev, foundAgents: prev.foundAgents + 1 } : { scannedDirs: 0, foundAgents: 1 }
         );

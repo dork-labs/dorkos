@@ -4,6 +4,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
+vi.mock('motion/react', () => ({
+  motion: {
+    div: 'div',
+  },
+  useReducedMotion: () => false,
+}));
+
 const mockUseOnboarding = vi.fn();
 
 vi.mock('../model/use-onboarding', () => ({
@@ -43,12 +50,11 @@ describe('ProgressCard', () => {
     cleanup();
   });
 
-  it('shows all three step names', () => {
+  it('shows both step names', () => {
     render(<ProgressCard onStepClick={vi.fn()} onDismiss={vi.fn()} />);
 
     expect(screen.getByText('Discover agents')).toBeTruthy();
     expect(screen.getByText('Set up Pulse schedules')).toBeTruthy();
-    expect(screen.getByText('Connect adapters')).toBeTruthy();
   });
 
   it('shows Getting Started heading', () => {
@@ -57,7 +63,7 @@ describe('ProgressCard', () => {
     expect(screen.getByText('Getting Started')).toBeTruthy();
   });
 
-  it('completed steps show line-through text', () => {
+  it('completed steps show muted text without strikethrough', () => {
     mockUseOnboarding.mockReturnValue(
       defaultOnboardingState({
         state: {
@@ -72,7 +78,7 @@ describe('ProgressCard', () => {
     render(<ProgressCard onStepClick={vi.fn()} onDismiss={vi.fn()} />);
 
     const completedItem = screen.getByText('Discover agents');
-    expect(completedItem.className).toContain('line-through');
+    expect(completedItem.className).not.toContain('line-through');
   });
 
   it('dismiss button calls onDismiss', () => {

@@ -4,6 +4,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
+vi.mock('motion/react', () => ({
+  useReducedMotion: () => false,
+}));
+
 import { AgentCard } from '../ui/AgentCard';
 
 // ---------------------------------------------------------------------------

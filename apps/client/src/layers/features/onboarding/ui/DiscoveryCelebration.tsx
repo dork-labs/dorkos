@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Badge } from '@/layers/shared/ui';
 import { cn, fireConfetti } from '@/layers/shared/lib';
-import type { DiscoveryCandidate } from '@/layers/features/onboarding';
+import type { ScanCandidate } from '@/layers/features/onboarding';
 import { formatMarker } from '../lib/marker-labels';
 
 /** Beat timing constants in milliseconds. */
@@ -17,7 +17,7 @@ const TOTAL_DURATION = BEAT_3_DELAY + BEAT_3_DURATION;
 const REDUCED_MOTION_DELAY = 800;
 
 interface DiscoveryCelebrationProps {
-  candidates: DiscoveryCandidate[];
+  candidates: ScanCandidate[];
   onComplete: () => void;
 }
 
@@ -136,7 +136,7 @@ export function DiscoveryCelebration({ candidates, onComplete }: DiscoveryCelebr
 }
 
 /** Compact read-only card for a discovered agent during celebration. */
-function CandidateCard({ candidate }: { candidate: DiscoveryCandidate }) {
+function CandidateCard({ candidate }: { candidate: ScanCandidate }) {
   return (
     <div
       className={cn(

@@ -1,24 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
+import { useTransport } from '@/layers/shared/model';
+import type { PulsePreset } from '@dorkos/shared/types';
 
-/** A single Pulse schedule preset returned by the server. */
-export interface PulsePreset {
-  id: string;
-  name: string;
-  description: string;
-  cron: string;
-  prompt: string;
-}
+export type { PulsePreset } from '@dorkos/shared/types';
 
 /** Fetch available Pulse schedule presets for onboarding. */
 export function usePulsePresets() {
+  const transport = useTransport();
   return useQuery<PulsePreset[]>({
     queryKey: ['pulse', 'presets'],
-    queryFn: async () => {
-      const res = await fetch('/api/pulse/presets');
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    queryFn: () => transport.getPulsePresets(),
   });
 }

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Polish FTUE with Aceternity-inspired animations and UX improvements
 - Add Reset All Data and Restart Server to Advanced tab
 - Implement first-time user experience with agent discovery, pulse presets, and adapter setup
 - Overhaul remote access with multi-tab sync, UX redesign, and CLI QR code

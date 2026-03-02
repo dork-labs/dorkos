@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useOnboarding } from '../model/use-onboarding';
 import { Check, Circle, Minus, X } from 'lucide-react';
@@ -9,7 +10,7 @@ const STEP_LABELS: Record<OnboardingStep, string> = {
   adapters: 'Connect adapters',
 };
 
-const ALL_STEPS: OnboardingStep[] = ['discovery', 'pulse', 'adapters'];
+const VISIBLE_STEPS: OnboardingStep[] = ['discovery', 'pulse'];
 
 interface ProgressCardProps {
   /** Called when a user clicks an incomplete step to re-enter onboarding at that index. */
@@ -21,9 +22,15 @@ interface ProgressCardProps {
 /** Compact sidebar card showing remaining onboarding steps with completion indicators. */
 export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
   const { state } = useOnboarding();
+  const reducedMotion = useReducedMotion();
 
   return (
-    <div className="border-border bg-card relative rounded-lg border p-3">
+    <motion.div
+      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="border-border bg-card relative rounded-lg border p-3"
+    >
       <button
         onClick={onDismiss}
         className="text-muted-foreground/50 hover:text-muted-foreground absolute right-1.5 top-1.5 rounded-md p-0.5 transition-colors duration-150"
@@ -35,15 +42,15 @@ export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
       <h3 className="text-xs font-medium mb-2">Getting Started</h3>
 
       <ul className="space-y-1">
-        {ALL_STEPS.map((step, index) => {
+        {VISIBLE_STEPS.map((step, index) => {
           const isCompleted = state.completedSteps.includes(step);
           const isSkipped = state.skippedSteps.includes(step);
 
           if (isCompleted) {
             return (
               <li key={step} className="flex items-center gap-2 py-0.5">
-                <Check className="text-muted-foreground/50 size-3.5 shrink-0" />
-                <span className="text-muted-foreground/50 text-xs line-through">
+                <Check className="text-primary size-3.5 shrink-0" />
+                <span className="text-muted-foreground text-xs">
                   {STEP_LABELS[step]}
                 </span>
               </li>
@@ -80,6 +87,6 @@ export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
           );
         })}
       </ul>
-    </div>
+    </motion.div>
   );
 }

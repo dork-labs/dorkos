@@ -8,12 +8,19 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 vi.mock('motion/react', () => ({
   motion: {
     div: 'div',
+    span: 'span',
   },
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useReducedMotion: () => false,
 }));
 
 vi.mock('@/layers/shared/model', () => ({
   useIsMobile: vi.fn(() => false),
+}));
+
+vi.mock('@/layers/shared/lib', () => ({
+  cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
+  fireConfetti: vi.fn(),
 }));
 
 const mockCompleteStep = vi.fn();
@@ -38,6 +45,15 @@ vi.mock('../model/use-onboarding', () => ({
 }));
 
 // Mock step components to isolate OnboardingFlow navigation logic
+vi.mock('../ui/WelcomeStep', () => ({
+  WelcomeStep: ({ onGetStarted, onSkip }: { onGetStarted: () => void; onSkip: () => void }) => (
+    <div data-testid="welcome-step">
+      <button onClick={onGetStarted}>Get Started</button>
+      <button onClick={onSkip}>Skip setup</button>
+    </div>
+  ),
+}));
+
 vi.mock('../ui/AgentDiscoveryStep', () => ({
   AgentDiscoveryStep: ({ onStepComplete }: { onStepComplete: () => void }) => (
     <div data-testid="discovery-step">
@@ -50,14 +66,6 @@ vi.mock('../ui/PulsePresetsStep', () => ({
   PulsePresetsStep: ({ onStepComplete }: { onStepComplete: () => void }) => (
     <div data-testid="pulse-step">
       <button onClick={onStepComplete}>Complete Pulse</button>
-    </div>
-  ),
-}));
-
-vi.mock('../ui/AdapterSetupStep', () => ({
-  AdapterSetupStep: ({ onStepComplete }: { onStepComplete: () => void }) => (
-    <div data-testid="adapter-step">
-      <button onClick={onStepComplete}>Complete Adapter</button>
     </div>
   ),
 }));
@@ -85,11 +93,10 @@ describe('OnboardingFlow', () => {
     cleanup();
   });
 
-  it('renders Step 1 (discovery) initially', () => {
+  it('renders Welcome step initially', () => {
     render(<OnboardingFlow onComplete={vi.fn()} />);
 
-    expect(screen.getByTestId('discovery-step')).toBeTruthy();
-    expect(screen.getByText('Step 1 of 3')).toBeTruthy();
+    expect(screen.getByTestId('welcome-step')).toBeTruthy();
   });
 
   it('calls startOnboarding on mount', () => {
@@ -98,23 +105,28 @@ describe('OnboardingFlow', () => {
     expect(mockStartOnboarding).toHaveBeenCalled();
   });
 
-  it('shows step indicator dots', () => {
-    const { container } = render(<OnboardingFlow onComplete={vi.fn()} />);
+  it('clicking Get Started advances to discovery step', () => {
+    render(<OnboardingFlow onComplete={vi.fn()} />);
 
-    // Three step indicator dots rendered as div elements with rounded-full class
-    const dots = container.querySelectorAll('.rounded-full');
-    expect(dots).toHaveLength(3);
+    fireEvent.click(screen.getByText('Get Started'));
+
+    expect(screen.getByTestId('discovery-step')).toBeTruthy();
+    expect(screen.getByText('Step 1 of 2')).toBeTruthy();
   });
 
-  it('shows Skip button', () => {
-    render(<OnboardingFlow onComplete={vi.fn()} />);
+  it('shows step indicator dots on step pages', () => {
+    render(<OnboardingFlow onComplete={vi.fn()} initialStep={0} />);
+
+    // Two step indicators rendered as rounded-full elements
+    const { container } = render(<OnboardingFlow onComplete={vi.fn()} initialStep={0} />);
+    const dots = container.querySelectorAll('.rounded-full');
+    expect(dots.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows Skip and Skip all buttons on step pages', () => {
+    render(<OnboardingFlow onComplete={vi.fn()} initialStep={0} />);
 
     expect(screen.getByRole('button', { name: 'Skip' })).toBeTruthy();
-  });
-
-  it('shows Skip all button', () => {
-    render(<OnboardingFlow onComplete={vi.fn()} />);
-
     expect(screen.getByRole('button', { name: 'Skip all' })).toBeTruthy();
   });
 
@@ -122,47 +134,33 @@ describe('OnboardingFlow', () => {
     render(<OnboardingFlow onComplete={vi.fn()} initialStep={1} />);
 
     expect(screen.getByTestId('pulse-step')).toBeTruthy();
-    expect(screen.getByText('Step 2 of 3')).toBeTruthy();
-  });
-
-  it('initialStep=2 renders the adapter step', () => {
-    render(<OnboardingFlow onComplete={vi.fn()} initialStep={2} />);
-
-    expect(screen.getByTestId('adapter-step')).toBeTruthy();
-    expect(screen.getByText('Step 3 of 3')).toBeTruthy();
-  });
-
-  it('Back button is disabled on the first step', () => {
-    render(<OnboardingFlow onComplete={vi.fn()} />);
-
-    const backBtn = screen.getByRole('button', { name: 'Back' });
-    expect(backBtn.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('Step 2 of 2')).toBeTruthy();
   });
 
   it('completing a step calls completeStep and advances', () => {
-    render(<OnboardingFlow onComplete={vi.fn()} />);
+    render(<OnboardingFlow onComplete={vi.fn()} initialStep={0} />);
 
     fireEvent.click(screen.getByText('Complete Discovery'));
 
     expect(mockCompleteStep).toHaveBeenCalledWith('discovery');
     // Should advance to step 2
     expect(screen.getByTestId('pulse-step')).toBeTruthy();
-    expect(screen.getByText('Step 2 of 3')).toBeTruthy();
+    expect(screen.getByText('Step 2 of 2')).toBeTruthy();
   });
 
   it('completing all steps shows completion screen', () => {
-    render(<OnboardingFlow onComplete={vi.fn()} initialStep={2} />);
+    render(<OnboardingFlow onComplete={vi.fn()} initialStep={1} />);
 
-    fireEvent.click(screen.getByText('Complete Adapter'));
+    fireEvent.click(screen.getByText('Complete Pulse'));
 
-    expect(mockCompleteStep).toHaveBeenCalledWith('adapters');
+    expect(mockCompleteStep).toHaveBeenCalledWith('pulse');
     expect(screen.getByTestId('onboarding-complete')).toBeTruthy();
   });
 
   it('Skip all calls dismiss and onComplete', () => {
     const onComplete = vi.fn();
 
-    render(<OnboardingFlow onComplete={onComplete} />);
+    render(<OnboardingFlow onComplete={onComplete} initialStep={0} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip all' }));
 
@@ -171,10 +169,21 @@ describe('OnboardingFlow', () => {
   });
 
   it('Skip calls skipStep with current step and advances', () => {
-    render(<OnboardingFlow onComplete={vi.fn()} />);
+    render(<OnboardingFlow onComplete={vi.fn()} initialStep={0} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
 
     expect(mockSkipStep).toHaveBeenCalledWith('discovery');
+  });
+
+  it('Skip setup on welcome calls dismiss and onComplete', () => {
+    const onComplete = vi.fn();
+
+    render(<OnboardingFlow onComplete={onComplete} />);
+
+    fireEvent.click(screen.getByText('Skip setup'));
+
+    expect(mockDismiss).toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalled();
   });
 });

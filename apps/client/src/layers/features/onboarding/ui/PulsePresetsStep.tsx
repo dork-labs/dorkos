@@ -76,9 +76,8 @@ export function PulsePresetsStep({ onStepComplete }: PulsePresetsStepProps) {
         <h2 className="text-2xl font-semibold tracking-tight">
           Want your agents to work while you sleep?
         </h2>
-        <p className="text-muted-foreground">
-          Pulse schedules run your agents on a cron timer — code reviews,
-          dependency checks, and more, all on autopilot.
+        <p className="text-sm text-muted-foreground">
+          Pulse runs automated tasks on a schedule — like a cron job for your agents.
         </p>
       </div>
 

@@ -665,6 +665,20 @@ export const PulseRunSchema = z
 
 export type PulseRun = z.infer<typeof PulseRunSchema>;
 
+export const PulsePresetSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    prompt: z.string(),
+    cron: z.string(),
+    timezone: z.string().optional(),
+    category: z.string().optional(),
+  })
+  .openapi('PulsePreset');
+
+export type PulsePreset = z.infer<typeof PulsePresetSchema>;
+
 export const CreateScheduleRequestSchema = z
   .object({
     name: z.string().min(1),

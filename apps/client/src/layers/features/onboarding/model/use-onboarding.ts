@@ -21,13 +21,21 @@ export function useOnboarding() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const state: OnboardingState = (config as Record<string, unknown> | undefined)
-    ?.onboarding as OnboardingState ?? {
+  const DEFAULT_STATE: OnboardingState = {
     completedSteps: [],
     skippedSteps: [],
     startedAt: null,
     dismissedAt: null,
   };
+
+  const state: OnboardingState = config?.onboarding
+    ? {
+        completedSteps: config.onboarding.completedSteps as OnboardingStep[],
+        skippedSteps: config.onboarding.skippedSteps as OnboardingStep[],
+        startedAt: config.onboarding.startedAt,
+        dismissedAt: config.onboarding.dismissedAt,
+      }
+    : DEFAULT_STATE;
 
   const isOnboardingComplete = ALL_STEPS.every((step) => state.completedSteps.includes(step));
   const isOnboardingDismissed = state.dismissedAt !== null;

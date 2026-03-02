@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { Search } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { useRegisterAgent } from '@/layers/entities/mesh';
 import { useDiscoveryScan } from '../model/use-discovery-scan';
@@ -12,8 +13,9 @@ interface AgentDiscoveryStepProps {
 /**
  * Step 1 of onboarding — discovers AI agent projects on the user's machine.
  *
- * Flows through three states: initial (start scan), scanning (progressive results),
- * and results (selection + confirmation). All discovered agents are selected by default.
+ * Auto-starts scanning on mount. Shows progressive results as they arrive,
+ * with staggered entrance animations. All discovered agents are selected
+ * by default.
  *
  * @param onStepComplete - Called when the user confirms their agent selection
  */
@@ -23,6 +25,16 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [hasScanned, setHasScanned] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const autoStarted = useRef(false);
+
+  // Auto-start scan on mount
+  useEffect(() => {
+    if (!autoStarted.current) {
+      autoStarted.current = true;
+      startScan();
+    }
+  }, [startScan]);
 
   // Select all agents by default when scan completes
   useEffect(() => {
@@ -51,7 +63,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
     });
   }, []);
 
-  const handleStartScan = useCallback(() => {
+  const handleRescan = useCallback(() => {
     setHasScanned(false);
     startScan();
   }, [startScan]);
@@ -70,7 +82,6 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
   }, [selectedPaths, registerAgent, onStepComplete]);
 
   const hasResults = candidates.length > 0;
-  const showInitial = !isScanning && !hasResults && !hasScanned;
   const showNoResults = !isScanning && !hasResults && hasScanned;
 
   return (
@@ -78,34 +89,44 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
       {/* Header */}
       <div className="text-center">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          {showInitial ? "Let's find your agents" : 'Discovered Agents'}
+          {isScanning && !hasResults ? 'Searching your projects...' : 'Discovered Agents'}
         </h1>
-        <p className="mt-3 text-muted-foreground">
-          {showInitial &&
-            'We will scan your machine for projects with AI agent configurations like CLAUDE.md, .cursor, and more.'}
-          {isScanning && 'Scanning your projects...'}
-          {showNoResults && 'No agent projects were found on your machine.'}
-          {!isScanning &&
-            hasResults &&
-            `Found ${candidates.length} project${candidates.length === 1 ? '' : 's'}. Select the ones you want to register.`}
+        <p className="mt-2 text-sm text-muted-foreground">
+          We&rsquo;ll find AI-configured projects on your machine.
         </p>
       </div>
 
-      {/* Progress indicator */}
-      {isScanning && progress && (
-        <div className="mt-6 text-center text-sm text-muted-foreground">
-          Scanned {progress.scannedDirs} directories &middot; Found {progress.foundAgents} agent
+      {/* Scanning animation */}
+      {isScanning && !hasResults && (
+        <div className="mt-8 flex flex-col items-center gap-4">
+          <motion.div
+            animate={reducedMotion ? {} : { scale: [1, 1.15, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Search className="size-8 text-muted-foreground" />
+          </motion.div>
+          {progress && (
+            <p className="text-sm text-muted-foreground">
+              Scanned {progress.scannedDirs} directories
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Progress indicator during scan with results */}
+      {isScanning && hasResults && progress && (
+        <div className="mt-4 text-center text-sm text-muted-foreground">
+          Scanning... {progress.scannedDirs} directories &middot; Found {progress.foundAgents} agent
           {progress.foundAgents === 1 ? '' : 's'}
         </div>
       )}
 
-      {/* Initial state — start scan button */}
-      {showInitial && (
-        <div className="mt-8">
-          <Button size="lg" onClick={handleStartScan}>
-            Start Scan
-          </Button>
-        </div>
+      {/* Summary after scan */}
+      {!isScanning && hasResults && (
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          Found {candidates.length} project{candidates.length === 1 ? '' : 's'}. Select the ones
+          you want to register.
+        </p>
       )}
 
       {/* Error state */}
@@ -115,21 +136,32 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
         </div>
       )}
 
-      {/* Agent cards list */}
+      {/* Agent cards list with staggered entrance */}
       {hasResults && (
-        <div className="mt-8 w-full space-y-3">
+        <motion.div
+          className="mt-8 w-full space-y-3"
+          initial="hidden"
+          animate="visible"
+          variants={
+            reducedMotion
+              ? {}
+              : { visible: { transition: { staggerChildren: 0.1 } } }
+          }
+        >
           <AnimatePresence mode="popLayout">
-            {candidates.map((candidate, index) => (
+            {candidates.map((candidate) => (
               <motion.div
                 key={candidate.path}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
+                variants={
+                  reducedMotion
+                    ? {}
+                    : {
+                        hidden: { opacity: 0, y: 16 },
+                        visible: { opacity: 1, y: 0 },
+                      }
+                }
                 exit={{ opacity: 0, y: -8 }}
-                transition={{
-                  duration: 0.25,
-                  delay: isScanning ? index * 0.1 : 0,
-                  ease: 'easeOut',
-                }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
               >
                 <AgentCard
                   candidate={{ ...candidate, hasDorkManifest: false }}
@@ -139,15 +171,15 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
               </motion.div>
             ))}
           </AnimatePresence>
-        </div>
+        </motion.div>
       )}
 
       {/* No results placeholder */}
       {showNoResults && (
         <div className="mt-8 text-center text-sm text-muted-foreground">
-          <p>Try creating a CLAUDE.md file in one of your project directories and scanning again.</p>
+          <p>No agent projects were found. Try creating a CLAUDE.md file in one of your project directories.</p>
           <div className="mt-4">
-            <Button variant="outline" onClick={handleStartScan}>
+            <Button variant="outline" onClick={handleRescan}>
               Scan Again
             </Button>
           </div>

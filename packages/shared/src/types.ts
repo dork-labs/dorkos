@@ -51,6 +51,7 @@ export type {
   PulseRunTrigger,
   PulseSchedule,
   PulseRun,
+  PulsePreset,
   CreateScheduleRequest,
   CreateScheduleInput,
   UpdateScheduleRequest,

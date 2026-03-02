@@ -14,7 +14,7 @@ import type { AgentManifest, DenialRecord } from '@dorkos/shared/mesh-schemas';
 import { useDirectoryState } from '@/layers/entities/session';
 import { AgentDialog } from '@/layers/features/agent-settings';
 import { useDiscoveryScan, AgentCard as OnboardingAgentCard } from '@/layers/features/onboarding';
-import type { DiscoveryCandidate } from '@/layers/features/onboarding';
+import type { ScanCandidate } from '@/layers/features/onboarding';
 import { MeshStatsHeader } from './MeshStatsHeader';
 import { AgentHealthDetail } from './AgentHealthDetail';
 import { TopologyPanel } from './TopologyPanel';
@@ -166,7 +166,7 @@ function DiscoverAgentsSection({ registeredNames }: DiscoverAgentsSectionProps) 
 
   /** Check if a candidate is already registered by name or .dork marker. */
   const isRegistered = useCallback(
-    (c: DiscoveryCandidate) => registeredNames.has(c.name) || c.markers.includes('.dork'),
+    (c: ScanCandidate) => registeredNames.has(c.name) || c.markers.includes('.dork'),
     [registeredNames],
   );
 
