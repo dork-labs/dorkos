@@ -11,7 +11,7 @@ export const subsystems: Subsystem[] = [
     id: 'pulse',
     benefit: 'Makes agents work autonomously',
     name: 'Pulse',
-    description: 'Wake up your agents and have them start working on schedule, even at 3am.',
+    description: 'Tell your agents what to do and when to do it, and they\'ll handle the rest.',
     status: 'available',
   },
   {

@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect width="32" height="32" fill="white"/>
-  <!-- "D" in square border frame from DORK monogram -->
+  <!-- "D" with interior cutout from new DORK logo -->
   <g transform="scale(0.04)">
     <rect x="50" y="50" width="699" height="699" stroke="#1A1A1A" stroke-width="100"/>
-    <path d="M200 599V200H492L599.5 296V491.5L492 599H200Z" fill="#1A1A1A" stroke="#1A1A1A"/>
+    <path d="M492.333 199.627L599.833 295.627L600 295.776V491.707L492.207 599.5H199.5V199.5H492.19L492.333 199.627ZM334 347.5V448.5H435V347.5H334Z" fill="#1A1A1A"/>
   </g>
 </svg>

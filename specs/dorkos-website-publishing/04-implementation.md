@@ -83,4 +83,4 @@ _(None yet)_
 - `docs/api/openapi.json` must be committed to git — fumadocs-openapi needs it at Next.js build time for prerendering API reference pages
 - `generate:api-docs` script gracefully skips if openapi.json is missing (CI safety)
 - 9 MDX files in `docs/` had HTML comments (`<!-- -->`) that are invalid in MDX — converted to `{/* */}`
-- Logo assets still reference `dorkian-logo.svg` filenames — requires separate asset replacement task
+- Logo assets still reference `dork-logo.svg` filenames — requires separate asset replacement task

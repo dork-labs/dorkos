@@ -47,7 +47,7 @@ export default function HomePage() {
       <Prelude />
       <MarketingHeader />
 
-      <main>
+      <main className="pt-8">
         <ActivityFeedHero
           ctaText="Install"
           ctaHref="#install"

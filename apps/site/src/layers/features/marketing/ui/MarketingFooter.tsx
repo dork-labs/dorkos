@@ -17,7 +17,7 @@ interface MarketingFooterProps {
 }
 
 export function MarketingFooter({
-  logoSrc = '/images/dorkian-logo-white.svg',
+  logoSrc = '/images/dork-logo-white.svg',
   logoAlt = 'DorkOS',
   bylineText = 'by Dorian Collier',
   bylineHref = 'https://doriancollier.com',

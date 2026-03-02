@@ -21,7 +21,7 @@ status: ideation
 - **Assumptions:**
   - Scope is the marketing site (`apps/web`) only — not the client app, server, or docs content
   - The current homepage hero copy ("Your agents are brilliant. They just can't do anything when you leave.") is the canonical brand message
-  - The Dorkian logo SVG (`public/images/dorkian-logo.svg`) is the canonical logo mark
+  - The Dorkian logo SVG (`public/images/dork-logo.svg`) is the canonical logo mark
   - OG and Twitter images should be identical (one consistent share card everywhere)
   - Deployed on Vercel; edge runtime constraints apply
 - **Out of scope:**
@@ -41,7 +41,7 @@ status: ideation
 - `apps/web/src/app/sitemap.ts`: Includes static pages + docs. **Missing blog posts entirely**
 - `apps/web/src/app/(marketing)/blog/[slug]/page.tsx`: Per-post OG metadata with `type: 'article'` and `publishedTime`. No JSON-LD BlogPosting schema. No per-post OG image
 - `apps/web/src/app/icon.svg`: Favicon — "D" monogram from the DORK logotype
-- `apps/web/public/images/dorkian-logo.svg`: Full DORK logotype (geometric letter shapes in bordered rectangle)
+- `apps/web/public/images/dork-logo.svg`: Full DORK logotype (geometric letter shapes in bordered rectangle)
 - `apps/web/src/layers/features/marketing/ui/ActivityFeedHero.tsx`: Current hero with "Your agents are brilliant." headline and "You slept. They shipped." tagline
 
 ## 3) Codebase Map
@@ -59,7 +59,7 @@ status: ideation
 | `apps/web/src/app/sitemap.ts` | Sitemap generation (static + docs) |
 | `apps/web/src/app/(marketing)/blog/[slug]/page.tsx` | Blog post metadata (per-post OG, no JSON-LD) |
 | `apps/web/src/app/icon.svg` | Favicon (D monogram) |
-| `apps/web/public/images/dorkian-logo.svg` | Full DORK logotype |
+| `apps/web/public/images/dork-logo.svg` | Full DORK logotype |
 
 **Shared dependencies:**
 - `siteConfig` singleton used by all metadata exports
@@ -150,5 +150,5 @@ Prioritized changes:
 |---|----------|--------|-----------|
 | 1 | OG share card headline | Match homepage hero: "Your agents are brilliant." | Strongest brand message, matches what visitors see on landing. Current OG text ("Claude Code in your browser") is from an older product positioning |
 | 2 | OG vs Twitter image parity | Same image for both | One consistent share card everywhere. Fixes the iMessage bug where it shows the wrong card. Simpler to maintain |
-| 3 | Logo in OG image | Use Dorkian logo SVG | The actual brand mark exists in `public/images/dorkian-logo.svg`. Using it builds recognition across share cards vs generic triangles |
+| 3 | Logo in OG image | Use Dorkian logo SVG | The actual brand mark exists in `public/images/dork-logo.svg`. Using it builds recognition across share cards vs generic triangles |
 | 4 | AI readability features | llms.txt + enhanced robots.txt | High impact, near-zero maintenance. Adopted by major players (Anthropic, Vercel, Stripe). Skip llms-full.txt for now |

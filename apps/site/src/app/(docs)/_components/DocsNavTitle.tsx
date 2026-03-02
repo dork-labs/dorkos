@@ -5,14 +5,14 @@ export function DocsNavTitle() {
   return (
     <span className="inline-flex items-center gap-2">
       <Image
-        src="/images/dorkian-logo.svg"
+        src="/images/dork-logo.svg"
         alt="DorkOS"
         width={40}
         height={40}
         className="block dark:hidden"
       />
       <Image
-        src="/images/dorkian-logo-white.svg"
+        src="/images/dork-logo-white.svg"
         alt="DorkOS"
         width={40}
         height={40}

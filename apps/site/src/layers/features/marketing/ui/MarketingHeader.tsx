@@ -10,7 +10,7 @@ interface MarketingHeaderProps {
 }
 
 export function MarketingHeader({
-  logoSrc = '/images/dorkian-logo.svg',
+  logoSrc = '/images/dork-logo.svg',
   logoAlt = 'DorkOS',
 }: MarketingHeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false)
@@ -59,7 +59,7 @@ export function MarketingHeader({
             priority
           />
           <span
-            className="font-mono text-2xs tracking-[0.15em] uppercase text-warm-gray-light transition-all duration-500 ease-out overflow-hidden"
+            className="font-mono text-xs tracking-[0.15em] text-warm-gray-light transition-all duration-500 ease-out overflow-hidden"
             style={{
               opacity: isScrolled ? 0 : 1,
               maxHeight: isScrolled ? '0px' : '20px',
