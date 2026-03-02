@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { motion } from 'motion/react'
+import { cn } from '@/lib/utils'
 import { REVEAL, STAGGER } from '../lib/motion-variants'
 import { ConsoleMockup } from './ConsoleMockup'
 
@@ -32,7 +33,7 @@ interface FeedEntry {
 const MAX_VISIBLE = 6
 
 /** Interval between new entries appearing, in ms. */
-const FEED_INTERVAL_MS = 2400
+const FEED_INTERVAL_MS = 5500
 
 /** Module dot colors matching brand palette. */
 const MODULE_COLORS: Record<ModuleId, string> = {
@@ -213,8 +214,10 @@ function FeedItem({ entry, index }: { entry: FeedEntry; index: number }) {
 
       <div className="flex-1 min-w-0">
         <p
-          className="font-mono text-[11px] leading-[1.5] text-charcoal"
-          style={{ color: index === 0 ? '#1A1814' : '#4A4640' }}
+          className={cn(
+            'font-mono text-sm text-left -top-1 relative ',
+            index === 0 ? 'text-[#1A1814] ' : 'text-[#4A4640]'
+          )}
         >
           {entry.text}
         </p>
@@ -288,7 +291,7 @@ function ActivityFeedPanel() {
         <div
           className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
           style={{
-            height: '48px',
+            height: '20px',
             background: 'linear-gradient(to bottom, #FFFEFB 0%, transparent 100%)',
           }}
         />
@@ -301,7 +304,7 @@ function ActivityFeedPanel() {
         />
 
         {/* Feed area — fixed height prevents layout shift */}
-        <div className="px-2 py-3 space-y-0.5" style={{ height: 370, overflow: 'hidden' }}>
+        <div className="px-2 py-3 space-y-3" style={{ height: 370, overflow: 'hidden' }}>
           {entries.map((entry, index) => (
             <FeedItem key={entry.id} entry={entry} index={index} />
           ))}

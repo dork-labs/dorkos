@@ -11,7 +11,7 @@ export const subsystems: Subsystem[] = [
     id: 'pulse',
     benefit: 'Makes agents work autonomously',
     name: 'Pulse',
-    description: 'Set tasks on a timer. Your agents start working on schedule, even at 3am.',
+    description: 'Wake up your agents and have them start working on schedule, even at 3am.',
     status: 'available',
   },
   {
@@ -19,7 +19,7 @@ export const subsystems: Subsystem[] = [
     benefit: 'Delivers messages between agents and humans',
     name: 'Relay',
     description:
-      'Your agents send you updates \u2014 Telegram, text, whatever you use.',
+      'Telegram, Slack, email, etc. You can chat with your agents wherever you are.',
     status: 'available',
   },
   {
@@ -31,9 +31,9 @@ export const subsystems: Subsystem[] = [
   },
   {
     id: 'console',
-    benefit: 'Dashboard for chat and system management',
+    benefit: 'Dashboard to chat and and control all aspects of DorkOS',
     name: 'Console',
-    description: 'A dashboard that shows what every agent is doing, from anywhere.',
+    description: 'Chat with your agents, create new agents, manage schedules, and more.',
     status: 'available',
   },
   {

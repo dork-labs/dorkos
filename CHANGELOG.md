@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Enhance WelcomeStep with dynamic gradient effects
 - Add agent discovery scroll fix image and enhance CLI build configuration
 
 ### Changed
