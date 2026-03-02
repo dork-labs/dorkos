@@ -4,7 +4,7 @@
 
 **DorkOS** is an autonomous agent operating system for developers, founders, and serious builders.
 
-It makes AI coding agents more capable — giving them an engine that never stops, a life layer that keeps you in context, and a mesh that lets agents discover and communicate with each other.
+It makes AI coding agents more capable — giving them a scheduling engine, a life layer that keeps you in context, and a mesh that lets agents discover and communicate with each other.
 
 DorkOS is:
 
@@ -30,7 +30,7 @@ Over the next decade, Dorian built products that reached 30 million users. He sh
 
 The throughline across everything: one person, building systems that let you do what should take a team. Tools that multiply what a single builder can accomplish.
 
-When AI coding agents arrived, Dorian saw the gap immediately. The agents were brilliant — they could write code, fix bugs, create entire features. But they were trapped. Each one stuck in a terminal, starting every session with amnesia, unable to run while you sleep, unable to tell you what they did, unable to coordinate with each other. The smartest tools in the world, and they only worked when you were sitting in front of them.
+When AI coding agents arrived, Dorian saw the gap immediately. The agents were brilliant — they could write code, fix bugs, create entire features. But they were trapped. Each one stuck in a terminal, starting every session with amnesia, unable to run on a schedule, unable to tell you what they did, unable to coordinate with each other. The smartest tools in the world, and they had no way to work independently.
 
 He'd seen this before. Every time a powerful capability emerges, the missing piece is always the same: the layer that lets it coordinate, communicate, and persist. Applications needed an OS. Teams needed Slack. AI agents need DorkOS.
 
@@ -70,46 +70,46 @@ This is not built for casual users.
 
 ## 4. Big Idea
 
-Your AI never sleeps.
+Intelligence doesn't scale. Coordination does.
 
-AI agents work like teammates — they can specialize, communicate, and coordinate. But right now, they're stuck working alone with no memory, no schedule, and no way to reach you. DorkOS is the layer that turns isolated agents into a coordinated team.
+You've always had more ideas than hours. AI agents are brilliant — they can specialize, write code, fix bugs, and create entire features. But right now, they're stuck working alone with no memory, no schedule, and no way to reach you. The missing piece isn't smarter agents. It's the coordination layer that lets your vision scale.
 
-One person. Ten agents. Ship around the clock.
+DorkOS is that layer. One person with the right system ships like a team — not because the agents replace what you do, but because they multiply what you can accomplish.
 
 DorkOS makes your agents:
 
-- Your autonomous engineering team
-- Your always-running agent system
-- Your persistent knowledge layer
-- Your extensible AI operating layer
+- Your coordination layer — scheduling, messaging, and discovery
+- Your persistent knowledge layer — context that survives across sessions
+- Your always-available system — browser-based, from any device
+- Your extensible AI operating layer — open source, modular, yours to shape
 
+Your ideas.
 Your agents.
-Your machine.
 Your rules.
 
 ---
 
 ## 5. The Villain
 
-The villain isn't a company or a competitor. The villain is a moment.
+The villain isn't a company or a competitor. The villain is a missing layer.
 
 ### The Moment
 
-It's 7am. You open your laptop. CI has been red since 2:47am. A dependency update broke three repos. The fix takes five minutes — your agent could have handled it in its sleep. But the terminal was closed. The agent wasn't running. Nobody was watching. Your entire morning is consumed by something that should have been resolved six hours ago.
+It's 7am. You open your laptop. CI has been red since 2:47am. A dependency update broke three repos. The fix takes five minutes — your agent could have handled it. But the terminal was closed. The agent wasn't running. There was no coordination layer to keep things moving. Your entire morning is consumed by something that should have been resolved six hours ago.
 
-You pay for the most powerful AI coding agent available. And it only works when you're sitting in front of it.
+You have the most powerful AI coding agent available. And it has no way to run without you sitting in front of it.
 
 ### The Pattern
 
-You've felt this before. Different forms, same root:
+This missing layer shows up everywhere. Different forms, same root cause:
 
-**The dead terminal.** Your agent shipped clean code at 11pm. Created a PR, wrote tests, refactored the edge cases. Then the terminal closed. The work is done but nobody knows — no Telegram message, no Slack notification, no record of what happened. You find the PR by accident three days later.
+**The dead terminal.** Your agent shipped clean code at 11pm. Created a PR, wrote tests, refactored the edge cases. Then the terminal closed. The work is done but nobody knows — no Telegram message, no Slack notification, no record of what happened. You find the PR by accident three days later. The agent did its job. The missing piece was a way to tell you about it.
 
-**The re-introduction.** "Let me give you some context..." You've typed these words a hundred times. Every session starts from zero. Every agent interaction begins with you re-explaining who you are, what you're building, and what happened yesterday. The most capable developer tool in the world has the memory of a goldfish.
+**The re-introduction.** "Let me give you some context..." You've typed these words a hundred times. Every session starts from zero. Every agent interaction begins with you re-explaining who you are, what you're building, and what happened yesterday. The most capable developer tool in the world has no persistent memory — because there's no layer to provide one.
 
-**The 15-tab juggle.** Five projects. Agents running in different terminals. You can't remember which session is doing what. One is waiting for approval. One finished 20 minutes ago and you didn't notice. One crashed silently. You're the scheduler, the memory, the messenger, and the router — and you're failing at all four.
+**The 15-tab juggle.** Five projects. Agents running in different terminals. You can't tell which session is doing what. One is waiting for approval. One finished 20 minutes ago. One crashed silently. There's no coordination, no status dashboard, no messaging — every agent is isolated because nothing connects them.
 
-**The flow-killer.** You're deep in an architecture document. Forty minutes of focused thinking. You need to check one thing in the codebase. Alt-tab. Open the terminal. Three paragraphs of context to set up a ten-second question. Get the answer. Switch back. The flow is gone. Fifteen minutes re-reading your own notes. This happens four times a day.
+**The flow-killer.** You're deep in an architecture document. Forty minutes of focused thinking. You need to check one thing in the codebase. Alt-tab. Open the terminal. Three paragraphs of context to set up a ten-second question. Get the answer. Switch back. The flow is gone. Fifteen minutes re-reading your own notes. This happens four times a day — not because you're doing something wrong, but because the tools don't connect your thinking and doing environments.
 
 ### The Truth
 
@@ -161,7 +161,7 @@ This makes DorkOS location-independent.
 - Configurable concurrency limits
 - Pending_approval gates for agent-created schedules
 
-This is what makes DorkOS alive. Your agents ship code while you sleep.
+This is what makes DorkOS alive. Your agents keep shipping — on schedule, around the clock.
 
 **Status: Available**
 
@@ -315,7 +315,7 @@ Use language like:
 | "Easy-to-use AI assistant" | "Autonomous agent operating system" |
 | "Get started in minutes!" | "Install. Configure. Run." |
 | "We help developers..." | "Built for developers who ship." |
-| "Powerful AI features" | "Agents that work while you sleep." |
+| "Powerful AI features" | "Agents that multiply what you accomplish." |
 | "No cloud dependency" | "Intelligence from the agents. Everything else is yours." |
 
 ### Language to Avoid
@@ -353,6 +353,22 @@ Use language like:
 - **Connectivity and flexibility over reliability.** When describing Relay, lead with "your agents can reach you on Telegram, notify each other, connect through any channel" — not "durable delivery, guaranteed message persistence."
 - **No "infrastructure" identity.** The brand identity is about building teams and shipping code, not about running infrastructure. "I build with AI teammates" not "I own my agent infrastructure."
 
+#### Human-Empowerment Positioning (Added 2026-03-02)
+
+DorkOS positions AI agents as tools for human creativity and empowerment — like Apple positions the Mac, iPhone, and iPad. The human is the creative force. The agents are the coordination layer that lets human vision scale.
+
+| Never Say | Say Instead | Why |
+|---|---|---|
+| "Your AI is smarter than you" | "Your AI amplifies what you build" | The human is the creator, the agent is the tool |
+| "You're the bottleneck" | "You've always had more ideas than hours" | Celebrate human ambition, don't diminish it |
+| "Agents that never stop" | "Agents that multiply what you accomplish" | Tirelessness framed as empowerment, not superiority |
+| "While you sleep" (as deficiency) | "So you can focus on what matters" | Human choices are valid, not limitations |
+| "Outship everyone" | "Ship what you've always imagined" | Empower, don't compete |
+| "Your agent works when you don't" | "Your ideas keep moving forward" | Center the human's vision, not the agent's labor |
+
+**Core thesis:** "Intelligence doesn't scale. Coordination does."
+**The Apple test:** Would Apple say this about the Mac? If not, reframe.
+
 ---
 
 ## 11. Brand Aesthetic
@@ -380,21 +396,24 @@ DorkOS should feel like:
 
 ## 12. Taglines
 
-**Primary:** Your AI Never Sleeps.
+**Primary:** Intelligence Doesn't Scale. Coordination Does.
 
 **Brand line:** Built by dorks. For dorks. Run by you.
 
 **Messaging bank** (secondary/contextual use):
 
-- One Person. Ten Agents. Ship Around the Clock.
+- You've Always Had More Ideas Than Hours. That Ratio Just Changed.
+- One Person. Ten Agents. Ship What You've Always Imagined.
 - The Operating System for AI Agents
-- Agents That Work While You Sleep
+- Tools for Builders Who Never Run Out of Ideas.
 - From Solo Agents to a Coordinated Team
-- Your Agents. Your Machine. Your Rules.
+- Your Ideas. Your Agents. Your Rules.
+- Agents That Multiply What You Accomplish.
 - Not a Chatbot. A System. The Layer Agents Were Missing.
 - Intelligence from the Agents. Everything Else Is Yours.
 - We Named It After Ourselves.
 - The Ones Who Care Too Much Build the Things That Matter Most.
+- You Slept. They Shipped. *(Use with awareness — the power is in celebrating the outcome, not framing sleep as deficiency.)*
 
 ---
 
@@ -402,11 +421,11 @@ DorkOS should feel like:
 
 ### Hero Section
 
-> **YOUR AI NEVER SLEEPS.**
+> **INTELLIGENCE DOESN'T SCALE. COORDINATION DOES.**
 >
 > DorkOS turns isolated AI agents into a coordinated team.
 > Scheduling. Messaging. Agent discovery. A browser-based command center.
-> One person. Ten agents. Ship around the clock.
+> You've always had more ideas than hours. That ratio just changed.
 >
 > `npm install -g dorkos`
 

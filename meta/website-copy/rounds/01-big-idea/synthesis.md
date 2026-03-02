@@ -1,3 +1,5 @@
+> **Editorial note (2026-03-02):** This is a historical creative artifact. Some framings have been superseded by the pro-human positioning shift. See `meta/brand-foundation.md` > "Human-Empowerment Positioning" and `meta/website-copy/decisions.md` > Decision 16 for current positioning guidelines.
+
 # Round 1 Synthesis: The Big Idea
 
 ## The Convergence

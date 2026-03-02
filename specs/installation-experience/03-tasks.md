@@ -86,7 +86,7 @@ Major changes:
 **File:** `apps/site/src/app/(marketing)/page.tsx` (modify)
 
 Two prop changes on `ActivityFeedHero`:
-- `ctaText`: `"npm install -g dorkos"` -> `"curl -fsSL https://dorkos.dev/install | bash"`
+- `ctaText`: `"npm install -g dorkos"` -> `"curl -fsSL https://dorkos.ai/install | bash"`
 - `ctaHref`: `{siteConfig.npm}` -> `"/docs/getting-started/installation"`
 
 ---
@@ -116,7 +116,7 @@ Update the Fumadocs documentation to feature curl as the primary install method.
 
 **File:** `docs/getting-started/quickstart.mdx` (modify)
 
-Single bullet change: `"DorkOS installed globally via npm install -g dorkos"` becomes `"DorkOS installed via curl -fsSL https://dorkos.dev/install | bash (or npm install -g dorkos)"`.
+Single bullet change: `"DorkOS installed globally via npm install -g dorkos"` becomes `"DorkOS installed via curl -fsSL https://dorkos.ai/install | bash (or npm install -g dorkos)"`.
 
 ---
 

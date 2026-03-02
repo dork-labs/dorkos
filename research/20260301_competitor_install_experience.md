@@ -317,7 +317,7 @@ Bun's `bun build --compile` produces a single executable that embeds the Bun run
 `pkg` (Vercel) or `nexe` embed Node.js into the binary. Produces a standalone ~80MB executable. Mature tooling, good native module support. Used by production CLIs.
 
 **Option C: Hybrid curl script wrapping npm**
-A `curl -fsSL https://dorkos.dev/install.sh | bash` script that:
+A `curl -fsSL https://dorkos.ai/install.sh | bash` script that:
 1. Checks Node.js 18+ is installed; installs via nvm if not
 2. Runs `npm install -g dorkos`
 3. Runs `dorkos --post-install-check` to verify the installation worked
@@ -331,7 +331,7 @@ This is what OpenClaw does. Provides the `curl` UX without requiring binary comp
 
 ### Tier 1: Immediate (Unblock the npm install UX)
 
-**1. Add a shell install script at dorkos.dev/install**
+**1. Add a shell install script at dorkos.ai/install**
 
 Even wrapping npm, this script provides meaningful value:
 ```bash
@@ -366,8 +366,8 @@ Create `dorkos-ai/homebrew-tap` GitHub repository with a formula that wraps `npm
 
 **3. Update the docs site install UX**
 
-Add a tabbed install section to `dorkos.dev/docs` (and ideally the homepage) with:
-- Tab 1: `curl -fsSL https://dorkos.dev/install | bash` (recommended)
+Add a tabbed install section to `dorkos.ai/docs` (and ideally the homepage) with:
+- Tab 1: `curl -fsSL https://dorkos.ai/install | bash` (recommended)
 - Tab 2: `npm install -g dorkos`
 - Tab 3: `brew install dorkos-ai/tap/dorkos`
 
@@ -431,7 +431,7 @@ When building the DorkOS install script, apply these principles from the researc
    Run: dorkos
    Or:  dorkos init   (first-time setup wizard)
 
-   Documentation: https://dorkos.dev/docs
+   Documentation: https://dorkos.ai/docs
    ```
 
 6. **Support version pinning from day one.** `curl ... | bash -s 1.2.3`. This is free to implement and invaluable for CI reproducibility.
@@ -453,7 +453,7 @@ The core issue is not technical but perceptual. When a developer sees `npm insta
 3. "It won't auto-update" — npm global packages require explicit re-runs to update
 4. "It's a Node.js tool" — which is accurate but positions DorkOS as "one of many npm CLIs" rather than infrastructure
 
-When a developer sees `curl -fsSL https://dorkos.dev/install | bash`, they form different expectations:
+When a developer sees `curl -fsSL https://dorkos.ai/install | bash`, they form different expectations:
 
 1. "This is a first-class CLI tool with its own distribution channel"
 2. "It probably auto-updates"

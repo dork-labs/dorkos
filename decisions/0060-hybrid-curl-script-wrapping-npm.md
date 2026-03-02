@@ -15,13 +15,13 @@ Draft (auto-extracted from spec: installation-experience)
 
 ## Context
 
-DorkOS is a Node.js application (Express + React + Claude Agent SDK) that currently distributes only via `npm install -g dorkos`. Every competitor in the space (Claude Code, OpenClaw, OpenCode, Codex) offers 3+ install methods with `curl | bash` as the dominant primary method. The `npm install -g` pattern signals "side project" while `curl -fsSL https://dorkos.dev/install | bash` signals "first-class infrastructure."
+DorkOS is a Node.js application (Express + React + Claude Agent SDK) that currently distributes only via `npm install -g dorkos`. Every competitor in the space (Claude Code, OpenClaw, OpenCode, Codex) offers 3+ install methods with `curl | bash` as the dominant primary method. The `npm install -g` pattern signals "side project" while `curl -fsSL https://dorkos.ai/install | bash` signals "first-class infrastructure."
 
 Two approaches exist for adding curl support: (1) compile to a standalone binary (like Claude Code's bootstrap.sh) or (2) wrap npm inside a curl script (like OpenClaw's install.sh). Binary compilation requires migrating to Bun compile or pkg, a significant architectural change with ongoing maintenance burden.
 
 ## Decision
 
-Use the hybrid approach: a bash install script served at `https://dorkos.dev/install` that wraps `npm install -g dorkos` but adds Node.js version detection, dependency validation, clean post-install messaging, and an optional setup wizard prompt. The script is served via a Next.js Route Handler for cache control and clean URL routing.
+Use the hybrid approach: a bash install script served at `https://dorkos.ai/install` that wraps `npm install -g dorkos` but adds Node.js version detection, dependency validation, clean post-install messaging, and an optional setup wizard prompt. The script is served via a Next.js Route Handler for cache control and clean URL routing.
 
 This provides the `curl | bash` UX without requiring binary compilation, keeping the existing npm distribution channel as the underlying mechanism.
 

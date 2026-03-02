@@ -1,3 +1,5 @@
+> **Editorial note (2026-03-02):** This is a historical creative artifact. Some framings — particularly the "employment" metaphor and "tool → worker" language — have been superseded by the pro-human positioning shift. See `meta/brand-foundation.md` > "Human-Empowerment Positioning" and `meta/website-copy/decisions.md` > Decision 16 for current positioning guidelines.
+
 # The Creative Concept for DorkOS
 
 ## A Memorandum from David Ogilvy

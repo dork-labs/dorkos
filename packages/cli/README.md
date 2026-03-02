@@ -100,8 +100,8 @@ When running, DorkOS serves interactive API documentation at `/api/docs` (powere
 
 ## Links
 
-- [Documentation](https://dorkos.dev/docs)
-- [Changelog](https://dorkos.dev/docs/changelog)
+- [Documentation](https://dorkos.ai/docs)
+- [Changelog](https://dorkos.ai/docs/changelog)
 - [GitHub](https://github.com/dork-labs/dorkos)
 - [Issues](https://github.com/dork-labs/dorkos/issues)
 

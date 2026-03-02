@@ -345,7 +345,7 @@ export default function Layout({ children }) {
       <footer className="border-t px-6 py-8 text-sm text-muted-foreground">
         <div className="mx-auto max-w-screen-xl flex justify-between">
           <span>© 2026 Dork Labs</span>
-          <a href="https://dorkos.dev">dorkos.dev</a>
+          <a href="https://dorkos.ai">dorkos.ai</a>
         </div>
       </footer>
     </>
@@ -363,7 +363,7 @@ However, wrapping DocsLayout in a footer this way can cause layout issues with t
     footer: (
       <div className="px-3 py-2 text-xs text-muted-foreground border-t">
         <a href="/" className="flex items-center gap-1 hover:text-foreground">
-          ← Back to dorkos.dev
+          ← Back to dorkos.ai
         </a>
       </div>
     ),
@@ -378,7 +378,7 @@ Three common patterns for linking from docs to the main marketing site:
 **1. Nav link (appears in docs top navbar):**
 ```tsx
 links: [
-  { text: 'dorkos.dev', url: 'https://dorkos.dev', on: 'nav', external: true },
+  { text: 'dorkos.ai', url: 'https://dorkos.ai', on: 'nav', external: true },
 ]
 ```
 
@@ -386,7 +386,7 @@ links: [
 ```tsx
 sidebar: {
   footer: (
-    <a href="https://dorkos.dev" className="text-xs text-muted-foreground hover:text-foreground">
+    <a href="https://dorkos.ai" className="text-xs text-muted-foreground hover:text-foreground">
       ← Back to main site
     </a>
   )
@@ -397,7 +397,7 @@ sidebar: {
 ```tsx
 nav: {
   title: 'DorkOS',
-  url: 'https://dorkos.dev',  // clicking logo exits docs
+  url: 'https://dorkos.ai',  // clicking logo exits docs
 }
 ```
 

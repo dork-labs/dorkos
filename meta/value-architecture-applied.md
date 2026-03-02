@@ -31,7 +31,7 @@ so_what: "Manage agents the way you manage web apps — with tabs, bookmarks, vi
 capability: "Pulse — Autonomous Agent Scheduling"
 alternative: "Only run agents when you're at your desk, manually typing prompts. Or: cobble together cron jobs + shell scripts that invoke the Claude CLI, with no run tracking, no overrun protection, no concurrency management."
 unique_attribute: "First-class cron scheduling with overrun protection, isolated agent sessions per run, run history with SQLite persistence, configurable concurrency limits, API for schedule management, integration with Loop for autonomous task selection"
-so_what: "Your agents execute work while you sleep — shipping features, triaging issues, running audits. You wake up to progress, not a stale terminal."
+so_what: "Your agents execute work on schedule — shipping features, triaging issues, running audits. You wake up to progress, not a stale terminal."
 
 # --- RELAY (Agent Communication) ---
 capability: "Relay — Agent Communication"
@@ -64,7 +64,7 @@ so_what: "Your software improves itself. Loop collects signals, forms hypotheses
 # --- KAI NAKAMURA (Primary — The Autonomous Builder) ---
 persona: "Kai Nakamura — The Autonomous Builder"
 core_job: "When I'm sleeping or away from my desk, I want my agents to execute roadmap tasks autonomously, so that my projects make progress 24/7 without burning me out."
-emotional_job: "I want to feel confident that progress is happening even when I'm not working — relief from the pressure of being the sole bottleneck."
+emotional_job: "I want to feel confident that progress is happening even when I'm not working — relief from the pressure of being the sole coordinator of everything."
 social_job: "I want to be perceived as someone who ships at an impossible pace — peers wonder how one person maintains five projects."
 job_steps:
   - step: "Define what needs to happen"
@@ -118,8 +118,8 @@ identity_territory:
 anti_positioning:
   villain: "The villain isn't a company. It's a moment: 7am, laptop open, CI red since 2:47am. The agent could have caught it. The terminal was closed. Nobody was watching. The most powerful coding agent in the world was useless because you weren't sitting in front of it."
   villain_pattern: "The dead terminal (agent shipped code, told no one). The re-introduction (re-explaining context for the hundredth time). The 15-tab juggle (five projects, which agent is doing what?). The flow-killer (alt-tab to terminal, lose 15 minutes of mental state for a 10-second answer)."
-  external_problem: "AI agents are powerful but isolated. Each session starts from scratch. They can't run while you sleep. They can't tell you what they did. They can't message each other. You — the human — are the scheduler, the memory, the messenger, and the router."
-  internal_problem: "You feel like a bottleneck for capable tools. You pay for the most powerful AI coding agent available, and it only works when you're at your desk. You have agents that can ship real code, and you're still manually invoking every session, copying context between them, and checking terminals to see if anything happened."
+  external_problem: "AI agents are powerful but isolated. Each session starts from scratch. They can't run on a schedule. They can't tell you what they did. They can't message each other. The coordination layer is missing — so everything falls on you to connect manually."
+  internal_problem: "You have more ideas than hours. You pay for the most powerful AI coding agent available, and it has no way to run independently. You have agents that can ship real code, and you're still manually invoking every session, copying context between them, and checking terminals to see if anything happened. The tools are brilliant — they just can't coordinate."
   philosophical_problem: "We gave people Slack because teammates can't coordinate in isolation. We gave applications an OS because software needs files, scheduling, and a way to talk to other programs. AI agents work like teammates — but right now, they start every day with amnesia, work alone, and have no way to reach you. That's a missing layer."
 ```
 
@@ -179,10 +179,10 @@ mechanism:
 functional: "Your agents ship code, triage issues, and run audits overnight. You wake up to completed pull requests, not a stale terminal waiting for your next prompt."
 
 # Layer 4: Emotional Benefit
-emotional: "Relief from being the bottleneck. For the first time, progress happens without you — and you can actually rest without anxiety about what's not getting done."
+emotional: "Relief — the system you designed keeps moving forward. For the first time, progress happens on schedule, and you can focus on what matters without anxiety about what's not getting done."
 
 # Layer 5: Identity Benefit
-identity: "I am someone who builds a team that works autonomously. My projects ship around the clock — what used to take a week ships overnight because my agents don't stop when I do."
+identity: "I am someone who builds a team that works autonomously. My projects ship around the clock — what used to take a week ships overnight because I designed a system that keeps my ideas moving forward."
 
 # Proof Anchor
 proof:
@@ -264,7 +264,7 @@ functional: "Glance at your browser tabs and instantly know: which agents are wo
 emotional: "Calm clarity instead of cognitive chaos. Ten agents running in parallel, each making progress — and you know the state of all of them at a glance, the way you know which browser tabs are playing audio."
 
 # Layer 5: Identity Benefit
-identity: "I am someone who runs a team, not someone who juggles terminals. My agents have names, colors, and status — and together they ship more than I ever could alone."
+identity: "I am someone who runs a team, not someone who juggles terminals. My agents have names, colors, and status — and together they multiply what I can accomplish."
 
 # Proof Anchor
 proof:
@@ -516,7 +516,7 @@ identity: "I am someone who builds self-improving systems. My software doesn't j
 proof:
   type: "contrast"
   spec: "Automated signal → hypothesis → dispatch → measurement loop vs. manual analytics checking + gut-feel prioritization"
-  translation: "Loop watches your metrics while you sleep. It finds the problem, writes the fix, and measures the result — then tells you what it did."
+  translation: "Loop watches your metrics around the clock. It finds the problem, writes the fix, and measures the result — then tells you what it did."
   social: "[PLACEHOLDER — NEEDS CUSTOMER DATA]"
 
 # Persona Resonance
@@ -609,8 +609,8 @@ VL-10 Open Foundation          L5 Identity       L4 Emotional
 │  PILLAR 1         │  PILLAR 2         │  PILLAR 3                        │
 │  AUTONOMY         │  COMMUNICATION    │  CONTROL                         │
 │                   │                   │                                  │
-│  "Ship code       │  "Agents that     │  "Trust your agents             │
-│  while you sleep" │  connected"        │  enough to let go"              │
+│  "Your ideas keep │  "Agents that     │  "Trust your agents             │
+│  moving forward"  │  connected"        │  enough to let go"              │
 │                   │                   │                                  │
 │  VL-01 Scheduling │  VL-04 Relay      │  VL-07 Trust/Audit              │
 │  VL-09 Loop       │  VL-05 Mesh       │  VL-10 Open Source              │
@@ -648,15 +648,15 @@ VL-10 Open Foundation          L5 Identity       L4 Emotional
 
 ```yaml
 # --- PILLAR 1: AUTONOMY ---
-pillar: "Autonomy — Ship Code While You Sleep"
+pillar: "Autonomy — Your Ideas Keep Moving Forward"
 headlines:
-  identity: "Your AI Never Sleeps"
+  identity: "Intelligence Doesn't Scale. Coordination Does."
   emotional: "Wake up to progress, not a stale terminal"
   functional: "Scheduled agent execution that runs independently — not tied to your IDE or terminal"
   proof: "Pulse keeps running when you close the terminal. Cowork requires your Mac to stay awake. You do the math."
 
-  alt_identity: "One Person. Ten Agents. Team-Level Output."
-  alt_emotional: "Relief from being the bottleneck — your output isn't limited to your hours anymore"
+  alt_identity: "You've Always Had More Ideas Than Hours. That Ratio Just Changed."
+  alt_emotional: "Your ideas keep moving forward — even when you step away"
   alt_functional: "Cron scheduling with overrun protection, isolated sessions, and approval gates"
   alt_proof: "RedMonk's #1 developer wish for agentic IDEs: background agents. Pulse is the answer."
 
@@ -696,7 +696,7 @@ lead_layer: "L3 Functional + L5 Identity"
 support_layer: "L2 Mechanism"
 messages:
   - "DorkOS is the operating system for autonomous AI agents. Scheduling, messaging, agent discovery, and a browser-based command center — for developers who want their agents to work like a team, and ship like one."
-  - "Your AI never sleeps. An open-source agent OS that turns isolated Claude Code sessions into a coordinated team."
+  - "Intelligence doesn't scale. Coordination does. An open-source agent OS that turns isolated Claude Code sessions into a coordinated team."
   - "Intelligence comes from the agents. Everything else — scheduling, communication, coordination — comes from DorkOS."
 
 # --- EVALUATION: "How does it work? Is it credible?" ---
@@ -743,11 +743,11 @@ messages:
 ### 4A. Homepage Hero
 
 ```
-YOUR AI NEVER SLEEPS.
+INTELLIGENCE DOESN'T SCALE. COORDINATION DOES.
 
 DorkOS turns isolated AI agents into a coordinated team.
 Scheduling. Messaging. Agent discovery. A browser-based command center.
-One person. Ten agents. Ship around the clock.
+You've always had more ideas than hours. That ratio just changed.
 
 npm install -g dorkos
 ```
@@ -760,10 +760,10 @@ npm install -g dorkos
 WAKE UP TO PROGRESS.
 
 Pulse schedules your agents on a cron — independently, not tied to your IDE.
-Unlike Cowork, your agents don't stop when you close the terminal.
+Unlike Cowork, Pulse keeps running when you close the terminal.
 Isolated sessions. Overrun protection. Approval gates. Full run history.
 
-Your laptop can rest. Your agents won't.
+Your ideas keep moving forward — even when you step away.
 ```
 
 **Pillar 2: Communication**
@@ -794,15 +794,15 @@ npm install -g dorkos. Your machine. Your agents. Your rules.
 ### 4C. Comparison Section (Anti-Positioning)
 
 ```
-YOU'RE THE BOTTLENECK.
+INTELLIGENCE DOESN'T SCALE. COORDINATION DOES.
 
-Your AI coding agent can write better code than you at 3am.
-But it can't schedule itself to run at 3am.
+Your AI coding agent can write brilliant code.
+But it can't schedule itself to run overnight.
 It can't tell you what it did.
 It can't ask the agent next door for help.
 It can't remember what you told it yesterday.
 
-You — the human — are the scheduler, the memory, the messenger, and the router.
+The agents aren't the problem. The missing layer is.
 
 We solved this for applications fifty years ago.
 We called it an operating system.
@@ -840,6 +840,23 @@ community_signals:
 # Anti-pattern: No generic testimonials. No "Great product!" quotes.
 # Developer audiences see through these immediately.
 ```
+
+---
+
+## Positioning Guideline: Human-Empowerment Framing (Added 2026-03-02)
+
+All copy generated from this Value Architecture must pass the **Apple test**: Would Apple say this about the Mac? If it frames the human as the problem, the limitation, or the bottleneck — reframe it.
+
+**Core thesis:** "Intelligence doesn't scale. Coordination does."
+
+**Principles:**
+- Pro-human — AI agents are tools for human creativity and empowerment
+- Never imply agents are better, smarter, or more capable than people
+- Don't make people feel bad for human needs (sleep, connection, belonging)
+- Champion the creatives and builders — they're the point, not the bottleneck
+- Frame: "You've always had more ideas than hours. That ratio just changed."
+
+**Superseded framing:** "YOU'RE THE BOTTLENECK", "Your AI coding agent can write better code than you at 3am", "You — the human — are the scheduler, the memory, the messenger, and the router", "Your AI Never Sleeps" (as primary tagline). These have been replaced with empowerment-focused alternatives throughout this document. See `meta/brand-foundation.md` > "Human-Empowerment Positioning" for the full reference table.
 
 ---
 
@@ -893,5 +910,8 @@ changelog:
   - date: "2026-02-27"
     change: "Comprehensive language reframe: removed 'server-side' (→ independent/not tied to IDE), 'infrastructure' (→ system/foundation/layer), 'audit trail'/'session locking' from marketing layers, 'universal message bus' (→ Apple-style outcome language), 'renting' metaphor, 'can talk' (→ connected). Pillar 2 tagline: 'Agents, Connected'. Relay proof reframed from reliability to connectivity/flexibility. Control pillar refocused on open source + self-hosted + transparency. Productivity woven into 1C, VL-01, VL-03, Hero, Discovery, Advocacy, Headline Bank."
     scope: "All phases — 40+ edits across entire document"
+  - date: "2026-03-02"
+    change: "Pro-human positioning shift. Removed anti-human framing: 'YOU'RE THE BOTTLENECK', 'better code than you at 3am', 'you are the scheduler/memory/messenger/router'. Replaced with empowerment framing: 'Intelligence doesn't scale. Coordination does.' Primary tagline changed from 'Your AI Never Sleeps' to coordination thesis. Added Human-Empowerment Positioning guideline section. Updated VL-01 identity, VL-03 identity, 1D anti-positioning, Headline Bank Pillar 1, 4B/4C activation templates."
+    scope: "1D, VL-01, VL-03, Headline Bank, 4B, 4C, new Positioning Guideline section"
 ```
 

@@ -408,14 +408,14 @@ export function GET() {
 <rss version="2.0">
   <channel>
     <title>DorkOS Blog</title>
-    <link>https://dorkos.dev/blog</link>
+    <link>https://dorkos.ai/blog</link>
     <description>Updates from the DorkOS team</description>
     ${posts
       .map(
         (post) => `
     <item>
       <title>${post.data.title}</title>
-      <link>https://dorkos.dev${post.url}</link>
+      <link>https://dorkos.ai${post.url}</link>
       <pubDate>${post.data.date.toUTCString()}</pubDate>
       <description>${post.data.description ?? ''}</description>
     </item>`

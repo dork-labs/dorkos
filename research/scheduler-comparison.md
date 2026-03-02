@@ -342,7 +342,7 @@ Designed for maximum LLM readability:
 
 ```json
 {
-  "$schema": "https://dorkos.dev/schemas/schedules.json",
+  "$schema": "https://dorkos.ai/schemas/schedules.json",
   "version": 1,
   "jobs": [
     {

@@ -182,7 +182,7 @@ N/A — This is a new feature, not a bug fix.
 
 The research identified a perceptual gap:
 - `npm install -g dorkos` signals "side project" — one of thousands of npm packages
-- `curl -fsSL https://dorkos.dev/install | bash` signals "first-class infrastructure" — own distribution channel
+- `curl -fsSL https://dorkos.ai/install | bash` signals "first-class infrastructure" — own distribution channel
 
 Claude Code's migration from npm to native binary was as much a repositioning as a technical improvement. DorkOS serving the same audience should present the same level of install sophistication, even if the underlying mechanism still uses npm.
 
@@ -227,11 +227,11 @@ This provides the `curl` UX without requiring binary compilation.
 | 1 | Install methods to offer | **curl script + npm + brew** (Tier 1) | Fastest path to parity with competitors. Every tool in our competitive set offers 3+ methods; we currently offer 1. The curl script wraps npm (like OpenClaw), the brew tap wraps npm. Days of work, not weeks. Native binary (Bun compile) is deferred to a separate spec |
 | 2 | Post-install behavior | **Offer but don't force** | After install, prompt `Run setup wizard now? (y/N)`. Skips by default — pressing Enter continues without the wizard. Respects expert users while surfacing the option. The web UI FTUE handles deeper onboarding |
 | 3 | Website install presentation | **Tabbed install with curl as default** | 3-tab UI (curl / npm / brew) on both the homepage InstallMoment and docs install page. Curl tab pre-selected. Copy-to-clipboard on each code block. Matches Claude Code's gold-standard pattern |
-| 4 | Install script host URL | **dorkos.dev/install** | Clean, brandable URL. Served as a static file from the marketing site (Next.js public directory or API route). Version-pinnable: `curl ... \| bash -s 1.2.3` |
+| 4 | Install script host URL | **dorkos.ai/install** | Clean, brandable URL. Served as a static file from the marketing site (Next.js public directory or API route). Version-pinnable: `curl ... \| bash -s 1.2.3` |
 | 5 | Install script security | **HTTPS only, no checksum (for now)** | Since the script wraps npm (not downloading arbitrary binaries), the security surface is the same as running npm directly. Checksum verification becomes critical when/if we move to binary distribution |
 | 6 | Script capabilities | **Node.js check + npm install + post-install message + optional init** | Detect Node.js 18+, run npm install, print clean completion message, ask about setup wizard. Support `--version`, `--no-prompt` (for CI), and `--dry-run` flags |
 | 7 | Homebrew tap structure | **Separate GitHub repo: dork-labs/homebrew-dorkos** | Standard Homebrew tap pattern. Formula wraps `npm install -g dorkos`. Updated on each npm release. Minimal maintenance via GitHub Actions |
-| 8 | Hero CTA update | **curl command replaces npm command** | The hero CTA (`ActivityFeedHero.tsx`) and install moment (`InstallMoment.tsx`) should show `curl -fsSL https://dorkos.dev/install \| bash` as the primary command. npm is one tab away |
+| 8 | Hero CTA update | **curl command replaces npm command** | The hero CTA (`ActivityFeedHero.tsx`) and install moment (`InstallMoment.tsx`) should show `curl -fsSL https://dorkos.ai/install \| bash` as the primary command. npm is one tab away |
 | 9 | Mobile install UX | **"Get started" button linking to docs** | On mobile, show a "Get started" button linking to the docs install page (current pattern). The curl command is too long for mobile display. Docs page has the full tabbed experience |
 | 10 | Docs install page update | **Add curl as first tab, keep existing content** | The existing `installation.mdx` has good content for npm, Obsidian, and Self-Hosted. Add curl as a new first tab, keep the other 3 tabs as-is. Reorder: curl (recommended) / npm / brew / Obsidian / Self-Hosted |
 
@@ -254,7 +254,7 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=1 ;;
     --no-prompt) DORKOS_NO_PROMPT=1 ;;
     --help)
-      echo "Usage: curl -fsSL https://dorkos.dev/install | bash [-s VERSION]"
+      echo "Usage: curl -fsSL https://dorkos.ai/install | bash [-s VERSION]"
       echo ""
       echo "Flags (pass after -s --):"
       echo "  --dry-run     Show what would happen without installing"
@@ -262,9 +262,9 @@ for arg in "$@"; do
       echo "  --help        Show this help"
       echo ""
       echo "Examples:"
-      echo "  curl -fsSL https://dorkos.dev/install | bash"
-      echo "  curl -fsSL https://dorkos.dev/install | bash -s 1.2.3"
-      echo "  curl -fsSL https://dorkos.dev/install | bash -s -- --dry-run"
+      echo "  curl -fsSL https://dorkos.ai/install | bash"
+      echo "  curl -fsSL https://dorkos.ai/install | bash -s 1.2.3"
+      echo "  curl -fsSL https://dorkos.ai/install | bash -s -- --dry-run"
       exit 0
       ;;
   esac
@@ -327,7 +327,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "  Start:   dorkos"
 echo "  Setup:   dorkos init"
-echo "  Docs:    https://dorkos.dev/docs"
+echo "  Docs:    https://dorkos.ai/docs"
 echo ""
 
 # Offer setup wizard (non-CI only)
@@ -346,7 +346,7 @@ The `InstallMoment.tsx` and docs `installation.mdx` should present install metho
 
 **Tab 1 — "One-liner" (pre-selected):**
 ```
-curl -fsSL https://dorkos.dev/install | bash
+curl -fsSL https://dorkos.ai/install | bash
 ```
 Copy button. Subtext: "Checks Node.js, installs via npm, offers setup wizard."
 
@@ -367,7 +367,7 @@ Copy button. Subtext: "macOS and Linux. Updates via brew upgrade."
 ```ruby
 class Dorkos < Formula
   desc "OS-layer for AI agents — scheduling, memory, and coordination"
-  homepage "https://dorkos.dev"
+  homepage "https://dorkos.ai"
   url "https://registry.npmjs.org/dorkos/-/dorkos-#{version}.tgz"
   license "MIT"
 

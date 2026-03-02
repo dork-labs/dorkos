@@ -402,7 +402,7 @@ Each project directory that wants to participate in Mesh creates `.claude/agent.
 
 ```json
 {
-  "$schema": "https://dorkos.dev/schemas/mesh/agent-card/v1.json",
+  "$schema": "https://dorkos.ai/schemas/mesh/agent-card/v1.json",
   "id": "my-project",
   "name": "My Project Agent",
   "version": "1.0.0",

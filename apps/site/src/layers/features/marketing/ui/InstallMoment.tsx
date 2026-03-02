@@ -12,7 +12,7 @@ const INSTALL_METHODS = [
   {
     id: 'curl',
     label: 'One-liner',
-    command: 'curl -fsSL https://dorkos.dev/install | bash',
+    command: 'curl -fsSL https://dorkos.ai/install | bash',
     description: 'Checks Node.js, installs via npm, offers setup wizard.',
     recommended: true,
   },

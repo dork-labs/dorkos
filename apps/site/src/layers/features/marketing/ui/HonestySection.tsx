@@ -31,17 +31,17 @@ export function HonestySection() {
         <motion.div variants={BRACKET} className="absolute -bottom-8 -right-8 w-6 h-6 border-r-2 border-b-2 border-cream-tertiary/20 origin-bottom-right" />
 
         <motion.span variants={REVEAL} className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-green block mb-10">
-          Honest by Design
+          Open by Default
         </motion.span>
 
         <motion.p variants={REVEAL} className="text-cream-white font-semibold text-lg leading-[1.7] mb-6">
-          DorkOS handles the boring parts &mdash; making sure your agents run on time,
-          talk to each other, and remember what happened last time. It runs on
-          your computer. Your data stays on your computer.
+          DorkOS is open source, MIT licensed, and runs wherever you put
+          it &mdash; your laptop, a VPS, a Raspberry Pi. Every line of code is
+          readable. Every decision is documented. Nothing phones home.
         </motion.p>
 
         <motion.p variants={REVEAL} className="text-cream-tertiary/70 text-lg leading-[1.7]">
-          The brains are Claude&apos;s. The control is yours.
+          It coordinates your agents. The thinking is theirs. The system is yours.
         </motion.p>
       </motion.div>
     </section>

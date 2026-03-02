@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 83,
+  "nextNumber": 84,
   "specs": [
     {
       "number": 1,
@@ -575,6 +575,13 @@
       "title": "Settings Reset & Server Restart",
       "created": "2026-03-01",
       "status": "specified"
+    },
+    {
+      "number": 83,
+      "slug": "marketing-faq-section",
+      "title": "Marketing FAQ Section",
+      "created": "2026-03-02",
+      "status": "draft"
     }
   ]
 }

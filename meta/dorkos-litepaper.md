@@ -13,7 +13,7 @@ But they're also isolated.
 
 A coding agent runs one session, does one thing, and forgets. It doesn't know what your other agents are doing. It doesn't remember what it shipped last week. It can't reach out to tell your team that a deploy succeeded. It can't wake up at 3am and execute your roadmap. It can't coordinate with the agent managing your finances to approve a budget before placing an order.
 
-The gap isn't intelligence. Intelligence is what the models provide, and they're getting better every quarter. The gap is infrastructure.
+The gap isn't intelligence. Intelligence is what the models provide, and they're getting better every quarter. The gap is coordination — the layer that lets human vision and AI capability work together at scale.
 
 Today's agents are like applications running without an operating system — each one manages its own memory, its own I/O, its own scheduling. Every session starts from scratch. There's no shared state. No communication layer. No heartbeat.
 
@@ -33,7 +33,7 @@ The analogy is precise: DorkOS is to AI agents what an operating system is to ap
 
 DorkOS gives agents:
 
-- **A heartbeat** — scheduled execution that runs while you're asleep
+- **A heartbeat** — scheduled execution that keeps your ideas moving forward
 - **A memory** — persistent context that survives across sessions
 - **A voice** — a universal message bus for agents, humans, and external services
 - **A network** — agent discovery, network topology, and access control
@@ -264,6 +264,6 @@ The trajectory is clear. AI agents are becoming infrastructure — as fundamenta
 
 DorkOS is the operating layer for that future.
 
-Any agent. Any model. Your infrastructure. Your rules.
+Any agent. Any model. Your system. Your rules.
 
-Your AI never sleeps.
+You've always had more ideas than hours. That ratio just changed.

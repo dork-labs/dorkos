@@ -36,7 +36,7 @@ Every competitor in DorkOS's space offers 3+ install methods with `curl | bash` 
 | Codex | `npm install -g` | 4 |
 | **DorkOS** | **`npm install -g`** | **1** |
 
-The perceptual gap is significant: `npm install -g` signals "side project" (one of thousands of npm packages), while `curl -fsSL https://dorkos.dev/install | bash` signals "first-class infrastructure" (own distribution channel). Claude Code's migration from npm to native binary was as much a repositioning as a technical improvement.
+The perceptual gap is significant: `npm install -g` signals "side project" (one of thousands of npm packages), while `curl -fsSL https://dorkos.ai/install | bash` signals "first-class infrastructure" (own distribution channel). Claude Code's migration from npm to native binary was as much a repositioning as a technical improvement.
 
 ---
 
@@ -44,7 +44,7 @@ The perceptual gap is significant: `npm install -g` signals "side project" (one 
 
 - Provide three install methods: curl script (primary), npm (secondary), Homebrew (tertiary)
 - Present a tabbed install UI on both the homepage and docs with curl pre-selected
-- Serve the install script at `https://dorkos.dev/install`
+- Serve the install script at `https://dorkos.ai/install`
 - Support CI/automation via `--no-prompt` and `--dry-run` flags
 - Offer (but not force) the setup wizard after install
 - Maintain full backward compatibility with existing npm install
@@ -81,7 +81,7 @@ No new npm dependencies are required. All changes use existing framework capabil
 A Next.js Route Handler that serves a bash script with `Content-Type: text/plain`. This approach is preferred over a static file in `public/` because:
 - Route Handlers support edge caching and headers control
 - The script can be versioned alongside the site code
-- URL stays clean: `dorkos.dev/install` (no file extension)
+- URL stays clean: `dorkos.ai/install` (no file extension)
 
 **Route Handler:**
 
@@ -125,7 +125,7 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=1 ;;
     --no-prompt) DORKOS_NO_PROMPT=1 ;;
     --help)
-      echo "Usage: curl -fsSL https://dorkos.dev/install | bash [-s VERSION]"
+      echo "Usage: curl -fsSL https://dorkos.ai/install | bash [-s VERSION]"
       echo ""
       echo "Flags (pass after -s --):"
       echo "  --dry-run     Show what would happen without installing"
@@ -133,9 +133,9 @@ for arg in "$@"; do
       echo "  --help        Show this help"
       echo ""
       echo "Examples:"
-      echo "  curl -fsSL https://dorkos.dev/install | bash"
-      echo "  curl -fsSL https://dorkos.dev/install | bash -s 1.2.3"
-      echo "  curl -fsSL https://dorkos.dev/install | bash -s -- --dry-run"
+      echo "  curl -fsSL https://dorkos.ai/install | bash"
+      echo "  curl -fsSL https://dorkos.ai/install | bash -s 1.2.3"
+      echo "  curl -fsSL https://dorkos.ai/install | bash -s -- --dry-run"
       exit 0
       ;;
   esac
@@ -207,7 +207,7 @@ echo "  DorkOS ${INSTALLED_VERSION} installed successfully."
 echo ""
 echo "  Start:   dorkos"
 echo "  Setup:   dorkos init"
-echo "  Docs:    https://dorkos.dev/docs"
+echo "  Docs:    https://dorkos.ai/docs"
 echo ""
 
 # Offer setup wizard (non-CI only)
@@ -247,7 +247,7 @@ const INSTALL_METHODS = [
   {
     id: 'curl',
     label: 'One-liner',
-    command: 'curl -fsSL https://dorkos.dev/install | bash',
+    command: 'curl -fsSL https://dorkos.ai/install | bash',
     description: 'Checks Node.js, installs via npm, offers setup wizard.',
   },
   {
@@ -274,7 +274,7 @@ const INSTALL_METHODS = [
 - Description text below command in `text-xs text-[#7A756A]`
 
 **CTA updates:**
-- Desktop primary CTA: change text to `curl -fsSL https://dorkos.dev/install | bash` and link to `#install` (scroll anchor)
+- Desktop primary CTA: change text to `curl -fsSL https://dorkos.ai/install | bash` and link to `#install` (scroll anchor)
 - Mobile primary CTA: keep "Get started" linking to `/docs/getting-started/quickstart`
 
 #### 2b. ActivityFeedHero.tsx CTA Update
@@ -293,7 +293,7 @@ The `ActivityFeedHero` receives `ctaText` and `ctaHref` as props. No component c
 
 // After
 <ActivityFeedHero
-  ctaText="curl -fsSL https://dorkos.dev/install | bash"
+  ctaText="curl -fsSL https://dorkos.ai/install | bash"
   ctaHref="/docs/getting-started/installation"
   githubHref={siteConfig.github}
 />
@@ -318,7 +318,7 @@ Add curl as the first tab, brew as a new tab, reorder to: `One-liner (Recommende
 ### Install DorkOS
 
 ```bash
-curl -fsSL https://dorkos.dev/install | bash
+curl -fsSL https://dorkos.ai/install | bash
 ```
 
 The install script checks for Node.js 18+, installs DorkOS via npm,
@@ -346,9 +346,9 @@ dorkos
 <Callout type="info">
 **CI/Automation:** Use `--no-prompt` to skip interactive prompts:
 ```bash
-curl -fsSL https://dorkos.dev/install | bash -s -- --no-prompt
+curl -fsSL https://dorkos.ai/install | bash -s -- --no-prompt
 ```
-Pin a specific version: `curl -fsSL https://dorkos.dev/install | bash -s 1.2.3`
+Pin a specific version: `curl -fsSL https://dorkos.ai/install | bash -s 1.2.3`
 </Callout>
 </Tab>
 
@@ -392,7 +392,7 @@ Update the prerequisites section to mention curl as the primary method:
 ```markdown
 - **Node.js 18+** installed
 - **Claude Code CLI** installed and authenticated (`claude` must be available in your PATH)
-- **DorkOS** installed via `curl -fsSL https://dorkos.dev/install | bash` (or `npm install -g dorkos`)
+- **DorkOS** installed via `curl -fsSL https://dorkos.ai/install | bash` (or `npm install -g dorkos`)
 ```
 
 ### 4. Homebrew Tap
@@ -404,7 +404,7 @@ A separate GitHub repository `dork-labs/homebrew-dorkos` containing a single for
 ```ruby
 class Dorkos < Formula
   desc "OS-layer for AI agents — scheduling, memory, and coordination"
-  homepage "https://dorkos.dev"
+  homepage "https://dorkos.ai"
   url "https://registry.npmjs.org/dorkos/-/dorkos-0.5.0.tgz"
   sha256 "PLACEHOLDER_SHA256"
   license "MIT"
@@ -451,9 +451,9 @@ This runs the Claude CLI check (`checkClaude()`) and prints the version, confirm
 ### Install Flow (Primary — curl)
 
 ```
-User visits dorkos.dev
+User visits dorkos.ai
   → Sees tabbed install with "One-liner" pre-selected
-  → Copies: curl -fsSL https://dorkos.dev/install | bash
+  → Copies: curl -fsSL https://dorkos.ai/install | bash
   → Runs in terminal
   → Script checks Node.js 18+ ✓
   → Script checks npm ✓
@@ -468,7 +468,7 @@ User visits dorkos.dev
 ### Install Flow (Alternative — npm)
 
 ```
-User visits dorkos.dev
+User visits dorkos.ai
   → Clicks "npm" tab
   → Copies: npm install -g dorkos
   → Runs in terminal (existing flow, unchanged)
@@ -477,7 +477,7 @@ User visits dorkos.dev
 ### Install Flow (Alternative — Homebrew)
 
 ```
-User visits dorkos.dev
+User visits dorkos.ai
   → Clicks "Homebrew" tab
   → Copies: brew install dorkos-ai/tap/dorkos
   → Runs in terminal
@@ -578,7 +578,7 @@ describe('InstallMoment', () => {
     render(<InstallMoment />)
     await user.click(screen.getByRole('button', { name: /copy/i }))
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      'curl -fsSL https://dorkos.dev/install | bash',
+      'curl -fsSL https://dorkos.ai/install | bash',
     )
   })
 })

@@ -43,6 +43,8 @@ DorkOS is starting.
 
 **Why Jobs wins short-form:** Two lines. First builds warmth ("brilliant"). Second drops the floor out ("when you leave"). The pause between recognition and gut-punch is perfect. No wasted syllable.
 
+**Editorial note (2026-03-02):** "When you leave" centers human absence as the problem. Consider reframing: the issue is the missing coordination layer, not the human stepping away. An empowerment-focused alternative: "Your agents are brilliant. They just have no way to coordinate." See `decisions.md` Decision 16.
+
 ---
 
 ### Option B: Long-Form
@@ -56,6 +58,8 @@ DorkOS is starting.
 The operating system for autonomous AI agents.
 
 **Why Wieden wins long-form:** It's a scene, not a statement. You feel the waste before you finish reading. The clock detail (11pm, eight hours) is specific enough to be a memory. "Waiting for permission to think" is devastating — it names the absurdity without explaining it.
+
+**Editorial note (2026-03-02):** "Waiting for permission to think" frames human presence as gatekeeping — as if the human is the obstacle. The pro-human positioning reframes this: the agents aren't waiting for the human; the coordination layer is missing. Consider: "The smartest tools you've ever used had no way to keep working — because nothing connected them." See `decisions.md` Decision 16.
 
 ---
 
@@ -181,7 +185,7 @@ You open your laptop. Console shows the night at a glance: three PRs ready for r
 
 You approve two PRs. You request a change on the third. You queue two more tasks for the day.
 
-Your agents have been productive for eight hours. You have been awake for four minutes.
+The system you designed has been productive for eight hours. You've been awake for four minutes.
 
 ---
 
@@ -201,7 +205,7 @@ SUBSYSTEMS
 
 | | |
 |---|---|
-| **No schedule** | **Pulse** — Cron-based autonomous execution. Your agents run while you sleep. |
+| **No schedule** | **Pulse** — Cron-based autonomous execution. Your ideas keep moving forward. |
 | **No communication** | **Relay** — Built-in messaging. Telegram, webhooks, inter-agent channels. Your agents reach you. |
 | **No coordination** | **Mesh** — Agent discovery and network. Your agents find each other and collaborate. |
 | **No memory** | **Wing** — Persistent context across sessions. Your agents remember. `Coming soon` |
@@ -244,11 +248,13 @@ One person. Ten agents. Ship around the clock.
 > Thirty million users. An exit in twelve months. Warner Bros. Art Blocks.
 > And then this — because the tools that matter most are built by the people who need them.
 
-**Boldness invitation — Source: Ive**
+**Boldness invitation — Source: Ive (updated 2026-03-02)**
 
-> The developers building agent teams will outship everyone.
-> Not because they are better.
-> Because they never stop.
+> You've always had more ideas than hours.
+> That ratio just changed.
+> The builders who coordinate their agents will ship what they've always imagined.
+
+*Original copy: "The developers building agent teams will outship everyone. / Not because they are better. / Because they never stop." Updated to align with pro-human positioning — empowerment over competitive framing. See `decisions.md` Decision 16.*
 
 *Design direction (Ive): Background returns to #0A0A0A. The dot grid reappears faintly. The tribal line at 28-32px, full contrast. The origin at 15px, 45% opacity — provenance, not biography. The boldness invitation at 18px, 70% opacity — trajectory, not taunt.*
 
@@ -258,7 +264,9 @@ One person. Ten agents. Ship around the clock.
 
 **Source: Wieden + Ive**
 
-> Your agents are ready. Leave the rest to them.
+> Your agents are ready. Your ideas keep moving forward.
+
+*Editorial note (2026-03-02): Original was "Your agents are ready. Leave the rest to them." — reframed because "leave the rest to them" implies the human's role is done or lesser. The new framing centers the human's vision continuing through the system they built.*
 
 Then, after 80px of space, centered, monospaced:
 

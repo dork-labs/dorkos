@@ -494,7 +494,7 @@ This framework covers the full journey from CLI install to multi-module discover
   Directory: /Users/kai/projects (detected from cwd)
   Features: Chat enabled | Pulse disabled | Relay disabled | Mesh disabled
 
-  To enable additional features, see: https://dorkos.dev/docs/configuration
+  To enable additional features, see: https://dorkos.ai/docs/configuration
   ```
 - No "Welcome to DorkOS!" message. No ASCII art. Output that is greppable, informative, and clean.
 - On first run only, append a single line: "New to DorkOS? Start a session at http://localhost:4242" — then never again (store a first-run flag).

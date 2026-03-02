@@ -94,7 +94,7 @@ How should `.dork/agent.json` be structured? Draft schema:
 
 ```json
 {
-  "$schema": "https://dorkos.dev/schemas/agent.json",
+  "$schema": "https://dorkos.ai/schemas/agent.json",
   "id": "my-backend",
   "name": "Backend API Agent",
   "description": "Manages the Express API server",

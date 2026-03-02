@@ -13,7 +13,7 @@ for arg in "$@"; do
     --no-prompt) DORKOS_NO_PROMPT=1 ;;
     --) ;; # skip separator
     --help)
-      echo "Usage: curl -fsSL https://dorkos.dev/install | bash [-s VERSION]"
+      echo "Usage: curl -fsSL https://dorkos.ai/install | bash [-s VERSION]"
       echo ""
       echo "Flags (pass after -s --):"
       echo "  --dry-run     Show what would happen without installing"
@@ -21,9 +21,9 @@ for arg in "$@"; do
       echo "  --help        Show this help"
       echo ""
       echo "Examples:"
-      echo "  curl -fsSL https://dorkos.dev/install | bash"
-      echo "  curl -fsSL https://dorkos.dev/install | bash -s 1.2.3"
-      echo "  curl -fsSL https://dorkos.dev/install | bash -s -- --dry-run"
+      echo "  curl -fsSL https://dorkos.ai/install | bash"
+      echo "  curl -fsSL https://dorkos.ai/install | bash -s 1.2.3"
+      echo "  curl -fsSL https://dorkos.ai/install | bash -s -- --dry-run"
       exit 0
       ;;
     *) DORKOS_VERSION="$arg" ;;
@@ -94,7 +94,7 @@ echo "  DorkOS ${INSTALLED_VERSION} installed successfully."
 echo ""
 echo "  Start:   dorkos"
 echo "  Setup:   dorkos init"
-echo "  Docs:    https://dorkos.dev/docs"
+echo "  Docs:    https://dorkos.ai/docs"
 echo ""
 
 if [ "$DORKOS_NO_PROMPT" != "1" ] && [ -t 0 ]; then
