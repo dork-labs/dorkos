@@ -45,7 +45,7 @@ describe('AgentCard', () => {
     );
 
     expect(screen.getByText('my-app')).toBeTruthy();
-    expect(screen.getByText('/home/user/projects/my-app')).toBeTruthy();
+    expect(screen.getByText('~/projects/my-app')).toBeTruthy();
   });
 
   it('shows marker badges', () => {
@@ -57,22 +57,20 @@ describe('AgentCard', () => {
     expect(screen.getByText('Copilot')).toBeTruthy();
   });
 
-  it('shows git branch when provided', () => {
-    const candidate = createCandidate({ gitBranch: 'feature/onboarding' });
+  it('shows git remote when provided', () => {
+    const candidate = createCandidate({ gitRemote: 'https://github.com/dork-labs/dorkos.git' });
 
     render(<AgentCard candidate={candidate} selected={false} onToggle={vi.fn()} />);
 
-    expect(screen.getByText('feature/onboarding')).toBeTruthy();
+    expect(screen.getByText('dork-labs/dorkos')).toBeTruthy();
   });
 
-  it('does not render git branch when null', () => {
-    const { container } = render(
+  it('does not render git remote when null', () => {
+    render(
       <AgentCard candidate={createCandidate()} selected={false} onToggle={vi.fn()} />
     );
 
-    // No font-mono element for git branch
-    const monoElements = container.querySelectorAll('.font-mono');
-    expect(monoElements).toHaveLength(0);
+    expect(screen.queryByText('github.com')).toBeNull();
   });
 
   it('clicking the card calls onToggle', () => {

@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix scroll containment and improve agent discovery UX
 - Reset stale status fields on stop and broadcast changes to other tabs
 - Restore code block padding after opting out of fumadocs dark theme
 - Update debug commands for .dork directory and fix ADR/README inventory

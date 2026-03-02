@@ -13,6 +13,7 @@ export interface ScanCandidate {
   markers: string[];
   gitBranch: string | null;
   gitRemote: string | null;
+  hasDorkManifest: boolean;
 }
 
 /** Options for starting a discovery scan. */

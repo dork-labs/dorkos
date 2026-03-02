@@ -71,7 +71,7 @@ export function PulsePresetsStep({ onStepComplete }: PulsePresetsStepProps) {
   }, [presets, selectedCount, resolvedEnabled, createSchedule, onStepComplete]);
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8 px-4">
+    <div className="mx-auto w-full max-w-2xl flex-1 space-y-8 overflow-y-auto px-4">
       <div className="space-y-2 text-center">
         <h2 className="text-2xl font-semibold tracking-tight">
           Want your agents to work while you sleep?

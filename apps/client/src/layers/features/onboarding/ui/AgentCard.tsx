@@ -1,3 +1,4 @@
+import { Folder, GitBranch } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { formatMarker } from '../lib/marker-labels';
@@ -5,16 +6,32 @@ import { useSpotlight } from '../lib/use-spotlight';
 import type { ScanCandidate } from '../model/use-discovery-scan';
 
 interface AgentCardProps {
-  candidate: ScanCandidate & { hasDorkManifest: boolean };
+  candidate: ScanCandidate;
   selected: boolean;
   onToggle: () => void;
+}
+
+/** Replace home directory prefix with ~ for compact display. */
+function formatPath(path: string): string {
+  return path.replace(/^\/(?:Users|home)\/[^/]+/, '~');
+}
+
+/** Extract org/repo from a git remote URL (HTTPS or SSH). */
+function formatRemote(remote: string): string {
+  // git@github.com:org/repo.git → org/repo
+  const sshMatch = remote.match(/:([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (sshMatch) return sshMatch[1];
+  // https://github.com/org/repo.git → org/repo
+  const segments = remote.replace(/\.git$/, '').split('/');
+  if (segments.length >= 2) return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+  return remote;
 }
 
 /**
  * Card displaying a discovered agent project with selection toggle.
  *
  * Clicking anywhere on the card toggles selection. Shows project name,
- * truncated path, AI marker badges, and git branch when available.
+ * truncated path, AI marker badges, and git remote when available.
  * Features a mouse-tracking spotlight effect on hover.
  */
 export function AgentCard({ candidate, selected, onToggle }: AgentCardProps) {
@@ -75,10 +92,8 @@ export function AgentCard({ candidate, selected, onToggle }: AgentCardProps) {
           )}
         </div>
 
-        <p className="truncate text-sm text-muted-foreground">{candidate.path}</p>
-
-        {/* Marker badges */}
-        <div className="flex flex-wrap gap-1.5">
+ {/* Marker badges */}
+ <div className="flex flex-wrap gap-1.5">
           {candidate.markers.map((marker) => (
             <Badge key={marker} variant="secondary" className="text-xs">
               {formatMarker(marker)}
@@ -86,10 +101,16 @@ export function AgentCard({ candidate, selected, onToggle }: AgentCardProps) {
           ))}
         </div>
 
-        {/* Git branch */}
-        {candidate.gitBranch && (
-          <p className="text-xs text-muted-foreground">
-            <span className="font-mono">{candidate.gitBranch}</span>
+        <p className="flex items-center gap-1.5 truncate text-sm text-muted-foreground">
+          <Folder className="size-3.5 shrink-0" />
+          <span className="truncate font-mono">{formatPath(candidate.path)}</span>
+        </p>
+
+        {/* Git remote */}
+        {candidate.gitRemote && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <GitBranch className="size-3 shrink-0" />
+            <span className="truncate font-mono">{formatRemote(candidate.gitRemote)}</span>
           </p>
         )}
       </div>

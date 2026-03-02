@@ -172,9 +172,9 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
               stiffness: 200,
               duration: reducedMotion ? 0.15 : undefined,
             }}
-            className="absolute inset-0 overflow-y-auto"
+            className="absolute inset-0 flex flex-col"
           >
-            <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6">
+            <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-4 py-8 sm:px-6">
               {currentStep === 0 && (
                 <AgentDiscoveryStep onStepComplete={handleStepComplete} />
               )}
