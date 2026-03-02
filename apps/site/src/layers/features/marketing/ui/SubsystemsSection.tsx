@@ -1,107 +1,10 @@
 'use client'
 
 import { motion } from 'motion/react'
+import { SUBSYSTEMS } from '@dorkos/icons/subsystems'
+import { BRAND_COLORS } from '@dorkos/icons/brand'
 import { subsystems } from '../lib/subsystems'
-import { REVEAL, SPRING, STAGGER, VIEWPORT } from '../lib/motion-variants'
-
-// ─── Animated SVG Icons ──────────────────────────────────────────────────────
-
-/** Draw path variant — pathLength animates from 0 to 1. */
-const DRAW = {
-  hidden: { pathLength: 0, opacity: 0 },
-  visible: { pathLength: 1, opacity: 1, transition: { duration: 1.2, ease: 'easeInOut' as const } },
-}
-
-/** Scale-in variant for SVG circles/nodes. */
-const NODE_IN = {
-  hidden: { scale: 0, opacity: 0 },
-  visible: { scale: 1, opacity: 1, transition: SPRING },
-}
-
-/** Bar grow variant — height animates from 0. */
-const barGrow = (height: number, delay: number) => ({
-  hidden: { height: 0, opacity: 0 },
-  visible: { height, opacity: 1, transition: { ...SPRING, delay: delay * 0.08 } },
-})
-
-/** Slide-in variant for wing layers. */
-const slideIn = (delay: number) => ({
-  hidden: { x: -10, opacity: 0 },
-  visible: { x: 0, opacity: 1, transition: { ...SPRING, delay: delay * 0.1 } },
-})
-
-/** Animated SVG icons per subsystem — each element draws/grows on viewport entry. */
-const SUBSYSTEM_ICONS: Record<string, React.ReactNode> = {
-  pulse: (
-    <motion.svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"
-      initial="hidden" whileInView="visible" viewport={VIEWPORT}
-    >
-      {/* Timing bars grow from bottom — staggered heights */}
-      {[
-        { x: 2, h: 8, opacity: 0.7, i: 0 },
-        { x: 7, h: 14, opacity: 0.85, i: 1 },
-        { x: 12, h: 10, opacity: 0.6, i: 2 },
-        { x: 17, h: 16, opacity: 0.9, i: 3 },
-        { x: 22, h: 12, opacity: 0.75, i: 4 },
-      ].map(({ x, h, opacity, i }) => (
-        <motion.rect
-          key={x}
-          x={x} y={24 - h} width="3" rx="1"
-          fill="#E85D04" opacity={opacity}
-          variants={barGrow(h, i)}
-        />
-      ))}
-    </motion.svg>
-  ),
-  relay: (
-    <motion.svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"
-      initial="hidden" whileInView="visible" viewport={VIEWPORT}
-    >
-      <motion.circle cx="4" cy="14" r="3" fill="#E85D04" opacity={0.8} variants={NODE_IN} />
-      <motion.path d="M7 14 L14 8 L21 14" stroke="#E85D04" strokeWidth="1.5" opacity={0.5} fill="none" variants={DRAW} />
-      <motion.circle cx="24" cy="14" r="3" fill="#E85D04" opacity={0.8} variants={NODE_IN} />
-    </motion.svg>
-  ),
-  mesh: (
-    <motion.svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"
-      initial="hidden" whileInView="visible" viewport={VIEWPORT}
-    >
-      <motion.line x1="14" y1="5" x2="5" y2="22" stroke="#E85D04" strokeWidth="1.2" opacity={0.4} variants={DRAW} />
-      <motion.line x1="14" y1="5" x2="23" y2="22" stroke="#E85D04" strokeWidth="1.2" opacity={0.4} variants={DRAW} />
-      <motion.line x1="5" y1="22" x2="23" y2="22" stroke="#E85D04" strokeWidth="1.2" opacity={0.4} variants={DRAW} />
-      <motion.circle cx="14" cy="5" r="3" fill="#E85D04" opacity={0.8} variants={NODE_IN} />
-      <motion.circle cx="5" cy="22" r="3" fill="#E85D04" opacity={0.8} variants={NODE_IN} />
-      <motion.circle cx="23" cy="22" r="3" fill="#E85D04" opacity={0.8} variants={NODE_IN} />
-    </motion.svg>
-  ),
-  wing: (
-    <motion.svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"
-      initial="hidden" whileInView="visible" viewport={VIEWPORT}
-    >
-      <motion.rect x="4" y="6" width="20" height="4" rx="1.5" fill="#E85D04" opacity={0.4} variants={slideIn(0)} />
-      <motion.rect x="4" y="12" width="20" height="4" rx="1.5" fill="#E85D04" opacity={0.6} variants={slideIn(1)} />
-      <motion.rect x="4" y="18" width="20" height="4" rx="1.5" fill="#E85D04" opacity={0.8} variants={slideIn(2)} />
-    </motion.svg>
-  ),
-  console: (
-    <motion.svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"
-      initial="hidden" whileInView="visible" viewport={VIEWPORT}
-    >
-      <motion.path d="M5 10 L11 14 L5 18" stroke="#E85D04" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity={0.8} fill="none" variants={DRAW} />
-      <motion.line x1="14" y1="18" x2="23" y2="18" stroke="#E85D04" strokeWidth="2" strokeLinecap="round" opacity={0.5} variants={DRAW} />
-    </motion.svg>
-  ),
-  loop: (
-    <motion.svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"
-      initial="hidden" whileInView="visible" viewport={VIEWPORT}
-    >
-      <motion.path d="M14 4 A10 10 0 1 1 4 14" stroke="#E85D04" strokeWidth="1.5" fill="none" opacity={0.6} variants={DRAW} />
-      <motion.polygon points="14,2 14,6 10,4" fill="#E85D04" opacity={0.8} variants={NODE_IN} />
-    </motion.svg>
-  ),
-}
-
-// ─── Main export ─────────────────────────────────────────────────────────────
+import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
 
 /** Compact subsystems reference — benefit pill above, module details below. */
 export function SubsystemsSection() {
@@ -129,28 +32,62 @@ export function SubsystemsSection() {
         </motion.p>
 
         <motion.div variants={STAGGER} className="space-y-0">
-          {subsystems.map((sub) => (
-            <motion.div
-              key={sub.id}
-              variants={REVEAL}
-              className="py-4"
-              style={{ borderBottom: '1px solid rgba(139, 90, 43, 0.08)' }}
-            >
-              <div className="flex items-start gap-3">
-                <div className="shrink-0 w-7 h-7 flex items-center justify-center mt-0.5">
-                  {SUBSYSTEM_ICONS[sub.id]}
+          {subsystems.map((sub) => {
+            const def = SUBSYSTEMS.find((s) => s.id === sub.id)
+            const Icon = def?.icon
+            return (
+              <motion.div
+                key={sub.id}
+                variants={REVEAL}
+                className="py-4"
+                style={{ borderBottom: '1px solid rgba(139, 90, 43, 0.08)' }}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 w-7 h-7 flex items-center justify-center mt-0.5">
+                    {Icon && <Icon size={20} color={BRAND_COLORS.orange} strokeWidth={1.5} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-brand-orange font-mono text-sm">{sub.name}</span>
+                    <span className="text-charcoal text-sm"> &mdash; {sub.benefit}</span>
+                    {sub.status === 'coming-soon' && (
+                      <span className="text-2xs text-warm-gray-light ml-2 font-mono">In development</span>
+                    )}
+                    <p className="text-warm-gray text-sm mt-1">{sub.description}</p>
+                    {sub.integrations && sub.integrations.length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {sub.integrations.map((int) => {
+                          const IntIcon = int.icon
+                          const isComingSoon = int.status === 'coming-soon'
+                          return (
+                            <span
+                              key={int.label}
+                              className="inline-flex items-center gap-1 rounded-[3px] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+                              style={{
+                                background: isComingSoon
+                                  ? 'rgba(139, 90, 43, 0.04)'
+                                  : 'rgba(232, 93, 4, 0.06)',
+                                color: isComingSoon ? '#A69E93' : '#7A756A',
+                                border: `1px solid ${isComingSoon ? 'rgba(139, 90, 43, 0.08)' : 'rgba(232, 93, 4, 0.12)'}`,
+                              }}
+                            >
+                              <IntIcon size={10} strokeWidth={1.5} />
+                              {int.label}
+                              {int.qualifier && (
+                                <span className="opacity-60">&middot; {int.qualifier}</span>
+                              )}
+                              {isComingSoon && (
+                                <span className="ml-0.5 text-[8px] opacity-60">soon</span>
+                              )}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-brand-orange font-mono text-sm">{sub.name}</span>
-                  <span className="text-charcoal text-sm"> &mdash; {sub.benefit}</span>
-                  {sub.status === 'coming-soon' && (
-                    <span className="text-2xs text-warm-gray-light ml-2 font-mono">In development</span>
-                  )}
-                  <p className="text-warm-gray text-sm mt-1">{sub.description}</p>
-                </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            )
+          })}
         </motion.div>
       </motion.div>
     </section>

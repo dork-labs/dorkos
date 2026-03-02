@@ -1,18 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
+import { DorkLogo } from '@dorkos/icons/logos'
 
-interface MarketingHeaderProps {
-  logoSrc?: string
-  logoAlt?: string
-}
-
-export function MarketingHeader({
-  logoSrc = '/images/dork-logo.svg',
-  logoAlt = 'DorkOS',
-}: MarketingHeaderProps) {
+export function MarketingHeader() {
   const [isScrolled, setIsScrolled] = useState(false)
 
   useEffect(() => {
@@ -47,16 +39,10 @@ export function MarketingHeader({
       <div className="flex items-center justify-between w-full">
         <div className="w-16" />
         <Link href="/" className="flex flex-col items-center gap-1.5">
-          <Image
-            src={logoSrc}
-            alt={logoAlt}
-            width={40}
-            height={40}
+          <DorkLogo
+            size={120}
             className="w-auto transition-all duration-500 ease-out"
-            style={{
-              height: isScrolled ? '28px' : '40px',
-            }}
-            priority
+            style={{ height: isScrolled ? '28px' : '40px' }}
           />
           <span
             className="font-mono text-xs tracking-[0.15em] text-warm-gray-light transition-all duration-500 ease-out overflow-hidden"

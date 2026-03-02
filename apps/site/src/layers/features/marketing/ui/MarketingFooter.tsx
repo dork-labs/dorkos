@@ -1,5 +1,5 @@
-import Image from 'next/image'
 import Link from 'next/link'
+import { DorkLogo } from '@dorkos/icons/logos'
 
 interface SocialLink {
   name: string
@@ -8,8 +8,6 @@ interface SocialLink {
 }
 
 interface MarketingFooterProps {
-  logoSrc?: string
-  logoAlt?: string
   bylineText?: string
   bylineHref?: string
   email: string
@@ -17,8 +15,6 @@ interface MarketingFooterProps {
 }
 
 export function MarketingFooter({
-  logoSrc = '/images/dork-logo-white.svg',
-  logoAlt = 'DorkOS',
   bylineText = 'by Dorian Collier',
   bylineHref = 'https://doriancollier.com',
   email,
@@ -35,13 +31,7 @@ export function MarketingFooter({
       <footer className="py-20 pb-40 px-8 text-center bg-charcoal">
         {/* Logo */}
         <Link href="/" className="inline-block mb-1.5">
-          <Image
-            src={logoSrc}
-            alt={logoAlt}
-            width={40}
-            height={40}
-            className="h-10 w-auto mx-auto"
-          />
+          <DorkLogo variant="white" size={40} className="h-10 w-auto mx-auto" />
         </Link>
 
         {/* Tagline */}

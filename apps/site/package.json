@@ -13,6 +13,7 @@
     "clean": "rm -rf .next node_modules/.cache"
   },
   "dependencies": {
+    "@dorkos/icons": "workspace:*",
     "@base-ui/react": "^1.0.0",
     "@xyflow/react": "^12.10.1",
     "class-variance-authority": "^0.7.1",

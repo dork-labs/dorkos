@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { HeartPulse } from 'lucide-react';
 import { FeatureDisabledState } from '@/layers/shared/ui';
+import { icons } from '@dorkos/icons/registry';
 import { usePulseEnabled, useSchedules } from '@/layers/entities/pulse';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import type { PulseSchedule } from '@dorkos/shared/types';
@@ -24,7 +24,7 @@ export function PulsePanel() {
   if (!pulseEnabled) {
     return (
       <FeatureDisabledState
-        icon={HeartPulse}
+        icon={icons.pulse}
         name="Pulse"
         description="Pulse runs AI agent tasks on a schedule. Start DorkOS with the --pulse flag to enable it."
         command="dorkos --pulse"

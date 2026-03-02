@@ -1,11 +1,11 @@
 ---
 title: Installation
-description: Install DorkOS as an npm CLI, Obsidian plugin, or self-hosted server
+description: Install DorkOS via one-liner, npm, Homebrew, Obsidian plugin, or self-hosted
 ---
 
 # Installation
 
-DorkOS runs in three modes: as a standalone **npm CLI**, as an **Obsidian plugin**, or as a **self-hosted** development server. Pick the one that fits your workflow.
+DorkOS runs in several modes. Pick the install method that fits your workflow.
 
 ## Prerequisites
 
@@ -15,11 +15,61 @@ DorkOS runs in three modes: as a standalone **npm CLI**, as an **Obsidian plugin
 
 ## Choose Your Install Method
 
-<Tabs items={['npm CLI', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner (Recommended)', 'npm', 'Homebrew', 'Obsidian Plugin', 'Self-Hosted']}>
 
-<Tab value="npm CLI">
+<Tab value="One-liner (Recommended)">
 
-The fastest way to get started. Install the `dorkos` package globally and run it from any directory.
+The fastest way to get started. A single command that checks your environment, installs DorkOS, and optionally runs the setup wizard.
+
+<Steps>
+<Step>
+
+### Install DorkOS
+
+```bash
+curl -fsSL https://dorkos.dev/install | bash
+```
+
+The install script checks for Node.js 18+, installs DorkOS via npm, and optionally runs the setup wizard.
+
+</Step>
+<Step>
+
+### Set your API key
+
+```bash
+export ANTHROPIC_API_KEY="your-key-here"
+```
+
+To persist this, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
+
+</Step>
+<Step>
+
+### Start DorkOS
+
+```bash
+dorkos
+```
+
+The server starts on port 4242 and opens your browser automatically.
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  **CI/Automation:** Use `--no-prompt` to skip interactive prompts:
+  ```bash
+  curl -fsSL https://dorkos.dev/install | bash -s -- --no-prompt
+  ```
+  Pin a specific version: `curl -fsSL https://dorkos.dev/install | bash -s 1.2.3`
+</Callout>
+
+</Tab>
+
+<Tab value="npm">
+
+Install the `dorkos` package globally with your preferred package manager.
 
 <Steps>
 <Step>
@@ -47,10 +97,8 @@ bun add -g dorkos
 
 ### Set your API key
 
-DorkOS needs your Anthropic API key to communicate with Claude:
-
 ```bash
-export ANTHROPIC_API_KEY=your-key-here
+export ANTHROPIC_API_KEY="your-key-here"
 ```
 
 To persist this, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
@@ -73,13 +121,55 @@ dorkos --version
 dorkos
 ```
 
-The server starts on port 4242 and opens your browser automatically. Visit [http://localhost:4242](http://localhost:4242) to see the interface.
+The server starts on port 4242 and opens your browser automatically.
 
 </Step>
 </Steps>
 
 <Callout type="info">
   You can pass flags to customize startup: `dorkos --port 8080 --dir ~/projects/my-app`. Run `dorkos --help` for all options.
+</Callout>
+
+</Tab>
+
+<Tab value="Homebrew">
+
+Install via Homebrew on macOS or Linux. Homebrew handles Node.js as a dependency automatically.
+
+<Steps>
+<Step>
+
+### Install DorkOS
+
+```bash
+brew install dorkos-ai/tap/dorkos
+```
+
+</Step>
+<Step>
+
+### Set your API key
+
+```bash
+export ANTHROPIC_API_KEY="your-key-here"
+```
+
+To persist this, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
+
+</Step>
+<Step>
+
+### Start DorkOS
+
+```bash
+dorkos
+```
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  Update via `brew upgrade dorkos`.
 </Callout>
 
 </Tab>
@@ -195,11 +285,15 @@ This starts both the Express API server and Vite dev server. The interface is av
 
 ## Updating
 
-<Tabs items={['npm CLI', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner / npm', 'Homebrew', 'Obsidian Plugin', 'Self-Hosted']}>
 
-<Tab value="npm CLI">
+<Tab value="One-liner / npm">
 
-Update to the latest version using the same package manager you installed with:
+Re-run the one-liner or update with your package manager:
+
+```bash tab="One-liner"
+curl -fsSL https://dorkos.dev/install | bash
+```
 
 ```bash tab="npm"
 npm install -g dorkos@latest
@@ -221,6 +315,14 @@ DorkOS checks for new versions on startup and shows a notification when an updat
 
 ```bash
 dorkos --version
+```
+
+</Tab>
+
+<Tab value="Homebrew">
+
+```bash
+brew upgrade dorkos
 ```
 
 </Tab>

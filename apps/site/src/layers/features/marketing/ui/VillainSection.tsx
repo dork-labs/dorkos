@@ -203,7 +203,7 @@ export function VillainSection() {
               <motion.div key={card.id} variants={REVEAL}>
                 <SpotlightCard>
                   {ArtComponent && <ArtComponent />}
-                  <span className="mb-2 block font-mono text-xs uppercase tracking-[0.12em] text-warm-gray">
+                  <span className="mb-2 block font-mono text-md uppercase tracking-[0.12em] text-brand-orange">
                     {card.label}
                   </span>
                   {card.body.split('\n\n').map((paragraph, i) => (
@@ -214,6 +214,12 @@ export function VillainSection() {
                       {paragraph}
                     </p>
                   ))}
+                  <p
+                    className="mt-5 pt-5 text-[14px] leading-[1.65] text-brand-orange italic"
+                    style={{ borderTop: '1px solid rgba(139, 90, 43, 0.1)' }}
+                  >
+                    {card.solution}
+                  </p>
                 </SpotlightCard>
               </motion.div>
             )

@@ -1,9 +1,21 @@
+import type { LucideIcon } from 'lucide-react'
+import { Terminal, AppWindow, Send, Webhook, Hash } from 'lucide-react'
+
+export interface Integration {
+  label: string
+  icon: LucideIcon
+  status: 'live' | 'coming-soon'
+  /** Extra context shown after the label, e.g. "discovery" for Cursor. */
+  qualifier?: string
+}
+
 export interface Subsystem {
   id: string
   benefit: string
   name: string
   description: string
   status: 'available' | 'coming-soon'
+  integrations?: Integration[]
 }
 
 export const subsystems: Subsystem[] = [
@@ -21,6 +33,11 @@ export const subsystems: Subsystem[] = [
     description:
       'Telegram, Slack, email, etc. You can chat with your agents wherever you are.',
     status: 'available',
+    integrations: [
+      { label: 'Telegram', icon: Send, status: 'live' },
+      { label: 'Webhooks', icon: Webhook, status: 'live' },
+      { label: 'Slack', icon: Hash, status: 'coming-soon' },
+    ],
   },
   {
     id: 'mesh',
@@ -28,6 +45,10 @@ export const subsystems: Subsystem[] = [
     name: 'Mesh',
     description: 'Your agents find each other and divide the work without you in the middle.',
     status: 'available',
+    integrations: [
+      { label: 'Claude Code', icon: Terminal, status: 'live' },
+      { label: 'Cursor', icon: AppWindow, status: 'live', qualifier: 'discovery' },
+    ],
   },
   {
     id: 'console',
@@ -35,13 +56,16 @@ export const subsystems: Subsystem[] = [
     name: 'Console',
     description: 'Chat with your agents, create new agents, manage schedules, and more.',
     status: 'available',
+    integrations: [
+      { label: 'Claude Code', icon: Terminal, status: 'live' },
+    ],
   },
   {
     id: 'loop',
     benefit: 'Continuous improvement engine',
     name: 'Loop',
     description: 'Your agents spot what\u2019s working, test new ideas, and improve over time.',
-    status: 'available',
+    status: 'coming-soon',
   },
   {
     id: 'wing',

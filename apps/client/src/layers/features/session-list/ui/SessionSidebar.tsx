@@ -28,18 +28,8 @@ import { useSessions, useDirectoryState } from '@/layers/entities/session';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { SessionItem } from './SessionItem';
 import { AgentHeader } from './AgentHeader';
-import {
-  Plus,
-  PanelLeftClose,
-  Sun,
-  Moon,
-  Monitor,
-  Route,
-  Network,
-  HeartPulse,
-  Bug,
-  Settings,
-} from 'lucide-react';
+import { Plus, PanelLeftClose, Sun, Moon, Monitor, Bug, Settings } from 'lucide-react';
+import { icons } from '@dorkos/icons/registry';
 import { SettingsDialog } from '@/layers/features/settings';
 import { PulsePanel } from '@/layers/features/pulse';
 import { RelayPanel } from '@/layers/features/relay';
@@ -269,7 +259,7 @@ export function SessionSidebar() {
                 )}
                 aria-label="Relay messaging"
               >
-                <Route className="size-(--size-icon-sm)" />
+                <icons.relay className="size-(--size-icon-sm)" />
               </button>
             </TooltipTrigger>
             {!relayEnabled && (
@@ -288,7 +278,7 @@ export function SessionSidebar() {
                 )}
                 aria-label="Mesh agent discovery"
               >
-                <Network className="size-(--size-icon-sm)" />
+                <icons.mesh className="size-(--size-icon-sm)" />
               </button>
             </TooltipTrigger>
             {!meshEnabled && (
@@ -307,7 +297,7 @@ export function SessionSidebar() {
                 )}
                 aria-label="Pulse scheduler"
               >
-                <HeartPulse className="size-(--size-icon-sm)" />
+                <icons.pulse className="size-(--size-icon-sm)" />
                 {activeRunCount > 0 && (
                   <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-green-500 animate-pulse" />
                 )}
