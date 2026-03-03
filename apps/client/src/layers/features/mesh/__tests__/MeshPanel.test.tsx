@@ -9,9 +9,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // ---------------------------------------------------------------------------
 // Mock entity hooks
+// Note: useMeshEnabled removed — always returns true (ADR-0062).
 // ---------------------------------------------------------------------------
 
-const mockUseMeshEnabled = vi.fn().mockReturnValue(false);
 const mockUseRegisteredAgents = vi.fn().mockReturnValue({ data: undefined, isLoading: false });
 const mockUseDiscoverAgents = vi.fn().mockReturnValue({ mutate: vi.fn(), data: undefined, isPending: false });
 const mockUseDeniedAgents = vi.fn().mockReturnValue({ data: undefined, isLoading: false });
@@ -25,7 +25,7 @@ const mockUseRegisterAgent = vi.fn().mockReturnValue({ mutate: vi.fn() });
 const mockUseDenyAgent = vi.fn().mockReturnValue({ mutate: vi.fn() });
 
 vi.mock('@/layers/entities/mesh', () => ({
-  useMeshEnabled: (...args: unknown[]) => mockUseMeshEnabled(...args),
+  useMeshEnabled: () => true,
   useRegisteredAgents: (...args: unknown[]) => mockUseRegisteredAgents(...args),
   useDiscoverAgents: (...args: unknown[]) => mockUseDiscoverAgents(...args),
   useDeniedAgents: (...args: unknown[]) => mockUseDeniedAgents(...args),
@@ -116,17 +116,15 @@ function createWrapper() {
   );
 }
 
-/** Set up Mode A — mesh enabled, zero agents */
+/** Set up Mode A — zero agents */
 function enableMeshModeA() {
-  mockUseMeshEnabled.mockReturnValue(true);
   mockUseRegisteredAgents.mockReturnValue({ data: { agents: [] }, isLoading: false });
   mockUseDeniedAgents.mockReturnValue({ data: { denied: [] }, isLoading: false });
   mockUseMeshScanRoots.mockReturnValue({ roots: ['/home/user'], boundary: '/home/user', isSaving: false, setScanRoots: vi.fn() });
 }
 
-/** Set up Mode B — mesh enabled, has agents */
+/** Set up Mode B — has agents */
 function enableMeshModeB() {
-  mockUseMeshEnabled.mockReturnValue(true);
   mockUseRegisteredAgents.mockReturnValue({
     data: {
       agents: [{
@@ -148,7 +146,6 @@ function enableMeshModeB() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUseMeshEnabled.mockReturnValue(false);
   mockUseRegisteredAgents.mockReturnValue({ data: undefined, isLoading: false });
   mockUseDiscoverAgents.mockReturnValue({ mutate: vi.fn(), data: undefined, isPending: false });
   mockUseDeniedAgents.mockReturnValue({ data: undefined, isLoading: false });
@@ -162,26 +159,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-// ---------------------------------------------------------------------------
-// Disabled state
-// ---------------------------------------------------------------------------
-
-describe('MeshPanel - disabled state', () => {
-  it('renders disabled message when mesh is disabled', () => {
-    render(<MeshPanel />, { wrapper: createWrapper() });
-    expect(screen.getByText('Mesh is currently disabled')).toBeInTheDocument();
-  });
-
-  it('shows the enable hint', () => {
-    render(<MeshPanel />, { wrapper: createWrapper() });
-    expect(screen.getByText('DORKOS_MESH_ENABLED=true dorkos')).toBeInTheDocument();
-  });
-
-  it('does not render any tabs when disabled', () => {
-    render(<MeshPanel />, { wrapper: createWrapper() });
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
-  });
-});
+// Note: 'disabled state' test suite removed — Mesh is always enabled (ADR-0062).
 
 // ---------------------------------------------------------------------------
 // Mode A — zero agents, Discovery full-bleed
@@ -270,7 +248,6 @@ describe('MeshPanel - Topology tab', () => {
 
 describe('MeshPanel - Agents tab empty state', () => {
   it('shows contextual empty state when agents list is empty', () => {
-    mockUseMeshEnabled.mockReturnValue(true);
     // Return agents loading=false with empty list but Mode B via loading state
     mockUseRegisteredAgents.mockReturnValue({
       data: { agents: [{ id: 'x', name: 'X', runtime: 'claude-code', description: '', capabilities: [], path: '/x', namespace: 'ns', version: '1' }] },

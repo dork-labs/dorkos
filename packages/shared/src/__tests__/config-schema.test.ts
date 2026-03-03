@@ -15,10 +15,11 @@ describe('UserConfigSchema', () => {
       server: { port: 4242, cwd: null, boundary: null },
       tunnel: { enabled: false, domain: null, authtoken: null, auth: null },
       ui: { theme: 'system' },
-      logging: { level: 'info' },
+      logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
-      mesh: { enabled: true, scanRoots: [] },
+      mesh: { scanRoots: [] },
+      onboarding: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
     });
   });
 
@@ -150,7 +151,7 @@ describe('UserConfigSchema', () => {
     expect(result.tunnel.enabled).toBe(false);
     expect(result.relay.enabled).toBe(true);
     expect(result.scheduler.enabled).toBe(true);
-    expect(result.mesh.enabled).toBe(true);
+    expect(result.mesh.scanRoots).toEqual([]);
     expect(result.ui.theme).toBe('system');
   });
 
@@ -199,10 +200,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
       server: { port: 4242, cwd: null, boundary: null },
       tunnel: { enabled: false, domain: null, authtoken: null, auth: null },
       ui: { theme: 'system' },
-      logging: { level: 'info' },
+      logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
-      mesh: { enabled: true, scanRoots: [] },
+      mesh: { scanRoots: [] },
+      onboarding: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
     });
   });
 
@@ -240,7 +242,7 @@ describe('UserConfigSchema logging', () => {
 
   it('logging section defaults to { level: "info" } when omitted', () => {
     const result = UserConfigSchema.parse({ version: 1 });
-    expect(result.logging).toEqual({ level: 'info' });
+    expect(result.logging).toEqual({ level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 });
   });
 
   it('logging.level accepts "fatal"', () => {

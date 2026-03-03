@@ -71,10 +71,9 @@ export const UserConfigSchema = z.object({
     })),
   mesh: z
     .object({
-      enabled: z.boolean().default(true),
       scanRoots: z.array(z.string()).default(() => []),
     })
-    .default(() => ({ enabled: true, scanRoots: [] })),
+    .default(() => ({ scanRoots: [] })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],
     skippedSteps: [],

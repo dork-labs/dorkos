@@ -7,7 +7,7 @@ import { UserConfigSchema, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-s
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isPulseEnabled, getPulseInitError } from '../services/pulse/pulse-state.js';
 import { isRelayEnabled, getRelayInitError } from '../services/relay/relay-state.js';
-import { isMeshEnabled, getMeshInitError } from '../services/mesh/mesh-state.js';
+import { getMeshInitError } from '../services/mesh/mesh-state.js';
 import { getBoundary } from '../lib/boundary.js';
 import { SERVER_VERSION } from '../lib/version.js';
 
@@ -104,7 +104,7 @@ router.get('/', async (_req, res) => {
       ...(getRelayInitError() && { initError: getRelayInitError() }),
     },
     mesh: {
-      enabled: isMeshEnabled(),
+      enabled: true,
       scanRoots: configManager.get('mesh')?.scanRoots ?? [],
       ...(getMeshInitError() && { initError: getMeshInitError() }),
     },

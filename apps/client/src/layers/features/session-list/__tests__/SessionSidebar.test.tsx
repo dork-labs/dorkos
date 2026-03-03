@@ -126,9 +126,9 @@ describe('SessionSidebar', () => {
     cleanup();
   });
 
-  it('renders "New chat" button', () => {
+  it('renders "New session" button', () => {
     renderWithQuery(<SessionSidebar />);
-    expect(screen.getByText('New chat')).toBeDefined();
+    expect(screen.getByText('New session')).toBeDefined();
   });
 
   it('shows empty state when no sessions', async () => {
@@ -159,14 +159,14 @@ describe('SessionSidebar', () => {
     expect(screen.getByText('Old session')).toBeDefined();
   });
 
-  it('creates session on "New chat" click', async () => {
+  it('creates session on "New session" click', async () => {
     const newSession = makeSession({ id: 'new-1', title: 'New session' });
     mockTransport = createMockTransport({
       createSession: vi.fn().mockResolvedValue(newSession),
     });
 
     renderWithQuery(<SessionSidebar />);
-    fireEvent.click(screen.getByText('New chat'));
+    fireEvent.click(screen.getByText('New session'));
 
     await waitFor(() => {
       expect(vi.mocked(mockTransport.createSession).mock.calls[0][0]).toEqual({

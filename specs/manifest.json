@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 85,
+  "nextNumber": 86,
   "specs": [
     {
       "number": 1,
@@ -589,6 +589,13 @@
       "title": "CLI Install Smoke Testing — Docker & GitHub Actions",
       "created": "2026-03-02",
       "status": "ideation"
+    },
+    {
+      "number": 85,
+      "slug": "agent-centric-ux",
+      "title": "Agent-Centric UX — Command Palette, Sidebar Redesign, Mesh Always-On",
+      "created": "2026-03-03",
+      "status": "specified"
     }
   ]
 }

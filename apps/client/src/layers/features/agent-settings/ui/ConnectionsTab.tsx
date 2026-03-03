@@ -1,6 +1,6 @@
 import { usePulseEnabled } from '@/layers/entities/pulse';
 import { useRelayEnabled } from '@/layers/entities/relay';
-import { useMeshEnabled, useMeshAgentHealth } from '@/layers/entities/mesh';
+import { useMeshAgentHealth } from '@/layers/entities/mesh';
 import { Badge } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
@@ -15,8 +15,7 @@ interface ConnectionsTabProps {
 export function ConnectionsTab({ agent }: ConnectionsTabProps) {
   const pulseEnabled = usePulseEnabled();
   const relayEnabled = useRelayEnabled();
-  const meshEnabled = useMeshEnabled();
-  const { data: health } = useMeshAgentHealth(meshEnabled ? agent.id : null);
+  const { data: health } = useMeshAgentHealth(agent.id);
 
   return (
     <div className="space-y-6">
@@ -54,11 +53,9 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
       <section className="space-y-2">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">Mesh Health</h3>
-          <Badge variant={meshEnabled ? 'default' : 'secondary'} className="text-xs">
-            {meshEnabled ? 'Enabled' : 'Disabled'}
-          </Badge>
+          <Badge variant="default" className="text-xs">Enabled</Badge>
         </div>
-        {meshEnabled && health ? (
+        {health ? (
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground text-sm">Status:</span>
             <Badge
@@ -74,11 +71,7 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
             )}
           </div>
         ) : (
-          <p className="text-muted-foreground text-sm">
-            {meshEnabled
-              ? 'Loading health information...'
-              : 'Enable Mesh for agent discovery and registry.'}
-          </p>
+          <p className="text-muted-foreground text-sm">Loading health information...</p>
         )}
       </section>
     </div>

@@ -22,7 +22,6 @@ import {
 } from '@/layers/shared/ui';
 import { usePulseEnabled, useActiveRunCount, useCompletedRunBadge } from '@/layers/entities/pulse';
 import { useRelayEnabled } from '@/layers/entities/relay';
-import { useMeshEnabled } from '@/layers/entities/mesh';
 import { toast } from 'sonner';
 import { useSessions, useDirectoryState } from '@/layers/entities/session';
 import { useResolvedAgents } from '@/layers/entities/agent';
@@ -63,7 +62,6 @@ export function SessionSidebar() {
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [agentDialogOpen, setAgentDialogOpen] = useState(false);
   const relayEnabled = useRelayEnabled();
-  const meshEnabled = useMeshEnabled();
   const [selectedCwd, setSelectedCwd] = useDirectoryState();
   const pulseEnabled = usePulseEnabled();
   const { data: activeRunCount = 0 } = useActiveRunCount(pulseEnabled);
@@ -182,7 +180,7 @@ export function SessionSidebar() {
           className="border-border text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98] disabled:opacity-50"
         >
           <Plus className="size-(--size-icon-sm)" />
-          New chat
+          New session
         </button>
       </div>
 
@@ -266,25 +264,13 @@ export function SessionSidebar() {
               <TooltipContent side="top">Relay is disabled</TooltipContent>
             )}
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setMeshOpen(true)}
-                className={cn(
-                  'rounded-md p-1 transition-colors duration-150 max-md:p-2',
-                  meshEnabled
-                    ? 'text-muted-foreground/50 hover:text-muted-foreground'
-                    : 'text-muted-foreground/25 hover:text-muted-foreground/40'
-                )}
-                aria-label="Mesh agent discovery"
-              >
-                <icons.mesh className="size-(--size-icon-sm)" />
-              </button>
-            </TooltipTrigger>
-            {!meshEnabled && (
-              <TooltipContent side="top">Mesh is disabled</TooltipContent>
-            )}
-          </Tooltip>
+          <button
+            onClick={() => setMeshOpen(true)}
+            className="rounded-md p-1 transition-colors duration-150 max-md:p-2 text-muted-foreground/50 hover:text-muted-foreground"
+            aria-label="Mesh agent discovery"
+          >
+            <icons.mesh className="size-(--size-icon-sm)" />
+          </button>
           <Tooltip>
             <TooltipTrigger asChild>
               <button

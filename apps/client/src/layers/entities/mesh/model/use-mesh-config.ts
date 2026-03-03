@@ -1,6 +1,4 @@
-import { useFeatureEnabled } from '@/layers/shared/model';
-
-/** Fetch server config and derive whether the Mesh subsystem is enabled. */
+/** Mesh is always enabled (feature flag removed in ADR-0062). */
 export function useMeshEnabled(): boolean {
-  return useFeatureEnabled('mesh');
+  return true;
 }

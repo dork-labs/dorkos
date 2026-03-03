@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 62,
+  "nextNumber": 64,
   "decisions": [
     {
       "number": 1,
@@ -500,6 +500,24 @@
       "created": "2026-03-01",
       "extractedFrom": "settings-reset-restart",
       "specSlug": "settings-reset-restart"
+    },
+    {
+      "number": 62,
+      "slug": "remove-mesh-feature-flag-always-on",
+      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
+      "status": "draft",
+      "created": "2026-03-03",
+      "extractedFrom": "agent-centric-ux",
+      "specSlug": "agent-centric-ux"
+    },
+    {
+      "number": 63,
+      "slug": "shadcn-command-dialog-for-global-palette",
+      "title": "Use Shadcn CommandDialog for Global Agent Command Palette",
+      "status": "draft",
+      "created": "2026-03-03",
+      "extractedFrom": "agent-centric-ux",
+      "specSlug": "agent-centric-ux"
     }
   ]
 }

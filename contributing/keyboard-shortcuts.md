@@ -77,9 +77,10 @@ interface UseInteractiveShortcutsOptions {
 
 ### Navigation
 
-| Key                  | Action         |
-| -------------------- | -------------- |
-| `Cmd+B` / `Ctrl+B`  | Toggle sidebar |
+| Key                  | Action               |
+| -------------------- | -------------------- |
+| `Cmd+K` / `Ctrl+K`  | Open command palette |
+| `Cmd+B` / `Ctrl+B`  | Toggle sidebar       |
 
 ### Approval Mode (`WAITING_FOR_APPROVAL`)
 

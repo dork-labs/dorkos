@@ -1,10 +1,9 @@
 import { lazy, Suspense, useState, useCallback, useMemo } from 'react';
 import { Loader2, Network, Radar, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Tabs, TabsList, TabsTrigger, TabsContent, FeatureDisabledState } from '@/layers/shared/ui';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/layers/shared/ui';
 import { Badge } from '@/layers/shared/ui/badge';
 import {
-  useMeshEnabled,
   useRegisteredAgents,
   useRegisterAgent,
   useDeniedAgents,
@@ -264,10 +263,9 @@ function DiscoverAgentsSection({ registeredNames }: DiscoverAgentsSectionProps) 
 
 /** Main Mesh panel — progressive disclosure with Mode A (empty) and Mode B (populated). */
 export function MeshPanel() {
-  const meshEnabled = useMeshEnabled();
-  const { data: agentsResult, isLoading: agentsLoading, isError: agentsError, refetch: refetchAgents } = useRegisteredAgents(undefined, meshEnabled);
+  const { data: agentsResult, isLoading: agentsLoading, isError: agentsError, refetch: refetchAgents } = useRegisteredAgents();
   const agents = agentsResult?.agents ?? [];
-  const { data: deniedResult, isLoading: deniedLoading } = useDeniedAgents(meshEnabled);
+  const { data: deniedResult, isLoading: deniedLoading } = useDeniedAgents();
   const denied = deniedResult?.denied ?? [];
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>('');
@@ -319,17 +317,6 @@ export function MeshPanel() {
   // redirect the user to Discovery — show an explicit error instead.
   const isModeA = !hasAgents && !agentsLoading && !agentsError;
 
-  if (!meshEnabled) {
-    return (
-      <FeatureDisabledState
-        icon={Network}
-        name="Mesh"
-        description="Mesh provides agent discovery and registry. Start DorkOS with mesh enabled."
-        command="DORKOS_MESH_ENABLED=true dorkos"
-      />
-    );
-  }
-
   if (agentsError) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
@@ -339,8 +326,7 @@ export function MeshPanel() {
         <div className="space-y-1">
           <p className="text-sm font-medium">Could not load agents</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            The mesh API is unreachable. Check that the server is running with{' '}
-            <code className="rounded bg-muted px-1 font-mono">DORKOS_MESH_ENABLED=true</code>.
+            The mesh API is unreachable. Check that the server is running correctly.
           </p>
         </div>
         <button

@@ -7,13 +7,13 @@ import '@testing-library/jest-dom/vitest';
 
 // ---------------------------------------------------------------------------
 // Mock entity hooks
+// Note: useMeshEnabled removed — always returns true (ADR-0062).
 // ---------------------------------------------------------------------------
 
-const mockUseMeshEnabled = vi.fn().mockReturnValue(false);
 const mockUseMeshStatus = vi.fn().mockReturnValue({ data: undefined, isLoading: false });
 
 vi.mock('@/layers/entities/mesh', () => ({
-  useMeshEnabled: (...args: unknown[]) => mockUseMeshEnabled(...args),
+  useMeshEnabled: () => true,
   useMeshStatus: (...args: unknown[]) => mockUseMeshStatus(...args),
 }));
 
@@ -32,14 +32,12 @@ const mockStatus = {
   byProject: {},
 };
 
-function enableMeshWithStatus() {
-  mockUseMeshEnabled.mockReturnValue(true);
+function setStatusData() {
   mockUseMeshStatus.mockReturnValue({ data: mockStatus, isLoading: false });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUseMeshEnabled.mockReturnValue(false);
   mockUseMeshStatus.mockReturnValue({ data: undefined, isLoading: false });
 });
 
@@ -51,35 +49,27 @@ afterEach(cleanup);
 
 describe('MeshStatsHeader', () => {
   describe('renders null when conditions are not met', () => {
-    it('renders null when mesh is disabled', () => {
-      mockUseMeshEnabled.mockReturnValue(false);
-      const { container } = render(<MeshStatsHeader />);
-      expect(container.firstChild).toBeNull();
-    });
-
     it('renders null when enabled prop is false', () => {
-      enableMeshWithStatus();
+      setStatusData();
       const { container } = render(<MeshStatsHeader enabled={false} />);
       expect(container.firstChild).toBeNull();
     });
 
     it('renders null while loading', () => {
-      mockUseMeshEnabled.mockReturnValue(true);
       mockUseMeshStatus.mockReturnValue({ data: undefined, isLoading: true });
       const { container } = render(<MeshStatsHeader />);
       expect(container.firstChild).toBeNull();
     });
 
     it('renders null when status data is absent', () => {
-      mockUseMeshEnabled.mockReturnValue(true);
       mockUseMeshStatus.mockReturnValue({ data: undefined, isLoading: false });
       const { container } = render(<MeshStatsHeader />);
       expect(container.firstChild).toBeNull();
     });
   });
 
-  describe('renders counts when mesh is enabled with data', () => {
-    beforeEach(enableMeshWithStatus);
+  describe('renders counts when status data is available', () => {
+    beforeEach(setStatusData);
 
     it('shows total agent count', () => {
       render(<MeshStatsHeader />);
@@ -103,7 +93,6 @@ describe('MeshStatsHeader', () => {
 
     it('renders three status dot indicators', () => {
       render(<MeshStatsHeader />);
-      // Each dot has aria-hidden="true" and one of the status colors
       const greenDot = document.querySelector('.bg-green-500');
       const amberDot = document.querySelector('.bg-amber-500');
       const zincDot = document.querySelector('.bg-zinc-400');
@@ -114,16 +103,13 @@ describe('MeshStatsHeader', () => {
   });
 
   describe('passes enabled flag to useMeshStatus', () => {
-    it('passes combined enabled state to the hook', () => {
-      mockUseMeshEnabled.mockReturnValue(true);
+    it('passes true to the hook when enabled prop is true', () => {
       mockUseMeshStatus.mockReturnValue({ data: mockStatus, isLoading: false });
       render(<MeshStatsHeader enabled={true} />);
-      // enabled && meshEnabled => true
       expect(mockUseMeshStatus).toHaveBeenCalledWith(true);
     });
 
     it('passes false to the hook when enabled prop is false', () => {
-      mockUseMeshEnabled.mockReturnValue(true);
       mockUseMeshStatus.mockReturnValue({ data: mockStatus, isLoading: false });
       render(<MeshStatsHeader enabled={false} />);
       expect(mockUseMeshStatus).toHaveBeenCalledWith(false);

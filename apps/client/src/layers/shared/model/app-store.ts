@@ -59,6 +59,9 @@ interface AppState {
   setMeshOpen: (open: boolean) => void;
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
+  globalPaletteOpen: boolean;
+  setGlobalPaletteOpen: (open: boolean) => void;
+  toggleGlobalPalette: () => void;
 
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
@@ -196,6 +199,9 @@ export const useAppStore = create<AppState>()(
       setMeshOpen: (open) => set({ meshOpen: open }),
       pickerOpen: false,
       setPickerOpen: (open) => set({ pickerOpen: open }),
+      globalPaletteOpen: false,
+      setGlobalPaletteOpen: (open) => set({ globalPaletteOpen: open }),
+      toggleGlobalPalette: () => set((s) => ({ globalPaletteOpen: !s.globalPaletteOpen })),
 
       sessionId: null,
       setSessionId: (id) => set({ sessionId: id }),

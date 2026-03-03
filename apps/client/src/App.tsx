@@ -10,6 +10,7 @@ import { ChatPanel, ChatEmptyState } from '@/layers/features/chat';
 import { useOnboarding, OnboardingFlow } from '@/layers/features/onboarding';
 import { Toaster, TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { Kbd } from '@/layers/shared/ui/kbd';
+import { CommandPaletteDialog } from '@/layers/features/command-palette';
 
 interface AppProps {
   /** Optional transform applied to message content before sending to server */
@@ -160,6 +161,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
               </main>
             </div>
           </div>
+          <CommandPaletteDialog />
           <Toaster />
         </MotionConfig>
       </TooltipProvider>
@@ -269,6 +271,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
             </motion.div>
           )}
         </AnimatePresence>
+        <CommandPaletteDialog />
         <Toaster />
       </MotionConfig>
     </TooltipProvider>

@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useMeshEnabled } from '../model/use-mesh-config';
 import { useRegisteredAgents } from '../model/use-mesh-agents';
 import { useDiscoverAgents } from '../model/use-mesh-discover';
 import { useRegisterAgent } from '../model/use-mesh-register';
@@ -14,6 +13,7 @@ import { useDenyAgent } from '../model/use-mesh-deny';
 import { useUnregisterAgent } from '../model/use-mesh-unregister';
 import { useUpdateAgent } from '../model/use-mesh-update';
 import { useDeniedAgents } from '../model/use-mesh-denied';
+// useMeshEnabled tests removed — hook now always returns true (ADR-0062).
 
 function createWrapper(transport: Transport) {
   const queryClient = new QueryClient({
@@ -31,76 +31,6 @@ function createWrapper(transport: Transport) {
     ),
   };
 }
-
-function createConfigWrapper(meshEnabled: boolean) {
-  const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue({
-      version: '1.0.0',
-      port: 4242,
-      uptime: 0,
-      workingDirectory: '/test',
-      nodeVersion: 'v20.0.0',
-      claudeCliPath: null,
-      tunnel: { enabled: false, connected: false, url: null, authEnabled: false, tokenConfigured: false },
-      mesh: { enabled: meshEnabled },
-    }),
-  });
-  const { Wrapper } = createWrapper(transport);
-  return { Wrapper, transport };
-}
-
-// ---------------------------------------------------------------------------
-// useMeshEnabled
-// ---------------------------------------------------------------------------
-describe('useMeshEnabled', () => {
-  it('returns true when mesh.enabled is true in config', async () => {
-    const { Wrapper } = createConfigWrapper(true);
-    const { result } = renderHook(() => useMeshEnabled(), { wrapper: Wrapper });
-
-    await waitFor(() => {
-      expect(result.current).toBe(true);
-    });
-  });
-
-  it('returns false when mesh.enabled is false in config', async () => {
-    const { Wrapper } = createConfigWrapper(false);
-    const { result } = renderHook(() => useMeshEnabled(), { wrapper: Wrapper });
-
-    await waitFor(() => {
-      expect(result.current).toBe(false);
-    });
-  });
-
-  it('returns false when config has no mesh field', async () => {
-    const transport = createMockTransport({
-      getConfig: vi.fn().mockResolvedValue({
-        version: '1.0.0',
-        port: 4242,
-        uptime: 0,
-        workingDirectory: '/test',
-        nodeVersion: 'v20.0.0',
-        claudeCliPath: null,
-        tunnel: { enabled: false, connected: false, url: null, authEnabled: false, tokenConfigured: false },
-      }),
-    });
-    const { Wrapper } = createWrapper(transport);
-    const { result } = renderHook(() => useMeshEnabled(), { wrapper: Wrapper });
-
-    await waitFor(() => {
-      expect(result.current).toBe(false);
-    });
-  });
-
-  it('returns false before config loads', () => {
-    const transport = createMockTransport({
-      getConfig: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves
-    });
-    const { Wrapper } = createWrapper(transport);
-    const { result } = renderHook(() => useMeshEnabled(), { wrapper: Wrapper });
-
-    expect(result.current).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // useRegisteredAgents

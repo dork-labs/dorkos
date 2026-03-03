@@ -133,48 +133,43 @@ async function start() {
     }
   }
 
-  // Initialize Mesh if enabled
-  const meshConfig = configManager.get('mesh');
-  const meshEnabled = env.DORKOS_MESH_ENABLED || meshConfig?.enabled;
+  // Initialize Mesh (always-on, ADR-0062)
+  // Wire SignalEmitter when Relay is enabled so MeshCore can broadcast lifecycle
+  // signals. When Relay is absent, signalEmitter stays undefined and MeshCore
+  // silently skips signal emission.
+  const meshSignalEmitter = relayCore ? new SignalEmitter() : undefined;
 
-  if (meshEnabled) {
-    // Wire SignalEmitter when both Mesh and Relay are enabled so MeshCore can
-    // broadcast lifecycle signals. When Relay is absent, signalEmitter stays
-    // undefined and MeshCore silently skips signal emission.
-    const meshSignalEmitter = relayCore ? new SignalEmitter() : undefined;
+  try {
+    meshCore = new MeshCore({
+      db,
+      relayCore,
+      signalEmitter: meshSignalEmitter,
+      logger,
+    });
+    logger.info('[Mesh] MeshCore initialized');
 
+    // Run startup reconciliation (non-fatal)
     try {
-      meshCore = new MeshCore({
-        db,
-        relayCore,
-        signalEmitter: meshSignalEmitter,
-        logger,
-      });
-      logger.info('[Mesh] MeshCore initialized (using consolidated DB)');
-
-      // Run startup reconciliation (non-fatal)
-      try {
-        const result = await meshCore.reconcileOnStartup();
-        logger.info('[Mesh] Startup reconciliation complete', result);
-      } catch (err) {
-        logger.error('[Mesh] Startup reconciliation failed', logError(err));
-      }
-
-      // Start periodic reconciliation (every 5 minutes)
-      meshCore.startPeriodicReconciliation(300_000);
+      const result = await meshCore.reconcileOnStartup();
+      logger.info('[Mesh] Startup reconciliation complete', result);
     } catch (err) {
-      const errInfo = logError(err);
-      logger.error('[Mesh] Failed to initialize MeshCore', errInfo);
-      setMeshInitError(errInfo.error);
-      // Mesh failure is non-fatal: server continues without mesh routes.
+      logger.error('[Mesh] Startup reconciliation failed', logError(err));
     }
 
-    // Subscribe to lifecycle signals for diagnostic logging
-    if (meshSignalEmitter && meshCore) {
-      meshSignalEmitter.subscribe('mesh.agent.lifecycle.>', (subject, signal) => {
-        logger.info(`[mesh] lifecycle: ${signal.state}`, { subject, data: signal.data });
-      });
-    }
+    // Start periodic reconciliation (every 5 minutes)
+    meshCore.startPeriodicReconciliation(300_000);
+  } catch (err) {
+    const errInfo = logError(err);
+    logger.error('[Mesh] Failed to initialize MeshCore', errInfo);
+    setMeshInitError(errInfo.error);
+    // Mesh failure is non-fatal: server continues without mesh routes.
+  }
+
+  // Subscribe to lifecycle signals for diagnostic logging
+  if (meshSignalEmitter && meshCore) {
+    meshSignalEmitter.subscribe('mesh.agent.lifecycle.>', (subject, signal) => {
+      logger.info(`[mesh] lifecycle: ${signal.state}`, { subject, data: signal.data });
+    });
   }
 
   // Register MCP tool server factory — creates fresh instances per query() call
@@ -216,8 +211,8 @@ async function start() {
     logger.info('[Relay] Routes mounted');
   }
 
-  // Mount Mesh routes if enabled
-  if (meshEnabled && meshCore) {
+  // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
+  if (meshCore) {
     app.use('/api/mesh', createMeshRouter(meshCore));
     setMeshEnabled(true);
     logger.info('[Mesh] Routes mounted');

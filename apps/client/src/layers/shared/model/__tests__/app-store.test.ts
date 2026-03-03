@@ -103,4 +103,26 @@ describe('AppStore', () => {
     useAppStore.getState().resetPreferences();
     expect(useAppStore.getState().autoHideToolCalls).toBe(true);
   });
+
+  it('globalPaletteOpen defaults to false', async () => {
+    const { useAppStore } = await import('../app-store');
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
+  });
+
+  it('setGlobalPaletteOpen sets explicit value', async () => {
+    const { useAppStore } = await import('../app-store');
+    useAppStore.getState().setGlobalPaletteOpen(true);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(true);
+    useAppStore.getState().setGlobalPaletteOpen(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
+  });
+
+  it('toggleGlobalPalette flips state', async () => {
+    const { useAppStore } = await import('../app-store');
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
+    useAppStore.getState().toggleGlobalPalette();
+    expect(useAppStore.getState().globalPaletteOpen).toBe(true);
+    useAppStore.getState().toggleGlobalPalette();
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
+  });
 });

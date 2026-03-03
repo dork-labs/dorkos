@@ -1,9 +1,9 @@
 /**
  * Lightweight mesh feature state registry.
  *
- * Holds the runtime enabled/disabled state of the Mesh agent discovery subsystem
- * so that the config route can report it without a circular dependency on index.ts.
- * Set once during server startup by `index.ts` when MeshCore is initialized.
+ * Mesh is always enabled (ADR-0062). The `isMeshEnabled()` function returns `true`
+ * unconditionally. `setMeshEnabled` is retained as a no-op for backward compatibility.
+ * Init error tracking is preserved so the config route can report runtime failures.
  *
  * @module services/mesh/mesh-state
  */
@@ -11,11 +11,11 @@ import { createFeatureFlag } from '../../lib/feature-flag.js';
 
 const meshFlag = createFeatureFlag();
 
-/** Mark the Mesh subsystem as enabled or disabled. */
+/** No-op — Mesh is always enabled (ADR-0062). Kept for backward compatibility. */
 export const setMeshEnabled = meshFlag.setEnabled;
 
-/** Return whether the Mesh subsystem is currently enabled. */
-export const isMeshEnabled = meshFlag.isEnabled;
+/** Mesh is always enabled (ADR-0062). */
+export const isMeshEnabled = (): boolean => true;
 
 /** Record why Mesh failed to initialize. */
 export const setMeshInitError = meshFlag.setInitError;

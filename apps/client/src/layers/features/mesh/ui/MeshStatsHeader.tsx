@@ -1,7 +1,7 @@
-import { useMeshEnabled, useMeshStatus } from '@/layers/entities/mesh';
+import { useMeshStatus } from '@/layers/entities/mesh';
 
 interface MeshStatsHeaderProps {
-  /** When false, the header is suppressed regardless of mesh state. Defaults to true. */
+  /** When false, the header is suppressed. Defaults to true. */
   enabled?: boolean;
 }
 
@@ -9,14 +9,13 @@ interface MeshStatsHeaderProps {
  * Compact aggregate mesh status bar showing total agent count and
  * per-status dot indicators (active / inactive / stale).
  *
- * Renders null when mesh is disabled, the `enabled` prop is false,
- * the query is loading, or no status data is available.
+ * Renders null when the `enabled` prop is false, the query is loading,
+ * or no status data is available.
  */
 export function MeshStatsHeader({ enabled = true }: MeshStatsHeaderProps) {
-  const meshEnabled = useMeshEnabled();
-  const { data: status, isLoading } = useMeshStatus(enabled && meshEnabled);
+  const { data: status, isLoading } = useMeshStatus(enabled);
 
-  if (!meshEnabled || !enabled || isLoading || !status) return null;
+  if (!enabled || isLoading || !status) return null;
 
   return (
     <div className="flex items-center gap-3 border-b px-3 py-1.5 text-xs text-muted-foreground">
