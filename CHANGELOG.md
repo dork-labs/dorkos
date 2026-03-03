@@ -9,14 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.7.0] - 2026-03-02
+
+> Brand refresh, CI hardening, and marketing site overhaul
+
+### Added
+
 - Add full-app Docker integration testing and runnable container
-- Enforce dorkHome parameter usage in server code
+- Enforce dorkHome parameter usage in server code via ESLint rule
 - Add Docker and GitHub Actions smoke testing for CLI installs
 - Add GitHub Actions CLI smoke test workflow for npm package install validation
 - Add Dockerfile and .dockerignore for isolated CLI smoke testing
 - Add `smoke:docker` convenience script for local Docker smoke tests
-- Add DorkLogo to welcome screen
-- Add FAQ accordion section before install CTA
+- Add DorkLogo to onboarding welcome screen
+- Add FAQ accordion section before install CTA on marketing site
 - Align site copy with pro-human positioning
 - Rewrite IdentityClose copy to celebrate human ambition
 - Rewrite PivotSection with "intelligence doesn't scale" metaphor
@@ -27,17 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Migrate domain from dorkos.dev to dorkos.ai
 - Add DORKOS_HOST, Docker workflow, and discovery endpoint to guides
 
 ### Fixed
 
-- Use cd for cli version bump and gitignore tarballs
+- Use cd for CLI version bump and gitignore tarballs
 - Resolve Docker runtime and npm publishing issues
 - Support dark mode in favicon SVG
 - Gate shouldShowOnboarding on config loading state
 - Send partial patches to prevent skip dismiss race condition
 - Fix missing `better-sqlite3` dependency in CLI package that crashed on `npm install -g dorkos`
 - Adjust beam visibility range in TimelineSection
+
 ---
 
 ## [0.6.0] - 2026-03-02
@@ -244,7 +258,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/dork-labs/dorkos/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dork-labs/dorkos/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dork-labs/dorkos/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dork-labs/dorkos/compare/v0.3.0...v0.4.0
