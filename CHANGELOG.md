@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add DorkLogo to welcome screen
 - Add FAQ accordion section before install CTA
 - Align site copy with pro-human positioning
 - Rewrite IdentityClose copy to celebrate human ambition

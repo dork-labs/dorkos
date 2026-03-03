@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Search, Clock, Radio } from 'lucide-react';
+import { DorkLogo } from '@dorkos/icons/logos';
 import { Button } from '@/layers/shared/ui';
 
 interface WelcomeStepProps {
@@ -57,6 +58,17 @@ export function WelcomeStep({ onGetStarted, onSkip }: WelcomeStepProps) {
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center px-4 text-center">
+      {/* Logo */}
+      <motion.div
+        className="mb-6 opacity-80"
+        initial={reducedMotion ? false : { opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 0.8, scale: 1 }}
+        transition={{ duration: 0.4 }}
+      >
+        <DorkLogo size={150} className="dark:hidden" />
+        <DorkLogo variant="white" size={150} className="hidden dark:block" />
+      </motion.div>
+
       {/* Text Generate Effect heading */}
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
         {reducedMotion ? (
