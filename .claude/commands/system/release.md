@@ -361,8 +361,7 @@ Present the release plan to the user:
 1. `VERSION` - 0.1.0 -> 0.2.0
 2. `packages/cli/package.json` - 0.1.0 -> 0.2.0
 3. `package.json` - 0.1.0 -> 0.2.0
-4. `package-lock.json` - updated by npm version
-5. `CHANGELOG.md` - [Unreleased] -> [0.2.0] - YYYY-MM-DD
+4. `CHANGELOG.md` - [Unreleased] -> [0.2.0] - YYYY-MM-DD
 
 ### Git Operations
 
@@ -424,13 +423,13 @@ printf "0.2.0" > VERSION
 
 ```bash
 # Update packages/cli/package.json (the published npm package)
-npm version 0.2.0 --no-git-tag-version -w packages/cli
+cd packages/cli && npm version 0.2.0 --no-git-tag-version && cd ../..
 
 # Update root package.json
 npm version 0.2.0 --no-git-tag-version
 ```
 
-This updates `packages/cli/package.json`, `package.json`, and `package-lock.json` in one go.
+This updates `packages/cli/package.json` and root `package.json`.
 
 ### 5.4: Update Changelog
 
@@ -522,7 +521,7 @@ The user can edit this post before the release commit. Add the blog post file to
 
 ```bash
 # Stage all version-related changes
-git add VERSION CHANGELOG.md docs/changelog.mdx packages/cli/package.json package.json package-lock.json blog/
+git add VERSION CHANGELOG.md docs/changelog.mdx packages/cli/package.json package.json blog/
 
 # Commit (use HEREDOC for message)
 git commit -m "$(cat <<'EOF'

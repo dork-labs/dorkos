@@ -6,6 +6,7 @@ dist/
 dist-server/
 dist-obsidian/
 *.tsbuildinfo
+*.tgz
 .source/
 
 # Generated docs (openapi.json is committed for Vercel builds)

@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Use cd for cli version bump and gitignore tarballs
 - Resolve Docker runtime and npm publishing issues
 - Support dark mode in favicon SVG
 - Gate shouldShowOnboarding on config loading state
