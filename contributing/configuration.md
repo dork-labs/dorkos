@@ -560,3 +560,43 @@ Two config keys are marked as sensitive: `tunnel.authtoken` and `tunnel.auth`. T
 - Never commit `~/.dork/config.json` to version control
 
 If you must store tunnel credentials in the config (e.g., single-user machine), be aware that they are saved as plain text in `~/.dork/config.json`.
+
+## Docker
+
+DorkOS provides Docker images for testing and deployment. All Docker images set `DORKOS_HOST=0.0.0.0` so that the Express server binds to all interfaces (required for Docker port forwarding).
+
+### Running in Docker
+
+Build and run a DorkOS container from local code:
+
+```bash
+pnpm docker:build    # Build the image
+pnpm docker:run      # Run the container (maps DORKOS_PORT)
+```
+
+The `Dockerfile.run` image bundles the CLI, server, and client. Pass environment variables at runtime:
+
+```bash
+docker run --rm -p 4242:4242 \
+  -e ANTHROPIC_API_KEY=your-key \
+  -e DORKOS_PORT=4242 \
+  dorkos:local
+```
+
+### Integration Testing
+
+```bash
+pnpm smoke:integration   # Full integration test (local tarball)
+pnpm smoke:npm           # Test published npm package
+pnpm smoke:docker        # CLI install smoke test only
+```
+
+### Publishing
+
+Publish the CLI to npm:
+
+```bash
+pnpm publish:cli
+```
+
+This runs `pnpm publish --filter=dorkos`, which triggers the `prepublishOnly` script to build the CLI bundle automatically.

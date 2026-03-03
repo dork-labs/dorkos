@@ -120,6 +120,31 @@ sudo systemctl enable dorkos
 sudo systemctl start dorkos
 ```
 
+## Docker Deployment
+
+DorkOS provides a runnable Docker image for containerized deployments.
+
+### Build and Run
+
+From the repository root:
+
+```bash
+pnpm docker:build
+pnpm docker:run
+```
+
+Or directly with Docker:
+
+```bash
+docker build -f Dockerfile.run -t dorkos:local .
+docker run --rm -p 4242:4242 \
+  -e ANTHROPIC_API_KEY=your-key-here \
+  -e DORKOS_PORT=4242 \
+  dorkos:local
+```
+
+The container sets `DORKOS_HOST=0.0.0.0` automatically so the server binds to all interfaces for port forwarding.
+
 ## Health Check
 
 Verify the server is running:

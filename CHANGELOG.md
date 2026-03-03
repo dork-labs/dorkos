@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add DORKOS_HOST, Docker workflow, and discovery endpoint to guides
+
 ### Fixed
 
 - Use cd for cli version bump and gitignore tarballs

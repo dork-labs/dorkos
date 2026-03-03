@@ -109,6 +109,22 @@ Configuration is resolved in this order (highest priority first):
   Use `dorkos config` to view the resolved configuration and see which values come from which source.
 </Callout>
 
+## Docker
+
+Run DorkOS in a Docker container without a local Node.js install:
+
+```bash
+# From the repository (development)
+pnpm docker:build
+pnpm docker:run
+
+# Or directly
+docker build -f Dockerfile.run -t dorkos:local .
+docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY=your-key dorkos:local
+```
+
+The container binds to `0.0.0.0` automatically for Docker port forwarding.
+
 ## Automatic Update Checks
 
 DorkOS checks the npm registry for new versions each time it starts. If a newer version is available, you will see a notification in the terminal:

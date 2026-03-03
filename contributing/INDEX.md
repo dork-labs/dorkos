@@ -43,10 +43,10 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | Guide | Last Reviewed | Reviewer | Notes |
 |---|---|---|---|
 | `project-structure.md` | 2026-02-17 | Claude | Verified post-FSD paths |
-| `architecture.md` | 2026-02-17 | Claude | Fixed pre-FSD path references |
+| `architecture.md` | 2026-03-02 | Claude | Added 3 Dockerfile differentiation |
 | `design-system.md` | 2026-02-17 | Claude | Fixed pre-FSD component paths |
-| `api-reference.md` | 2026-02-17 | Claude | Current |
-| `configuration.md` | 2026-02-17 | Claude | Current |
+| `api-reference.md` | 2026-03-02 | Claude | Added POST /api/discovery/scan |
+| `configuration.md` | 2026-03-02 | Claude | Added Docker/publish workflow |
 | `interactive-tools.md` | 2026-02-17 | Claude | Fixed pre-FSD paths |
 | `keyboard-shortcuts.md` | 2026-02-17 | Claude | Fixed pre-FSD paths |
 | `obsidian-plugin-development.md` | 2026-02-17 | Claude | Fixed pre-FSD paths |
@@ -58,7 +58,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `relay-adapters.md` | 2026-02-17 | Claude | Current |
 | `adapter-catalog.md` | 2026-02-17 | Claude | Current |
 | `browser-testing.md` | 2026-03-01 | Claude | Added to index |
-| `environment-variables.md` | 2026-03-01 | Claude | Added to index |
+| `environment-variables.md` | 2026-03-02 | Claude | Added DORKOS_HOST |
 
 ## External Docs Coverage
 
@@ -85,11 +85,11 @@ Maps `docs/` MDX files (Fumadocs content for the marketing site) to the source c
 | `docs/getting-started/configuration.mdx` | 2026-02-17 | Claude | Pre-existing content |
 | `docs/integrations/sse-protocol.mdx` | 2026-02-17 | Claude | Written from scratch |
 | `docs/integrations/building-integrations.mdx` | 2026-02-17 | Claude | Written from scratch |
-| `docs/self-hosting/deployment.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/self-hosting/deployment.mdx` | 2026-03-02 | Claude | Added Docker deployment |
 | `docs/self-hosting/reverse-proxy.mdx` | 2026-02-17 | Claude | Written from scratch |
 | `docs/contributing/architecture.mdx` | 2026-02-17 | Claude | Fixed service count + links |
 | `docs/contributing/testing.mdx` | 2026-02-17 | Claude | Written from scratch |
-| `docs/contributing/development-setup.mdx` | 2026-02-17 | Claude | Written from scratch |
-| `docs/guides/cli-usage.mdx` | 2026-02-17 | Claude | Written from scratch |
+| `docs/contributing/development-setup.mdx` | 2026-03-02 | Claude | Added Docker/smoke test commands |
+| `docs/guides/cli-usage.mdx` | 2026-03-02 | Claude | Added Docker section |
 | `docs/guides/tunnel-setup.mdx` | 2026-02-17 | Claude | Written from scratch |
 | `docs/guides/slash-commands.mdx` | 2026-02-17 | Claude | Written from scratch |

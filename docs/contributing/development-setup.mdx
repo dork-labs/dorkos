@@ -86,6 +86,17 @@ Always use `pnpm` scripts or prefix commands with `dotenv --` to ensure `.env` i
   "pnpm format:check": { type: "command", description: "Check formatting without writing" }
 }} />
 
+## Docker & Smoke Tests
+
+<TypeTable type={{
+  "pnpm smoke:docker": { type: "command", description: "CLI install smoke test in Docker" },
+  "pnpm smoke:integration": { type: "command", description: "Full integration test (server + API + client in Docker)" },
+  "pnpm smoke:npm": { type: "command", description: "Integration test against published npm package" },
+  "pnpm docker:build": { type: "command", description: "Build runnable Docker image from local code" },
+  "pnpm docker:run": { type: "command", description: "Run DorkOS in Docker (build first)" },
+  "pnpm publish:cli": { type: "command", description: "Publish dorkos CLI to npm" }
+}} />
+
 ## Running Specific Tests
 
 ```bash

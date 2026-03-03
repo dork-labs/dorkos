@@ -12,7 +12,7 @@ Each app and package now exports a typed, validated `env` object from a local `e
 
 | App / Package    | env.ts path                              | Env vars covered                                                                                                                                                 |
 | ---------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
+| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, DORKOS_HOST, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
 | `apps/client`    | `apps/client/src/env.ts`                 | MODE, DEV (Vite built-ins)                                                                                                                                       |
 | `apps/site`      | `apps/site/src/env.ts`                   | NODE_ENV, NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST                                                                                                      |
 | `packages/cli`   | `packages/cli/src/env.ts`                | NODE_ENV, DORK_HOME, LOG_LEVEL                                                                                                                                   |
@@ -92,6 +92,7 @@ To add a new `VITE_*` var:
 | ------------------------- | -------------- | ----------------- | ------------------------- | --------------------------------------------------------------------------- |
 | NODE_ENV                  | server         | string enum       | `development`             | Runtime environment mode                                                    |
 | DORKOS_PORT               | server         | number            | `4242`                    | Express server port                                                         |
+| DORKOS_HOST               | server         | string            | `localhost`               | Express server bind address. Set to `0.0.0.0` in Docker containers for port forwarding. |
 | DORKOS_DEFAULT_CWD        | server         | string \| undefined | —                       | Default working directory for new sessions                                  |
 | DORKOS_BOUNDARY           | server         | string \| undefined | —                       | Directory access boundary for file browsing security                        |
 | DORKOS_LOG_LEVEL          | server         | number \| undefined | —                       | Log verbosity: 0=Fatal 1=Error 2=Warn 3=Info 4=Debug 5=Trace               |

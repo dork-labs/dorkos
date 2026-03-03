@@ -869,6 +869,33 @@ No feature flag required — always mounted.
 ]
 ```
 
+## Discovery Endpoint
+
+### POST /api/discovery/scan
+
+SSE endpoint that streams agent discovery results. Performs a BFS filesystem scan for AI-configured projects (CLAUDE.md, .claude/, .cursor/, .dork/agent.json markers). No feature flag required.
+
+**Request body:**
+
+```json
+{
+  "roots": ["/home/user/projects"],
+  "maxDepth": 3,
+  "timeout": 30000
+}
+```
+
+`roots` is required (array of directory paths to scan). `maxDepth` (default 4) and `timeout` (default 30000ms) are optional.
+
+**Response:** `text/event-stream` with these event types:
+
+- `candidate` - Discovered project: `{ path, markers, runtime, name }`
+- `progress` - Scan progress: `{ scannedDirs, currentDir }`
+- `complete` - Scan finished: `{ totalCandidates, scannedDirs, duration }`
+- `error` - Scan error: `{ message }`
+
+All `roots` paths are validated against the configured directory boundary (403 if outside).
+
 ## Validation Errors
 
 Invalid requests return HTTP 400 with a structured error body:
