@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Enhance step completion and skipping logic to handle rapid calls
 ---
 
 ## [0.7.0] - 2026-03-02

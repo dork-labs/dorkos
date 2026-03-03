@@ -239,4 +239,121 @@ describe('useOnboarding', () => {
       expect(result.current.shouldShowOnboarding).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Rapid-burst race condition tests
+  // ---------------------------------------------------------------------------
+
+  it('rapid completeStep calls send superset arrays (no race condition)', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConfig).mockResolvedValue({
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+      },
+    } as never);
+    // Resolve immediately — the cache won't refresh within a synchronous act() block,
+    // so this simulates the race where all calls read stale cache state.
+    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
+
+    const { result } = renderHook(() => useOnboarding(), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => {
+      expect(result.current.shouldShowOnboarding).toBe(true);
+    });
+
+    act(() => {
+      result.current.completeStep('discovery');
+      result.current.completeStep('pulse');
+      result.current.completeStep('adapters');
+    });
+
+    await waitFor(() => {
+      expect(transport.updateConfig).toHaveBeenCalledTimes(3);
+    });
+
+    expect(transport.updateConfig).toHaveBeenNthCalledWith(1, {
+      onboarding: { completedSteps: ['discovery'] },
+    });
+    expect(transport.updateConfig).toHaveBeenNthCalledWith(2, {
+      onboarding: { completedSteps: expect.arrayContaining(['discovery', 'pulse']) },
+    });
+    expect(transport.updateConfig).toHaveBeenNthCalledWith(3, {
+      onboarding: {
+        completedSteps: expect.arrayContaining(['discovery', 'pulse', 'adapters']),
+      },
+    });
+  });
+
+  it('duplicate completeStep calls are deduplicated', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConfig).mockResolvedValue({
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+      },
+    } as never);
+    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
+
+    const { result } = renderHook(() => useOnboarding(), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => {
+      expect(result.current.shouldShowOnboarding).toBe(true);
+    });
+
+    act(() => {
+      result.current.completeStep('discovery');
+      result.current.completeStep('discovery');
+      result.current.completeStep('discovery');
+    });
+
+    await waitFor(() => {
+      expect(transport.updateConfig).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('rapid skipStep calls send superset arrays', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConfig).mockResolvedValue({
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+      },
+    } as never);
+    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
+
+    const { result } = renderHook(() => useOnboarding(), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => {
+      expect(result.current.shouldShowOnboarding).toBe(true);
+    });
+
+    act(() => {
+      result.current.skipStep('pulse');
+      result.current.skipStep('adapters');
+    });
+
+    await waitFor(() => {
+      expect(transport.updateConfig).toHaveBeenCalledTimes(2);
+    });
+
+    expect(transport.updateConfig).toHaveBeenNthCalledWith(1, {
+      onboarding: { skippedSteps: ['pulse'] },
+    });
+    expect(transport.updateConfig).toHaveBeenNthCalledWith(2, {
+      onboarding: { skippedSteps: expect.arrayContaining(['pulse', 'adapters']) },
+    });
+  });
 });

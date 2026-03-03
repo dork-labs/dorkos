@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTransport } from '@/layers/shared/model';
@@ -15,6 +16,11 @@ const ALL_STEPS: OnboardingStep[] = ['discovery', 'pulse', 'adapters'];
 export function useOnboarding() {
   const transport = useTransport();
   const queryClient = useQueryClient();
+
+  // Track steps dispatched but not yet confirmed by the server cache,
+  // so rapid calls within the same render frame build correct superset arrays.
+  const pendingCompleted = useRef(new Set<OnboardingStep>());
+  const pendingSkipped = useRef(new Set<OnboardingStep>());
 
   const { data: config, isLoading } = useQuery({
     queryKey: [...CONFIG_KEY],
@@ -46,7 +52,10 @@ export function useOnboarding() {
     mutationFn: (patch: Partial<OnboardingState>) =>
       transport.updateConfig({ onboarding: patch }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [...CONFIG_KEY] });
+      queryClient.invalidateQueries({ queryKey: [...CONFIG_KEY] }).then(() => {
+        pendingCompleted.current.clear();
+        pendingSkipped.current.clear();
+      });
     },
     onError: () => {
       toast.error('Failed to save onboarding progress');
@@ -55,17 +64,21 @@ export function useOnboarding() {
 
   /** Mark a step as completed. */
   function completeStep(step: OnboardingStep) {
-    if (state.completedSteps.includes(step)) return;
+    const allCompleted = new Set([...state.completedSteps, ...pendingCompleted.current]);
+    if (allCompleted.has(step)) return;
+    pendingCompleted.current.add(step);
     patchOnboarding.mutate({
-      completedSteps: [...state.completedSteps, step],
+      completedSteps: [...allCompleted, step],
     });
   }
 
   /** Skip a step without completing it. */
   function skipStep(step: OnboardingStep) {
-    if (state.skippedSteps.includes(step)) return;
+    const allSkipped = new Set([...state.skippedSteps, ...pendingSkipped.current]);
+    if (allSkipped.has(step)) return;
+    pendingSkipped.current.add(step);
     patchOnboarding.mutate({
-      skippedSteps: [...state.skippedSteps, step],
+      skippedSteps: [...allSkipped, step],
     });
   }
 
