@@ -4,11 +4,7 @@
 [![CI](https://github.com/dork-labs/dorkos/actions/workflows/cli-smoke-test.yml/badge.svg)](https://github.com/dork-labs/dorkos/actions/workflows/cli-smoke-test.yml)
 [![license](https://img.shields.io/npm/l/dorkos)](LICENSE)
 
-Web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK.
-
-## What is DorkOS?
-
-DorkOS gives Claude Code a browser-based chat UI with tool approval flows, slash command discovery, and cross-client session synchronization. It wraps the Claude Agent SDK with a REST/SSE API that any client can consume.
+The operating system for autonomous AI agents. Scheduling, messaging, agent discovery, and a browser-based command center — so one person can ship like a team.
 
 ## Install
 
@@ -23,44 +19,68 @@ export ANTHROPIC_API_KEY=your-key-here
 dorkos
 ```
 
-The server starts on port 4242 and opens your browser automatically.
-
-### Docker
-
-```bash
-docker build -f Dockerfile.run --build-arg INSTALL_MODE=npm -t dorkos .
-docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY=your-key-here dorkos
-```
+Your browser opens. You're looking at every Claude Code session across all your projects — sessions you started from the CLI, from VS Code, from anywhere. One place. Every session. Already there.
 
 ![DorkOS — Web interface for Claude Code](https://raw.githubusercontent.com/dork-labs/dorkos/main/meta/hero.png)
 
-## Features
+## What DorkOS Does
 
-- Chat UI with rich markdown rendering and syntax highlighting
-- Tool approval and deny flows for safe AI interactions
-- Slash command discovery from `.claude/commands/`
-- Real-time SSE streaming responses
-- Cross-client session sync (CLI, web, Obsidian)
-- **Pulse** — Cron-based agent scheduler with run history and approval workflows
-- **Relay** — Inter-agent message bus with subject-based routing, delivery tracing, and external adapters (Telegram, Webhook)
-- **Mesh** — Agent discovery and registry with pluggable strategies, network topology, and health monitoring
-- Marketing website and documentation site ([dorkos.ai](https://dorkos.ai))
-- Obsidian plugin with sidebar integration
-- ngrok tunnel support for remote access
-- Interactive API documentation at `/api/docs` (OpenAPI 3.1)
-- Working directory picker for project context
+DorkOS gives your AI agents what they're missing: scheduling, communication, coordination, and a unified interface. The intelligence comes from the agents. Everything else comes from DorkOS.
+
+### Pulse — Scheduling
+
+Cron-based agent execution, independent of your IDE or terminal. Your agents ship code, triage issues, and run audits on schedule. You wake up to completed pull requests.
+
+- Overrun protection prevents duplicate runs
+- Isolated sessions per run with full history
+- Configurable concurrency limits
+- Approval gates for agent-created schedules
+
+### Relay — Communication
+
+Built-in messaging between your agents and the channels you already use. Telegram, webhooks, browser — agents send notifications to where you are. Agents can also message each other across project boundaries.
+
+- Telegram and webhook adapters built in
+- Plugin system for adding new channels
+- Messages persist even when terminals close
+
+### Mesh — Agent Discovery
+
+Scans your projects and finds agent-capable directories automatically. You approve which agents join the network. They coordinate through governed channels.
+
+- Pluggable discovery strategies (Claude Code, Cursor, Codex)
+- `.dork/agent.json` identity manifests
+- Network topology with namespace isolation
+- Access control rules enforced by Relay
+
+### Console — Browser UI
+
+Chat with agents in rich markdown. Approve or deny tool calls. Browse and resume sessions across devices. Real-time sync across multiple clients.
+
+## Architecture
+
+DorkOS is a Turborepo monorepo with a hexagonal architecture. A `Transport` interface decouples the React client from its backend, with adapters for HTTP/SSE (standalone web) and in-process (Obsidian plugin).
+
+| Package | Description |
+|---|---|
+| `apps/client` | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui) |
+| `apps/server` | Express API with Claude Agent SDK integration |
+| `apps/site` | Marketing site and docs (Next.js 16, Fumadocs) |
+| `packages/cli` | Publishable npm CLI (esbuild bundle) |
+| `packages/shared` | Zod schemas, types, transport interface |
+| `packages/db` | Drizzle ORM schemas (SQLite) |
+| `packages/relay` | Inter-agent message bus |
+| `packages/mesh` | Agent discovery and registry |
 
 ## Documentation
 
-Full documentation is available at [dorkos.ai/docs](https://dorkos.ai/docs) and in the [`contributing/`](contributing/) directory:
+- [dorkos.ai/docs](https://dorkos.ai/docs) — User-facing guides and API reference
+- [Architecture Overview](contributing/architecture.md) — Hexagonal architecture, Transport interface, module layout
+- [API Reference](contributing/api-reference.md) — OpenAPI spec, endpoints, SSE streaming protocol
+- [Design System](contributing/design-system.md) — Color palette, typography, spacing, motion specs
+- [CLAUDE.md](CLAUDE.md) — Comprehensive technical reference
 
-- [Architecture Overview](contributing/architecture.md) - Hexagonal architecture, Transport interface, module layout
-- [API Reference](contributing/api-reference.md) - OpenAPI spec, endpoints, SSE streaming protocol
-- [Design System](contributing/design-system.md) - Color palette, typography, spacing, motion specs
-- [Obsidian Plugin Development](contributing/obsidian-plugin-development.md) - Plugin architecture and development guide
-- [Interactive Tools](contributing/interactive-tools.md) - Tool approval flows and interactive patterns
-
-See [CLAUDE.md](CLAUDE.md) for comprehensive technical documentation.
+Interactive API docs at `/api/docs` (Scalar UI) and raw OpenAPI spec at `/api/openapi.json`.
 
 ## Development
 
@@ -72,13 +92,29 @@ cp .env.example .env  # Add your ANTHROPIC_API_KEY
 pnpm dev
 ```
 
-This starts the Express server on port 4242 and the Vite dev server on port 5173.
+This starts the Express server on port 4242 and the Vite dev server on port 4241.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+### Docker
+
+```bash
+docker build -f Dockerfile.run --build-arg INSTALL_MODE=npm -t dorkos .
+docker run --rm -p 4242:4242 \
+  -e ANTHROPIC_API_KEY=your-key-here \
+  -e DORKOS_HOST=0.0.0.0 \
+  dorkos
+```
 
 ## Contributing
 
-We welcome contributions! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our development process, coding standards, and how to submit pull requests.
+We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+
+## Open Source
+
+MIT-licensed. Runs on your machine. Your agents, your data, your rules.
+
+- [Documentation](https://dorkos.ai/docs)
+- [Changelog](https://dorkos.ai/docs/changelog)
+- [Issues](https://github.com/dork-labs/dorkos/issues)
 
 ## License
 
