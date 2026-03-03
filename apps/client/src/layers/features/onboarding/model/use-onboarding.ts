@@ -16,7 +16,7 @@ export function useOnboarding() {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
-  const { data: config } = useQuery({
+  const { data: config, isLoading } = useQuery({
     queryKey: [...CONFIG_KEY],
     queryFn: () => transport.getConfig(),
     staleTime: 5 * 60 * 1000,
@@ -40,7 +40,7 @@ export function useOnboarding() {
 
   const isOnboardingComplete = ALL_STEPS.every((step) => state.completedSteps.includes(step));
   const isOnboardingDismissed = state.dismissedAt !== null;
-  const shouldShowOnboarding = !isOnboardingComplete && !isOnboardingDismissed;
+  const shouldShowOnboarding = !isLoading && !isOnboardingComplete && !isOnboardingDismissed;
 
   const patchOnboarding = useMutation({
     mutationFn: (patch: Partial<OnboardingState>) =>

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Gate shouldShowOnboarding on config loading state
 - Send partial patches to prevent skip dismiss race condition
 - Fix missing `better-sqlite3` dependency in CLI package that crashed on `npm install -g dorkos`
 - Adjust beam visibility range in TimelineSection
