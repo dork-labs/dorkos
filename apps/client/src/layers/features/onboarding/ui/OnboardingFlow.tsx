@@ -74,8 +74,8 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
     goNext();
   }, [currentStep, skipStep, goNext]);
 
-  const handleSkipAll = useCallback(() => {
-    dismiss();
+  const handleSkipAll = useCallback(async () => {
+    await dismiss();
     onComplete();
   }, [dismiss, onComplete]);
 

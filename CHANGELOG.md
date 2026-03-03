@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add GitHub Actions CLI smoke test workflow for npm package install validation
+- Add Dockerfile and .dockerignore for isolated CLI smoke testing
+- Add `smoke:docker` convenience script for local Docker smoke tests
 - Add DorkLogo to welcome screen
 - Add FAQ accordion section before install CTA
 - Align site copy with pro-human positioning
@@ -23,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Send partial patches to prevent skip dismiss race condition
+- Fix missing `better-sqlite3` dependency in CLI package that crashed on `npm install -g dorkos`
 - Adjust beam visibility range in TimelineSection
 ---
 

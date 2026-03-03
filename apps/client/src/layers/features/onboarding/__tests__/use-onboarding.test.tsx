@@ -124,13 +124,9 @@ describe('useOnboarding', () => {
     });
 
     await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledWith(
-        expect.objectContaining({
-          onboarding: expect.objectContaining({
-            completedSteps: ['discovery'],
-          }),
-        })
-      );
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        onboarding: { completedSteps: ['discovery'] },
+      });
     });
   });
 
@@ -159,17 +155,42 @@ describe('useOnboarding', () => {
     });
 
     await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledWith(
-        expect.objectContaining({
-          onboarding: expect.objectContaining({
-            skippedSteps: ['pulse'],
-          }),
-        })
-      );
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        onboarding: { skippedSteps: ['pulse'] },
+      });
     });
   });
 
-  it('dismiss calls updateConfig with dismissedAt timestamp', async () => {
+  it('dismiss calls updateConfig with only dismissedAt (partial patch)', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConfig).mockResolvedValue({
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+      },
+    } as never);
+    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
+
+    const { result } = renderHook(() => useOnboarding(), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => {
+      expect(result.current.shouldShowOnboarding).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.dismiss();
+    });
+
+    expect(transport.updateConfig).toHaveBeenCalledWith({
+      onboarding: { dismissedAt: expect.any(String) },
+    });
+  });
+
+  it('startOnboarding sends only startedAt as partial patch', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
       onboarding: {
@@ -190,17 +211,13 @@ describe('useOnboarding', () => {
     });
 
     act(() => {
-      result.current.dismiss();
+      result.current.startOnboarding();
     });
 
     await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledWith(
-        expect.objectContaining({
-          onboarding: expect.objectContaining({
-            dismissedAt: expect.any(String),
-          }),
-        })
-      );
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        onboarding: { startedAt: expect.any(String) },
+      });
     });
   });
 

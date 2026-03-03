@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useTransport } from '@/layers/shared/model';
 import type { OnboardingState, OnboardingStep } from '@dorkos/shared/config-schema';
 
@@ -43,9 +44,12 @@ export function useOnboarding() {
 
   const patchOnboarding = useMutation({
     mutationFn: (patch: Partial<OnboardingState>) =>
-      transport.updateConfig({ onboarding: { ...state, ...patch } }),
+      transport.updateConfig({ onboarding: patch }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...CONFIG_KEY] });
+    },
+    onError: () => {
+      toast.error('Failed to save onboarding progress');
     },
   });
 
@@ -67,7 +71,7 @@ export function useOnboarding() {
 
   /** Dismiss onboarding entirely. */
   function dismiss() {
-    patchOnboarding.mutate({
+    return patchOnboarding.mutateAsync({
       dismissedAt: new Date().toISOString(),
     });
   }

@@ -25,7 +25,7 @@ vi.mock('@/layers/shared/lib', () => ({
 
 const mockCompleteStep = vi.fn();
 const mockSkipStep = vi.fn();
-const mockDismiss = vi.fn();
+const mockDismiss = vi.fn().mockResolvedValue(undefined);
 const mockStartOnboarding = vi.fn();
 
 vi.mock('../model/use-onboarding', () => ({
@@ -177,7 +177,7 @@ describe('OnboardingFlow', () => {
     expect(screen.getByTestId('onboarding-complete')).toBeTruthy();
   });
 
-  it('Skip all calls dismiss and onComplete', () => {
+  it('Skip all calls dismiss and onComplete', async () => {
     const onComplete = vi.fn();
 
     render(<OnboardingFlow onComplete={onComplete} initialStep={0} />);
@@ -185,7 +185,9 @@ describe('OnboardingFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Skip all' }));
 
     expect(mockDismiss).toHaveBeenCalled();
-    expect(onComplete).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalled();
+    });
   });
 
   it('Skip calls skipStep with current step and advances', () => {
@@ -196,7 +198,7 @@ describe('OnboardingFlow', () => {
     expect(mockSkipStep).toHaveBeenCalledWith('discovery');
   });
 
-  it('Skip setup on welcome calls dismiss and onComplete', () => {
+  it('Skip setup on welcome calls dismiss and onComplete', async () => {
     const onComplete = vi.fn();
 
     render(<OnboardingFlow onComplete={onComplete} />);
@@ -204,7 +206,9 @@ describe('OnboardingFlow', () => {
     fireEvent.click(screen.getByText('Skip setup'));
 
     expect(mockDismiss).toHaveBeenCalled();
-    expect(onComplete).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalled();
+    });
   });
 
   // --- Auto-skip Pulse when no agents ---
