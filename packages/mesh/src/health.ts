@@ -8,14 +8,14 @@
  */
 
 /** Health status thresholds in minutes. */
-const ACTIVE_THRESHOLD_MINUTES = 5;
-const INACTIVE_THRESHOLD_MINUTES = 30;
+const ACTIVE_THRESHOLD_MINUTES = 60;
+const INACTIVE_THRESHOLD_MINUTES = 60 * 24; // 1440 minutes
 
 /**
  * Compute agent health status from last_seen_at timestamp.
  *
  * @param lastSeenAt - ISO 8601 timestamp of last agent heartbeat, or null
- * @returns Health status: 'active' (< 5min), 'inactive' (5-30min), 'stale' (> 30min or null)
+ * @returns Health status: 'active' (< 1hr), 'inactive' (1-24hr), 'stale' (> 24hr or null)
  */
 export function computeHealthStatus(
   lastSeenAt: string | null,

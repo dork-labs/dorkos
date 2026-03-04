@@ -154,6 +154,13 @@ export class AgentManager {
       return;
     }
 
+    // Stamp agent last_seen_at when a message is dispatched
+    const meshAgent = this.meshCore?.getByPath(effectiveCwd);
+    const meshAgentId = meshAgent?.id;
+    if (this.meshCore && meshAgentId) {
+      this.meshCore.updateLastSeen(meshAgentId, 'message_sent');
+    }
+
     // Load agent manifest for per-agent tool filtering
     let manifest: Awaited<ReturnType<typeof readManifest>> | null = null;
     try {
@@ -291,7 +298,12 @@ export class AgentManager {
 
         const prevSdkId = session.sdkSessionId;
         for await (const event of mapSdkMessage(result.value, session, sessionId, toolState)) {
-          if (event.type === 'done') emittedDone = true;
+          if (event.type === 'done') {
+            emittedDone = true;
+            if (this.meshCore && meshAgentId) {
+              this.meshCore.updateLastSeen(meshAgentId, 'response_complete');
+            }
+          }
           yield event;
         }
         // Update reverse index if sdk-event-mapper assigned a new SDK session ID
