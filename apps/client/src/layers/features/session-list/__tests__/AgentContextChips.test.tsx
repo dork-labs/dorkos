@@ -3,13 +3,20 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vite
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { AgentContextChips } from '../ui/AgentContextChips';
+import type { AgentToolStatus } from '@/layers/entities/agent';
 
-// Mock entity hooks
-const mockUsePulseEnabled = vi.fn(() => true);
-vi.mock('@/layers/entities/pulse/model/use-pulse-config', () => ({
-  usePulseEnabled: () => mockUsePulseEnabled(),
+// Mock useAgentToolStatus — controls per-agent chip state
+const mockUseAgentToolStatus = vi.fn((): AgentToolStatus => ({
+  pulse: 'enabled',
+  relay: 'enabled',
+  mesh: 'enabled',
+  adapter: 'enabled',
+}));
+vi.mock('@/layers/entities/agent', () => ({
+  useAgentToolStatus: () => mockUseAgentToolStatus(),
 }));
 
+// Mock Pulse run count hooks (still needed for badge display)
 const mockActiveRunCount = vi.fn(() => ({ data: 0 }));
 vi.mock('@/layers/entities/pulse/model/use-runs', () => ({
   useActiveRunCount: () => mockActiveRunCount(),
@@ -20,9 +27,10 @@ vi.mock('@/layers/entities/pulse/model/use-completed-run-badge', () => ({
   useCompletedRunBadge: () => mockCompletedRunBadge(),
 }));
 
-const mockUseRelayEnabled = vi.fn(() => true);
-vi.mock('@/layers/entities/relay/model/use-relay-config', () => ({
-  useRelayEnabled: () => mockUseRelayEnabled(),
+// usePulseEnabled is still imported for the pulse feature gate check
+const mockUsePulseEnabled = vi.fn(() => true);
+vi.mock('@/layers/entities/pulse/model/use-pulse-config', () => ({
+  usePulseEnabled: () => mockUsePulseEnabled(),
 }));
 
 const mockUseRegisteredAgents = vi.fn(() => ({ data: { agents: [] } }));
@@ -81,14 +89,18 @@ describe('AgentContextChips', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUsePulseEnabled.mockReturnValue(true);
+    mockUseAgentToolStatus.mockReturnValue({
+      pulse: 'enabled',
+      relay: 'enabled',
+      mesh: 'enabled',
+      adapter: 'enabled',
+    });
     mockActiveRunCount.mockReturnValue({ data: 0 });
     mockCompletedRunBadge.mockReturnValue({ unviewedCount: 0, clearBadge: vi.fn() });
-    mockUseRelayEnabled.mockReturnValue(true);
     mockUseRegisteredAgents.mockReturnValue({ data: { agents: [] } });
   });
 
-  it('renders all three chips with aria-labels', () => {
+  it('renders all three chips with aria-labels when all enabled', () => {
     render(<AgentContextChips />, { wrapper: Wrapper });
 
     expect(screen.getByLabelText('Pulse scheduler')).toBeInTheDocument();
@@ -115,5 +127,57 @@ describe('AgentContextChips', () => {
 
     fireEvent.click(screen.getByLabelText('Mesh discovery'));
     expect(mockSetMeshOpen).toHaveBeenCalledWith(true);
+  });
+
+  describe('per-agent chip rendering', () => {
+    it('renders enabled chip at normal opacity (enabled state)', () => {
+      mockUseAgentToolStatus.mockReturnValue({
+        pulse: 'enabled',
+        relay: 'enabled',
+        mesh: 'enabled',
+        adapter: 'enabled',
+      });
+      render(<AgentContextChips projectPath="/test" />, { wrapper: Wrapper });
+      expect(screen.getByLabelText('Pulse scheduler')).toBeInTheDocument();
+      expect(screen.getByLabelText('Relay messaging')).toBeInTheDocument();
+      expect(screen.getByLabelText('Mesh discovery')).toBeInTheDocument();
+    });
+
+    it('renders muted chip for disabled-by-agent state', () => {
+      mockUseAgentToolStatus.mockReturnValue({
+        pulse: 'disabled-by-agent',
+        relay: 'enabled',
+        mesh: 'enabled',
+        adapter: 'enabled',
+      });
+      render(<AgentContextChips projectPath="/test" />, { wrapper: Wrapper });
+      // Chip still renders but in muted style — aria-label still present
+      expect(screen.getByLabelText('Pulse scheduler')).toBeInTheDocument();
+    });
+
+    it('hides chip when disabled-by-server', () => {
+      mockUseAgentToolStatus.mockReturnValue({
+        pulse: 'disabled-by-server',
+        relay: 'disabled-by-server',
+        mesh: 'enabled',
+        adapter: 'disabled-by-server',
+      });
+      render(<AgentContextChips projectPath="/test" />, { wrapper: Wrapper });
+      expect(screen.queryByLabelText('Pulse scheduler')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Relay messaging')).not.toBeInTheDocument();
+      // Mesh has no server flag so it still renders
+      expect(screen.getByLabelText('Mesh discovery')).toBeInTheDocument();
+    });
+
+    it('returns null when all chips are disabled-by-server', () => {
+      mockUseAgentToolStatus.mockReturnValue({
+        pulse: 'disabled-by-server',
+        relay: 'disabled-by-server',
+        mesh: 'disabled-by-server',
+        adapter: 'disabled-by-server',
+      });
+      const { container } = render(<AgentContextChips projectPath="/test" />, { wrapper: Wrapper });
+      expect(container.firstChild).toBeNull();
+    });
   });
 });

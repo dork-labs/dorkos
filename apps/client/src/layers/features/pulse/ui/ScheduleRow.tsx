@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
-import { MoreHorizontal, Pencil, Play, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useUpdateSchedule,
@@ -23,6 +23,7 @@ import {
   DialogFooter,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { shortenHomePath } from '@/layers/shared/lib';
 import { hashToHslColor, hashToEmoji } from '@/layers/shared/lib/favicon-utils';
 import type { PulseSchedule } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -124,9 +125,23 @@ export function ScheduleRow({ schedule, agent, expanded, onToggleExpand, onEdit 
                   <span className="text-sm font-medium">{agent.name}</span>
                   <span className="text-muted-foreground text-xs">&middot;</span>
                 </>
+              ) : schedule.agentId ? (
+                // agentId is set but agent is not found — show warning
+                <>
+                  <AlertCircle className="text-destructive size-3.5 shrink-0" />
+                  <span className="text-destructive text-xs">Agent not found</span>
+                  <span className="text-muted-foreground text-xs">&middot;</span>
+                </>
+              ) : schedule.cwd ? (
+                // No agentId, show folder icon + CWD
+                <>
+                  <FolderOpen className="text-muted-foreground size-3.5 shrink-0" />
+                  <span className="text-muted-foreground font-mono text-xs">{shortenHomePath(schedule.cwd)}</span>
+                  <span className="text-muted-foreground text-xs">&middot;</span>
+                </>
               ) : null}
-              <span className={agent ? 'text-muted-foreground text-xs' : 'text-sm font-medium'}>
-                {agent ? schedule.name : schedule.name}
+              <span className={agent || schedule.agentId || schedule.cwd ? 'text-muted-foreground text-xs' : 'text-sm font-medium'}>
+                {schedule.name}
               </span>
             </div>
             <div className="text-xs text-muted-foreground">

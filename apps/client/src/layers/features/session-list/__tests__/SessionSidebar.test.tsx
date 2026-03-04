@@ -62,12 +62,18 @@ vi.mock('@/layers/features/onboarding', () => ({
   ProgressCard: () => null,
 }));
 
-// Mock agent entity hooks (used by AgentHeader)
+// Mock agent entity hooks (used by AgentHeader and AgentContextChips)
 vi.mock('@/layers/entities/agent', () => ({
   useCurrentAgent: () => ({ data: null, isLoading: false }),
   useCreateAgent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAgentVisual: () => ({ color: 'hsl(0,70%,55%)', emoji: '🤖' }),
   useResolvedAgents: () => ({ data: undefined }),
+  useAgentToolStatus: () => ({
+    pulse: 'enabled',
+    relay: 'enabled',
+    mesh: 'enabled',
+    adapter: 'enabled',
+  }),
 }));
 
 // Mock usePulseEnabled

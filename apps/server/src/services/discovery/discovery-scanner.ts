@@ -2,7 +2,6 @@ import { readdir, access } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, basename } from 'node:path';
-import { homedir } from 'node:os';
 
 /**
  * Filesystem discovery scanner for AI-configured projects.
@@ -44,8 +43,8 @@ export interface ScanProgress {
 
 /** Options controlling the scanner behavior. */
 export interface ScanOptions {
-  /** Root directory to start scanning from. Defaults to `os.homedir()`. */
-  root?: string;
+  /** Root directory to start scanning from. */
+  root: string;
   /** Maximum directory depth to traverse. Defaults to 5. */
   maxDepth?: number;
   /** Overall scan timeout in milliseconds. Defaults to 30000. */
@@ -177,8 +176,8 @@ async function getGitRemote(dirPath: string): Promise<string | null> {
  *
  * @param options - Scan configuration (root, maxDepth, timeout)
  */
-export async function* scanForAgents(options: ScanOptions = {}): AsyncGenerator<ScanEvent> {
-  const root = options.root ?? homedir();
+export async function* scanForAgents(options: ScanOptions): AsyncGenerator<ScanEvent> {
+  const root = options.root;
   const maxDepth = options.maxDepth ?? 5;
   const timeout = options.timeout ?? 30_000;
 

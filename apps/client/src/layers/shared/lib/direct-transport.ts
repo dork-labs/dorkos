@@ -499,6 +499,7 @@ export class DirectTransport implements Transport {
       registeredAt: new Date().toISOString(),
       registeredBy: 'dorkos-obsidian',
       personaEnabled: true,
+      enabledToolGroups: {},
     };
     await writeManifest(agentPath, manifest);
     return manifest;

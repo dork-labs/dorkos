@@ -148,6 +148,9 @@ async function start() {
     });
     logger.info('[Mesh] MeshCore initialized');
 
+    // Provide MeshCore to AgentManager for per-session manifest lookup and peer agents context
+    agentManager.setMeshCore(meshCore);
+
     // Run startup reconciliation (non-fatal)
     try {
       const result = await meshCore.reconcileOnStartup();
@@ -194,10 +197,20 @@ async function start() {
       maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
       retentionCount: schedulerConfig.retentionCount,
       timezone: schedulerConfig.timezone,
-    }, relayCore);
-    app.use('/api/pulse', createPulseRouter(pulseStore, schedulerService));
+    }, relayCore, meshCore);
+    app.use('/api/pulse', createPulseRouter(pulseStore, schedulerService, meshCore));
     setPulseEnabled(true);
     logger.info('[Pulse] Routes mounted and scheduler configured');
+
+    // Cascade-disable: when an agent is unregistered from Mesh, disable its linked Pulse schedules
+    if (meshCore) {
+      meshCore.onUnregister((agentId) => {
+        const disabledCount = pulseStore.disableSchedulesByAgentId(agentId);
+        if (disabledCount > 0) {
+          logger.info(`[Pulse] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`);
+        }
+      });
+    }
   }
 
   // Mount Relay routes if enabled

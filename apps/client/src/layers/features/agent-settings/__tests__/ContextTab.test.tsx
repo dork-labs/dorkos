@@ -8,7 +8,7 @@ vi.mock('@/layers/entities/relay', () => ({
 }));
 vi.mock('../model/use-agent-context-config', () => ({
   useAgentContextConfig: vi.fn(() => ({
-    config: { relayTools: true, meshTools: true, adapterTools: true },
+    config: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
     updateConfig: vi.fn(),
   })),
 }));
@@ -31,7 +31,7 @@ describe('ContextTab', () => {
     vi.clearAllMocks();
     vi.mocked(useRelayEnabled).mockReturnValue(true);
     vi.mocked(useAgentContextConfig).mockReturnValue({
-      config: { relayTools: true, meshTools: true, adapterTools: true },
+      config: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
       updateConfig: vi.fn(),
     });
   });
@@ -62,7 +62,7 @@ describe('ContextTab', () => {
 
   it('hides preview when toggle is off', () => {
     vi.mocked(useAgentContextConfig).mockReturnValue({
-      config: { relayTools: false, meshTools: true, adapterTools: true },
+      config: { relayTools: false, meshTools: true, adapterTools: true, pulseTools: true },
       updateConfig: vi.fn(),
     });
     const view = renderTab();
@@ -94,7 +94,7 @@ describe('ContextTab', () => {
   it('hides preview when feature is unavailable even if toggle is on', () => {
     vi.mocked(useRelayEnabled).mockReturnValue(false);
     vi.mocked(useAgentContextConfig).mockReturnValue({
-      config: { relayTools: true, meshTools: true, adapterTools: true },
+      config: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
       updateConfig: vi.fn(),
     });
     const view = renderTab();
@@ -108,7 +108,7 @@ describe('ContextTab', () => {
   it('calls updateConfig when a toggle is switched', () => {
     const updateConfig = vi.fn();
     vi.mocked(useAgentContextConfig).mockReturnValue({
-      config: { relayTools: true, meshTools: true, adapterTools: true },
+      config: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
       updateConfig,
     });
     const view = renderTab();
@@ -123,7 +123,7 @@ describe('ContextTab', () => {
   it('calls updateConfig with correct key for relay toggle', () => {
     const updateConfig = vi.fn();
     vi.mocked(useAgentContextConfig).mockReturnValue({
-      config: { relayTools: true, meshTools: true, adapterTools: true },
+      config: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
       updateConfig,
     });
     const view = renderTab();

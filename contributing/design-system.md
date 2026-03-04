@@ -168,7 +168,7 @@ Animation should feel like physics, not decoration. Things should move because t
 
 **Sidebar toggle:** Width transition 200ms, content fades.
 
-**Command palette:** Fade in + scale from 0.98, 150ms ease-out.
+**Command palette:** Spring entrance (scale 0.96 + y: -8, stiffness: 500, damping: 35). Sliding selection indicator via `layoutId`. Stagger items on open (first 8 only, 40ms per item). Directional x-axis page transitions (150ms ease-out). Item hover nudge (2px rightward). Preview panel width spring (stiffness: 400, damping: 35). Dialog width animates from 480px to 720px when preview panel appears.
 
 **Streaming cursor:** Blinking pipe character, 1s infinite.
 
@@ -276,6 +276,22 @@ Searchable combobox from `shared/ui/command.tsx`. Used with Popover for dropdown
 
 Pattern: `Popover` > `PopoverTrigger` > `PopoverContent` > `Command` > `CommandInput` + `CommandList` > `CommandGroup` > `CommandItem`.
 
+**Global command palette**: The `features/command-palette/` module uses cmdk with `shouldFilter={false}` to disable built-in filtering, delegating all search to Fuse.js (`use-palette-search.ts`). Category prefixes: `@` for agents, `>` for commands. The palette uses cmdk's native `pages` array pattern for sub-menu drill-down with breadcrumb navigation. List height transitions use the `--cmdk-list-height` CSS variable:
+
+```css
+[cmdk-list] {
+  height: var(--cmdk-list-height);
+  transition: height 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+```
+
+**Split-pane layout**: The palette dialog uses a flex-row container. `CommandList` takes ~40% width, `AgentPreviewPanel` takes ~60%. The preview panel only appears when the selected item is an agent. On mobile (`useIsMobile()` or below 900px viewport), the preview panel is hidden.
+
+**Character highlighting**: `HighlightedText` renders Fuse.js match indices as `<mark>` elements with `bg-transparent text-foreground font-semibold`. All content passes through React's createElement pipeline (no raw HTML).
+
+**PaletteFooter**: Dynamic keyboard hint bar using `<kbd>` elements styled with `border, rounded, monospace font, text-xs, text-muted-foreground`. Shows context-appropriate shortcuts (navigate, open, back, close).
+
 ---
 
 ## Interaction States
@@ -314,6 +330,20 @@ Opacity 0.5. No cursor change beyond `not-allowed`.
 - Streaming: blinking cursor after last character
 - Tool running: spinning icon (Loader2 from lucide)
 - History loading: three pulsing dots in message area
+
+### 3-State Chip Pattern (AgentContextChips)
+
+Status chips in the sidebar footer use a 3-state model driven by `useAgentToolStatus()`:
+
+| State | Visual | Tooltip |
+|-------|--------|---------|
+| `enabled` | Colored chip, normal opacity | "{Domain} -- enabled for {agent.name}" |
+| `disabled-by-agent` | Muted chip, `opacity-40`, `[off]` suffix in label | "{Domain} -- disabled for this agent" |
+| `disabled-by-server` | Hidden entirely (not rendered) | N/A |
+
+Active run counts (Pulse) and agent counts (Mesh) render as badges on `enabled` chips only. The `disabled-by-agent` state communicates that the agent manifest has explicitly opted out, while `disabled-by-server` hides the chip entirely since the feature is globally unavailable.
+
+This pattern applies to any status indicator that depends on both per-entity configuration and global feature flags.
 
 ---
 

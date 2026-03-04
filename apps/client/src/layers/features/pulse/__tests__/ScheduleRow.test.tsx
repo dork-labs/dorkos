@@ -40,12 +40,27 @@ const activeSchedule: PulseSchedule = {
   enabled: true,
   status: 'active',
   cwd: null,
+  agentId: null,
   timezone: null,
   maxRuntime: null,
   permissionMode: 'acceptEdits',
   nextRun: new Date(Date.now() + 3600000).toISOString(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+};
+
+const scheduleWithCwd: PulseSchedule = {
+  ...activeSchedule,
+  id: 'sched-4',
+  name: 'Dir Review',
+  cwd: '/projects/api',
+};
+
+const scheduleWithOrphanedAgent: PulseSchedule = {
+  ...activeSchedule,
+  id: 'sched-5',
+  name: 'Orphan Schedule',
+  agentId: 'missing-agent-id',
 };
 
 const pendingSchedule: PulseSchedule = {
@@ -237,5 +252,70 @@ describe('ScheduleRow', () => {
     });
 
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
+  });
+
+  describe('schedule target display', () => {
+    it('shows agent color dot, icon, and name when agent prop is provided', () => {
+      const agent = {
+        id: 'agent-1',
+        name: 'api-bot',
+        icon: '🤖',
+        color: '#6366f1',
+        description: '',
+        runtime: 'claude-code' as const,
+        capabilities: [],
+        behavior: { responseMode: 'always' as const },
+        budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
+        registeredAt: new Date().toISOString(),
+        registeredBy: 'test',
+        enabledToolGroups: {},
+        personaEnabled: true,
+      };
+
+      const scheduleWithAgent: PulseSchedule = {
+        ...activeSchedule,
+        agentId: 'agent-1',
+      };
+
+      const t = createMockTransport();
+      const Wrapper = createWrapper(t);
+      render(
+        <Wrapper>
+          <ScheduleRow
+            schedule={scheduleWithAgent}
+            agent={agent}
+            expanded={false}
+            onToggleExpand={vi.fn()}
+            onEdit={vi.fn()}
+          />
+        </Wrapper>
+      );
+
+      expect(screen.getByText('api-bot')).toBeTruthy();
+      expect(screen.getByText('🤖')).toBeTruthy();
+    });
+
+    it('shows "Agent not found" warning when agentId is set but agent is not provided', () => {
+      renderScheduleRow(scheduleWithOrphanedAgent);
+
+      expect(screen.getByText('Agent not found')).toBeTruthy();
+    });
+
+    it('shows folder icon and shortened CWD when schedule has cwd but no agentId', () => {
+      renderScheduleRow(scheduleWithCwd);
+
+      // The schedule name is still visible
+      expect(screen.getByText('Dir Review')).toBeTruthy();
+      // CWD path is displayed (shortened — /projects/api stays as-is, no ~ prefix)
+      expect(screen.getByText('/projects/api')).toBeTruthy();
+    });
+
+    it('shows schedule name without any target prefix when no cwd and no agentId', () => {
+      renderScheduleRow(activeSchedule);
+
+      // Name shows as primary text, no agent/cwd prefix
+      expect(screen.getByText('Daily Review')).toBeTruthy();
+      expect(screen.queryByText('Agent not found')).toBeNull();
+    });
   });
 });

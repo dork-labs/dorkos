@@ -1,7 +1,7 @@
 ---
 number: 67
 title: Use Slack Bucket Frecency for Agent Ranking
-status: draft
+status: proposed
 created: 2026-03-03
 spec: command-palette-10x
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: command-palette-10x)
+Proposed
 
 ## Context
 

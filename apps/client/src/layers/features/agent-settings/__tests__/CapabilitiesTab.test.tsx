@@ -1,8 +1,26 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+
+vi.mock('@/layers/entities/relay', () => ({
+  useRelayEnabled: vi.fn(() => true),
+}));
+vi.mock('@/layers/entities/pulse', () => ({
+  usePulseEnabled: vi.fn(() => true),
+}));
+vi.mock('../model/use-agent-context-config', () => ({
+  useAgentContextConfig: vi.fn(() => ({
+    config: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
+    updateConfig: vi.fn(),
+  })),
+}));
+
 import { CapabilitiesTab } from '../ui/CapabilitiesTab';
+import { useRelayEnabled } from '@/layers/entities/relay';
+import { usePulseEnabled } from '@/layers/entities/pulse';
+import { useAgentContextConfig } from '../model/use-agent-context-config';
+import { TooltipProvider } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 const baseAgent: AgentManifest = {
@@ -16,14 +34,20 @@ const baseAgent: AgentManifest = {
   registeredAt: '2025-01-01T00:00:00.000Z',
   registeredBy: 'test',
   personaEnabled: true,
+  enabledToolGroups: {},
 };
 
 /**
  * Helper to scope queries to the rendered container, avoiding duplicates
  * from portal-based components or React strict mode.
+ * Wraps in TooltipProvider since ToolGroupRow uses Tooltip.
  */
 function renderTab(agent: AgentManifest, onUpdate: ReturnType<typeof vi.fn>) {
-  const { container } = render(<CapabilitiesTab agent={agent} onUpdate={onUpdate} />);
+  const { container } = render(
+    <TooltipProvider>
+      <CapabilitiesTab agent={agent} onUpdate={onUpdate} />
+    </TooltipProvider>
+  );
   return within(container);
 }
 
@@ -33,6 +57,13 @@ describe('CapabilitiesTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     onUpdate = vi.fn();
+    // Re-establish default mock return values after clearAllMocks
+    vi.mocked(useRelayEnabled).mockReturnValue(true);
+    vi.mocked(usePulseEnabled).mockReturnValue(true);
+    vi.mocked(useAgentContextConfig).mockReturnValue({
+      config: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
+      updateConfig: vi.fn(),
+    });
   });
 
   it('renders existing capabilities as badges', () => {
@@ -133,5 +164,83 @@ describe('CapabilitiesTab', () => {
     expect(onUpdate).toHaveBeenCalledWith({ namespace: 'blur-ns' });
 
     vi.useRealTimers();
+  });
+
+  describe('Tool Groups section', () => {
+    it('renders all four tool group toggles', () => {
+      const view = renderTab(baseAgent, onUpdate);
+      expect(view.getByText('Pulse (Scheduling)')).toBeInTheDocument();
+      expect(view.getByText('Relay (Messaging)')).toBeInTheDocument();
+      expect(view.getByText('Mesh (Discovery)')).toBeInTheDocument();
+      expect(view.getByText('Relay Adapters')).toBeInTheDocument();
+    });
+
+    it('renders Core Tools row with "Always enabled" label', () => {
+      const view = renderTab(baseAgent, onUpdate);
+      expect(view.getByText('Core Tools')).toBeInTheDocument();
+      expect(view.getByText('Always enabled')).toBeInTheDocument();
+    });
+
+    it('shows Inherited label when agent has no override', () => {
+      const view = renderTab({ ...baseAgent, enabledToolGroups: {} }, onUpdate);
+      const inherited = view.getAllByText('Inherited');
+      expect(inherited.length).toBe(4);
+    });
+
+    it('shows Overridden: Off label when agent explicitly disables pulse', () => {
+      const view = renderTab(
+        { ...baseAgent, enabledToolGroups: { pulse: false } },
+        onUpdate
+      );
+      expect(view.getByText('Overridden: Off')).toBeInTheDocument();
+    });
+
+    it('shows Overridden: On label when agent explicitly enables a domain', () => {
+      const view = renderTab(
+        { ...baseAgent, enabledToolGroups: { mesh: true } },
+        onUpdate
+      );
+      expect(view.getByText('Overridden: On')).toBeInTheDocument();
+    });
+
+    it('calls onUpdate with updated enabledToolGroups when toggle changes', () => {
+      const view = renderTab(baseAgent, onUpdate);
+      // The 4 tool group switches come after 2 budget spinbuttons; get all switches
+      const switches = view.getAllByRole('switch');
+      // Click the first tool group switch (Pulse)
+      fireEvent.click(switches[0]);
+      expect(onUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ enabledToolGroups: expect.any(Object) })
+      );
+    });
+
+    it('Reset button clears the per-agent override', () => {
+      const view = renderTab(
+        { ...baseAgent, enabledToolGroups: { pulse: false } },
+        onUpdate
+      );
+      const resetBtn = view.getByLabelText('Reset Pulse (Scheduling) to default');
+      fireEvent.click(resetBtn);
+      expect(onUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ enabledToolGroups: {} })
+      );
+    });
+
+    it('shows disabled switch when server has relay off', () => {
+      vi.mocked(useRelayEnabled).mockReturnValue(false);
+      const view = renderTab(baseAgent, onUpdate);
+      // Relay and Adapter switches should be disabled (server off state)
+      const relayRow = view.getByText('Relay (Messaging)').closest('div')!.parentElement!;
+      const switchInRow = within(relayRow).getByRole('switch');
+      expect(switchInRow).toBeDisabled();
+    });
+
+    it('shows disabled switch when server has pulse off', () => {
+      vi.mocked(usePulseEnabled).mockReturnValue(false);
+      const view = renderTab(baseAgent, onUpdate);
+      const pulseRow = view.getByText('Pulse (Scheduling)').closest('div')!.parentElement!;
+      const switchInRow = within(pulseRow).getByRole('switch');
+      expect(switchInRow).toBeDisabled();
+    });
   });
 });

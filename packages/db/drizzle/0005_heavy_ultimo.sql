@@ -1,0 +1,1 @@
+ALTER TABLE `pulse_schedules` ADD `agent_id` text;

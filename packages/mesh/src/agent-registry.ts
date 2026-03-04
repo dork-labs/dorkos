@@ -387,6 +387,9 @@ export class AgentRegistry {
       personaEnabled: row.personaEnabled,
       color: row.color ?? undefined,
       icon: row.icon ?? undefined,
+      // enabledToolGroups is not yet persisted in the DB schema — defaults to {} (inherit global).
+      // A future migration will add a JSON column; until then, read from the manifest file.
+      enabledToolGroups: {},
     };
   }
 

@@ -5,6 +5,7 @@ import { createTestDb } from '@dorkos/test-utils';
 import type { Db } from '@dorkos/db';
 import type { PulseSchedule, PulseRun } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
+import type { MeshCore } from '@dorkos/mesh';
 import type { PulseDispatchPayload } from '@dorkos/shared/relay-schemas';
 
 vi.mock('../../relay/relay-state.js', () => ({
@@ -374,6 +375,139 @@ describe('SchedulerService', () => {
 
       await service.stop();
     });
+  });
+});
+
+/** Create a minimal MeshCore mock with getProjectPath. */
+function createMockMeshCore(pathMap: Record<string, string | undefined> = {}): MeshCore {
+  return {
+    getProjectPath: vi.fn((agentId: string) => pathMap[agentId]),
+  } as unknown as MeshCore;
+}
+
+describe('agent CWD resolution (via triggerManualRun)', () => {
+  let store: PulseStore;
+  let db: Db;
+  let mockAgent: ReturnType<typeof createMockAgentManager>;
+
+  beforeEach(() => {
+    db = createTestDb();
+    store = new PulseStore(db);
+    mockAgent = createMockAgentManager();
+    vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+      // no events
+    });
+  });
+
+  it('records failed run when agent not found in registry', async () => {
+    const sched = store.createSchedule({
+      name: 'Agent CWD Test',
+      prompt: 'test',
+      cron: '0 * * * *',
+      agentId: 'missing-agent',
+    });
+
+    const mockMesh = createMockMeshCore({});
+    const service = new SchedulerService({
+      store,
+      agentManager: mockAgent,
+      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      meshCore: mockMesh,
+    });
+
+    const run = await service.triggerManualRun(sched.id);
+    await new Promise((r) => setTimeout(r, 100));
+
+    const updatedRun = store.getRun(run!.id);
+    expect(updatedRun!.status).toBe('failed');
+    expect(updatedRun!.error).toContain('not found in registry');
+
+    await service.stop();
+  });
+
+  it('uses agent projectPath as CWD when agentId is set', async () => {
+    const sched = store.createSchedule({
+      name: 'Agent CWD Resolve',
+      prompt: 'test',
+      cron: '0 * * * *',
+      agentId: 'agent-123',
+    });
+
+    const mockMesh = createMockMeshCore({ 'agent-123': '/projects/agent-dir' });
+    const service = new SchedulerService({
+      store,
+      agentManager: mockAgent,
+      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      meshCore: mockMesh,
+    });
+
+    await service.triggerManualRun(sched.id);
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(mockAgent.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ cwd: '/projects/agent-dir' }),
+    );
+    expect(mockAgent.sendMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      'test',
+      expect.objectContaining({ cwd: '/projects/agent-dir' }),
+    );
+
+    await service.stop();
+  });
+
+  it('falls back to schedule.cwd when no agentId', async () => {
+    const sched = store.createSchedule({
+      name: 'CWD Fallback',
+      prompt: 'test',
+      cron: '0 * * * *',
+      cwd: '/custom/path',
+    });
+
+    const service = new SchedulerService({
+      store,
+      agentManager: mockAgent,
+      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      meshCore: null,
+    });
+
+    await service.triggerManualRun(sched.id);
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(mockAgent.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ cwd: '/custom/path' }),
+    );
+
+    await service.stop();
+  });
+
+  it('ignores agentId when meshCore is null and falls back to cwd', async () => {
+    const sched = store.createSchedule({
+      name: 'No Mesh',
+      prompt: 'test',
+      cron: '0 * * * *',
+      agentId: 'some-agent',
+      cwd: '/fallback',
+    });
+
+    const service = new SchedulerService({
+      store,
+      agentManager: mockAgent,
+      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      meshCore: null,
+    });
+
+    await service.triggerManualRun(sched.id);
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(mockAgent.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ cwd: '/fallback' }),
+    );
+
+    await service.stop();
   });
 });
 

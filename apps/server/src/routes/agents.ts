@@ -114,6 +114,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         registeredAt: new Date().toISOString(),
         registeredBy: 'dorkos-ui',
         personaEnabled: true,
+        enabledToolGroups: {},
       };
 
       await writeManifest(agentPath, manifest);

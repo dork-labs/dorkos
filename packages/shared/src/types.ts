@@ -87,6 +87,7 @@ export type {
   AgentHealthStatus,
   AgentBehavior,
   AgentBudget,
+  EnabledToolGroups,
   AgentManifest,
   AgentHints,
   DiscoveryCandidate,

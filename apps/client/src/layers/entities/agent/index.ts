@@ -10,3 +10,5 @@ export { useUpdateAgent } from './model/use-update-agent';
 export { useResolvedAgents } from './model/use-resolved-agents';
 export { useAgentVisual } from './model/use-agent-visual';
 export type { AgentVisual } from './model/use-agent-visual';
+export { useAgentToolStatus } from './model/use-agent-tool-status';
+export type { ChipState, AgentToolStatus } from './model/use-agent-tool-status';

@@ -322,6 +322,120 @@ Key details:
 - Limit stagger to the first 8 visible items -- items beyond index 7 render immediately without animation to avoid excessive delay
 - Update `staggerKey` on dialog open and page transitions, never on search input changes
 
+### Dialog Entrance (Spring Scale + Fade)
+
+Use for modals, command palettes, and overlays that open with a spring-based scale and fade effect.
+
+```typescript
+const dialogVariants = {
+  hidden: { opacity: 0, scale: 0.96, y: -8 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: { type: 'spring', stiffness: 500, damping: 35 },
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.96,
+    y: -8,
+    transition: { duration: 0.12 },
+  },
+}
+
+<AnimatePresence>
+  {isOpen && (
+    <motion.div
+      variants={dialogVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+    >
+      {children}
+    </motion.div>
+  )}
+</AnimatePresence>
+```
+
+Key details:
+
+- Initial state: `scale: 0.96` (slightly smaller) and `y: -8` (slightly above) create anticipatory positioning
+- Spring transition: `stiffness: 500` (snappy), `damping: 35` (controlled)
+- Exit: short `duration: 0.12` for quick dismissal
+- Used in: command palette dialog, confirmation modals
+
+### Directional Page Transitions
+
+Animate between pages in a multi-level navigation (e.g., cmdk sub-menu stack). Items slide horizontally based on navigation direction.
+
+```typescript
+<AnimatePresence mode="wait" initial={false}>
+  <motion.div
+    key={currentPage ?? 'root'}
+    initial={{ opacity: 0, x: isForward ? 16 : -16 }}
+    animate={{ opacity: 1, x: 0 }}
+    exit={{ opacity: 0, x: isForward ? -16 : 16 }}
+    transition={{ duration: 0.15, ease: 'easeOut' }}
+  >
+    {children}
+  </motion.div>
+</AnimatePresence>
+```
+
+Key details:
+
+- `mode="wait"` ensures exit animation completes before enter starts
+- Forward navigation starts at `x: 16` (off-right), backward at `x: -16` (off-left)
+- Duration: 150ms with `easeOut` for natural deceleration
+- Used in: command palette sub-menus, breadcrumb navigation
+
+### Item Hover Nudge
+
+A subtle rightward nudge on hover for list items, menu entries, and command palette selections (Linear pattern).
+
+```typescript
+<motion.div
+  whileHover={{ x: 2 }}
+  transition={{ type: 'spring', stiffness: 600, damping: 40 }}
+>
+  {children}
+</motion.div>
+```
+
+Key details:
+
+- Distance: `x: 2` (2px rightward) — subtle, non-intrusive
+- Spring: `stiffness: 600`, `damping: 40` for snappy, responsive feel (~50-80ms)
+- Respects `prefers-reduced-motion` via global `<MotionConfig reducedMotion="user">`
+
+### Width Spring Animation (Expanding Panel)
+
+Animate a panel sliding in from the edge by animating `width` and `opacity` together. While animating layout dimensions is generally discouraged (see Anti-Patterns), width spring animations on fixed-width containers are acceptable when used sparingly for reveal panels.
+
+```typescript
+<AnimatePresence>
+  {isVisible && (
+    <motion.div
+      initial={{ opacity: 0, width: 0 }}
+      animate={{ opacity: 1, width: '60%' }}
+      exit={{ opacity: 0, width: 0 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+      className="border-l overflow-hidden"
+    >
+      {children}
+    </motion.div>
+  )}
+</AnimatePresence>
+```
+
+Key details:
+
+- Animate both `opacity` and `width` for a smooth reveal
+- Set `overflow: hidden` to clip content while collapsing
+- Spring: `stiffness: 400`, `damping: 35` (slightly softer than dialog entrance)
+- Pair with a container size transition (e.g., `maxWidth: 480px → 720px`) for the parent
+- Used in: command palette preview panel, sidebars, detail views
+
 ## Anti-Patterns
 
 ```typescript

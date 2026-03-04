@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { scanForAgents } from '../services/discovery/discovery-scanner.js';
 import { parseBody } from '../lib/route-utils.js';
 import { isWithinBoundary } from '../lib/boundary.js';
+import { DEFAULT_CWD } from '../lib/resolve-root.js';
 
 /** Zod schema for the POST /scan request body. */
 const ScanRequestSchema = z.object({
@@ -44,7 +45,7 @@ export function createDiscoveryRouter(): Router {
 
     try {
       for await (const event of scanForAgents({
-        root: data.root,
+        root: data.root ?? DEFAULT_CWD,
         maxDepth: data.maxDepth,
         timeout: data.timeout,
       })) {

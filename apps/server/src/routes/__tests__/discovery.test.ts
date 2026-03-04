@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { parseSSEResponse } from '@dorkos/test-utils/sse-helpers';
 
 // Mock the discovery scanner
@@ -218,7 +219,7 @@ describe('Discovery Route', () => {
         });
 
       expect(mockScanForAgents).toHaveBeenCalledWith({
-        root: undefined,
+        root: DEFAULT_CWD,
         maxDepth: undefined,
         timeout: undefined,
       });

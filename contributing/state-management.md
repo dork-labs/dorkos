@@ -25,7 +25,9 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Simple UI state          | React useState  | Modal open/close, toggle visibility         | Scoped to component, no persistence needed                 |
 | URL state (standalone)   | nuqs            | `?session=` ID, `?dir=` working directory   | Shareable links, browser history, bookmarkable             |
 | URL state (Obsidian)     | Zustand         | Session ID, working directory               | No URL bar in Obsidian; Zustand replaces nuqs              |
-| Persistent client state  | localStorage    | Agent frecency scores, UI preferences       | Survives page reloads, no server roundtrip needed          |
+| Persistent client state  | localStorage + useSyncExternalStore | Agent frecency scores (Slack bucket system)  | Survives page reloads, reactive updates via subscribe/getSnapshot |
+| Dialog-scoped state      | React useState  | Pages stack in CommandPaletteDialog          | Resets when dialog closes, no persistence needed           |
+| Debounced derived state  | useDeferredValue | Preview panel data during rapid navigation  | Defers expensive fetches without state management overhead |
 
 ## Core Patterns
 
@@ -41,6 +43,8 @@ interface AppState {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  previousCwd: string | null;
+  setPreviousCwd: (cwd: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -107,6 +111,72 @@ export function useSessionId() {
 ```
 
 In Obsidian embedded mode, the same hooks use Zustand instead of nuqs (no URL bar available). The `?dir=` parameter is omitted when using the server's default directory to keep URLs clean.
+
+### Persistent Client State with useSyncExternalStore
+
+For persistent client state that needs external subscription semantics (e.g., localStorage-backed frecency scores), use React's `useSyncExternalStore`:
+
+```typescript
+// apps/client/src/layers/features/command-palette/model/use-agent-frecency.ts
+import { useSyncExternalStore } from 'react';
+
+const STORAGE_KEY = 'dorkos:agent-frecency-v2';
+
+interface FrecencyRecord {
+  agentId: string;
+  timestamps: number[];  // epoch ms, most recent first, max 10
+  totalCount: number;
+}
+
+// Singleton storage manager with subscribe/getSnapshot pattern
+let listeners = new Set<() => void>();
+let snapshot: FrecencyRecord[] = loadFromStorage();
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot() {
+  return snapshot;
+}
+
+function recordVisit(agentId: string) {
+  // ... update record, persist to localStorage
+  snapshot = [...updatedRecords];
+  listeners.forEach(l => l()); // Notify React
+}
+
+export function useAgentFrecency() {
+  const data = useSyncExternalStore(subscribe, getSnapshot);
+  return { data, recordVisit };
+}
+```
+
+**When to use**: Client state that needs external subscribers (localStorage observers), custom unsubscribe semantics, or synchronization with non-React state systems.
+
+### Debouncing with useDeferredValue
+
+For high-frequency state changes that trigger expensive computations (like data fetches during rapid keyboard navigation), use React's `useDeferredValue`:
+
+```typescript
+import { useDeferredValue, useMemo } from 'react';
+
+export function usePreviewData(agentId: string, agentCwd: string) {
+  const deferredAgentId = useDeferredValue(agentId);
+  const { data: health } = useMeshAgentHealth(deferredAgentId);
+  const { data: sessions } = useSessions();
+
+  const agentSessions = useMemo(
+    () => sessions?.filter(s => s.cwd === agentCwd) ?? [],
+    [sessions, agentCwd]
+  );
+
+  return { sessionCount: agentSessions.length, health };
+}
+```
+
+**When to use**: Debouncing expensive effects (API calls, heavy computations) triggered by rapid input changes. The deferred value keeps UI responsive during typing but maintains correctness after input settles.
 
 ### Combining Zustand with TanStack Query
 
@@ -205,6 +275,21 @@ export function useSessionId() {
 }
 ```
 
+```typescript
+// ❌ Don't store dialog-scoped state in global Zustand
+export const usePaletteStore = create((set) => ({
+  pages: [],
+  setPages: (pages) => set({ pages }),
+}));
+// Problem: pages state persists across dialog close/open cycles
+
+// ✅ Keep dialog-scoped state local to the component
+export function CommandPaletteDialog() {
+  const [pages, setPages] = useState<string[]>([]);
+  // State resets when dialog closes — correct behavior
+}
+```
+
 ## Adding a New Store
 
 1. **Determine if you need a store**: Check the decision matrix above. Most state should be TanStack Query (server) or useState (local UI).
@@ -286,3 +371,6 @@ const currentState = useAppStore.getState();
 - [Architecture Guide](./architecture.md) - Transport interface, dependency injection
 - [Zustand Documentation](https://docs.pmnd.rs/zustand/getting-started/introduction)
 - [nuqs Documentation](https://nuqs.47ng.com/) - Type-safe URL query state for React
+- [useSyncExternalStore (React docs)](https://react.dev/reference/react/useSyncExternalStore) - External state subscription pattern
+- [useDeferredValue (React docs)](https://react.dev/reference/react/useDeferredValue) - High-frequency update debouncing
+- [Slack Engineering — A Faster, Smarter Quick Switcher](https://slack.engineering/a-faster-smarter-quick-switcher/) - Bucket frecency algorithm

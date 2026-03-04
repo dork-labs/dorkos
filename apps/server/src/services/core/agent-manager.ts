@@ -8,9 +8,15 @@ import { type AgentSession, createToolState } from './agent-types.js';
 import { mapSdkMessage } from './sdk-event-mapper.js';
 import { makeUserPrompt, resolveClaudeCliPath } from '../../lib/sdk-utils.js';
 import { buildSystemPromptAppend } from './context-builder.js';
+import { resolveToolConfig, buildAllowedTools } from './tool-filter.js';
 import { validateBoundary } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
+import { readManifest } from '@dorkos/shared/manifest';
+import { isRelayEnabled } from '../relay/relay-state.js';
+import { isPulseEnabled } from '../pulse/pulse-state.js';
+import { configManager } from './config-manager.js';
+import type { MeshCore } from '@dorkos/mesh';
 
 export { buildTaskEvent } from '../session/build-task-event.js';
 
@@ -50,10 +56,20 @@ export class AgentManager {
   private readonly claudeCliPath: string | undefined;
   private mcpServerFactory: (() => Record<string, McpServerConfig>) | null = null;
   private cachedModels: ModelOption[] | null = null;
+  private meshCore: MeshCore | null = null;
 
   constructor(cwd?: string) {
     this.cwd = cwd ?? DEFAULT_CWD;
     this.claudeCliPath = resolveClaudeCliPath();
+  }
+
+  /**
+   * Set the MeshCore instance for agent manifest resolution and peer agent context.
+   *
+   * @param meshCore - The MeshCore instance from server startup
+   */
+  setMeshCore(meshCore: MeshCore): void {
+    this.meshCore = meshCore;
   }
 
   /**
@@ -138,7 +154,28 @@ export class AgentManager {
       return;
     }
 
-    const baseAppend = await buildSystemPromptAppend(effectiveCwd);
+    // Load agent manifest for per-agent tool filtering
+    let manifest: Awaited<ReturnType<typeof readManifest>> | null = null;
+    try {
+      manifest = await readManifest(effectiveCwd);
+    } catch {
+      // No manifest found — all tools inherit global defaults
+    }
+
+    const globalConfig = configManager.get('agentContext') ?? {
+      pulseTools: true,
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    };
+
+    const toolConfig = resolveToolConfig(manifest?.enabledToolGroups, {
+      relayEnabled: isRelayEnabled(),
+      pulseEnabled: isPulseEnabled(),
+      globalConfig,
+    });
+
+    const baseAppend = await buildSystemPromptAppend(effectiveCwd, this.meshCore, toolConfig);
     // Concatenate caller-supplied append (e.g. Pulse scheduler context) after the base
     const systemPromptAppend = opts?.systemPromptAppend
       ? `${baseAppend}\n\n${opts.systemPromptAppend}`
@@ -189,6 +226,15 @@ export class AgentManager {
     // "Already connected to a transport" errors from reused Protocol objects.
     if (this.mcpServerFactory) {
       sdkOptions.mcpServers = this.mcpServerFactory();
+    }
+
+    // Apply per-agent MCP tool filtering (undefined = no filter = all tools available)
+    const allowedTools = buildAllowedTools(toolConfig);
+    if (allowedTools) {
+      sdkOptions.allowedTools = [
+        ...(sdkOptions.allowedTools ?? []),
+        ...allowedTools,
+      ];
     }
 
     sdkOptions.canUseTool = createCanUseTool(session, logger.debug.bind(logger));

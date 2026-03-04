@@ -1,7 +1,7 @@
 ---
 number: 68
 title: Use Static XML Blocks for Agent Tool Context Injection
-status: draft
+status: proposed
 created: 2026-03-04
 spec: agent-tool-context-injection
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: agent-tool-context-injection)
+Proposed
 
 ## Context
 

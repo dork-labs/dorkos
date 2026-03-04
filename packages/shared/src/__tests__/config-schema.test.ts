@@ -20,7 +20,7 @@ describe('UserConfigSchema', () => {
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
       onboarding: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
-      agentContext: { relayTools: true, meshTools: true, adapterTools: true },
+      agentContext: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
     });
   });
 
@@ -206,7 +206,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
       onboarding: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
-      agentContext: { relayTools: true, meshTools: true, adapterTools: true },
+      agentContext: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
     });
   });
 

@@ -157,6 +157,53 @@ User input -> ChatPanel -> useChatSession.handleSubmit()
         -> onEvent(event) -> React state updates -> UI re-render
 ```
 
+## Per-Session Tool Filtering
+
+Each agent session can have a tailored MCP tool palette. The filtering pipeline runs on every `sendMessage()` call in `AgentManager`:
+
+```
+sendMessage(sessionId, content, cwd)
+  -> readManifest(effectiveCwd)                    // Load .dork/agent.json
+  -> resolveToolConfig(manifest.enabledToolGroups, // Merge agent overrides with global defaults
+       { relayEnabled, pulseEnabled, globalConfig })
+  -> buildSystemPromptAppend(cwd, meshCore,        // Context blocks gated by toolConfig
+       toolConfig)
+  -> buildAllowedTools(toolConfig)                 // Produce SDK allowedTools array
+  -> query({ allowedTools, systemPrompt })         // SDK call with filtered tools
+```
+
+### Resolution Order
+
+1. **Per-agent override** (`enabledToolGroups` in `.dork/agent.json`): explicit `true`/`false` per domain
+2. **Global default** (`agentContext.*Tools` in `~/.dork/config.json`): applies when agent has no override
+3. **Server feature flag** (`relayEnabled`, `pulseEnabled`): hard gate that overrides both above when `false`
+
+### Implicit Grouping
+
+Four top-level toggles control six tool groups:
+
+| Toggle | Controls |
+|--------|----------|
+| `pulse` | Pulse tools (list/create/update/delete schedules, run history) |
+| `relay` | Relay tools (send, inbox, endpoints) + Trace tools (get_trace, get_metrics) |
+| `mesh` | Mesh tools (discover, register, list, deny, status, inspect, topology) |
+| `adapter` | Adapter tools (list/enable/disable/reload adapters) + Binding tools (list/create/delete bindings) |
+
+Core tools (ping, get_server_info, get_session_count, agent_get_current) are always included.
+
+### Defense in Depth
+
+When a domain is disabled, both the MCP `allowedTools` filter and the context block are omitted. The `allowedTools` filter prevents the SDK from offering the tools; the context block omission removes usage instructions from the system prompt. This is defense-in-depth, not a security boundary.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `apps/server/src/services/core/tool-filter.ts` | `resolveToolConfig()` + `buildAllowedTools()` |
+| `apps/server/src/services/core/context-builder.ts` | Agent-aware block gating, peer agents block |
+| `packages/shared/src/mesh-schemas.ts` | `EnabledToolGroupsSchema` on `AgentManifest` |
+| `packages/shared/src/config-schema.ts` | `agentContext.pulseTools` global default |
+
 ## Module Layout
 
 ```
@@ -225,6 +272,7 @@ apps/
     components/
       App.tsx               -- Main app shell
     main.tsx                -- Standalone entry (HttpTransport)
+    # Client dependencies: fuse.js (fuzzy search with match indices for command palette)
 
   obsidian-plugin/src/
     main.ts                 -- Obsidian plugin entry

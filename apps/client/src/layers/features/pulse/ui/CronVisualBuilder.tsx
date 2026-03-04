@@ -18,9 +18,11 @@ interface CronFields {
 
 /** @internal Exported for testing only. */
 export function parseCron(expr: string): CronFields {
-  const parts = expr.trim().split(/\s+/);
+  const trimmed = expr.trim();
+  // Empty string means no expression — default all fields to wildcard
+  const parts = trimmed === '' ? [] : trimmed.split(/\s+/);
   return {
-    minute: parts[0] ?? '*',
+    minute: parts[0] || '*',
     hour: parts[1] ?? '*',
     dayOfMonth: parts[2] ?? '*',
     month: parts[3] ?? '*',

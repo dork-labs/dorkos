@@ -95,6 +95,7 @@ export class MeshCore {
   private readonly logger: import('@dorkos/shared/logger').Logger;
   private readonly generateUlid = monotonicFactory();
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
+  private onUnregisterCallbacks: Array<(agentId: string) => void> = [];
 
   /**
    * Create a new MeshCore instance.
@@ -193,6 +194,7 @@ export class MeshCore {
       personaEnabled: overrides?.personaEnabled ?? true,
       color: overrides?.color,
       icon: overrides?.icon,
+      enabledToolGroups: overrides?.enabledToolGroups ?? {},
     };
 
     return this.registerInternal(candidate.path, manifest, namespace, effectiveScanRoot);
@@ -233,6 +235,7 @@ export class MeshCore {
       personaEnabled: partial.personaEnabled ?? true,
       color: partial.color,
       icon: partial.icon,
+      enabledToolGroups: partial.enabledToolGroups ?? {},
     };
 
     return this.registerInternal(projectPath, manifest, namespace, effectiveScanRoot);
@@ -345,6 +348,15 @@ export class MeshCore {
 
     this.registry.remove(agentId);
 
+    // Fire unregister callbacks (e.g., cascade-disable Pulse schedules)
+    for (const cb of this.onUnregisterCallbacks) {
+      try {
+        cb(agentId);
+      } catch (err) {
+        this.logger.warn('[Mesh] Unregister callback failed', { agentId, err });
+      }
+    }
+
     // Clean up namespace rules if this was the last agent in the namespace
     if (namespace) {
       const remaining = this.registry.listByNamespace(namespace);
@@ -352,6 +364,20 @@ export class MeshCore {
         this.relayBridge.cleanupNamespaceRules(namespace);
       }
     }
+  }
+
+  // --- Lifecycle Hooks ---
+
+  /**
+   * Register a callback to be invoked when an agent is unregistered.
+   *
+   * Callbacks are fire-and-forget: errors are logged but do not prevent
+   * the unregistration from completing.
+   *
+   * @param callback - Function called with the agentId after unregistration
+   */
+  onUnregister(callback: (agentId: string) => void): void {
+    this.onUnregisterCallbacks.push(callback);
   }
 
   // --- Query ---

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   AgentManifestSchema,
+  EnabledToolGroupsSchema,
   UpdateAgentRequestSchema,
   ResolveAgentsRequestSchema,
   ResolveAgentsResponseSchema,
@@ -126,7 +127,12 @@ describe('UpdateAgentRequestSchema — new fields', () => {
 
   it('accepts empty object (all fields optional)', () => {
     const result = UpdateAgentRequestSchema.parse({});
-    expect(result).toEqual({});
+    // Fields with defaults (description, capabilities, personaEnabled, enabledToolGroups)
+    // will be included with their default values when parsed
+    expect(result.name).toBeUndefined();
+    expect(result.persona).toBeUndefined();
+    expect(result.color).toBeUndefined();
+    expect(result.icon).toBeUndefined();
   });
 
   it('still accepts existing fields (name, description, capabilities)', () => {
@@ -245,5 +251,58 @@ describe('CreateAgentRequestSchema', () => {
     expect(() =>
       CreateAgentRequestSchema.parse({ path: '/agent', runtime: 'unknown-runtime' })
     ).toThrow();
+  });
+});
+
+describe('EnabledToolGroupsSchema', () => {
+  it('defaults to empty object when parsed with undefined', () => {
+    expect(EnabledToolGroupsSchema.parse(undefined)).toEqual({});
+  });
+
+  it('accepts partial overrides', () => {
+    const result = EnabledToolGroupsSchema.parse({ pulse: false });
+    expect(result).toEqual({ pulse: false });
+  });
+
+  it('accepts all fields', () => {
+    const result = EnabledToolGroupsSchema.parse({
+      pulse: true,
+      relay: false,
+      mesh: true,
+      adapter: false,
+    });
+    expect(result).toEqual({ pulse: true, relay: false, mesh: true, adapter: false });
+  });
+});
+
+describe('AgentManifestSchema with enabledToolGroups', () => {
+  it('includes enabledToolGroups in parsed manifest', () => {
+    const manifest = AgentManifestSchema.parse({
+      ...baseManifest,
+      enabledToolGroups: { pulse: false },
+    });
+    expect(manifest.enabledToolGroups).toEqual({ pulse: false });
+  });
+
+  it('defaults enabledToolGroups to empty object when omitted', () => {
+    const manifest = AgentManifestSchema.parse(baseManifest);
+    expect(manifest.enabledToolGroups).toEqual({});
+  });
+});
+
+describe('UpdateAgentRequestSchema — enabledToolGroups', () => {
+  it('accepts enabledToolGroups in a partial update', () => {
+    const result = UpdateAgentRequestSchema.parse({ enabledToolGroups: { relay: false } });
+    expect(result.enabledToolGroups).toEqual({ relay: false });
+  });
+
+  it('accepts enabledToolGroups as empty object', () => {
+    const result = UpdateAgentRequestSchema.parse({ enabledToolGroups: {} });
+    expect(result.enabledToolGroups).toEqual({});
+  });
+
+  it('accepts update without enabledToolGroups', () => {
+    const result = UpdateAgentRequestSchema.parse({ name: 'new-name' });
+    expect(result.name).toBe('new-name');
   });
 });

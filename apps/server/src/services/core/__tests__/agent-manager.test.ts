@@ -19,6 +19,29 @@ vi.mock('../../../lib/logger.js', () => ({
 vi.mock('../context-builder.js', () => ({
   buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>'),
 }));
+vi.mock('../tool-filter.js', () => ({
+  resolveToolConfig: vi.fn().mockReturnValue({ pulse: true, relay: true, mesh: true, adapter: true }),
+  buildAllowedTools: vi.fn().mockReturnValue(undefined),
+}));
+vi.mock('@dorkos/shared/manifest', () => ({
+  readManifest: vi.fn().mockResolvedValue(null),
+}));
+vi.mock('../../relay/relay-state.js', () => ({
+  isRelayEnabled: vi.fn().mockReturnValue(false),
+}));
+vi.mock('../../pulse/pulse-state.js', () => ({
+  isPulseEnabled: vi.fn().mockReturnValue(false),
+}));
+vi.mock('../config-manager.js', () => ({
+  configManager: {
+    get: vi.fn().mockReturnValue({
+      pulseTools: true,
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    }),
+  },
+}));
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
   getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
@@ -650,6 +673,178 @@ describe('AgentManager', () => {
       expect(agentManager.hasSession('fresh')).toBe(true);
 
       vi.useRealTimers();
+    });
+  });
+
+  describe('sendMessage() tool filtering', () => {
+    /** SDK mock that yields init + result (minimal successful flow). */
+    function mockSuccessFlow() {
+      return mockQueryResult(
+        (async function* () {
+          yield {
+            type: 'system',
+            subtype: 'init',
+            session_id: 'tf-session',
+            tools: [],
+            mcp_servers: [],
+            model: 'test',
+            permissionMode: 'default',
+            slash_commands: [],
+            output_style: 'text',
+            skills: [],
+            plugins: [],
+            cwd: '/test',
+            apiKeySource: 'user',
+            uuid: 'uuid-tf-1',
+          };
+          yield {
+            type: 'result',
+            subtype: 'success',
+            duration_ms: 100,
+            duration_api_ms: 80,
+            is_error: false,
+            num_turns: 1,
+            result: '',
+            stop_reason: 'end_turn',
+            total_cost_usd: 0.001,
+            usage: { input_tokens: 10, output_tokens: 5 },
+            modelUsage: {},
+            permission_denials: [],
+            uuid: 'uuid-tf-2',
+            session_id: 'tf-session',
+          };
+        })()
+      );
+    }
+
+    it('calls resolveToolConfig with manifest enabledToolGroups', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const { readManifest } = await import('@dorkos/shared/manifest');
+      const { resolveToolConfig } = await import('../tool-filter.js');
+
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
+      (readManifest as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'test-id',
+        name: 'test',
+        enabledToolGroups: { pulse: false },
+      });
+
+      agentManager.ensureSession('tf-1', { permissionMode: 'default' });
+      const events = [];
+      for await (const event of agentManager.sendMessage('tf-1', 'hello')) {
+        events.push(event);
+      }
+
+      expect(resolveToolConfig).toHaveBeenCalledWith(
+        { pulse: false },
+        expect.objectContaining({
+          pulseEnabled: expect.any(Boolean),
+          relayEnabled: expect.any(Boolean),
+          globalConfig: expect.objectContaining({
+            pulseTools: true,
+            relayTools: true,
+          }),
+        })
+      );
+    });
+
+    it('passes toolConfig to buildSystemPromptAppend', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const { buildSystemPromptAppend } = await import('../context-builder.js');
+
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
+      (buildSystemPromptAppend as ReturnType<typeof vi.fn>).mockClear();
+
+      agentManager.ensureSession('tf-2', { permissionMode: 'default' });
+      const events = [];
+      for await (const event of agentManager.sendMessage('tf-2', 'hello')) {
+        events.push(event);
+      }
+
+      expect(buildSystemPromptAppend).toHaveBeenCalledTimes(1);
+      const callArgs = (buildSystemPromptAppend as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(typeof callArgs[0]).toBe('string'); // cwd
+      // callArgs[1] is meshCore (null when not set)
+      expect(callArgs[2]).toEqual(
+        expect.objectContaining({
+          pulse: expect.any(Boolean),
+          relay: expect.any(Boolean),
+          mesh: expect.any(Boolean),
+          adapter: expect.any(Boolean),
+        })
+      );
+    });
+
+    it('applies allowedTools to SDK options when buildAllowedTools returns a list', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const { buildAllowedTools } = await import('../tool-filter.js');
+
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
+      (buildAllowedTools as ReturnType<typeof vi.fn>).mockReturnValue([
+        'mcp__dorkos__ping',
+        'mcp__dorkos__get_server_info',
+      ]);
+
+      agentManager.ensureSession('tf-3', { permissionMode: 'default' });
+      const events = [];
+      for await (const event of agentManager.sendMessage('tf-3', 'hello')) {
+        events.push(event);
+      }
+
+      expect(mockedQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            allowedTools: expect.arrayContaining([
+              'mcp__dorkos__ping',
+              'mcp__dorkos__get_server_info',
+            ]),
+          }),
+        })
+      );
+    });
+
+    it('does not set allowedTools when buildAllowedTools returns undefined', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const { buildAllowedTools } = await import('../tool-filter.js');
+
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
+      (buildAllowedTools as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+
+      agentManager.ensureSession('tf-4', { permissionMode: 'default' });
+      const events = [];
+      for await (const event of agentManager.sendMessage('tf-4', 'hello')) {
+        events.push(event);
+      }
+
+      const callArgs = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(callArgs.options.allowedTools).toBeUndefined();
+    });
+
+    it('uses global defaults when no agent manifest exists', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const { readManifest } = await import('@dorkos/shared/manifest');
+      const { resolveToolConfig } = await import('../tool-filter.js');
+
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
+      // readManifest throws (no .dork/agent.json)
+      (readManifest as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('ENOENT')
+      );
+
+      agentManager.ensureSession('tf-5', { permissionMode: 'default' });
+      const events = [];
+      for await (const event of agentManager.sendMessage('tf-5', 'hello')) {
+        events.push(event);
+      }
+
+      // Should pass undefined for agentConfig (no manifest)
+      expect(resolveToolConfig).toHaveBeenCalledWith(
+        undefined,
+        expect.any(Object)
+      );
+      // Should still complete without errors
+      expect(events.find((e) => e.type === 'done')).toBeDefined();
+      expect(events.find((e) => e.type === 'error')).toBeUndefined();
     });
   });
 });

@@ -322,6 +322,140 @@ describe('PulseStore', () => {
     });
   });
 
+  // === agentId field ===
+
+  describe('agentId field', () => {
+    it('creates schedule with agentId', () => {
+      const schedule = store.createSchedule({
+        name: 'Agent test',
+        prompt: 'test prompt',
+        cron: '* * * * *',
+        agentId: 'agent-123',
+      });
+      expect(schedule.agentId).toBe('agent-123');
+    });
+
+    it('defaults agentId to null when not provided', () => {
+      const schedule = store.createSchedule({
+        name: 'No agent',
+        prompt: 'test prompt',
+        cron: '* * * * *',
+      });
+      expect(schedule.agentId).toBeNull();
+    });
+
+    it('updates schedule agentId', () => {
+      const schedule = store.createSchedule({
+        name: 'Update agent',
+        prompt: 'test prompt',
+        cron: '* * * * *',
+      });
+      const updated = store.updateSchedule(schedule.id, { agentId: 'agent-456' });
+      expect(updated!.agentId).toBe('agent-456');
+    });
+
+    it('unlinks agent by setting agentId to null', () => {
+      const schedule = store.createSchedule({
+        name: 'Unlink agent',
+        prompt: 'test prompt',
+        cron: '* * * * *',
+        agentId: 'agent-123',
+      });
+      const updated = store.updateSchedule(schedule.id, { agentId: null });
+      expect(updated!.agentId).toBeNull();
+    });
+
+    it('preserves agentId on unrelated updates', () => {
+      const schedule = store.createSchedule({
+        name: 'Preserve agent',
+        prompt: 'test prompt',
+        cron: '* * * * *',
+        agentId: 'agent-789',
+      });
+      const updated = store.updateSchedule(schedule.id, { name: 'Renamed' });
+      expect(updated!.agentId).toBe('agent-789');
+      expect(updated!.name).toBe('Renamed');
+    });
+
+    it('includes agentId in getSchedules list', () => {
+      store.createSchedule({
+        name: 'Listed',
+        prompt: 'test prompt',
+        cron: '* * * * *',
+        agentId: 'agent-list',
+      });
+      const schedules = store.getSchedules();
+      expect(schedules[0].agentId).toBe('agent-list');
+    });
+  });
+
+  // === disableSchedulesByAgentId ===
+
+  describe('disableSchedulesByAgentId', () => {
+    it('disables matching enabled schedules', () => {
+      const schedule = store.createSchedule({
+        name: 'Agent schedule',
+        prompt: 'test',
+        cron: '* * * * *',
+        agentId: 'agent-1',
+      });
+      const count = store.disableSchedulesByAgentId('agent-1');
+      expect(count).toBe(1);
+      const updated = store.getSchedule(schedule.id);
+      expect(updated!.enabled).toBe(false);
+      expect(updated!.status).toBe('paused');
+    });
+
+    it('returns 0 when no matching schedules', () => {
+      store.createSchedule({
+        name: 'Other agent',
+        prompt: 'test',
+        cron: '* * * * *',
+        agentId: 'agent-2',
+      });
+      const count = store.disableSchedulesByAgentId('nonexistent');
+      expect(count).toBe(0);
+    });
+
+    it('does not re-disable already disabled schedules', () => {
+      store.createSchedule({
+        name: 'Already disabled',
+        prompt: 'test',
+        cron: '* * * * *',
+        agentId: 'agent-3',
+        enabled: false,
+      });
+      const count = store.disableSchedulesByAgentId('agent-3');
+      expect(count).toBe(0);
+    });
+
+    it('only disables schedules for the specified agent', () => {
+      const s1 = store.createSchedule({
+        name: 'Agent A',
+        prompt: 'test',
+        cron: '* * * * *',
+        agentId: 'agent-a',
+      });
+      const s2 = store.createSchedule({
+        name: 'Agent B',
+        prompt: 'test',
+        cron: '* * * * *',
+        agentId: 'agent-b',
+      });
+      store.disableSchedulesByAgentId('agent-a');
+      expect(store.getSchedule(s1.id)!.enabled).toBe(false);
+      expect(store.getSchedule(s2.id)!.enabled).toBe(true);
+    });
+
+    it('disables multiple schedules for the same agent', () => {
+      store.createSchedule({ name: 'S1', prompt: 'test', cron: '* * * * *', agentId: 'agent-multi' });
+      store.createSchedule({ name: 'S2', prompt: 'test', cron: '* * * * *', agentId: 'agent-multi' });
+      store.createSchedule({ name: 'S3', prompt: 'test', cron: '* * * * *', agentId: 'agent-multi' });
+      const count = store.disableSchedulesByAgentId('agent-multi');
+      expect(count).toBe(3);
+    });
+  });
+
   // === ISO 8601 timestamps ===
 
   describe('timestamps', () => {

@@ -5,7 +5,10 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../env.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
+import { isPulseEnabled } from '../pulse/pulse-state.js';
 import { configManager } from './config-manager.js';
+import type { ResolvedToolConfig } from './tool-filter.js';
+import type { MeshCore } from '@dorkos/mesh';
 
 const RELAY_TOOLS_CONTEXT = `<relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.
@@ -16,15 +19,14 @@ Subject hierarchy:
   relay.system.console             — system broadcast channel
   relay.system.pulse.{scheduleId}  — Pulse scheduler events
 
-Workflows:
-- Register a reply address first: relay_register_endpoint(subject="relay.agent.{your-sessionId}")
-- Message another agent: relay_send(subject="relay.agent.{their-sessionId}", payload={...}, from="relay.agent.{your-sessionId}")
-- Check for replies: relay_inbox(endpoint_subject="relay.agent.{your-sessionId}")
-- See who is listening: relay_list_endpoints()
+Workflow: Query another agent
+1. mesh_list() to find available agents and their session IDs
+2. mesh_inspect(agentId) to get their relay endpoint
+3. relay_register_endpoint(subject="relay.agent.{mySessionId}") to enable replies
+4. relay_send(subject="relay.agent.{theirSessionId}", payload={task}, replyTo="relay.agent.{mySessionId}")
+5. relay_inbox(endpoint_subject="relay.agent.{mySessionId}") to check for reply
 
-The "from" field is your own subject. Set "replyTo" so the recipient knows where to respond.
-
-Error codes: RELAY_DISABLED (feature off), ACCESS_DENIED (subject blocked), INVALID_SUBJECT (malformed), ENDPOINT_NOT_FOUND (inbox miss).
+Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND
 </relay_tools>`;
 
 const MESH_TOOLS_CONTEXT = `<mesh_tools>
@@ -68,37 +70,110 @@ Bindings route adapter messages to agent projects:
 Session strategies: per-chat (default, one session per conversation), per-user (shared across chats), stateless (new session each message).
 </adapter_tools>`;
 
+const PULSE_TOOLS_CONTEXT = `<pulse_tools>
+DorkOS Pulse lets you create and manage scheduled agent runs.
+
+Available tools:
+  list_schedules() -- list all configured schedules
+  create_schedule(name, cron, prompt, ...) -- create a new schedule (enters pending_approval)
+  update_schedule(id, ...) -- modify schedule settings
+  delete_schedule(id) -- remove a schedule
+  get_run_history(scheduleId) -- view past run results
+
+Schedules can target a specific agent (by agentId) or a directory (by cwd).
+Agent-linked schedules automatically resolve the agent's project path at run time.
+</pulse_tools>`;
+
 /**
  * Build the `<relay_tools>` context block.
- * Included when Relay is enabled AND the config toggle is on.
+ *
+ * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
+ * Otherwise falls back to global feature flag + config toggle checks.
  */
-function buildRelayToolsBlock(): string {
-  if (!isRelayEnabled()) return '';
-  const config = configManager.get('agentContext');
-  if (config?.relayTools === false) return '';
+function buildRelayToolsBlock(toolConfig?: ResolvedToolConfig): string {
+  if (toolConfig) {
+    if (!toolConfig.relay) return '';
+  } else {
+    if (!isRelayEnabled()) return '';
+    const config = configManager.get('agentContext');
+    if (config?.relayTools === false) return '';
+  }
   return RELAY_TOOLS_CONTEXT;
 }
 
 /**
  * Build the `<mesh_tools>` context block.
- * Included when Mesh is available AND the config toggle is on.
- * Mesh is always-on per ADR-0062, so no feature flag check.
+ *
+ * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
+ * Otherwise falls back to the global config toggle.
+ * Mesh is always-on per ADR-0062, so no feature flag check in the fallback path.
  */
-function buildMeshToolsBlock(): string {
-  const config = configManager.get('agentContext');
-  if (config?.meshTools === false) return '';
+function buildMeshToolsBlock(toolConfig?: ResolvedToolConfig): string {
+  if (toolConfig) {
+    if (!toolConfig.mesh) return '';
+  } else {
+    const config = configManager.get('agentContext');
+    if (config?.meshTools === false) return '';
+  }
   return MESH_TOOLS_CONTEXT;
 }
 
 /**
  * Build the `<adapter_tools>` context block.
- * Included when Relay is enabled (adapters require Relay) AND the config toggle is on.
+ *
+ * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
+ * Otherwise falls back to Relay feature flag + config toggle checks.
  */
-function buildAdapterToolsBlock(): string {
-  if (!isRelayEnabled()) return '';
-  const config = configManager.get('agentContext');
-  if (config?.adapterTools === false) return '';
+function buildAdapterToolsBlock(toolConfig?: ResolvedToolConfig): string {
+  if (toolConfig) {
+    if (!toolConfig.adapter) return '';
+  } else {
+    if (!isRelayEnabled()) return '';
+    const config = configManager.get('agentContext');
+    if (config?.adapterTools === false) return '';
+  }
   return ADAPTER_TOOLS_CONTEXT;
+}
+
+/**
+ * Build the `<pulse_tools>` context block.
+ *
+ * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
+ * Otherwise falls back to Pulse feature flag + config toggle checks.
+ */
+function buildPulseToolsBlock(toolConfig?: ResolvedToolConfig): string {
+  if (toolConfig) {
+    if (!toolConfig.pulse) return '';
+  } else {
+    if (!isPulseEnabled()) return '';
+    const config = configManager.get('agentContext');
+    if (config?.pulseTools === false) return '';
+  }
+  return PULSE_TOOLS_CONTEXT;
+}
+
+/**
+ * Build the `<peer_agents>` context block with a summary of registered agents.
+ *
+ * Uses `listWithPaths()` for lightweight agent data including project paths.
+ * Returns an empty string when MeshCore is unavailable or no agents are registered.
+ *
+ * @param meshCore - Optional MeshCore instance for agent registry access
+ */
+async function buildPeerAgentsBlock(
+  meshCore: MeshCore | null | undefined,
+): Promise<string> {
+  if (!meshCore) return '';
+  try {
+    const agents = meshCore.listWithPaths().slice(0, 10);
+    if (agents.length === 0) return '';
+    const lines = agents
+      .map((a) => `- ${a.name} (${a.projectPath})`)
+      .join('\n');
+    return `<peer_agents>\nRegistered agents on this machine (use mesh_list() for live data):\n${lines}\n\nTo contact a peer: mesh_inspect(agentId) for relay endpoint, then relay_send() to that subject.\n</peer_agents>`;
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -107,26 +182,37 @@ function buildAdapterToolsBlock(): string {
  * Returns XML key-value blocks mirroring Claude Code's own `<env>` structure.
  * Never throws — all errors result in partial context (git failures produce
  * `Is git repo: false`).
+ *
+ * @param cwd - Working directory for the session
+ * @param meshCore - Optional MeshCore instance for peer agents block
+ * @param toolConfig - Optional resolved tool config for agent-aware block gating
  */
-export async function buildSystemPromptAppend(cwd: string): Promise<string> {
-  const [envResult, gitResult, agentResult] = await Promise.allSettled([
+export async function buildSystemPromptAppend(
+  cwd: string,
+  meshCore?: MeshCore | null,
+  toolConfig?: ResolvedToolConfig,
+): Promise<string> {
+  const results = await Promise.allSettled([
     buildEnvBlock(cwd),
     buildGitBlock(cwd),
     buildAgentBlock(cwd),
+    buildPeerAgentsBlock(meshCore),
   ]);
 
   // Tool context blocks are synchronous (static strings + config checks)
-  const relayBlock = buildRelayToolsBlock();
-  const meshBlock = buildMeshToolsBlock();
-  const adapterBlock = buildAdapterToolsBlock();
+  const relayBlock = buildRelayToolsBlock(toolConfig);
+  const meshBlock = buildMeshToolsBlock(toolConfig);
+  const adapterBlock = buildAdapterToolsBlock(toolConfig);
+  const pulseBlock = buildPulseToolsBlock(toolConfig);
 
   return [
-    envResult.status === 'fulfilled' ? envResult.value : '',
-    gitResult.status === 'fulfilled' ? gitResult.value : '',
-    agentResult.status === 'fulfilled' ? agentResult.value : '',
+    ...results
+      .filter((r) => r.status === 'fulfilled' && r.value)
+      .map((r) => (r as PromiseFulfilledResult<string>).value),
     relayBlock,
     meshBlock,
     adapterBlock,
+    pulseBlock,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -241,7 +327,10 @@ export {
   buildRelayToolsBlock as _buildRelayToolsBlock,
   buildMeshToolsBlock as _buildMeshToolsBlock,
   buildAdapterToolsBlock as _buildAdapterToolsBlock,
+  buildPulseToolsBlock as _buildPulseToolsBlock,
+  buildPeerAgentsBlock as _buildPeerAgentsBlock,
   RELAY_TOOLS_CONTEXT as _RELAY_TOOLS_CONTEXT,
   MESH_TOOLS_CONTEXT as _MESH_TOOLS_CONTEXT,
   ADAPTER_TOOLS_CONTEXT as _ADAPTER_TOOLS_CONTEXT,
+  PULSE_TOOLS_CONTEXT as _PULSE_TOOLS_CONTEXT,
 };

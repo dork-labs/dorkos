@@ -9,6 +9,7 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   timezone: text('timezone').notNull().default('UTC'),
   prompt: text('prompt').notNull(),
   cwd: text('cwd'),
+  agentId: text('agent_id'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   maxRuntime: integer('max_runtime'),
   permissionMode: text('permission_mode').notNull().default('acceptEdits'),

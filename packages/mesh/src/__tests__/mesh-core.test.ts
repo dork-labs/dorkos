@@ -1079,3 +1079,87 @@ describe('unregister() file deletion (ADR-0043)', () => {
     mesh.close();
   });
 });
+
+describe('onUnregister callbacks', () => {
+  it('invokes registered callback with agentId on unregister', async () => {
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'callback-test');
+    await fs.mkdir(projectDir, { recursive: true });
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'callback-agent',
+      runtime: 'claude-code',
+    });
+
+    const callback = vi.fn();
+    mesh.onUnregister(callback);
+
+    await mesh.unregister(manifest.id);
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith(manifest.id);
+
+    mesh.close();
+  });
+
+  it('invokes multiple callbacks', async () => {
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'multi-cb-test');
+    await fs.mkdir(projectDir, { recursive: true });
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'multi-cb-agent',
+      runtime: 'claude-code',
+    });
+
+    const cb1 = vi.fn();
+    const cb2 = vi.fn();
+    mesh.onUnregister(cb1);
+    mesh.onUnregister(cb2);
+
+    await mesh.unregister(manifest.id);
+
+    expect(cb1).toHaveBeenCalledOnce();
+    expect(cb2).toHaveBeenCalledOnce();
+
+    mesh.close();
+  });
+
+  it('continues executing callbacks even if one throws', async () => {
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'throw-cb-test');
+    await fs.mkdir(projectDir, { recursive: true });
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'throw-cb-agent',
+      runtime: 'claude-code',
+    });
+
+    const failingCb = vi.fn(() => { throw new Error('callback boom'); });
+    const successCb = vi.fn();
+    mesh.onUnregister(failingCb);
+    mesh.onUnregister(successCb);
+
+    await mesh.unregister(manifest.id);
+
+    expect(failingCb).toHaveBeenCalledOnce();
+    expect(successCb).toHaveBeenCalledOnce();
+
+    mesh.close();
+  });
+
+  it('does not invoke callback when agent not found', async () => {
+    const mesh = new MeshCore({ db });
+    const callback = vi.fn();
+    mesh.onUnregister(callback);
+
+    await mesh.unregister('nonexistent-agent');
+
+    expect(callback).not.toHaveBeenCalled();
+
+    mesh.close();
+  });
+});

@@ -523,7 +523,7 @@
       "number": 64,
       "slug": "shadcn-sidebar-for-standalone-layout",
       "title": "Use Shadcn Sidebar for Standalone Layout",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-03",
       "extractedFrom": "shadcn-sidebar-redesign",
       "specSlug": "shadcn-sidebar-redesign"
@@ -532,7 +532,7 @@
       "number": 65,
       "slug": "lift-dialogs-to-root-dialog-host",
       "title": "Lift Dialogs to Root-Level DialogHost",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-03",
       "extractedFrom": "shadcn-sidebar-redesign",
       "specSlug": "shadcn-sidebar-redesign"
@@ -541,7 +541,7 @@
       "number": 66,
       "slug": "fuse-js-for-palette-fuzzy-search",
       "title": "Use Fuse.js for Command Palette Fuzzy Search",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-03",
       "extractedFrom": "command-palette-10x",
       "specSlug": "command-palette-10x"
@@ -550,7 +550,7 @@
       "number": 67,
       "slug": "slack-bucket-frecency-for-agent-ranking",
       "title": "Use Slack Bucket Frecency for Agent Ranking",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-03",
       "extractedFrom": "command-palette-10x",
       "specSlug": "command-palette-10x"
@@ -559,7 +559,7 @@
       "number": 68,
       "slug": "static-xml-blocks-for-tool-context",
       "title": "Use Static XML Blocks for Agent Tool Context Injection",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-04",
       "extractedFrom": "agent-tool-context-injection",
       "specSlug": "agent-tool-context-injection"
@@ -568,7 +568,7 @@
       "number": 69,
       "slug": "agent-context-config-independent-from-feature-flags",
       "title": "Agent Context Config Section Independent from Feature Flags",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-04",
       "extractedFrom": "agent-tool-context-injection",
       "specSlug": "agent-tool-context-injection"
@@ -577,7 +577,7 @@
       "number": 70,
       "slug": "per-agent-tool-filtering-via-allowedtools",
       "title": "Per-Agent Tool Filtering via Domain-Level allowedTools",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
       "specSlug": "agent-tools-elevation"
@@ -586,7 +586,7 @@
       "number": 71,
       "slug": "implicit-tool-group-hierarchy",
       "title": "Implicit Tool Group Hierarchy for User-Facing Toggles",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
       "specSlug": "agent-tools-elevation"
@@ -595,7 +595,7 @@
       "number": 72,
       "slug": "cascade-disable-on-agent-unregister",
       "title": "Cascade Disable Pulse Schedules on Agent Unregister",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
       "specSlug": "agent-tools-elevation"

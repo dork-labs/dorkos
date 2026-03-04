@@ -21,6 +21,29 @@ vi.mock('../../../lib/boundary.js', () => ({
 vi.mock('../context-builder.js', () => ({
   buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>'),
 }));
+vi.mock('../tool-filter.js', () => ({
+  resolveToolConfig: vi.fn().mockReturnValue({ pulse: true, relay: true, mesh: true, adapter: true }),
+  buildAllowedTools: vi.fn().mockReturnValue(undefined),
+}));
+vi.mock('@dorkos/shared/manifest', async () => ({
+  readManifest: vi.fn().mockResolvedValue(null),
+}));
+vi.mock('../../relay/relay-state.js', () => ({
+  isRelayEnabled: vi.fn().mockReturnValue(false),
+}));
+vi.mock('../../pulse/pulse-state.js', () => ({
+  isPulseEnabled: vi.fn().mockReturnValue(false),
+}));
+vi.mock('../config-manager.js', () => ({
+  configManager: {
+    get: vi.fn().mockReturnValue({
+      pulseTools: true,
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    }),
+  },
+}));
 
 // Mock child_process and fs to prevent resolveClaudeCliPath side effects
 vi.mock('child_process', async (importOriginal) => {

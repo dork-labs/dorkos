@@ -1,5 +1,6 @@
 import { Cron } from 'croner';
 import type { RelayCore } from '@dorkos/relay';
+import type { MeshCore } from '@dorkos/mesh';
 import type { PulseSchedule, PulseRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import type { PulseDispatchPayload } from '@dorkos/shared/relay-schemas';
 import type { PulseStore } from './pulse-store.js';
@@ -35,6 +36,8 @@ export interface SchedulerDeps {
   config: SchedulerConfig;
   /** Optional RelayCore instance for dispatching runs via the Relay message bus. */
   relay?: RelayCore | null;
+  /** Optional MeshCore instance for resolving agent CWDs from agent IDs. */
+  meshCore?: MeshCore | null;
 }
 
 /**
@@ -72,14 +75,16 @@ export class SchedulerService {
   private agentManager: SchedulerAgentManager;
   private config: SchedulerConfig;
   private relay: RelayCore | null;
+  private meshCore: MeshCore | null;
 
-  constructor(store: PulseStore, agentManager: SchedulerAgentManager, config: SchedulerConfig, relay?: RelayCore | null);
+  constructor(store: PulseStore, agentManager: SchedulerAgentManager, config: SchedulerConfig, relay?: RelayCore | null, meshCore?: MeshCore | null);
   constructor(deps: SchedulerDeps);
   constructor(
     storeOrDeps: PulseStore | SchedulerDeps,
     agentManager?: SchedulerAgentManager,
     config?: SchedulerConfig,
     relay?: RelayCore | null,
+    meshCore?: MeshCore | null,
   ) {
     if ('store' in storeOrDeps && 'agentManager' in storeOrDeps && 'config' in storeOrDeps) {
       // SchedulerDeps object form
@@ -87,12 +92,14 @@ export class SchedulerService {
       this.agentManager = storeOrDeps.agentManager;
       this.config = storeOrDeps.config;
       this.relay = storeOrDeps.relay ?? null;
+      this.meshCore = storeOrDeps.meshCore ?? null;
     } else {
       // Positional args form (backwards-compatible)
       this.store = storeOrDeps as PulseStore;
       this.agentManager = agentManager!;
       this.config = config!;
       this.relay = relay ?? null;
+      this.meshCore = meshCore ?? null;
     }
   }
 
@@ -199,6 +206,30 @@ export class SchedulerService {
     return this.cronJobs.has(scheduleId);
   }
 
+  /**
+   * Resolve the effective working directory for a schedule.
+   *
+   * When the schedule is linked to an agent (via agentId), resolves the agent's
+   * projectPath from MeshCore. Falls back to schedule.cwd, then the server default.
+   *
+   * @param schedule - The schedule to resolve CWD for
+   * @returns The absolute path to use as CWD for this run
+   * @throws When agentId is set but the agent is not found in the Mesh registry
+   */
+  private async resolveEffectiveCwd(schedule: PulseSchedule): Promise<string> {
+    if (schedule.agentId && this.meshCore) {
+      const projectPath = this.meshCore.getProjectPath(schedule.agentId);
+      if (!projectPath) {
+        throw new Error(
+          `Agent ${schedule.agentId} not found in registry -- schedule ${schedule.id} cannot run. ` +
+          'The agent may have been unregistered. Re-link the schedule to a valid agent or directory.'
+        );
+      }
+      return projectPath;
+    }
+    return schedule.cwd ?? process.cwd();
+  }
+
   /** Dispatch a scheduled run — checks concurrency and schedule state. */
   private async dispatch(schedule: PulseSchedule): Promise<void> {
     if (this.activeRuns.size >= this.config.maxConcurrentRuns) {
@@ -235,12 +266,26 @@ export class SchedulerService {
    * status on completion via a separate response flow.
    */
   private async executeRunViaRelay(schedule: PulseSchedule, run: PulseRun): Promise<void> {
+    let effectiveCwd: string;
+    try {
+      effectiveCwd = await this.resolveEffectiveCwd(schedule);
+    } catch (err) {
+      this.store.updateRun(run.id, {
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        durationMs: 0,
+        error: (err as Error).message,
+      });
+      logger.error(`run ${run.id} failed: ${(err as Error).message}`);
+      return;
+    }
+
     const payload: PulseDispatchPayload = {
       type: 'pulse_dispatch',
       scheduleId: schedule.id,
       runId: run.id,
       prompt: schedule.prompt,
-      cwd: schedule.cwd || process.cwd(),
+      cwd: effectiveCwd,
       permissionMode: schedule.permissionMode,
       scheduleName: schedule.name,
       cron: schedule.cron,
@@ -276,6 +321,20 @@ export class SchedulerService {
 
   /** Execute a run directly via AgentManager — manages AbortController, streams output, updates status. */
   private async executeRunDirect(schedule: PulseSchedule, run: PulseRun): Promise<void> {
+    let effectiveCwd: string | undefined;
+    try {
+      effectiveCwd = await this.resolveEffectiveCwd(schedule);
+    } catch (err) {
+      this.store.updateRun(run.id, {
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        durationMs: 0,
+        error: (err as Error).message,
+      });
+      logger.error(`run ${run.id} failed: ${(err as Error).message}`);
+      return;
+    }
+
     const controller = new AbortController();
     this.activeRuns.set(run.id, controller);
 
@@ -296,14 +355,14 @@ export class SchedulerService {
 
       this.agentManager.ensureSession(sessionId, {
         permissionMode,
-        cwd: schedule.cwd ?? undefined,
+        cwd: effectiveCwd,
         hasStarted: false,
       });
 
       const pulseAppend = buildPulseAppend(schedule, run);
       const stream = this.agentManager.sendMessage(sessionId, schedule.prompt, {
         permissionMode,
-        cwd: schedule.cwd ?? undefined,
+        cwd: effectiveCwd,
         systemPromptAppend: pulseAppend,
       });
 

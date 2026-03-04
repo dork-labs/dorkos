@@ -106,6 +106,16 @@ The global command palette (`Cmd+K` / `Ctrl+K`) provides unified access to agent
 | `Escape` | In sub-menu | Go back one level (does not close the dialog) |
 | `Escape` | At root level | Close the command palette |
 
+#### Dynamic Keyboard Hints (PaletteFooter)
+
+The command palette displays a `PaletteFooter` bar showing context-appropriate keyboard shortcuts. Hints adapt based on navigation depth and selection state:
+
+| Context | Hints Shown |
+| ------- | ----------- |
+| Root level, no selection | `up/down` Navigate, `esc` Close |
+| Root level, agent selected | `up/down` Navigate, `Enter` Open, `Cmd+Enter` New Tab, `esc` Close |
+| Sub-menu active | `up/down` Navigate, `Backspace` Back, `esc` Close |
+
 ### Approval Mode (`WAITING_FOR_APPROVAL`)
 
 | Key      | Action                |

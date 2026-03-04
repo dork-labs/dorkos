@@ -2,8 +2,21 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { parseCron, assembleCron, CronVisualBuilder } from '../ui/CronVisualBuilder';
+
+// Capture the aria-label from SelectTrigger and attach it to the wrapping <select>
+// We store it in a module-level ref so Select can pick it up after SelectTrigger renders.
+// Since Select renders its children (including SelectTrigger) inside a <select>, we instead
+// hoist the aria-label by having SelectTrigger set it on a shared context value, then
+// pass it through a React context to the parent Select.
+
+import React from 'react';
+
+const SelectAriaLabelContext = React.createContext<{
+  ariaLabel: string;
+  setAriaLabel: (label: string) => void;
+}>({ ariaLabel: '', setAriaLabel: () => {} });
 
 // Mock shadcn Select — render a native <select> for testability
 vi.mock('@/layers/shared/ui', () => ({
@@ -18,12 +31,33 @@ vi.mock('@/layers/shared/ui', () => ({
     value: string;
     onValueChange: (v: string) => void;
     children: React.ReactNode;
-  }) => (
-    <select value={value} onChange={(e) => onValueChange(e.target.value)}>
-      {children}
-    </select>
-  ),
-  SelectTrigger: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  }) => {
+    const [ariaLabel, setAriaLabel] = React.useState('');
+    return (
+      <SelectAriaLabelContext.Provider value={{ ariaLabel, setAriaLabel }}>
+        <select
+          value={value}
+          aria-label={ariaLabel || undefined}
+          onChange={(e) => onValueChange(e.target.value)}
+        >
+          {children}
+        </select>
+      </SelectAriaLabelContext.Provider>
+    );
+  },
+  SelectTrigger: ({
+    children,
+    'aria-label': ariaLabel,
+  }: {
+    children?: React.ReactNode;
+    'aria-label'?: string;
+  }) => {
+    const ctx = React.useContext(SelectAriaLabelContext);
+    React.useEffect(() => {
+      if (ariaLabel) ctx.setAriaLabel(ariaLabel);
+    }, [ariaLabel]); // eslint-disable-line react-hooks/exhaustive-deps
+    return <>{children}</>;
+  },
   SelectValue: () => null,
   SelectContent: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   SelectItem: ({
@@ -91,6 +125,16 @@ describe('parseCron', () => {
       dayOfWeek: '*',
     });
   });
+
+  it('handles empty string by defaulting all fields to *', () => {
+    expect(parseCron('')).toEqual({
+      minute: '*',
+      hour: '*',
+      dayOfMonth: '*',
+      month: '*',
+      dayOfWeek: '*',
+    });
+  });
 });
 
 describe('assembleCron', () => {
@@ -131,5 +175,28 @@ describe('CronVisualBuilder', () => {
     // The mocked Select renders as native <select>, labels render as <label>
     const labels = screen.getAllByText(/Minute|Hour|Day|Month|Weekday/);
     expect(labels).toHaveLength(5);
+  });
+
+  it('calls onChange when a field is changed', () => {
+    const onChange = vi.fn();
+    render(<CronVisualBuilder value="* * * * *" onChange={onChange} />);
+
+    // The mocked Select renders as a native <select> — find by aria-label
+    const minuteSelect = screen.getByLabelText('Minute');
+    fireEvent.change(minuteSelect, { target: { value: '30' } });
+
+    expect(onChange).toHaveBeenCalledWith('30 * * * *');
+  });
+
+  it('updates displayed values when value prop changes', () => {
+    const { rerender } = render(<CronVisualBuilder value="* * * * *" onChange={vi.fn()} />);
+
+    // All selects should show wildcard initially — the mocked Select renders value as a <select>
+    const hourSelect = screen.getByLabelText('Hour') as HTMLSelectElement;
+    expect(hourSelect.value).toBe('*');
+
+    rerender(<CronVisualBuilder value="0 9 * * 1-5" onChange={vi.fn()} />);
+
+    expect(hourSelect.value).toBe('9');
   });
 });

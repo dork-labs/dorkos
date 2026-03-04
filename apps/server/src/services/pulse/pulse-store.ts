@@ -72,6 +72,7 @@ export class PulseStore {
       cron: input.cron,
       timezone: input.timezone ?? 'UTC',
       cwd: input.cwd ?? null,
+      agentId: input.agentId ?? null,
       enabled: input.enabled ?? true,
       maxRuntime: input.maxRuntime ?? null,
       permissionMode: input.permissionMode ?? 'acceptEdits',
@@ -97,6 +98,7 @@ export class PulseStore {
     if (input.cron !== undefined) updates.cron = input.cron;
     if (input.timezone !== undefined) updates.timezone = input.timezone ?? 'UTC';
     if (input.cwd !== undefined) updates.cwd = input.cwd ?? null;
+    if (input.agentId !== undefined) updates.agentId = input.agentId ?? null;
     if (input.enabled !== undefined) updates.enabled = input.enabled;
     if (input.maxRuntime !== undefined) updates.maxRuntime = input.maxRuntime ?? null;
     if (input.permissionMode !== undefined) updates.permissionMode = input.permissionMode;
@@ -270,6 +272,25 @@ export class PulseStore {
     return result.changes;
   }
 
+  /**
+   * Disable all schedules linked to a specific agent ID.
+   *
+   * Sets enabled=0 and status='paused' for matching schedules that are currently enabled.
+   * Used by the cascade-disable flow when an agent is unregistered from Mesh.
+   *
+   * @param agentId - The agent ULID whose linked schedules should be disabled
+   * @returns The number of schedules that were disabled
+   */
+  disableSchedulesByAgentId(agentId: string): number {
+    const now = new Date().toISOString();
+    const result = this.db
+      .update(pulseSchedules)
+      .set({ enabled: false, status: 'paused', updatedAt: now })
+      .where(and(eq(pulseSchedules.agentId, agentId), eq(pulseSchedules.enabled, true)))
+      .run();
+    return result.changes;
+  }
+
   /** Close the database connection. No-op since the shared Db lifecycle is managed externally. */
   close(): void {
     logger.debug('PulseStore: close() called (no-op — db lifecycle managed externally)');
@@ -286,6 +307,7 @@ function mapScheduleRow(row: typeof pulseSchedules.$inferSelect): PulseSchedule 
     cron: row.cron,
     timezone: row.timezone,
     cwd: row.cwd,
+    agentId: row.agentId ?? null,
     enabled: row.enabled,
     maxRuntime: row.maxRuntime,
     permissionMode: row.permissionMode,

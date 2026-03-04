@@ -6,12 +6,14 @@ interface AgentContextConfig {
   relayTools: boolean;
   meshTools: boolean;
   adapterTools: boolean;
+  pulseTools: boolean;
 }
 
 const DEFAULTS: AgentContextConfig = {
   relayTools: true,
   meshTools: true,
   adapterTools: true,
+  pulseTools: true,
 };
 
 /**

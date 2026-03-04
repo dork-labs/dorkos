@@ -47,6 +47,34 @@ export const AgentBudgetSchema = z
 
 export type AgentBudget = z.infer<typeof AgentBudgetSchema>;
 
+// === Agent Tool Groups ===
+
+/**
+ * Per-domain MCP tool group enable/disable overrides for an individual agent.
+ *
+ * `undefined` means "inherit global default". Explicit `true`/`false` overrides the global setting.
+ *
+ * Implicit grouping rules:
+ * - `adapter: false` also disables Binding tools (`binding_list`, `binding_create`, `binding_delete`)
+ * - `relay: false` also disables Trace tools (`relay_get_trace`, `relay_get_metrics`)
+ * - Core tools (`ping`, `get_server_info`, `get_session_count`, `agent_get_current`) are always enabled
+ */
+export const EnabledToolGroupsSchema = z
+  .object({
+    pulse: z.boolean().optional(),
+    relay: z.boolean().optional(),
+    mesh: z.boolean().optional(),
+    adapter: z.boolean().optional(),
+  })
+  .default({})
+  .openapi('EnabledToolGroups', {
+    description:
+      'Per-domain tool group enable/disable. undefined = inherit global default. ' +
+      'Binding tools follow adapter toggle. Trace tools follow relay toggle.',
+  });
+
+export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;
+
 // === Agent Manifest ===
 
 export const AgentManifestSchema = z
@@ -76,6 +104,7 @@ export const AgentManifestSchema = z
       description: 'Emoji override for visual identity',
       example: '🤖',
     }),
+    enabledToolGroups: EnabledToolGroupsSchema,
   })
   .openapi('AgentManifest');
 
@@ -222,6 +251,7 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   personaEnabled: true,
   color: true,
   icon: true,
+  enabledToolGroups: true,
 }).partial().openapi('UpdateAgentRequest');
 
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;

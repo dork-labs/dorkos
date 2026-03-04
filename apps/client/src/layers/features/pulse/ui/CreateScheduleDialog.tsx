@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import cronstrue from 'cronstrue';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronRight, FolderOpen } from 'lucide-react';
+import { ChevronRight, FolderOpen, Bot } from 'lucide-react';
 import { useCreateSchedule, useUpdateSchedule } from '@/layers/entities/pulse';
+import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -20,6 +21,7 @@ import type { PulseSchedule } from '@dorkos/shared/types';
 import { CronPresets } from './CronPresets';
 import { CronVisualBuilder } from './CronVisualBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
+import { AgentCombobox } from './AgentCombobox';
 
 interface Props {
   open: boolean;
@@ -28,6 +30,7 @@ interface Props {
 }
 
 type PermissionMode = 'acceptEdits' | 'bypassPermissions';
+type ScheduleTarget = 'agent' | 'directory';
 
 const DEFAULT_MAX_RUNTIME_MIN = 10;
 const MAX_NAME_LENGTH = 100;
@@ -49,6 +52,7 @@ function buildInitialState(editSchedule?: PulseSchedule) {
       prompt: editSchedule.prompt,
       cron: editSchedule.cron,
       cwd: editSchedule.cwd ?? '',
+      agentId: editSchedule.agentId ?? undefined,
       timezone: editSchedule.timezone ?? '',
       permissionMode: (editSchedule.permissionMode === 'bypassPermissions'
         ? 'bypassPermissions'
@@ -61,6 +65,7 @@ function buildInitialState(editSchedule?: PulseSchedule) {
     prompt: '',
     cron: '',
     cwd: '',
+    agentId: undefined as string | undefined,
     timezone: '',
     permissionMode: 'acceptEdits' as PermissionMode,
     maxRuntimeMin: DEFAULT_MAX_RUNTIME_MIN,
@@ -72,6 +77,7 @@ interface FormState {
   prompt: string;
   cron: string;
   cwd: string;
+  agentId: string | undefined;
   timezone: string;
   permissionMode: PermissionMode;
   maxRuntimeMin: number;
@@ -81,14 +87,30 @@ interface FormState {
 export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
+  const { data: agentsData } = useMeshAgentPaths();
+  const agents = agentsData?.agents ?? [];
 
   const [form, setForm] = useState<FormState>(() => buildInitialState(editSchedule));
   const [customBuilderOpen, setCustomBuilderOpen] = useState(false);
   const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
 
+  // Determine initial schedule target: 'agent' if editing an agent-linked schedule,
+  // or if no edit and agents exist; otherwise 'directory'.
+  const [scheduleTarget, setScheduleTarget] = useState<ScheduleTarget>(() => {
+    if (editSchedule?.agentId) return 'agent';
+    return 'directory';
+  });
+
   // Reset form when dialog opens or switches between create/edit
   useEffect(() => {
     setForm(buildInitialState(editSchedule));
+    // Default to 'agent' when creating if agents are available
+    if (!editSchedule) {
+      setScheduleTarget(agents.length > 0 ? 'agent' : 'directory');
+    } else {
+      setScheduleTarget(editSchedule.agentId ? 'agent' : 'directory');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- agents.length intentionally excluded to avoid resetting on re-fetch
   }, [editSchedule, open]);
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -107,7 +129,8 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
       name: form.name.trim(),
       prompt: form.prompt.trim(),
       cron: form.cron.trim(),
-      ...(form.cwd.trim() && { cwd: form.cwd.trim() }),
+      ...(scheduleTarget === 'agent' && form.agentId ? { agentId: form.agentId } : {}),
+      ...(scheduleTarget === 'directory' && form.cwd.trim() ? { cwd: form.cwd.trim() } : {}),
       ...(form.timezone && { timezone: form.timezone }),
       permissionMode: form.permissionMode,
       maxRuntime: form.maxRuntimeMin * 60_000,
@@ -225,28 +248,77 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
             {/* ── Common fields ── */}
             <div className="border-t pt-4">
               <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="schedule-cwd">Working Directory</Label>
-                  <div className="flex gap-2">
-                    <div
-                      className={cn(
-                        'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
-                        form.cwd ? 'text-foreground' : 'text-muted-foreground'
-                      )}
-                    >
-                      {form.cwd || 'Default (server working directory)'}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      onClick={() => setCwdPickerOpen(true)}
-                      aria-label="Browse directories"
-                    >
-                      <FolderOpen className="size-4" />
-                    </Button>
-                  </div>
+                {/* Schedule target: agent or directory */}
+                <div className="space-y-2">
+                  <Label>Run target</Label>
+                  <fieldset className="space-y-1.5">
+                    <legend className="sr-only">Schedule target</legend>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="scheduleTarget"
+                        value="agent"
+                        aria-label="Run for agent"
+                        checked={scheduleTarget === 'agent'}
+                        onChange={() => setScheduleTarget('agent')}
+                      />
+                      <Bot className="text-muted-foreground size-3.5" />
+                      Run for agent
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="scheduleTarget"
+                        value="directory"
+                        aria-label="Run in directory"
+                        checked={scheduleTarget === 'directory'}
+                        onChange={() => setScheduleTarget('directory')}
+                      />
+                      <FolderOpen className="text-muted-foreground size-3.5" />
+                      Run in directory
+                    </label>
+                  </fieldset>
                 </div>
+
+                {scheduleTarget === 'agent' ? (
+                  <div className="space-y-1.5">
+                    <Label>Agent</Label>
+                    {agents.length === 0 ? (
+                      <p className="text-muted-foreground text-xs">
+                        No registered agents found. Register an agent via the Mesh panel, or switch to directory mode.
+                      </p>
+                    ) : (
+                      <AgentCombobox
+                        agents={agents}
+                        value={form.agentId}
+                        onValueChange={(id) => updateField('agentId', id)}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="schedule-cwd">Working Directory</Label>
+                    <div className="flex gap-2">
+                      <div
+                        className={cn(
+                          'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
+                          form.cwd ? 'text-foreground' : 'text-muted-foreground'
+                        )}
+                      >
+                        {form.cwd || 'Default (server working directory)'}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        onClick={() => setCwdPickerOpen(true)}
+                        aria-label="Browse directories"
+                      >
+                        <FolderOpen className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-1.5">
                   <Label>Timezone</Label>

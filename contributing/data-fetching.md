@@ -164,6 +164,98 @@ The `GET /api/sessions/:id/messages` endpoint supports `If-None-Match` / `304` f
 // Server returns 304 when content hasn't changed, saving bandwidth
 ```
 
+### Debouncing Fetches with useDeferredValue
+
+For high-frequency state changes (e.g., rapid arrow key navigation through a list), use `useDeferredValue` to prevent fetch thrashing:
+
+```typescript
+// apps/client/src/layers/features/command-palette/model/use-preview-data.ts
+import { useDeferredValue, useMemo } from 'react';
+
+export function usePreviewData(agentId: string, agentCwd: string) {
+  // Defers the agent ID — prevents preview fetches on every keystroke
+  const deferredAgentId = useDeferredValue(agentId);
+
+  const { data: sessions } = useSessions();
+  const { data: health } = useMeshAgentHealth(deferredAgentId);
+
+  // Derived data via useMemo — recomputes only when dependencies change
+  const agentSessions = useMemo(
+    () => sessions?.filter(s => s.cwd === agentCwd) ?? [],
+    [sessions, agentCwd]
+  );
+
+  return {
+    sessionCount: agentSessions.length,
+    recentSessions: agentSessions.slice(0, 3),
+    health: health ?? null,
+  };
+}
+```
+
+**When to use**: Debouncing expensive effects (API calls, heavy computations) triggered by rapid input changes. The deferred value keeps UI responsive during typing/navigation but maintains correctness after input settles. Prefer over manual `setTimeout`/`useEffect` debounce patterns.
+
+### Data Aggregation Hooks
+
+When multiple TanStack Query hooks need to be composed into a single derived result, create a custom hook that combines them with `useMemo`:
+
+```typescript
+export function usePreviewData(agentId: string, agentCwd: string) {
+  const { data: sessions } = useSessions();           // TanStack Query
+  const { data: health } = useMeshAgentHealth(agentId); // TanStack Query
+
+  // Derive filtered + sliced data via useMemo
+  const agentSessions = useMemo(
+    () => sessions?.filter(s => s.cwd === agentCwd) ?? [],
+    [sessions, agentCwd]
+  );
+
+  return { sessionCount: agentSessions.length, recentSessions: agentSessions.slice(0, 3), health };
+}
+```
+
+This pattern centralizes the aggregation logic, avoids scattered queries, and lets TanStack Query handle caching/refetching for each underlying data source independently.
+
+### Multi-Source Derived Hooks (Feature Flags + Server State)
+
+When a hook needs to combine TanStack Query data with non-query state (feature flags, config), use `useMemo` to produce a derived result:
+
+```typescript
+// apps/client/src/layers/entities/agent/model/use-agent-tool-status.ts
+export function useAgentToolStatus(projectPath: string | null): AgentToolStatus {
+  const { data: agent } = useCurrentAgent(projectPath);   // TanStack Query
+  const relayEnabled = useRelayEnabled();                   // Feature flag (config query)
+  const pulseEnabled = usePulseEnabled();                   // Feature flag (config query)
+
+  return useMemo((): AgentToolStatus => {
+    const groups = agent?.enabledToolGroups ?? {};
+    return {
+      pulse: !pulseEnabled ? 'disabled-by-server'
+        : groups.pulse === false ? 'disabled-by-agent' : 'enabled',
+      relay: !relayEnabled ? 'disabled-by-server'
+        : groups.relay === false ? 'disabled-by-agent' : 'enabled',
+      mesh: groups.mesh === false ? 'disabled-by-agent' : 'enabled',
+      adapter: !relayEnabled ? 'disabled-by-server'
+        : groups.adapter === false ? 'disabled-by-agent' : 'enabled',
+    };
+  }, [agent, relayEnabled, pulseEnabled]);
+}
+```
+
+This pattern is useful when the derived state depends on multiple independent sources with different update frequencies. Each source updates independently (agent manifest changes infrequently, feature flags almost never), but the derived value recomputes correctly via `useMemo` dependency tracking.
+
+### Pre-loading Data with staleTime
+
+For UI elements that need data immediately on open (e.g., command palette), pre-load data via TanStack Query with explicit `staleTime` to avoid unnecessary refetches:
+
+```typescript
+// Data is loaded before the palette opens; staleTime prevents refetch on mount
+const { data: agents } = useRegisteredAgents({ staleTime: 30_000 });
+const { data: sessions } = useSessions({ staleTime: 30_000 });
+```
+
+`staleTime: 30_000` means TanStack Query considers the data fresh for 30 seconds. If the user opens the palette within that window, it uses cached data without a network request. After 30 seconds, a background refetch occurs on next access.
+
 ## Anti-Patterns
 
 ```typescript

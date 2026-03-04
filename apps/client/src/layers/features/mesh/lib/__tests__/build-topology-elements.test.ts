@@ -22,6 +22,7 @@ const baseAgent = {
   registeredAt: '2026-01-01T00:00:00.000Z',
   registeredBy: 'test',
   personaEnabled: true,
+  enabledToolGroups: {},
   relayAdapters: [],
   relaySubject: null,
   pulseScheduleCount: 0,

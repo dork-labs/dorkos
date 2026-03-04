@@ -85,8 +85,9 @@ export const UserConfigSchema = z.object({
       relayTools: z.boolean().default(true),
       meshTools: z.boolean().default(true),
       adapterTools: z.boolean().default(true),
+      pulseTools: z.boolean().default(true),
     })
-    .default(() => ({ relayTools: true, meshTools: true, adapterTools: true })),
+    .default(() => ({ relayTools: true, meshTools: true, adapterTools: true, pulseTools: true })),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

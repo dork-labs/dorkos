@@ -9,6 +9,7 @@ import {
   UpdateScheduleRequestSchema,
   ListRunsQuerySchema,
 } from '@dorkos/shared/schemas';
+import type { MeshCore } from '@dorkos/mesh';
 import type { PulseStore } from '../services/pulse/pulse-store.js';
 import type { SchedulerService } from '../services/pulse/scheduler-service.js';
 import { loadPresets } from '../services/pulse/pulse-presets.js';
@@ -20,8 +21,9 @@ import { parseBody } from '../lib/route-utils.js';
  *
  * @param store - PulseStore for data persistence
  * @param scheduler - SchedulerService for cron management and dispatch
+ * @param meshCore - Optional MeshCore for validating agentId on create/update
  */
-export function createPulseRouter(store: PulseStore, scheduler: SchedulerService): Router {
+export function createPulseRouter(store: PulseStore, scheduler: SchedulerService, meshCore?: MeshCore): Router {
   const router = Router();
 
   // === Preset endpoints ===
@@ -56,6 +58,13 @@ export function createPulseRouter(store: PulseStore, scheduler: SchedulerService
       }
     }
 
+    if (data.agentId && meshCore) {
+      const agent = meshCore.get(data.agentId);
+      if (!agent) {
+        return res.status(400).json({ error: `Agent ${data.agentId} not found in registry` });
+      }
+    }
+
     const schedule = store.createSchedule(data);
     if (schedule.enabled && schedule.status === 'active') {
       scheduler.registerSchedule(schedule);
@@ -72,6 +81,13 @@ export function createPulseRouter(store: PulseStore, scheduler: SchedulerService
       const withinBoundary = await isWithinBoundary(data.cwd);
       if (!withinBoundary) {
         return res.status(403).json({ error: 'CWD outside directory boundary' });
+      }
+    }
+
+    if (data.agentId && meshCore) {
+      const agent = meshCore.get(data.agentId);
+      if (!agent) {
+        return res.status(400).json({ error: `Agent ${data.agentId} not found in registry` });
       }
     }
 

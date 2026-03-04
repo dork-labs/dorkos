@@ -17,7 +17,6 @@ import { IdentityTab } from './IdentityTab';
 import { PersonaTab } from './PersonaTab';
 import { CapabilitiesTab } from './CapabilitiesTab';
 import { ConnectionsTab } from './ConnectionsTab';
-import { ContextTab } from './ContextTab';
 
 interface AgentDialogProps {
   projectPath: string;
@@ -27,7 +26,7 @@ interface AgentDialogProps {
 
 /**
  * Dialog shell for agent configuration with tabbed navigation.
- * Five tabs: Identity, Persona, Capabilities, Connections, and Context.
+ * Four tabs: Identity, Persona, Capabilities, and Connections.
  */
 export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProps) {
   const [activeTab, setActiveTab] = useState('identity');
@@ -83,14 +82,13 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
           className="flex flex-1 flex-col overflow-hidden"
         >
           <TabsList
-            className="mx-4 mt-3 grid w-full grid-cols-5"
+            className="mx-4 mt-3 grid w-full grid-cols-4"
             style={{ width: 'calc(100% - 2rem)' }}
           >
             <TabsTrigger value="identity">Identity</TabsTrigger>
             <TabsTrigger value="persona">Persona</TabsTrigger>
             <TabsTrigger value="capabilities">Capabilities</TabsTrigger>
             <TabsTrigger value="connections">Connections</TabsTrigger>
-            <TabsTrigger value="context">Context</TabsTrigger>
           </TabsList>
 
           <div className="min-h-[280px] flex-1 overflow-y-auto p-4">
@@ -112,10 +110,6 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
 
             <TabsContent value="connections" className="mt-0">
               <ConnectionsTab agent={agent} />
-            </TabsContent>
-
-            <TabsContent value="context" className="mt-0">
-              <ContextTab />
             </TabsContent>
           </div>
         </Tabs>

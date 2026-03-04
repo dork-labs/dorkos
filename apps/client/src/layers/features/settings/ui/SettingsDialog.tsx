@@ -23,6 +23,7 @@ import { ServerTab } from './ServerTab';
 import { TunnelDialog } from './TunnelDialog';
 import { AdvancedTab } from './AdvancedTab';
 import { ServerRestartOverlay } from './ServerRestartOverlay';
+import { ToolsTab } from './ToolsTab';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -95,13 +96,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           className="flex flex-1 flex-col overflow-hidden"
         >
           <TabsList
-            className="mx-4 mt-3 grid w-full grid-cols-5"
+            className="mx-4 mt-3 grid w-full grid-cols-6"
             style={{ width: 'calc(100% - 2rem)' }}
           >
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
             <TabsTrigger value="preferences">Preferences</TabsTrigger>
             <TabsTrigger value="statusBar">Status Bar</TabsTrigger>
             <TabsTrigger value="server">Server</TabsTrigger>
+            <TabsTrigger value="tools">Tools</TabsTrigger>
             <TabsTrigger value="advanced">Advanced</TabsTrigger>
           </TabsList>
 
@@ -288,6 +290,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
             <TabsContent value="server" className="mt-0">
               <ServerTab config={config} isLoading={isLoading} onOpenTunnelDialog={() => setTunnelDialogOpen(true)} />
+            </TabsContent>
+
+            <TabsContent value="tools" className="mt-0">
+              <ToolsTab />
             </TabsContent>
 
             <TabsContent value="advanced" className="mt-0">
