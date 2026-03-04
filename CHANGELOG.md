@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add round-trip tests guarding against infinite loop regression
 - Update developer guides for domain-grouped services and agent-tools-elevation
 - Update README and CLI documentation to reflect DorkOS features and usage
 

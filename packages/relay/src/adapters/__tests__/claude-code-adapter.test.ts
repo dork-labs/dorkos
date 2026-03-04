@@ -344,6 +344,37 @@ describe('ClaudeCodeAdapter', () => {
     );
   });
 
+  // === StreamEvent filter (Bug 1 guard) ===
+
+  describe('agent message delivery', () => {
+    it('skips sendMessage and marks trace processed for every StreamEvent payload type', async () => {
+      const STREAM_EVENT_TYPES = [
+        'text_delta', 'tool_call_start', 'tool_call_end', 'tool_call_delta',
+        'tool_result', 'session_status', 'approval_required', 'question_prompt',
+        'error', 'done', 'task_update', 'relay_message', 'relay_receipt', 'message_delivered',
+      ] as const;
+
+      await adapter.start(relay);
+
+      for (const type of STREAM_EVENT_TYPES) {
+        vi.clearAllMocks();
+        const envelope = createTestEnvelope({
+          payload: { type, data: { text: 'response from peer agent' } },
+          replyTo: 'relay.human.console.client-1',
+        });
+
+        const result = await adapter.deliver(envelope.subject, envelope);
+
+        expect(result.success, `type=${type}`).toBe(true);
+        expect(agentManager.sendMessage, `type=${type}`).not.toHaveBeenCalled();
+        expect(traceStore.updateSpan).toHaveBeenCalledWith(
+          envelope.id,
+          expect.objectContaining({ status: 'processed', processedAt: expect.any(Number) }),
+        );
+      }
+    });
+  });
+
   it('Pulse: collects output summary up to 1000 chars', async () => {
     // Generate events with text that exceeds 1000 chars total
     const longText = 'a'.repeat(600);
