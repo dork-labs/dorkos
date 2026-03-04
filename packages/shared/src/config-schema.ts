@@ -80,6 +80,13 @@ export const UserConfigSchema = z.object({
     startedAt: null,
     dismissedAt: null,
   })),
+  agentContext: z
+    .object({
+      relayTools: z.boolean().default(true),
+      meshTools: z.boolean().default(true),
+      adapterTools: z.boolean().default(true),
+    })
+    .default(() => ({ relayTools: true, meshTools: true, adapterTools: true })),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

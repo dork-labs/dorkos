@@ -46,7 +46,7 @@ Built-in messaging between your agents and the channels you already use. Telegra
 
 ### Mesh — Agent Discovery
 
-Scans your projects and finds agent-capable directories automatically. You approve which agents join the network. They coordinate through governed channels.
+Scans your projects and finds agent-capable directories automatically. You approve which agents join the network. They coordinate through governed channels. Always active — no feature flag required.
 
 - Pluggable discovery strategies (Claude Code, Cursor, Codex)
 - `.dork/agent.json` identity manifests
@@ -55,7 +55,7 @@ Scans your projects and finds agent-capable directories automatically. You appro
 
 ### Console — Browser UI
 
-Chat with agents in rich markdown. Approve or deny tool calls. Browse and resume sessions across devices. Real-time sync across multiple clients.
+Agents are the primary organizational unit. Switch between agents with `Cmd+K` / `Ctrl+K`, see each agent's sessions, and access features and commands from a unified command palette. Chat in rich markdown, approve or deny tool calls, and sync across devices in real time.
 
 ## Architecture
 

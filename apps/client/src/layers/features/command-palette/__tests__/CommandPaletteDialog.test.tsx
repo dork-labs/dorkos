@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -47,6 +48,8 @@ const mockSetPickerOpen = vi.fn();
 
 let mockGlobalPaletteOpen = true;
 
+const mockSetPreviousCwd = vi.fn();
+
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
@@ -55,6 +58,7 @@ vi.mock('@/layers/shared/model', () => ({
       setRelayOpen: mockSetRelayOpen,
       setMeshOpen: mockSetMeshOpen,
       setPickerOpen: mockSetPickerOpen,
+      setPreviousCwd: mockSetPreviousCwd,
     };
     return selector ? selector(state) : state;
   },
@@ -65,6 +69,24 @@ vi.mock('@/layers/shared/model', () => ({
 const mockSetDir = vi.fn();
 vi.mock('@/layers/entities/session', () => ({
   useDirectoryState: () => ['/projects/current', mockSetDir],
+}));
+
+// Mock usePreviewData so AgentPreviewPanel doesn't call real entity hooks
+vi.mock('../model/use-preview-data', () => ({
+  usePreviewData: () => ({
+    sessionCount: 2,
+    recentSessions: [],
+    health: null,
+  }),
+}));
+
+// Mock motion/react to render plain elements (avoids animation-related test issues)
+vi.mock('motion/react', () => ({
+  motion: {
+    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) =>
+      React.createElement('div', props, children),
+  },
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) => children,
 }));
 
 const mockRecordUsage = vi.fn();
@@ -102,8 +124,45 @@ vi.mock('../model/use-palette-items', () => ({
       { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
       { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
     ],
+    searchableItems: [
+      ...mockAgents.map((a) => ({ id: a.id, name: a.name, type: 'agent', keywords: [a.projectPath], data: a })),
+      { id: 'pulse', name: 'Pulse Scheduler', type: 'feature', data: {} },
+      { id: 'relay', name: 'Relay Messaging', type: 'feature', data: {} },
+      { id: 'mesh', name: 'Mesh Network', type: 'feature', data: {} },
+      { id: 'settings', name: 'Settings', type: 'feature', data: {} },
+      { id: 'cmd-/hello', name: '/hello', type: 'command', data: {} },
+      { id: 'cmd-/world', name: '/world', type: 'command', data: {} },
+      { id: 'new-session', name: 'New Session', type: 'quick-action', data: {} },
+      { id: 'discover', name: 'Discover Agents', type: 'quick-action', data: {} },
+      { id: 'browse', name: 'Browse Filesystem', type: 'quick-action', data: {} },
+      { id: 'theme', name: 'Toggle Theme', type: 'quick-action', data: {} },
+    ],
     isLoading: false,
   }),
+}));
+
+// Mock usePaletteSearch: returns all items as unfiltered results (no match highlights).
+// This preserves existing test behavior — all items always pass through — while
+// correctly exposing the prefix so mode-switching tests work.
+vi.mock('../model/use-palette-search', () => ({
+  usePaletteSearch: (items: Array<{ id: string; type: string; name: string }>, search: string) => {
+    const prefix = search.startsWith('@') ? '@' : search.startsWith('>') ? '>' : null;
+    const term = prefix ? search.slice(1) : search;
+    // Filter by prefix when present so @ and > mode tests work correctly
+    const filtered =
+      prefix === '@'
+        ? items.filter((i) => i.type === 'agent')
+        : prefix === '>'
+          ? items.filter((i) => i.type === 'command')
+          : items;
+    const results = filtered.map((item) => ({ item, matches: undefined }));
+    return { results, prefix, term };
+  },
+  parsePrefix: (search: string) => {
+    if (search.startsWith('@')) return { prefix: '@', term: search.slice(1) };
+    if (search.startsWith('>')) return { prefix: '>', term: search.slice(1) };
+    return { prefix: null, term: search };
+  },
 }));
 
 vi.mock('../model/use-global-palette', () => ({
@@ -134,7 +193,8 @@ describe('CommandPaletteDialog', () => {
 
   it('renders agent names from recentAgents', () => {
     render(<CommandPaletteDialog />);
-    expect(screen.getByText('Worker')).toBeInTheDocument();
+    // getAllByText used because the selected agent name also appears in the preview panel
+    expect(screen.getAllByText('Worker').length).toBeGreaterThan(0);
     expect(screen.getByText('Auth Service')).toBeInTheDocument();
   });
 

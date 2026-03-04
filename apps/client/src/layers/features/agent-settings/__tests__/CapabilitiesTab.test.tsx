@@ -104,4 +104,34 @@ describe('CapabilitiesTab', () => {
 
     expect(view.getByPlaceholderText('Optional grouping namespace')).toBeInTheDocument();
   });
+
+  it('debounces namespace input and calls onUpdate after delay', () => {
+    vi.useFakeTimers();
+    const view = renderTab(baseAgent, onUpdate);
+
+    const input = view.getByPlaceholderText('Optional grouping namespace');
+    fireEvent.change(input, { target: { value: 'my-ns' } });
+
+    // Should not fire immediately
+    expect(onUpdate).not.toHaveBeenCalled();
+
+    // After debounce, should fire
+    vi.advanceTimersByTime(500);
+    expect(onUpdate).toHaveBeenCalledWith({ namespace: 'my-ns' });
+
+    vi.useRealTimers();
+  });
+
+  it('flushes namespace on blur without waiting for debounce', () => {
+    vi.useFakeTimers();
+    const view = renderTab(baseAgent, onUpdate);
+
+    const input = view.getByPlaceholderText('Optional grouping namespace');
+    fireEvent.change(input, { target: { value: 'blur-ns' } });
+    fireEvent.blur(input);
+
+    expect(onUpdate).toHaveBeenCalledWith({ namespace: 'blur-ns' });
+
+    vi.useRealTimers();
+  });
 });

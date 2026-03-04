@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 87,
+  "nextNumber": 89,
   "specs": [
     {
       "number": 1,
@@ -603,6 +603,20 @@
       "title": "Shadcn Sidebar Redesign — Agent-Centric Sidebar with Glanceable Status",
       "created": "2026-03-03",
       "status": "ideation"
+    },
+    {
+      "number": 87,
+      "slug": "command-palette-10x",
+      "title": "10x Command Palette UX",
+      "created": "2026-03-03",
+      "status": "specified"
+    },
+    {
+      "number": 88,
+      "slug": "agent-tool-context-injection",
+      "title": "Agent Tool Context Injection",
+      "created": "2026-03-03",
+      "status": "specified"
     }
   ]
 }

@@ -1,40 +1,68 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
-const STORAGE_KEY = 'dorkos-agent-frecency';
-const MAX_ENTRIES = 50;
-const PRUNE_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const STORAGE_KEY = 'dorkos:agent-frecency-v2';
+const MAX_TIMESTAMPS = 10;
 
-interface FrecencyEntry {
+/** Epoch-ms bucket boundaries and their point values. */
+const BUCKETS: Array<{ maxAgeMs: number; points: number }> = [
+  { maxAgeMs: 4 * 60 * 60 * 1000, points: 100 }, // Past 4 hours
+  { maxAgeMs: 24 * 60 * 60 * 1000, points: 80 }, // Past 24 hours
+  { maxAgeMs: 3 * 24 * 60 * 60 * 1000, points: 60 }, // Past 3 days
+  { maxAgeMs: 7 * 24 * 60 * 60 * 1000, points: 40 }, // Past week
+  { maxAgeMs: 30 * 24 * 60 * 60 * 1000, points: 20 }, // Past month
+  { maxAgeMs: 90 * 24 * 60 * 60 * 1000, points: 10 }, // Past 90 days
+];
+
+export interface FrecencyRecord {
   agentId: string;
-  lastUsed: string; // ISO timestamp
-  useCount: number;
+  /** Epoch-ms timestamps, most recent first. Max 10 entries. */
+  timestamps: number[];
+  totalCount: number;
 }
 
-/** Calculate frecency score: higher is more recent/frequent. */
-function calcScore(entry: FrecencyEntry): number {
-  const hoursSinceUse = (Date.now() - new Date(entry.lastUsed).getTime()) / (1000 * 60 * 60);
-  return entry.useCount / (1 + hoursSinceUse * 0.1);
+/** Calculate the bucket score for a single timestamp. */
+function bucketScore(timestamp: number, now: number): number {
+  const age = now - timestamp;
+  for (const bucket of BUCKETS) {
+    if (age <= bucket.maxAgeMs) return bucket.points;
+  }
+  return 0; // Beyond 90 days
 }
 
-function readEntries(): FrecencyEntry[] {
+/**
+ * Calculate the frecency score for a record using Slack's bucket algorithm.
+ *
+ * Formula: totalCount * bucketSum / min(timestamps.length, MAX_TIMESTAMPS)
+ * The denominator caps at MAX_TIMESTAMPS to prevent old high-frequency items
+ * from dominating through sheer volume.
+ *
+ * @param record - The frecency record to score
+ * @param now - Current epoch-ms timestamp (defaults to Date.now())
+ */
+export function calcFrecencyScore(record: FrecencyRecord, now: number = Date.now()): number {
+  if (record.timestamps.length === 0) return 0;
+  const bucketSum = record.timestamps.reduce((sum, ts) => sum + bucketScore(ts, now), 0);
+  const denominator = Math.min(record.timestamps.length, MAX_TIMESTAMPS);
+  return (record.totalCount * bucketSum) / denominator;
+}
+
+function readRecords(): FrecencyRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as FrecencyEntry[];
+    const parsed = JSON.parse(raw) as FrecencyRecord[];
     if (!Array.isArray(parsed)) return [];
-    // Prune old entries on read
-    const cutoff = Date.now() - PRUNE_AGE_MS;
-    return parsed.filter((e) => new Date(e.lastUsed).getTime() > cutoff).slice(0, MAX_ENTRIES);
+    return parsed;
   } catch {
     return [];
   }
 }
 
-function writeEntries(entries: FrecencyEntry[]): void {
+function writeRecords(records: FrecencyRecord[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   } catch {
-    // localStorage unavailable — silently degrade
+    // localStorage unavailable -- silently degrade
   }
 }
 
@@ -61,17 +89,17 @@ function getSnapshot(): string {
 }
 
 /**
- * Track and retrieve agent usage frecency from localStorage.
+ * Track and retrieve agent usage frecency using Slack's bucket algorithm.
  *
- * Frecency = useCount / (1 + hoursSinceUse * 0.1).
- * Entries older than 30 days with 0 recent usage are pruned on read.
- * Maximum 50 entries stored.
+ * Storage key: dorkos:agent-frecency-v2 (new key, old data left in place and ignored).
+ * Stores up to 10 timestamps per agent, most recent first.
+ * Score formula: totalCount * bucketSum / min(timestamps.length, 10)
  */
 export function useAgentFrecency() {
   const raw = useSyncExternalStore(subscribe, getSnapshot, () => '[]');
-  const entries = useMemo(() => {
+  const records = useMemo(() => {
     try {
-      const parsed = JSON.parse(raw) as FrecencyEntry[];
+      const parsed = JSON.parse(raw) as FrecencyRecord[];
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
@@ -79,37 +107,44 @@ export function useAgentFrecency() {
   }, [raw]);
 
   const recordUsage = useCallback((agentId: string) => {
-    const current = readEntries();
-    const existing = current.find((e) => e.agentId === agentId);
-    let updated: FrecencyEntry[];
+    const current = readRecords();
+    const now = Date.now();
+    const existing = current.find((r) => r.agentId === agentId);
+
+    let updated: FrecencyRecord[];
     if (existing) {
-      updated = current.map((e) =>
-        e.agentId === agentId
-          ? { ...e, lastUsed: new Date().toISOString(), useCount: e.useCount + 1 }
-          : e,
+      updated = current.map((r) =>
+        r.agentId === agentId
+          ? {
+              ...r,
+              timestamps: [now, ...r.timestamps].slice(0, MAX_TIMESTAMPS),
+              totalCount: r.totalCount + 1,
+            }
+          : r,
       );
     } else {
-      updated = [...current, { agentId, lastUsed: new Date().toISOString(), useCount: 1 }];
+      updated = [...current, { agentId, timestamps: [now], totalCount: 1 }];
     }
-    writeEntries(updated);
+    writeRecords(updated);
     emitChange();
   }, []);
 
   const getSortedAgentIds = useCallback(
     (allAgentIds: string[]): string[] => {
+      const now = Date.now();
       const scoreMap = new Map<string, number>();
-      for (const entry of entries) {
-        scoreMap.set(entry.agentId, calcScore(entry));
+      for (const record of records) {
+        scoreMap.set(record.agentId, calcFrecencyScore(record, now));
       }
       return [...allAgentIds].sort((a, b) => {
         const scoreA = scoreMap.get(a) ?? -1;
         const scoreB = scoreMap.get(b) ?? -1;
-        if (scoreA === scoreB) return a.localeCompare(b); // alphabetical fallback
-        return scoreB - scoreA; // higher score first
+        if (scoreA === scoreB) return a.localeCompare(b);
+        return scoreB - scoreA;
       });
     },
-    [entries],
+    [records],
   );
 
-  return { entries, recordUsage, getSortedAgentIds };
+  return { entries: records, recordUsage, getSortedAgentIds };
 }

@@ -543,6 +543,14 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'First-time user onboarding state' }),
+    agentContext: z
+      .object({
+        relayTools: z.boolean().openapi({ description: 'Whether relay tool context is injected into agent prompts' }),
+        meshTools: z.boolean().openapi({ description: 'Whether mesh tool context is injected into agent prompts' }),
+        adapterTools: z.boolean().openapi({ description: 'Whether adapter tool context is injected into agent prompts' }),
+      })
+      .optional()
+      .openapi({ description: 'Agent tool context injection toggles' }),
   })
   .openapi('ServerConfig');
 

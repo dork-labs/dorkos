@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
 import { useAgentFrecency } from './use-agent-frecency';
+import type { SearchableItem } from './use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface FeatureItem {
@@ -32,6 +33,8 @@ export interface PaletteItems {
   features: FeatureItem[];
   commands: CommandItemData[];
   quickActions: QuickActionItem[];
+  /** Flat list of all palette items for Fuse.js search */
+  searchableItems: SearchableItem[];
   isLoading: boolean;
 }
 
@@ -97,12 +100,47 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     }));
   }, [commandsData]);
 
+  const searchableItems: SearchableItem[] = useMemo(() => {
+    const items: SearchableItem[] = [];
+
+    for (const agent of allAgents) {
+      items.push({
+        id: agent.id,
+        name: agent.name,
+        type: 'agent',
+        keywords: [agent.projectPath, agent.id],
+        data: agent,
+      });
+    }
+
+    for (const f of FEATURES) {
+      items.push({ id: f.id, name: f.label, type: 'feature', data: f });
+    }
+
+    for (const cmd of commands) {
+      items.push({
+        id: `cmd-${cmd.name}`,
+        name: cmd.name,
+        type: 'command',
+        keywords: cmd.description ? [cmd.description] : undefined,
+        data: cmd,
+      });
+    }
+
+    for (const qa of QUICK_ACTIONS) {
+      items.push({ id: qa.id, name: qa.label, type: 'quick-action', data: qa });
+    }
+
+    return items;
+  }, [allAgents, commands]);
+
   return {
     recentAgents,
     allAgents,
     features: FEATURES,
     commands,
     quickActions: QUICK_ACTIONS,
+    searchableItems,
     isLoading: agentsLoading,
   };
 }

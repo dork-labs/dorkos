@@ -12,7 +12,7 @@ Each app and package now exports a typed, validated `env` object from a local `e
 
 | App / Package    | env.ts path                              | Env vars covered                                                                                                                                                 |
 | ---------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, DORKOS_HOST, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
+| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, DORKOS_HOST, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
 | `apps/client`    | `apps/client/src/env.ts`                 | MODE, DEV (Vite built-ins)                                                                                                                                       |
 | `apps/site`      | `apps/site/src/env.ts`                   | NODE_ENV, NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST                                                                                                      |
 | `packages/cli`   | `packages/cli/src/env.ts`                | NODE_ENV, DORK_HOME, LOG_LEVEL                                                                                                                                   |
@@ -101,7 +101,6 @@ To add a new `VITE_*` var:
 | CLIENT_DIST_PATH          | server         | string \| undefined | —                       | Path to built React client assets (set by CLI package)                      |
 | DORKOS_PULSE_ENABLED      | server         | boolean           | `false`                   | Enable the Pulse scheduler subsystem                                        |
 | DORKOS_RELAY_ENABLED      | server         | boolean           | `false`                   | Enable the Relay inter-agent message bus                                    |
-| DORKOS_MESH_ENABLED       | server         | boolean           | `false`                   | Enable the Mesh agent discovery registry                                    |
 | DORKOS_CORS_ORIGIN        | server         | string \| undefined | —                       | CORS allowed origin(s). `*` for wildcard; comma-separated list for multiple origins. Defaults to localhost on DORKOS_PORT and VITE_PORT. Read via direct `process.env` in `app.ts`, not yet in `env.ts`. |
 | TUNNEL_ENABLED            | server         | boolean           | `false`                   | Enable ngrok tunnel on startup                                              |
 | TUNNEL_PORT               | server         | number \| undefined | —                       | Port to expose via ngrok (defaults to DORKOS_PORT)                          |

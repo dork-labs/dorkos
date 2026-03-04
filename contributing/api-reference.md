@@ -158,14 +158,13 @@ The `warnings` field is only present when the patch includes keys listed in `SEN
 
 ## Feature Flags
 
-Some route groups are guarded by environment variable feature flags. When a flag is disabled, the router is not mounted and all requests to those paths return 404.
+The Relay route group is guarded by an environment variable feature flag. When disabled, the router is not mounted and all requests to those paths return 404. Mesh routes are always mounted (no feature flag).
 
 | Flag                       | Default | Guards                              |
 | -------------------------- | ------- | ----------------------------------- |
 | `DORKOS_RELAY_ENABLED`     | `false` | `/api/relay/*` routes               |
-| `DORKOS_MESH_ENABLED`      | `false` | `/api/mesh/*` routes                |
 
-Both flags also control the behavior of `POST /api/sessions/:id/messages`:
+This flag also controls the behavior of `POST /api/sessions/:id/messages`:
 - When `DORKOS_RELAY_ENABLED=true`, the endpoint returns 202 + receipt instead of an SSE stream.
 
 Other relevant environment variables:
@@ -656,7 +655,7 @@ Delete an adapter-agent binding.
 
 ## Mesh Endpoints
 
-All mesh endpoints are under `/api/mesh/` and require `DORKOS_MESH_ENABLED=true`. When disabled, the mesh router is not mounted and requests return 404.
+All mesh endpoints are under `/api/mesh/` and are always mounted (no feature flag). The Mesh subsystem initializes automatically on server startup.
 
 Mesh manages an in-memory registry of discovered agent peers. Agents heartbeat to maintain their presence and query the topology to find collaborators.
 

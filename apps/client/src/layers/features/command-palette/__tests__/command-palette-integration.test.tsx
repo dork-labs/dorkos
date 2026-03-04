@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -49,6 +50,8 @@ const mockSetTheme = vi.fn();
 let mockGlobalPaletteOpen = true;
 let mockTheme = 'light';
 
+const mockSetPreviousCwd = vi.fn();
+
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
@@ -60,6 +63,7 @@ vi.mock('@/layers/shared/model', () => ({
       setRelayOpen: mockSetRelayOpen,
       setMeshOpen: mockSetMeshOpen,
       setPickerOpen: mockSetPickerOpen,
+      setPreviousCwd: mockSetPreviousCwd,
     };
     return selector ? selector(state) : state;
   },
@@ -89,26 +93,65 @@ let mockPaletteRecentAgents: AgentPathEntry[] = [mockAgents[2], mockAgents[0]];
 let mockPaletteAllAgents: AgentPathEntry[] = mockAgents;
 
 vi.mock('../model/use-palette-items', () => ({
-  usePaletteItems: () => ({
-    recentAgents: mockPaletteRecentAgents,
-    allAgents: mockPaletteAllAgents,
-    features: [
+  usePaletteItems: () => {
+    const features = [
       { id: 'pulse', label: 'Pulse Scheduler', icon: 'Clock', action: 'openPulse' },
       { id: 'relay', label: 'Relay Messaging', icon: 'Radio', action: 'openRelay' },
       { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
-    ],
-    commands: [
-      { name: '/deploy', description: 'Deploy service' },
-    ],
-    quickActions: [
+    ];
+    const commands = [{ name: '/deploy', description: 'Deploy service' }];
+    const quickActions = [
       { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
       { id: 'discover', label: 'Discover Agents', icon: 'Search', action: 'discoverAgents' },
       { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
       { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
-    ],
-    isLoading: false,
-  }),
+    ];
+    return {
+      recentAgents: mockPaletteRecentAgents,
+      allAgents: mockPaletteAllAgents,
+      features,
+      commands,
+      quickActions,
+      searchableItems: [
+        ...mockPaletteAllAgents.map((a: AgentPathEntry) => ({
+          id: a.id,
+          name: a.name,
+          type: 'agent',
+          keywords: [a.projectPath],
+          data: a,
+        })),
+        ...features.map((f) => ({ id: f.id, name: f.label, type: 'feature', data: f })),
+        ...commands.map((c) => ({ id: `cmd-${c.name}`, name: c.name, type: 'command', data: c })),
+        ...quickActions.map((q) => ({ id: q.id, name: q.label, type: 'quick-action', data: q })),
+      ],
+      isLoading: false,
+    };
+  },
+}));
+
+// Mock usePaletteSearch: passthrough all items so existing rendering assertions hold.
+// Prefix filtering (@ / >) is preserved so mode-switching tests work correctly.
+vi.mock('../model/use-palette-search', () => ({
+  usePaletteSearch: (
+    items: Array<{ id: string; type: string; name: string }>,
+    search: string,
+  ) => {
+    const prefix = search.startsWith('@') ? '@' : search.startsWith('>') ? '>' : null;
+    const term = prefix ? search.slice(1) : search;
+    const filtered =
+      prefix === '@'
+        ? items.filter((i) => i.type === 'agent')
+        : prefix === '>'
+          ? items.filter((i) => i.type === 'command')
+          : items;
+    return { results: filtered.map((item) => ({ item, matches: undefined })), prefix, term };
+  },
+  parsePrefix: (search: string) => {
+    if (search.startsWith('@')) return { prefix: '@', term: search.slice(1) };
+    if (search.startsWith('>')) return { prefix: '>', term: search.slice(1) };
+    return { prefix: null, term: search };
+  },
 }));
 
 vi.mock('../model/use-global-palette', () => ({
@@ -117,6 +160,24 @@ vi.mock('../model/use-global-palette', () => ({
     setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
     toggleGlobalPalette: vi.fn(),
   }),
+}));
+
+// Mock usePreviewData so AgentPreviewPanel doesn't call real entity hooks
+vi.mock('../model/use-preview-data', () => ({
+  usePreviewData: () => ({
+    sessionCount: 0,
+    recentSessions: [],
+    health: null,
+  }),
+}));
+
+// Mock motion/react to render plain elements (avoids animation-related test issues)
+vi.mock('motion/react', () => ({
+  motion: {
+    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) =>
+      React.createElement('div', props, children),
+  },
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) => children,
 }));
 
 describe('Command Palette Integration', () => {
@@ -147,11 +208,11 @@ describe('Command Palette Integration', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
 
     // Should record frecency in localStorage (real hook)
-    const stored = localStorage.getItem('dorkos-agent-frecency');
+    const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     expect(stored).toBeTruthy();
     const entries = JSON.parse(stored!);
     expect(entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-1', useCount: 1 })]),
+      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-1', totalCount: 1 })]),
     );
   });
 
@@ -166,10 +227,10 @@ describe('Command Palette Integration', () => {
     expect(mockSetDir).toHaveBeenCalledWith('/projects/current');
 
     // Frecency recorded for agent-3
-    const stored = localStorage.getItem('dorkos-agent-frecency');
+    const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     const entries = JSON.parse(stored!);
     expect(entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-3', useCount: 1 })]),
+      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-3', totalCount: 1 })]),
     );
   });
 
@@ -188,10 +249,10 @@ describe('Command Palette Integration', () => {
     fireEvent.click(item2 as Element);
     unmount2();
 
-    const stored = localStorage.getItem('dorkos-agent-frecency');
+    const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     const entries = JSON.parse(stored!);
     const authEntry = entries.find((e: { agentId: string }) => e.agentId === 'agent-1');
-    expect(authEntry.useCount).toBe(2);
+    expect(authEntry.totalCount).toBe(2);
   });
 
   // --- @ prefix mode ---
@@ -237,7 +298,7 @@ describe('Command Palette Integration', () => {
     expect(mockSetDir).toHaveBeenCalledWith('/projects/gateway');
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
 
-    const stored = localStorage.getItem('dorkos-agent-frecency');
+    const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     const entries = JSON.parse(stored!);
     expect(entries).toEqual(
       expect.arrayContaining([expect.objectContaining({ agentId: 'agent-2' })]),
@@ -332,7 +393,8 @@ describe('Command Palette Integration', () => {
     render(<CommandPaletteDialog />);
 
     // Agents from mesh appear directly without any "mesh disabled" message
-    expect(screen.getByText('Frontend App')).toBeInTheDocument();
+    // getAllByText used because the selected agent name also appears in the preview panel
+    expect(screen.getAllByText('Frontend App').length).toBeGreaterThan(0);
     expect(screen.getByText('Auth Service')).toBeInTheDocument();
 
     // Mesh is a feature option in the palette
@@ -380,14 +442,14 @@ describe('Command Palette Integration', () => {
     unmount();
 
     // Verify localStorage has data
-    const storedBefore = localStorage.getItem('dorkos-agent-frecency');
+    const storedBefore = localStorage.getItem('dorkos:agent-frecency-v2');
     expect(storedBefore).toBeTruthy();
 
     // Second render: data should still be in localStorage
     mockGlobalPaletteOpen = true;
     render(<CommandPaletteDialog />);
 
-    const storedAfter = localStorage.getItem('dorkos-agent-frecency');
+    const storedAfter = localStorage.getItem('dorkos:agent-frecency-v2');
     expect(storedAfter).toBe(storedBefore);
   });
 });

@@ -25,6 +25,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Simple UI state          | React useState  | Modal open/close, toggle visibility         | Scoped to component, no persistence needed                 |
 | URL state (standalone)   | nuqs            | `?session=` ID, `?dir=` working directory   | Shareable links, browser history, bookmarkable             |
 | URL state (Obsidian)     | Zustand         | Session ID, working directory               | No URL bar in Obsidian; Zustand replaces nuqs              |
+| Persistent client state  | localStorage    | Agent frecency scores, UI preferences       | Survives page reloads, no server roundtrip needed          |
 
 ## Core Patterns
 

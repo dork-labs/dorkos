@@ -78,13 +78,13 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `tunnel.auth`     | string \| null                 | `null`    | HTTP basic auth for tunnel, `user:pass` format (sensitive) |
 | `logging.level`   | `"fatal"` \| `"error"` \| `"warn"` \| `"info"` \| `"debug"` \| `"trace"` | `"info"` | Log verbosity level |
 | `ui.theme`        | `"light"` \| `"dark"` \| `"system"` | `"system"` | UI color theme                           |
+| `mesh.scanRoots`  | string[]                       | `[]`      | Directories to scan for agent discovery    |
 
 The following settings are controlled exclusively by environment variables and have no corresponding config file key or CLI flag:
 
 | Environment Variable    | Default  | Description                                                |
 | ----------------------- | -------- | ---------------------------------------------------------- |
 | `DORKOS_RELAY_ENABLED`  | `false`  | Enable the Relay message bus subsystem                     |
-| `DORKOS_MESH_ENABLED`   | `false`  | Enable the Mesh agent discovery subsystem                  |
 | `DORKOS_CORS_ORIGIN`    | `*`      | CORS allowed origin for the Express server                 |
 
 The config file also contains a `version` field (always `1`) used for schema migrations.
@@ -218,23 +218,22 @@ The UI color theme. Options: `light`, `dark`, or `system` (follows OS preference
 dorkos config set ui.theme dark
 ```
 
+### mesh.scanRoots
+
+Directories to scan for agent discovery. The Mesh subsystem is always enabled and initializes automatically on server startup. If initialization fails (e.g., SQLite errors), the server continues with graceful degradation.
+
+When `scanRoots` is empty (default), the reconciler scans from the server's default working directory. Add explicit paths to control which directories are scanned for `.dork/agent.json` manifests.
+
+```bash
+dorkos config set mesh.scanRoots '["/home/user/projects", "/home/user/agents"]'
+```
+
 ### DORKOS_RELAY_ENABLED
 
 Feature flag that enables the Relay message bus subsystem. When `true`, the server mounts the `/api/relay` routes, starts the `RelayCore`, and activates Relay-backed session messaging (POST `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}` instead of calling AgentManager directly).
 
 ```bash
 export DORKOS_RELAY_ENABLED=true
-dorkos
-```
-
-There is no config file key for this setting. It must be set as an environment variable.
-
-### DORKOS_MESH_ENABLED
-
-Feature flag that enables the Mesh agent discovery subsystem. When `true`, the server mounts the `/api/mesh` routes and activates the MeshCore registry.
-
-```bash
-export DORKOS_MESH_ENABLED=true
 dorkos
 ```
 
@@ -402,6 +401,9 @@ $ dorkos config list
   },
   "ui": {
     "theme": "system"
+  },
+  "mesh": {
+    "scanRoots": []
   }
 }
 ```

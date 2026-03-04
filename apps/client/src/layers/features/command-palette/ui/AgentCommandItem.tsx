@@ -1,6 +1,7 @@
 import { Check } from 'lucide-react';
 import { CommandItem } from '@/layers/shared/ui';
 import { hashToHslColor, hashToEmoji, shortenHomePath } from '@/layers/shared/lib';
+import { HighlightedText } from './HighlightedText';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface AgentCommandItemProps {
@@ -10,6 +11,8 @@ interface AgentCommandItemProps {
   isActive: boolean;
   /** Called when the user selects this agent */
   onSelect: () => void;
+  /** Fuse.js match indices for highlighting the agent name */
+  nameIndices?: readonly [number, number][];
 }
 
 /**
@@ -21,8 +24,11 @@ interface AgentCommandItemProps {
  *
  * Color and emoji use agent overrides when present, otherwise fall back to
  * hash-based deterministic values derived from the agent id.
+ *
+ * When nameIndices is provided, the agent name is rendered with matched
+ * characters bolded via HighlightedText.
  */
-export function AgentCommandItem({ agent, isActive, onSelect }: AgentCommandItemProps) {
+export function AgentCommandItem({ agent, isActive, onSelect, nameIndices }: AgentCommandItemProps) {
   const color = agent.color ?? hashToHslColor(agent.id);
   const emoji = agent.icon ?? hashToEmoji(agent.id);
 
@@ -44,7 +50,15 @@ export function AgentCommandItem({ agent, isActive, onSelect }: AgentCommandItem
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm">{emoji}</span>
-          <span className="truncate text-sm font-semibold">{agent.name}</span>
+          {nameIndices ? (
+            <HighlightedText
+              text={agent.name}
+              indices={nameIndices}
+              className="truncate text-sm font-semibold"
+            />
+          ) : (
+            <span className="truncate text-sm font-semibold">{agent.name}</span>
+          )}
           <span className="text-muted-foreground ml-auto flex-shrink-0 text-xs">
             {shortenHomePath(agent.projectPath)}
           </span>

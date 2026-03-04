@@ -114,6 +114,11 @@ router.get('/', async (_req, res) => {
       startedAt: null,
       dismissedAt: null,
     },
+    agentContext: configManager.get('agentContext') ?? {
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    },
   });
 });
 

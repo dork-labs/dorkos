@@ -1,4 +1,4 @@
-import { useState, useCallback, type KeyboardEvent } from 'react';
+import { useState, useCallback, useRef, useEffect, type KeyboardEvent } from 'react';
 import { X } from 'lucide-react';
 import {
   Badge,
@@ -19,12 +19,47 @@ interface CapabilitiesTabProps {
 const INPUT_CLASSES =
   'border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2';
 
+const DEBOUNCE_MS = 500;
+
 /**
  * Capabilities tab for agent configuration: tag-based capabilities,
  * namespace, response mode, and budget fields.
  */
 export function CapabilitiesTab({ agent, onUpdate }: CapabilitiesTabProps) {
   const [capInput, setCapInput] = useState('');
+
+  // Debounced namespace input (same pattern as IdentityTab)
+  const [nsValue, setNsValue] = useState(agent.namespace ?? '');
+  const nsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setNsValue(agent.namespace ?? '');
+  }, [agent.namespace]);
+
+  const handleNsChange = useCallback(
+    (value: string) => {
+      setNsValue(value);
+      if (nsTimerRef.current) clearTimeout(nsTimerRef.current);
+      nsTimerRef.current = setTimeout(() => {
+        onUpdate({ namespace: value || undefined });
+      }, DEBOUNCE_MS);
+    },
+    [onUpdate]
+  );
+
+  const handleNsBlur = useCallback(() => {
+    if (nsTimerRef.current) clearTimeout(nsTimerRef.current);
+    const current = nsValue || undefined;
+    if (current !== agent.namespace) {
+      onUpdate({ namespace: current });
+    }
+  }, [nsValue, agent.namespace, onUpdate]);
+
+  useEffect(() => {
+    return () => {
+      if (nsTimerRef.current) clearTimeout(nsTimerRef.current);
+    };
+  }, []);
 
   const addCapability = useCallback(
     (raw: string) => {
@@ -93,8 +128,9 @@ export function CapabilitiesTab({ agent, onUpdate }: CapabilitiesTabProps) {
         <input
           id="agent-namespace"
           type="text"
-          value={agent.namespace ?? ''}
-          onChange={(e) => onUpdate({ namespace: e.target.value || undefined })}
+          value={nsValue}
+          onChange={(e) => handleNsChange(e.target.value)}
+          onBlur={handleNsBlur}
           className={INPUT_CLASSES}
           placeholder="Optional grouping namespace"
         />

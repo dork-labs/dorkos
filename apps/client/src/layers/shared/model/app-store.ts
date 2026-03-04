@@ -116,6 +116,9 @@ interface AppState {
   setFontFamily: (key: FontFamilyKey) => void;
   resetPreferences: () => void;
 
+  previousCwd: string | null;
+  setPreviousCwd: (cwd: string | null) => void;
+
   isStreaming: boolean;
   setIsStreaming: (v: boolean) => void;
   isWaitingForUser: boolean;
@@ -393,6 +396,9 @@ export const useAppStore = create<AppState>()(
           fontFamily: DEFAULT_FONT,
         });
       },
+
+      previousCwd: null,
+      setPreviousCwd: (cwd) => set({ previousCwd: cwd }),
 
       isStreaming: false,
       setIsStreaming: (v) => set({ isStreaming: v }),

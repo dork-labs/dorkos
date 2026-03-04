@@ -268,7 +268,7 @@ apps/
       sessions.ts / commands.ts / health.ts / directory.ts / config.ts
       files.ts / git.ts / tunnel.ts / pulse.ts / agents.ts
       relay.ts              -- Relay HTTP routes (feature-flag guarded)
-      mesh.ts               -- Mesh HTTP routes (feature-flag guarded)
+      mesh.ts               -- Mesh HTTP routes (always mounted)
       models.ts             -- GET /api/models (dynamic from SDK supportedModels())
       discovery.ts          -- POST /api/discovery/scan (SSE agent discovery)
     index.ts                -- Express server entry
@@ -670,7 +670,7 @@ Health is returned by `GET /api/mesh/agents/:id/health` and aggregated by `GET /
 
 ### Server Integration
 
-The server exposes Mesh via `routes/mesh.ts` (feature-flag guarded by `DORKOS_MESH_ENABLED`). MCP tools in `mcp-tool-server.ts` allow agents to discover, register, deny, inspect, and query topology programmatically (`mesh_discover`, `mesh_register`, `mesh_deny`, `mesh_list`, `mesh_unregister`, `mesh_status`, `mesh_inspect`, `mesh_query_topology`).
+The server exposes Mesh via `routes/mesh.ts` (always mounted, no feature flag). MCP tools in `mcp-tool-server.ts` allow agents to discover, register, deny, inspect, and query topology programmatically (`mesh_discover`, `mesh_register`, `mesh_deny`, `mesh_list`, `mesh_unregister`, `mesh_status`, `mesh_inspect`, `mesh_query_topology`).
 
 ### Relay Bridge
 

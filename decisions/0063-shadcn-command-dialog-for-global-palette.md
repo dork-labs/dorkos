@@ -1,7 +1,7 @@
 ---
 number: 63
 title: Use Shadcn CommandDialog for Global Agent Command Palette
-status: draft
+status: proposed
 created: 2026-03-03
 spec: agent-centric-ux
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: agent-centric-ux)
+Proposed
 
 ## Context
 

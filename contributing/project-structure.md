@@ -57,7 +57,8 @@ src/
 │   │   │   ├── model/
 │   │   │   ├── api/
 │   │   │   └── index.ts
-│   │   ├── commands/    # CommandPalette
+│   │   ├── command-palette/ # Global Cmd+K palette (agents, features, commands, quick actions)
+│   │   ├── commands/    # Inline slash command palette
 │   │   ├── session-list/ # SessionSidebar
 │   │   ├── settings/    # SettingsPanel
 │   │   └── files/       # FileBrowser

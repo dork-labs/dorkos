@@ -18,10 +18,26 @@ vi.mock('../../../lib/logger.js', () => ({
     withTag: vi.fn().mockReturnThis(),
   },
 }));
+vi.mock('../../relay/relay-state.js', () => ({
+  isRelayEnabled: vi.fn(() => true),
+}));
+vi.mock('../config-manager.js', () => ({
+  configManager: {
+    get: vi.fn(() => ({ relayTools: true, meshTools: true, adapterTools: true })),
+  },
+}));
 
-import { buildSystemPromptAppend, _buildAgentBlock } from '../context-builder.js';
+import {
+  buildSystemPromptAppend,
+  _buildAgentBlock,
+  _buildRelayToolsBlock,
+  _buildMeshToolsBlock,
+  _buildAdapterToolsBlock,
+} from '../context-builder.js';
 import { getGitStatus } from '../git-status.js';
 import { readManifest } from '@dorkos/shared/manifest';
+import { isRelayEnabled } from '../../relay/relay-state.js';
+import { configManager } from '../config-manager.js';
 import type { GitStatusResponse } from '@dorkos/shared/types';
 
 const mockedGetGitStatus = vi.mocked(getGitStatus);
@@ -67,6 +83,12 @@ describe('buildSystemPromptAppend', () => {
     vi.unstubAllEnvs();
     mockedGetGitStatus.mockResolvedValue(makeGitStatus());
     mockedReadManifest.mockResolvedValue(null);
+    vi.mocked(isRelayEnabled).mockReturnValue(true);
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    });
   });
 
   it('returns string containing <env> block', async () => {
@@ -186,6 +208,42 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<git_status>');
     expect(result).not.toContain('<agent_identity>');
   });
+
+  it('includes tool context blocks in output when features are enabled', async () => {
+    vi.mocked(isRelayEnabled).mockReturnValue(true);
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    });
+    const result = await buildSystemPromptAppend('/test/dir');
+    expect(result).toContain('<env>');
+    expect(result).toContain('<relay_tools>');
+    expect(result).toContain('<mesh_tools>');
+    expect(result).toContain('<adapter_tools>');
+  });
+
+  it('excludes relay and adapter blocks when relay is disabled', async () => {
+    vi.mocked(isRelayEnabled).mockReturnValue(false);
+    const result = await buildSystemPromptAppend('/test/dir');
+    expect(result).toContain('<env>');
+    expect(result).toContain('<mesh_tools>');
+    expect(result).not.toContain('<relay_tools>');
+    expect(result).not.toContain('<adapter_tools>');
+  });
+
+  it('excludes all tool blocks when all config toggles are off', async () => {
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: false,
+      meshTools: false,
+      adapterTools: false,
+    });
+    const result = await buildSystemPromptAppend('/test/dir');
+    expect(result).toContain('<env>');
+    expect(result).not.toContain('<relay_tools>');
+    expect(result).not.toContain('<mesh_tools>');
+    expect(result).not.toContain('<adapter_tools>');
+  });
 });
 
 describe('buildAgentBlock', () => {
@@ -274,5 +332,130 @@ describe('buildAgentBlock', () => {
     const result = await _buildAgentBlock('/test/dir');
     expect(result).toContain('<agent_persona>');
     expect(result).toContain('Expert persona text.');
+  });
+});
+
+describe('buildRelayToolsBlock', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isRelayEnabled).mockReturnValue(true);
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    });
+  });
+
+  it('returns relay context when relay enabled and config on', () => {
+    const result = _buildRelayToolsBlock();
+    expect(result).toContain('<relay_tools>');
+    expect(result).toContain('relay.agent.{sessionId}');
+    expect(result).toContain('relay_register_endpoint');
+    expect(result).toContain('relay_send');
+    expect(result).toContain('relay_inbox');
+    expect(result).toContain('</relay_tools>');
+  });
+
+  it('returns empty string when relay disabled', () => {
+    vi.mocked(isRelayEnabled).mockReturnValue(false);
+    expect(_buildRelayToolsBlock()).toBe('');
+  });
+
+  it('returns empty string when config toggle is off', () => {
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: false,
+      meshTools: true,
+      adapterTools: true,
+    });
+    expect(_buildRelayToolsBlock()).toBe('');
+  });
+
+  it('returns relay context when config is undefined (default behavior)', () => {
+    vi.mocked(configManager.get).mockReturnValue(undefined);
+    const result = _buildRelayToolsBlock();
+    expect(result).toContain('<relay_tools>');
+  });
+});
+
+describe('buildMeshToolsBlock', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    });
+  });
+
+  it('returns mesh context by default (mesh always-on)', () => {
+    const result = _buildMeshToolsBlock();
+    expect(result).toContain('<mesh_tools>');
+    expect(result).toContain('mesh_discover');
+    expect(result).toContain('mesh_register');
+    expect(result).toContain('mesh_inspect');
+    expect(result).toContain('mesh_status');
+    expect(result).toContain('</mesh_tools>');
+  });
+
+  it('returns empty string when config toggle is off', () => {
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: true,
+      meshTools: false,
+      adapterTools: true,
+    });
+    expect(_buildMeshToolsBlock()).toBe('');
+  });
+
+  it('returns mesh context when config is undefined (default behavior)', () => {
+    vi.mocked(configManager.get).mockReturnValue(undefined);
+    const result = _buildMeshToolsBlock();
+    expect(result).toContain('<mesh_tools>');
+  });
+
+  it('is not affected by relay feature flag', () => {
+    vi.mocked(isRelayEnabled).mockReturnValue(false);
+    const result = _buildMeshToolsBlock();
+    expect(result).toContain('<mesh_tools>');
+  });
+});
+
+describe('buildAdapterToolsBlock', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isRelayEnabled).mockReturnValue(true);
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: true,
+      meshTools: true,
+      adapterTools: true,
+    });
+  });
+
+  it('returns adapter context when relay enabled and config on', () => {
+    const result = _buildAdapterToolsBlock();
+    expect(result).toContain('<adapter_tools>');
+    expect(result).toContain('binding_create');
+    expect(result).toContain('binding_list');
+    expect(result).toContain('relay.human.telegram');
+    expect(result).toContain('</adapter_tools>');
+  });
+
+  it('returns empty string when relay disabled', () => {
+    vi.mocked(isRelayEnabled).mockReturnValue(false);
+    expect(_buildAdapterToolsBlock()).toBe('');
+  });
+
+  it('returns empty string when config toggle is off', () => {
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: true,
+      meshTools: true,
+      adapterTools: false,
+    });
+    expect(_buildAdapterToolsBlock()).toBe('');
+  });
+
+  it('returns adapter context when config is undefined (default behavior)', () => {
+    vi.mocked(configManager.get).mockReturnValue(undefined);
+    const result = _buildAdapterToolsBlock();
+    expect(result).toContain('<adapter_tools>');
   });
 });
