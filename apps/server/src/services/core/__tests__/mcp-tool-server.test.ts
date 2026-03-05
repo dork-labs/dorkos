@@ -448,9 +448,9 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 13 tools (4 core + 5 pulse + 4 relay)', () => {
+    it('registers 14 tools (4 core + 5 pulse + 5 relay)', () => {
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(13);
+      expect(server.tools).toHaveLength(14);
     });
 
     it('registers tools with correct names', () => {
@@ -469,6 +469,7 @@ describe('MCP Tool Handlers', () => {
       expect(toolNames).toContain('relay_inbox');
       expect(toolNames).toContain('relay_list_endpoints');
       expect(toolNames).toContain('relay_register_endpoint');
+      expect(toolNames).toContain('relay_query');
     });
   });
 });

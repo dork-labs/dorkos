@@ -138,6 +138,12 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
           replyTo: inboxSubject,
           budget: args.budget,
         });
+        // If the message was rejected before reaching any recipient (e.g. rate-limit),
+        // return immediately rather than waiting the full timeout.
+        if (result.deliveredTo === 0 && result.rejected && result.rejected.length > 0) {
+          const reason = result.rejected[0]?.reason ?? 'unknown';
+          return jsonContent({ error: `Message rejected: ${reason}`, code: 'REJECTED', reason }, true);
+        }
         sentMessageId = result.messageId;
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Publish failed';

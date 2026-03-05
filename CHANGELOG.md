@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Update MCP tool registration test to reflect addition of relay_query tool
 - Fix agent-to-agent routing CWD bug and harden CCA pipeline
 - Auto-stamp last_seen_at and widen health thresholds
 - Fix mobile Sheet close bug, sidebar transparency, and remove dead cookie persistence
