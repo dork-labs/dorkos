@@ -42,7 +42,12 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
     }
   }
 
-  const candidates = result?.candidates;
+  const [actedPaths, setActedPaths] = useState<Set<string>>(new Set());
+  const visibleCandidates = result?.candidates?.filter((c) => !actedPaths.has(c.path));
+
+  function markActed(path: string) {
+    setActedPaths((prev) => new Set([...prev, path]));
+  }
 
   return (
     <div className={fullBleed ? 'flex h-full flex-col p-6' : 'space-y-4 p-4'}>
@@ -127,7 +132,7 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
           </div>
         )}
 
-        {!isPending && candidates && candidates.length === 0 && (() => {
+        {!isPending && visibleCandidates && visibleCandidates.length === 0 && (() => {
           const hasRegistered = (agentsResult?.agents?.length ?? 0) > 0;
           return (
             <div className="rounded-xl border border-dashed p-8 text-center">
@@ -143,24 +148,29 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
           );
         })()}
 
-        {!isPending && candidates && candidates.length > 0 && (
+        {!isPending && visibleCandidates && visibleCandidates.length > 0 && (
           <div className="space-y-2">
-            {candidates.map((c: DiscoveryCandidate) => (
+            {visibleCandidates.map((c: DiscoveryCandidate) => (
               <CandidateCard
                 key={c.path}
                 candidate={c}
                 onApprove={(cand) =>
-                  registerAgent({
-                    path: cand.path,
-                    overrides: {
-                      name: cand.hints.suggestedName,
-                      runtime: cand.hints.detectedRuntime,
-                      ...(cand.hints.inferredCapabilities ? { capabilities: cand.hints.inferredCapabilities } : {}),
-                      ...(cand.hints.description ? { description: cand.hints.description } : {}),
+                  registerAgent(
+                    {
+                      path: cand.path,
+                      overrides: {
+                        name: cand.hints.suggestedName,
+                        runtime: cand.hints.detectedRuntime,
+                        ...(cand.hints.inferredCapabilities ? { capabilities: cand.hints.inferredCapabilities } : {}),
+                        ...(cand.hints.description ? { description: cand.hints.description } : {}),
+                      },
                     },
-                  })
+                    { onSuccess: () => markActed(cand.path) },
+                  )
                 }
-                onDeny={(cand) => denyAgent({ path: cand.path })}
+                onDeny={(cand) =>
+                  denyAgent({ path: cand.path }, { onSuccess: () => markActed(cand.path) })
+                }
               />
             ))}
           </div>
