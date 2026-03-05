@@ -197,6 +197,90 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
   };
 }
 
+/**
+ * Dispatch a message to an agent asynchronously.
+ *
+ * Unlike relay_query, relay_dispatch returns immediately with a dispatch inbox
+ * subject. Agent A can then poll relay_inbox() for progress events and the
+ * final agent_result. Call relay_unregister_endpoint() to clean up when done.
+ *
+ * Early rejection (deliveredTo=0 && rejected.length>0): auto-unregisters inbox,
+ * returns { error, code: 'REJECTED', rejected }.
+ */
+export function createRelayDispatchHandler(deps: McpToolDeps) {
+  return async (args: {
+    to_subject: string;
+    payload: unknown;
+    from: string;
+    budget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
+  }) => {
+    const err = requireRelay(deps);
+    if (err) return err;
+
+    const relay = deps.relayCore!;
+    const inboxSubject = `relay.inbox.dispatch.${randomUUID()}`;
+
+    try {
+      await relay.registerEndpoint(inboxSubject);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Registration failed';
+      return jsonContent({ error: message, code: 'REGISTRATION_FAILED' }, true);
+    }
+
+    try {
+      const result = await relay.publish(args.to_subject, args.payload, {
+        from: args.from,
+        replyTo: inboxSubject,
+        budget: args.budget,
+      });
+
+      // Early rejection: auto-unregister the inbox to prevent leaks
+      if (result.deliveredTo === 0 && result.rejected && result.rejected.length > 0) {
+        const reason = result.rejected[0]?.reason ?? 'unknown';
+        await relay.unregisterEndpoint(inboxSubject).catch(() => undefined);
+        return jsonContent(
+          { error: `Message rejected: ${reason}`, code: 'REJECTED', rejected: result.rejected },
+          true
+        );
+      }
+
+      return jsonContent({
+        messageId: result.messageId,
+        inboxSubject,
+        note: `Poll relay_inbox("${inboxSubject}") for progress. Call relay_unregister_endpoint("${inboxSubject}") when done:true is received.`,
+      });
+    } catch (e) {
+      // Clean up inbox on publish error
+      await relay.unregisterEndpoint(inboxSubject).catch(() => undefined);
+      const message = e instanceof Error ? e.message : 'Dispatch failed';
+      const code = message.includes('Access denied')
+        ? 'ACCESS_DENIED'
+        : message.includes('Invalid subject')
+          ? 'INVALID_SUBJECT'
+          : 'DISPATCH_FAILED';
+      return jsonContent({ error: message, code }, true);
+    }
+  };
+}
+
+/** Unregister a named Relay endpoint. */
+export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
+  return async (args: { subject: string }) => {
+    const err = requireRelay(deps);
+    if (err) return err;
+    try {
+      const removed = await deps.relayCore!.unregisterEndpoint(args.subject);
+      if (!removed) {
+        return jsonContent({ error: `Endpoint not found: ${args.subject}`, code: 'ENDPOINT_NOT_FOUND' }, true);
+      }
+      return jsonContent({ success: true, subject: args.subject });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unregistration failed';
+      return jsonContent({ error: message, code: 'UNREGISTER_FAILED' }, true);
+    }
+  };
+}
+
 /** Returns the Relay tool definitions for registration with the MCP server. */
 export function getRelayTools(deps: McpToolDeps) {
   return [
@@ -262,9 +346,9 @@ export function getRelayTools(deps: McpToolDeps) {
           .number()
           .int()
           .min(1000)
-          .max(120000)
+          .max(600000)
           .optional()
-          .describe('Max milliseconds to wait for a reply (default: 60000)'),
+          .describe('Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, use relay_dispatch instead.'),
         budget: z
           .object({
             maxHops: z.number().int().min(1).optional().describe('Max hop count'),
@@ -275,6 +359,33 @@ export function getRelayTools(deps: McpToolDeps) {
           .describe('Optional budget constraints'),
       },
       createRelayQueryHandler(deps)
+    ),
+    tool(
+      'relay_dispatch',
+      'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
+      'Unlike relay_query (which blocks), relay_dispatch returns { messageId, inboxSubject } at once. ' +
+      'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
+      'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject) for updates. ' +
+      'When you receive a message with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
+      {
+        to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
+        payload: z.unknown().describe('Message payload'),
+        from: z.string().describe('Sender subject identifier'),
+        budget: z.object({
+          maxHops: z.number().int().min(1).optional(),
+          ttl: z.number().int().optional(),
+          callBudgetRemaining: z.number().int().min(0).optional(),
+        }).optional(),
+      },
+      createRelayDispatchHandler(deps)
+    ),
+    tool(
+      'relay_unregister_endpoint',
+      'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_dispatch completes (when done:true received).',
+      {
+        subject: z.string().describe('Subject of the endpoint to unregister'),
+      },
+      createRelayUnregisterEndpointHandler(deps)
     ),
   ];
 }

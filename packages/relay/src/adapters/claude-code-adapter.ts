@@ -419,12 +419,14 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    // For relay.inbox.* replyTo addresses (agent-to-agent), collect the full
-    // response text and publish a single aggregated result instead of streaming
-    // raw events. Streaming events to an inbox creates noise the receiving agent
-    // must aggregate; a single clean message is better for agent consumption.
-    // For relay.human.console.* (SSE) and other addresses, stream all events.
-    const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
+    // Distinguish dispatch inboxes (relay.inbox.dispatch.*) from query inboxes
+    // (relay.inbox.query.*) and other relay.inbox.* addresses.
+    // - Dispatch inboxes receive incremental progress events + final agent_result
+    // - Query inboxes receive a single aggregated agent_result (backward compat)
+    // - Other addresses (relay.human.console.*, relay.agent.*) stream raw events
+    const isDispatchInbox = envelope.replyTo?.startsWith('relay.inbox.dispatch.');
+    // Non-dispatch inbox replyTo (relay.inbox.query.* etc.) → existing aggregated behavior
+    const isQueryInbox = envelope.replyTo?.startsWith('relay.inbox.') && !isDispatchInbox;
 
     try {
       const eventStream = this.deps.agentManager.sendMessage(ccaSessionKey, prompt, {
@@ -433,24 +435,57 @@ export class ClaudeCodeAdapter implements RelayAdapter {
 
       let eventCount = 0;
       let collectedText = '';
+      let stepCounter = 0;
+      let messageBuffer = '';
       for await (const event of eventStream) {
         if (controller.signal.aborted) break;
         eventCount++;
+
         if (envelope.replyTo && this.relay) {
-          if (isInboxReplyTo) {
-            // Collect text_delta events for aggregated inbox publish
+          if (isDispatchInbox) {
+            // Accumulate text deltas into buffer
+            if (event.type === 'text_delta') {
+              const data = event.data as { text: string };
+              messageBuffer += data.text;
+              collectedText += data.text;
+            }
+            // tool_call_start signals end of prior text block — flush buffer as progress
+            if (event.type === 'tool_call_start' && messageBuffer) {
+              stepCounter++;
+              await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
+              messageBuffer = '';
+            }
+            // tool_result events publish a progress step
+            if (event.type === 'tool_result') {
+              stepCounter++;
+              const data = event.data as { content?: string; tool_use_id?: string };
+              const text = typeof data.content === 'string' ? data.content : JSON.stringify(data);
+              await this.publishDispatchProgress(envelope, stepCounter, 'tool_result', text, ccaSessionKey);
+            }
+          } else if (isQueryInbox) {
+            // Existing aggregated behavior: collect text_delta only for single agent_result
             if (event.type === 'text_delta') {
               const data = event.data as { text: string };
               collectedText += data.text;
             }
           } else {
+            // Existing behavior: stream raw events (relay.agent.*, relay.human.*)
             await this.publishResponse(envelope, event, ccaSessionKey);
           }
         }
       }
 
-      // Publish single aggregated result to inbox replyTo
-      if (isInboxReplyTo && envelope.replyTo && this.relay && collectedText) {
+      // Dispatch inbox: flush remaining text buffer, then publish final agent_result
+      if (isDispatchInbox && envelope.replyTo && this.relay) {
+        if (messageBuffer) {
+          stepCounter++;
+          await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
+        }
+        await this.publishAgentResult(envelope, collectedText, ccaSessionKey);
+      }
+
+      // Query inbox: publish single aggregated result (existing behavior unchanged)
+      if (isQueryInbox && envelope.replyTo && this.relay && collectedText) {
         await this.publishAgentResult(envelope, collectedText, ccaSessionKey);
       }
 
@@ -784,7 +819,38 @@ export class ClaudeCodeAdapter implements RelayAdapter {
         hopCount: originalEnvelope.budget.hopCount + 1,
       },
     };
-    await this.relay.publish(originalEnvelope.replyTo, { type: 'agent_result', text }, opts);
+    await this.relay.publish(originalEnvelope.replyTo, { type: 'agent_result', text, done: true }, opts);
+  }
+
+  /**
+   * Publish a single incremental progress event to a dispatch inbox.
+   *
+   * Called during Agent B's session to stream intermediate results to the
+   * relay.inbox.dispatch.* inbox so Agent A can poll for progress.
+   *
+   * @param originalEnvelope - The original incoming envelope (for replyTo and budget)
+   * @param step - Monotonically increasing step counter
+   * @param step_type - 'message' for text completions, 'tool_result' for tool events
+   * @param text - Text content for this step
+   * @param fromId - The session ID to use as the sender
+   */
+  private async publishDispatchProgress(
+    originalEnvelope: RelayEnvelope,
+    step: number,
+    step_type: 'message' | 'tool_result',
+    text: string,
+    fromId: string,
+  ): Promise<void> {
+    if (!this.relay || !originalEnvelope.replyTo) return;
+    const opts: PublishOptions = {
+      from: `agent:${fromId}`,
+      budget: { hopCount: originalEnvelope.budget.hopCount + 1 },
+    };
+    await this.relay.publish(
+      originalEnvelope.replyTo,
+      { type: 'progress', step, step_type, text, done: false },
+      opts,
+    );
   }
 
   /**

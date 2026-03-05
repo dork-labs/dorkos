@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 77,
+  "nextNumber": 79,
   "decisions": [
+    {
+      "number": 77,
+      "slug": "relay-dispatch-fire-and-poll-for-long-running-tasks",
+      "title": "relay_dispatch Fire-and-Poll Pattern for Long-Running Agent Tasks",
+      "status": "draft",
+      "created": "2026-03-05",
+      "extractedFrom": "relay-async-query",
+      "specSlug": "relay-async-query"
+    },
+    {
+      "number": 78,
+      "slug": "cca-dispatch-streaming-gated-on-inbox-prefix",
+      "title": "CCA Dispatch Streaming Gated on relay.inbox.dispatch.* Prefix",
+      "status": "draft",
+      "created": "2026-03-05",
+      "extractedFrom": "relay-async-query",
+      "specSlug": "relay-async-query"
+    },
     {
       "number": 1,
       "slug": "use-hexagonal-architecture",

@@ -210,4 +210,126 @@ describe('relay → CCA round-trip', () => {
     );
     expect(hasStreamEvents).toBe(false);
   });
+
+  it('publishes multiple progress events followed by agent_result for relay.inbox.dispatch.* replyTo', async () => {
+    // Purpose: end-to-end verification that CCA streams progress to dispatch inboxes.
+    // Validates the core contract: Agent A receives intermediate steps + done:true.
+    await relay.registerEndpoint('relay.inbox.dispatch.test-uuid');
+
+    const receivedPayloads: unknown[] = [];
+    relay.subscribe('relay.inbox.dispatch.test-uuid', (envelope) => {
+      receivedPayloads.push(envelope.payload);
+    });
+
+    vi.mocked(agentManager.sendMessage).mockReturnValue(
+      (async function* () {
+        yield { type: 'text_delta', data: { text: 'Thinking...' } } as StreamEvent;
+        yield { type: 'tool_call_start', data: { tool_use_id: 'tu1', name: 'Read' } } as StreamEvent;
+        yield { type: 'tool_result', data: { tool_use_id: 'tu1', content: 'file contents' } } as StreamEvent;
+        yield { type: 'text_delta', data: { text: 'Analysis complete.' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      })(),
+    );
+
+    await relay.publish(
+      'relay.agent.dispatch-target',
+      { text: 'Analyze this' },
+      { from: 'relay.agent.sender', replyTo: 'relay.inbox.dispatch.test-uuid' },
+    );
+
+    // Wait briefly for async operations to complete
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const types = receivedPayloads.map((p) => (p as Record<string, unknown>).type);
+    // Progress events arrive before the final result
+    expect(types).toContain('progress');
+    expect(types[types.length - 1]).toBe('agent_result');
+
+    // Final result has done: true
+    const finalResult = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
+    expect(finalResult.done).toBe(true);
+
+    // Progress events have done: false
+    const progressEvents = receivedPayloads.filter(
+      (p) => (p as Record<string, unknown>).type === 'progress',
+    );
+    expect(progressEvents.length).toBeGreaterThan(0);
+    progressEvents.forEach((p) => {
+      expect((p as Record<string, unknown>).done).toBe(false);
+    });
+  });
+
+  it('still publishes single agent_result for relay.inbox.query.* replyTo (backward compat)', async () => {
+    // Purpose: regression guard — relay_query inbox behavior must not change.
+    // relay_query subscribes via EventEmitter and resolves on the FIRST message;
+    // streaming would break it.
+    await relay.registerEndpoint('relay.inbox.query.existing-test');
+
+    const receivedPayloads: unknown[] = [];
+    relay.subscribe('relay.inbox.query.existing-test', (envelope) => {
+      receivedPayloads.push(envelope.payload);
+    });
+
+    // Use default mock: yields one text_delta + done
+    vi.mocked(agentManager.sendMessage).mockReturnValue(
+      (async function* () {
+        yield { type: 'text_delta', data: { text: 'answer' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      })(),
+    );
+
+    await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'question' },
+      { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.existing-test' },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Still exactly one message, still agent_result, still no progress events
+    expect(receivedPayloads).toHaveLength(1);
+    expect(receivedPayloads[0]).toMatchObject({ type: 'agent_result' });
+    const hasProgress = receivedPayloads.some(
+      (p) => (p as Record<string, unknown>).type === 'progress',
+    );
+    expect(hasProgress).toBe(false);
+  });
+
+  it('step_type field is "message" for text completions and "tool_result" for tool events', async () => {
+    // Purpose: validates the step_type discriminator field is correctly set,
+    // allowing Agent A to distinguish text progress from tool activity.
+    await relay.registerEndpoint('relay.inbox.dispatch.step-type-test');
+
+    const receivedPayloads: unknown[] = [];
+    relay.subscribe('relay.inbox.dispatch.step-type-test', (envelope) => {
+      receivedPayloads.push(envelope.payload);
+    });
+
+    vi.mocked(agentManager.sendMessage).mockReturnValue(
+      (async function* () {
+        yield { type: 'text_delta', data: { text: 'Hello' } } as StreamEvent;
+        yield { type: 'tool_call_start', data: { tool_use_id: 'tu1', name: 'Bash' } } as StreamEvent;
+        yield { type: 'tool_result', data: { tool_use_id: 'tu1', content: 'output' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      })(),
+    );
+
+    await relay.publish(
+      'relay.agent.target',
+      { text: 'Do work' },
+      { from: 'relay.agent.src', replyTo: 'relay.inbox.dispatch.step-type-test' },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const progressEvents = receivedPayloads.filter(
+      (p) => (p as Record<string, unknown>).type === 'progress',
+    ) as Array<Record<string, unknown>>;
+
+    const messageSteps = progressEvents.filter((p) => p.step_type === 'message');
+    const toolSteps = progressEvents.filter((p) => p.step_type === 'tool_result');
+
+    expect(messageSteps.length).toBeGreaterThan(0);
+    expect(toolSteps.length).toBeGreaterThan(0);
+  });
 });

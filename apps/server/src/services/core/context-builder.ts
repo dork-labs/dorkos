@@ -14,35 +14,50 @@ const RELAY_TOOLS_CONTEXT = `<relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
 Subject hierarchy:
-// Agent IDs are Mesh ULIDs (stable across restarts), NOT SDK session UUIDs.
-// Your Agent-ID and Session-ID are injected by the relay system in the <relay_context> block.
-// Agent-ID  = stable Mesh ULID — use this in relay subjects and mesh_inspect() calls.
-// Session-ID = SDK session UUID — matches the current conversation thread.
-  relay.agent.{agentId}            — activate a specific agent session (CCA-owned, do NOT use as replyTo)
-  relay.inbox.{agentId}            — agent-to-agent reply inbox (use this for replyTo and polling)
-  relay.human.console.{clientId}   — reach a human in the DorkOS UI
-  relay.system.console             — system broadcast channel
-  relay.system.pulse.{scheduleId}  — Pulse scheduler events
+  relay.agent.{agentId}                — activate a specific agent session
+  relay.inbox.query.{UUID}             — ephemeral inbox for relay_query (auto-managed)
+  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_dispatch (caller-managed)
+  relay.inbox.{agentId}                — persistent agent reply inbox
+  relay.human.console.{clientId}       — reach a human in the DorkOS UI
+  relay.system.console                 — system broadcast channel
+  relay.system.pulse.{scheduleId}      — Pulse scheduler events
 
-Workflow: Query another agent (PREFERRED — single blocking call)
+Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
 1. mesh_list() to find available agents and their agent IDs
-2. relay_query(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
-   → Blocks until the target agent replies (default timeout: 60 s)
+2. relay_query(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
+   → Blocks until reply (max 10 min / 600 000 ms)
    → Returns: { reply, from, replyMessageId, sentMessageId }
+
+Workflow: Dispatch to another agent — LONG tasks (>10 min)
+1. relay_dispatch(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+   → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
+2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread")
+   → Returns progress events: { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
+   → Returns final result: { type: "agent_result", text, done: true }
+3. When done:true received: relay_unregister_endpoint(subject=inboxSubject)
 
 Workflow: Fire-and-forget (no reply needed)
 1. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
 
-Workflow: Manual poll (fallback when relay_query is not suitable)
-1. relay_register_endpoint(subject="relay.inbox.{myAgentId}") — create your reply inbox
+Workflow: Manual poll (fallback)
+1. relay_register_endpoint(subject="relay.inbox.{myAgentId}")
 2. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, replyTo="relay.inbox.{myAgentId}")
-3. relay_inbox(endpoint_subject="relay.inbox.{myAgentId}") — poll for the reply (omit status filter)
+3. relay_inbox(endpoint_subject="relay.inbox.{myAgentId}")
 
-IMPORTANT: When YOU receive a relay message, just respond naturally — do NOT call relay_send to reply.
-Your response is automatically forwarded to the sender's inbox by the relay system.
-Only call relay_send or relay_query to INITIATE a new message to another agent.
+CONSTRAINT — Subagent MCP tools: DorkOS MCP tools (relay_*, mesh_*, pulse_*) are NOT available
+inside Claude Code Task() subagents. This is an SDK architectural limitation (subprocesses do not
+inherit the parent MCP server). The orchestrator pattern workaround:
+  WRONG:  Task("use relay_send to message agent B")   ← tools unavailable, silent failure
+  RIGHT:  1. Call relay_dispatch() in this (parent) session
+          2. Pass the inboxSubject into the Task() prompt if needed
+          3. Poll relay_inbox() in this session after Task() returns
 
-Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND, TIMEOUT, QUERY_FAILED
+IMPORTANT: When YOU receive a relay message, respond naturally — do NOT call relay_send.
+Your response is automatically forwarded by the relay system.
+Only call relay_send/relay_query/relay_dispatch to INITIATE a new message.
+
+Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND,
+             TIMEOUT, QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED
 </relay_tools>`;
 
 const MESH_TOOLS_CONTEXT = `<mesh_tools>

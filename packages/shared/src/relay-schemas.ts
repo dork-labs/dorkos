@@ -615,6 +615,37 @@ export const AdapterConfigUpdateSchema = z
 
 export type AdapterConfigUpdate = z.infer<typeof AdapterConfigUpdateSchema>;
 
+// === Dispatch Progress ===
+
+/** Published by CCA to relay.inbox.dispatch.* on each progress event. */
+export const RelayProgressPayloadSchema = z
+  .object({
+    type: z.literal('progress'),
+    step: z.number().int().min(1).describe('Monotonically increasing step counter'),
+    step_type: z.enum(['message', 'tool_result']).describe(
+      'message = assistant text block completed; tool_result = tool execution completed'
+    ),
+    text: z.string().describe('Text content of this progress step'),
+    done: z.literal(false),
+  })
+  .openapi('RelayProgressPayload');
+
+export type RelayProgressPayload = z.infer<typeof RelayProgressPayloadSchema>;
+
+/**
+ * Published by CCA to relay.inbox.dispatch.* as the final event.
+ * Also published to relay.inbox.query.* (existing behavior, done field added).
+ */
+export const RelayAgentResultPayloadSchema = z
+  .object({
+    type: z.literal('agent_result'),
+    text: z.string().describe('Full collected response text from the agent session'),
+    done: z.literal(true),
+  })
+  .openapi('RelayAgentResultPayload');
+
+export type RelayAgentResultPayload = z.infer<typeof RelayAgentResultPayloadSchema>;
+
 // === Conversation View ===
 
 export const SubjectLabelSchema = z

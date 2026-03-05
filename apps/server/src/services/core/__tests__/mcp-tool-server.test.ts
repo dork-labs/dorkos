@@ -11,6 +11,8 @@ import {
   createUpdateScheduleHandler,
   createDeleteScheduleHandler,
   createGetRunHistoryHandler,
+  createRelayDispatchHandler,
+  createRelayUnregisterEndpointHandler,
 } from '../mcp-tools/index.js';
 
 vi.mock('@dorkos/shared/manifest', () => ({
@@ -448,9 +450,11 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 14 tools (4 core + 5 pulse + 5 relay)', () => {
+    it('registers 16 tools (4 core + 5 pulse + 7 relay)', () => {
+      // Purpose: regression guard against accidental tool omissions or additions.
+      // This count changes intentionally when new MCP tools are added.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(14);
+      expect(server.tools).toHaveLength(16);
     });
 
     it('registers tools with correct names', () => {
@@ -470,6 +474,89 @@ describe('MCP Tool Handlers', () => {
       expect(toolNames).toContain('relay_list_endpoints');
       expect(toolNames).toContain('relay_register_endpoint');
       expect(toolNames).toContain('relay_query');
+      expect(toolNames).toContain('relay_dispatch');
+      expect(toolNames).toContain('relay_unregister_endpoint');
     });
+  });
+});
+
+/** Create a mock RelayCore with configurable return values */
+function makeRelayCoreMock(overrides: {
+  deliveredTo?: number;
+  messageId?: string;
+  rejected?: Array<{ subject: string; reason: string }>;
+  unregisterResult?: boolean;
+} = {}) {
+  return {
+    registerEndpoint: vi.fn().mockResolvedValue({ subject: 'relay.inbox.dispatch.test' }),
+    unregisterEndpoint: vi.fn().mockResolvedValue(overrides.unregisterResult ?? true),
+    publish: vi.fn().mockResolvedValue({
+      messageId: overrides.messageId ?? 'msg-1',
+      deliveredTo: overrides.deliveredTo ?? 1,
+      rejected: overrides.rejected ?? [],
+    }),
+  };
+}
+
+describe('createRelayDispatchHandler', () => {
+  it('returns error when relay disabled', async () => {
+    // Purpose: verifies requireRelay guard applies to relay_dispatch.
+    const handler = createRelayDispatchHandler(makeMockDeps());
+    const result = await handler({ to_subject: 'relay.agent.x', payload: {}, from: 'me' });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).code).toBe('RELAY_DISABLED');
+  });
+
+  it('returns messageId and inboxSubject on success', async () => {
+    // Purpose: verifies the non-blocking return contract.
+    const relayCore = makeRelayCoreMock({ deliveredTo: 1, messageId: 'msg-1' });
+    const handler = createRelayDispatchHandler({ ...makeMockDeps(), relayCore } as McpToolDeps);
+    const result = await handler({ to_subject: 'relay.agent.x', payload: {}, from: 'me' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.messageId).toBe('msg-1');
+    expect(parsed.inboxSubject).toMatch(/^relay\.inbox\.dispatch\./);
+    expect(result.isError).toBeUndefined();
+  });
+
+  it('auto-unregisters inbox on early rejection', async () => {
+    // Purpose: prevents inbox leaks when message is immediately rejected.
+    const relayCore = makeRelayCoreMock({
+      deliveredTo: 0,
+      rejected: [{ subject: 'relay.agent.x', reason: 'rate limit' }],
+    });
+    const handler = createRelayDispatchHandler({ ...makeMockDeps(), relayCore } as McpToolDeps);
+    const result = await handler({ to_subject: 'relay.agent.x', payload: {}, from: 'me' });
+    expect(result.isError).toBe(true);
+    expect(relayCore.unregisterEndpoint).toHaveBeenCalledOnce();
+    expect(JSON.parse(result.content[0].text).code).toBe('REJECTED');
+  });
+});
+
+describe('createRelayUnregisterEndpointHandler', () => {
+  it('returns success when endpoint exists', async () => {
+    // Purpose: basic happy path for cleanup tool.
+    const relayCore = makeRelayCoreMock({ unregisterResult: true });
+    const handler = createRelayUnregisterEndpointHandler({ ...makeMockDeps(), relayCore } as McpToolDeps);
+    const result = await handler({ subject: 'relay.inbox.dispatch.abc' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.success).toBe(true);
+    expect(result.isError).toBeUndefined();
+  });
+
+  it('returns ENDPOINT_NOT_FOUND when endpoint does not exist', async () => {
+    // Purpose: caller can detect cleanup of non-existent inbox (idempotent cleanup).
+    const relayCore = makeRelayCoreMock({ unregisterResult: false });
+    const handler = createRelayUnregisterEndpointHandler({ ...makeMockDeps(), relayCore } as McpToolDeps);
+    const result = await handler({ subject: 'relay.inbox.dispatch.gone' });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).code).toBe('ENDPOINT_NOT_FOUND');
+  });
+
+  it('returns error when relay disabled', async () => {
+    // Purpose: verifies requireRelay guard applies to relay_unregister_endpoint.
+    const handler = createRelayUnregisterEndpointHandler(makeMockDeps());
+    const result = await handler({ subject: 'relay.inbox.dispatch.abc' });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).code).toBe('RELAY_DISABLED');
   });
 });
