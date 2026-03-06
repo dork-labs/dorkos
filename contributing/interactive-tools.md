@@ -76,7 +76,7 @@ The `sendMessage()` generator must yield events from two sources: the SDK iterat
 The generator races between the SDK's next message and the queue notification:
 
 ```typescript
-// From agent-manager.ts sendMessage()
+// From claude-code-runtime.ts sendMessage()
 const queuePromise = new Promise<'queue'>((resolve) => {
   session.eventQueueNotify = () => resolve('queue');
 });
@@ -101,7 +101,7 @@ The SDK calls `canUseTool('AskUserQuestion', input, context)` where `input` cont
 **2. `handleAskUserQuestion` creates the event and deferred promise**
 
 ```typescript
-// agent-manager.ts
+// services/runtimes/claude-code/interactive-handlers.ts
 function handleAskUserQuestion(session, toolUseId, input) {
   // Push event to queue for the generator to yield
   session.eventQueue.push({
@@ -189,7 +189,7 @@ For any tool that is not `AskUserQuestion`, when the session's `permissionMode` 
 **2. `handleToolApproval` creates the event and deferred promise**
 
 ```typescript
-// agent-manager.ts
+// services/runtimes/claude-code/interactive-handlers.ts
 function handleToolApproval(session, toolUseId, toolName, input) {
   session.eventQueue.push({
     type: 'approval_required',
@@ -307,12 +307,12 @@ export interface StreamEvent {
 }
 ```
 
-### Step 2: Add handler in `agent-manager.ts`
+### Step 2: Add handler in `interactive-handlers.ts`
 
 Create a handler function following the deferred promise pattern, and wire it into `canUseTool`:
 
 ```typescript
-// apps/server/src/services/agent-manager.ts
+// apps/server/src/services/runtimes/claude-code/interactive-handlers.ts
 
 function handleMyNewInteractive(
   session: AgentSession,
@@ -386,7 +386,7 @@ export interface Transport {
 Add a resolver method to the runtime (e.g., `ClaudeCodeRuntime`):
 
 ```typescript
-// agent-manager.ts
+// services/runtimes/claude-code/claude-code-runtime.ts
 submitMyNewResult(sessionId: string, toolCallId: string, result: MyResult): boolean {
   const session = this.sessions.get(sessionId);
   const pending = session?.pendingInteractions.get(toolCallId);

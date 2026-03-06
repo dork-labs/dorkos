@@ -51,7 +51,7 @@ DorkOS is organized as a Turborepo monorepo with npm workspaces:
 
 ## Hexagonal Architecture: The Transport Interface
 
-The core abstraction in DorkOS is the **Transport** interface (`packages/shared/src/transport.ts`). This interface defines 9 methods that handle all client-server communication:
+The core abstraction in DorkOS is the **Transport** interface (`packages/shared/src/transport.ts`). This interface defines all client-server communication methods:
 
 ```typescript
 interface Transport {
@@ -63,6 +63,7 @@ interface Transport {
   approveTool(sessionId, toolCallId)        → { ok: boolean }
   denyTool(sessionId, toolCallId)           → { ok: boolean }
   getCommands(refresh?)      → CommandRegistry
+  getCapabilities()          → { capabilities, defaultRuntime }
   health()                   → { status, version, uptime }
 }
 ```
@@ -110,13 +111,12 @@ const transport = new HttpTransport({ baseUrl: '/api' })
 <Tab value="Obsidian Plugin">
 ```typescript
 // CopilotView.tsx
-const agentManager = new AgentManager(repoRoot)
-const transcriptReader = new TranscriptReader()
+const runtime = new ClaudeCodeRuntime(repoRoot)
 const commandRegistry = new CommandRegistryService(repoRoot)
 
 const transport = new DirectTransport({
-  agentManager,
-  transcriptReader,
+  runtime,
+  transcriptReader: runtime.getTranscriptReader(),
   commandRegistry,
   vaultRoot: repoRoot
 })
@@ -148,11 +148,13 @@ The Express server (`apps/server/`) is organized into routes and services:
 
 ### Routes
 
-Seven route groups handle REST/SSE endpoints:
+Route groups handle REST/SSE endpoints. Routes obtain the active runtime via `runtimeRegistry.getDefault()`:
 
 <TypeTable type={{
   "sessions.ts": { type: "route", description: "Session listing, creation, message streaming, tool approval/denial" },
   "commands.ts": { type: "route", description: "Slash command discovery" },
+  "capabilities.ts": { type: "route", description: "Runtime capability flags for all registered runtimes" },
+  "models.ts": { type: "route", description: "Available Claude models via runtime" },
   "health.ts": { type: "route", description: "Health checks and tunnel status" },
   "directory.ts": { type: "route", description: "Directory browsing for working directory selection" },
   "config.ts": { type: "route", description: "Configuration management" },
@@ -162,18 +164,18 @@ Seven route groups handle REST/SSE endpoints:
 
 ### Services
 
-Key services provide the core business logic:
+Services are organized under `services/core/` (shared infrastructure) and `services/runtimes/` (agent backend implementations):
 
 <TypeTable type={{
-  "agent-manager.ts": { type: "service", description: "Manages Claude Agent SDK sessions, calls query() with streaming" },
-  "transcript-reader.ts": { type: "service", description: "Reads SDK JSONL transcript files (single source of truth for session data)" },
-  "session-broadcaster.ts": { type: "service", description: "Watches JSONL files for changes, broadcasts sync events to clients" },
-  "stream-adapter.ts": { type: "service", description: "SSE helpers for formatting StreamEvent objects" },
-  "command-registry.ts": { type: "service", description: "Scans .claude/commands/ for slash commands" },
-  "openapi-registry.ts": { type: "service", description: "Auto-generates OpenAPI spec from Zod schemas" },
-  "config-manager.ts": { type: "service", description: "Persistent user config at ~/.dork/config.json" },
-  "tunnel-manager.ts": { type: "service", description: "Optional ngrok tunnel lifecycle" },
-  "session-lock.ts": { type: "service", description: "Prevents concurrent writes to sessions" }
+  "runtime-registry.ts": { type: "core service", description: "Registry of AgentRuntime instances keyed by type (e.g., 'claude-code')" },
+  "claude-code-runtime.ts": { type: "runtime", description: "ClaudeCodeRuntime — implements AgentRuntime, encapsulates Claude Agent SDK" },
+  "transcript-reader.ts": { type: "runtime", description: "Reads SDK JSONL transcript files (single source of truth for session data)" },
+  "session-broadcaster.ts": { type: "runtime", description: "Watches JSONL files for changes, broadcasts sync events to clients" },
+  "stream-adapter.ts": { type: "core service", description: "SSE helpers for formatting StreamEvent objects" },
+  "command-registry.ts": { type: "runtime", description: "Scans .claude/commands/ for slash commands" },
+  "openapi-registry.ts": { type: "core service", description: "Auto-generates OpenAPI spec from Zod schemas" },
+  "config-manager.ts": { type: "core service", description: "Persistent user config at ~/.dork/config.json" },
+  "tunnel-manager.ts": { type: "core service", description: "Optional ngrok tunnel lifecycle" }
 }} />
 
 ### Session Storage: SDK JSONL Transcripts
@@ -185,7 +187,7 @@ Sessions are **not** stored in a database. The `TranscriptReader` scans SDK JSON
 - Session ID = SDK session ID (UUID from filename)
 - No delete endpoint (sessions persist in SDK storage)
 - Session metadata (title, preview, timestamps) is extracted from file content on every request
-- The `AgentManager` calls the SDK's `query()` function with `resume: sessionId` for continuity across clients
+- The `ClaudeCodeRuntime` calls the SDK's `query()` function with `resume: sessionId` for continuity across clients
 
 ## Client Architecture
 
@@ -200,6 +202,8 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD) architecture:
 | `shared/lib/`            | Domain-agnostic utilities   | cn(), font-config, celebrations         |
 | `entities/session/`      | Session domain hooks        | useSessionId, useSessions               |
 | `entities/command/`      | Command domain hook         | useCommands                             |
+| `entities/runtime/`      | Runtime capabilities        | useRuntimeCapabilities, useDefaultCapabilities |
+| `entities/agent/`        | Agent identity hooks        | useCurrentAgent, useAgentVisual         |
 | `features/chat/`         | Chat interface              | ChatPanel, MessageList, ToolCallCard    |
 | `features/session-list/` | Session management          | SessionSidebar, SessionItem             |
 | `features/commands/`     | Slash command palette       | CommandPalette                          |
@@ -235,7 +239,7 @@ transport.sendMessage(sessionId, content, onEvent, signal, cwd)
   ↓
 fetch(POST /api/sessions/:id/messages) + ReadableStream SSE parsing
   ↓
-Express route → AgentManager.sendMessage() → SDK query()
+Express route → runtimeRegistry.getDefault().sendMessage() → SDK query()
   ↓
 SDK yields StreamEvent objects → SSE wire format
   ↓
@@ -252,7 +256,7 @@ ChatPanel → useChatSession.handleSubmit()
   ↓
 transport.sendMessage(sessionId, content, onEvent, signal, cwd)
   ↓
-DirectTransport → agentManager.sendMessage() → SDK query()
+DirectTransport → runtime.sendMessage() → SDK query()
   ↓
 SDK yields AsyncGenerator<StreamEvent>
   ↓
@@ -322,10 +326,16 @@ Clients receiving `sync_update` should re-fetch message history. The `GET /messa
         <File name="commands.ts" />
         <File name="health.ts" />
       </Folder>
-      <Folder name="services">
-        <File name="agent-manager.ts" />
-        <File name="transcript-reader.ts" />
-        <File name="command-registry.ts" />
+      <Folder name="services" defaultOpen>
+        <Folder name="core">
+          <File name="runtime-registry.ts" />
+          <File name="stream-adapter.ts" />
+        </Folder>
+        <Folder name="runtimes/claude-code">
+          <File name="claude-code-runtime.ts" />
+          <File name="transcript-reader.ts" />
+          <File name="command-registry.ts" />
+        </Folder>
       </Folder>
     </Folder>
     <Folder name="obsidian-plugin/src" defaultOpen>

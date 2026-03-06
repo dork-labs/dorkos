@@ -1,120 +1,177 @@
-# Chat Self-Test Findings — 2026-03-06
+# Chat Self-Test Findings — 2026-03-06 (Run 2)
 
 ## Test Config
 - URL: `http://localhost:4241/?dir=/Users/doriancollier/Keep/temp/empty`
-- Session ID (URL/Agent): `7dd04b5c-cd62-48a1-ab00-ec7c63b3a60e`
-- Session ID (SDK/JSONL): `21b09157-6961-4f92-a2c4-dd37863fa510`
-- Model: Haiku 4.5 (`claude-haiku-4-5-20251001`)
+- Session ID (URL/Agent): `9c99edf1-47eb-46c3-aa6f-73e2a409b12d`
+- Session ID (SDK/JSONL): `220131a7-b33e-48a0-bb1a-786a0f0e708f`
+- Model: claude-haiku-4-5-20251001
 - Permission mode: Accept Edits
 - Relay enabled: yes
 - Pulse enabled: yes
-- API port: 4242 (`.env` DORKOS_PORT=6942 not loaded by turbo)
 - Messages sent: 5
+- API port: 4242 (via Vite proxy on 4241)
+- Previous fix tested: `d62daa1 fix(relay): resolve SSE delivery pipeline causing ~40-50% message freezes`
 
 ## Summary
 
-The chat UI has a **critical SSE stream freeze bug** affecting 3 of 5 messages when Relay is enabled. Responses complete in ~15s but the SSE stream stays open 60-80+ seconds, leaving the stop button visible indefinitely. A secondary truncation bug causes incomplete response rendering during streaming (full content appears correctly on history reload). Both bugs trace to the same root cause: `session-broadcaster.ts` uses synchronous `res.write()` without backpressure handling — a pattern that was fixed in `stream-adapter.ts` by commit `1352e31` but never applied to the broadcaster.
+The relay SSE delivery pipeline fix (d62daa1) **significantly improved** the freeze rate — 4 of 5 messages completed without freezing (vs 3 of 5 freezing in run 1). However, **message 2 still exhibited a freeze regression**: the backend completed (JSONL) but the client's `done` event was not delivered. More critically, **history reload has severe rendering bugs**: all 5 user messages are missing, and internal Skill tool_result content leaks as user messages. A flood of **503 errors** on GET `/api/sessions/:id/messages` was observed during streaming.
 
 ## Issues Found
 
-### 1. SSE Stream Freeze on Relay Messages — Bug (P0)
+### 1. SSE `done` Event Not Delivered (Message 2) — Bug (P1)
 
-**Observed:** After response content finishes streaming (~15s), the SSE stream stays open for 60-80+ seconds. Stop button remains visible. Timer keeps incrementing. Content is unchanged. Occurred on messages 1, 2, 3, and 5. Message 4 (TodoWrite) did NOT freeze — completed in 12s.
+**Observed:** Message 2 ("Add TypeScript types") completed on the backend — JSONL line 11 shows the full 2136-char response, lines 12-15 show the next message queued. The client displayed complete text (357 tokens) but the stop button persisted for 25+ seconds (two screenshots 10s apart showed identical content). Required manual stop button click to unblock.
 
-**Expected:** SSE stream should close within a few seconds of the last content event. Stop button should disappear. A `done` event should terminate the stream.
+**Expected:** Stop button should disappear within 1-2 seconds of backend completion.
 
-**Root cause:** `apps/server/src/services/session/session-broadcaster.ts:186` — The relay subscription writes SSE events via `res.write(eventData)` without handling backpressure. When the socket buffer fills, the `done` event may be delayed or the write stalls without resolving. Commit `1352e31` fixed this pattern in `stream-adapter.ts:20-26` (async drain handling) but `session-broadcaster.ts` still uses the old synchronous pattern.
+**Root cause:** Despite the four-layer fix (stable EventSource lifecycle, subscribe-first handshake, pending buffer, terminal `done` in finally), the `done` event still failed to reach the client. The EventSource was stable (no reconnection), and `stream_ready` was received before POST. The failure likely occurs in the relay message writing path — `session-broadcaster.ts:182-224` uses a write queue with drain handling, but there may be an edge case where the `done` event's SSE write succeeds on the server but the EventSource doesn't fire the corresponding listener on the client (possibly a browser EventSource buffering issue or event type mismatch).
 
-**Code path:**
-1. ClaudeCodeAdapter receives SDK events → publishes to `relay.human.console.{clientId}`
-2. SessionBroadcaster subscribes → `res.write(eventData)` at line 186
-3. No backpressure handling → write stalls, `done` event delayed
-4. Client `useChatSession` waits for `done` event → never arrives → stream hangs
+**Key files:**
+- `apps/server/src/services/session/session-broadcaster.ts:182-224` — relay message SSE writing
+- `packages/relay/src/adapters/claude-code-adapter.ts:480-490` — terminal done in finally
+- `apps/client/src/layers/features/chat/model/use-chat-session.ts:217-252` — relay EventSource
 
-**Also affected:** `session-broadcaster.ts:324` — `broadcastUpdate()` has the same `client.write()` pattern for `sync_update` events.
+**Recommendation:** Add end-to-end tracing for the `done` event: log when CCA publishes it, when RelayCore dispatches it, when SubscriptionRegistry delivers it, and when SessionBroadcaster writes it to SSE. Also add a client-side safety net: if no SSE events arrive for 15s after the last `text_delta`, check the session status via REST API and auto-transition to idle if the backend has completed.
 
-**ADR context:** None found specifically for SSE backpressure.
+---
 
-**Recommendation:** Apply the same async drain pattern from `stream-adapter.ts:20-26` to `session-broadcaster.ts:186` and `:324`:
+### 2. User Messages Missing from History Reload — Bug (P0)
+
+**Observed:** After page refresh, only 6 DOM elements rendered vs expected 10+. **All 5 user messages were completely absent.** The conversation started with the assistant's first response.
+
+**Expected:** All user messages should render as user bubbles.
+
+**Root cause:** `transcript-parser.ts:231-233` — the relay context filter:
 ```typescript
-const ok = res.write(eventData);
-if (!ok) {
-  await new Promise<void>((resolve) => res.once('drain', resolve));
+if (text.startsWith('<relay_context>')) {
+  continue;  // Skips the ENTIRE message, including user content after </relay_context>
+}
+```
+
+When Relay is enabled, `ClaudeCodeAdapter.formatPromptWithContext()` (relay/adapters/claude-code-adapter.ts:755-785) wraps user messages as:
+```
+<relay_context>
+Agent-ID: 9c99edf1-...
+...
+</relay_context>
+
+Write a JavaScript bubble sort function with comments
+```
+
+The parser skips the whole message because the string starts with `<relay_context>`. The actual user content after the closing tag is discarded.
+
+**Test gap:** `transcript-reader.test.ts:562-597` only tests pure relay context (no trailing user content).
+
+**Recommendation:** Fix the parser to strip `<relay_context>...</relay_context>` from the string and process the remaining content as the actual user message:
+```typescript
+if (text.startsWith('<relay_context>')) {
+  const closingTag = '</relay_context>';
+  const idx = text.indexOf(closingTag);
+  if (idx !== -1) {
+    const userContent = text.slice(idx + closingTag.length).trim();
+    if (!userContent) continue; // Pure relay metadata, skip
+    text = userContent; // Process the actual user message
+  } else {
+    continue; // Malformed, skip
+  }
 }
 ```
 
 ---
 
-### 2. Response Text Truncation During Streaming — Bug (P1)
+### 3. Skill Tool Result Leaks as User Message in History — Bug (P1)
 
-**Observed:** For "What is 2+2?", JSONL contains `'2 + 2 = **4**'` but UI displayed only "2" during live streaming. After page reload from history, the full "2 + 2 = 4" rendered correctly.
+**Observed:** On history reload, an internal tool_result appeared as a user message bubble showing: `/frontend-design:frontend-design minimal HTML page with h1 heading`. This is the SDK's internal Skill tool_result content leaking into the conversation.
 
-**Expected:** Full response text should appear during streaming, not just on reload.
+**Expected:** Tool results should not appear as user messages. Skill invocations should show as collapsed tool call cards.
 
-**Root cause:** Same as Bug 1 — `session-broadcaster.ts:186`. Under backpressure, `res.write()` may drop or buffer events inconsistently. Short responses (few tokens) are most vulnerable since the text arrives in a burst that coincides with backpressure from prior events. The `text_delta` events are lost or never delivered to the client's EventSource.
+**Root cause:** `transcript-parser.ts:211-220` — when a user message contains both `tool_result` and `text` content blocks, the parser renders the text parts as a user message. The `pendingCommand` logic (lines 187-209) handles pure `tool_result` but doesn't handle the combined `tool_result + text` case from Skill expansions.
 
-**Evidence:**
-- JSONL has complete response (server wrote it correctly)
-- UI shows truncated response during streaming (client SSE stream incomplete)
-- History reload shows full response (parsed from JSONL, not SSE)
-
-**Recommendation:** Same fix as Bug 1.
+**Recommendation:** When a user message contains `tool_result` blocks, suppress the `text` parts from rendering as user messages — they are internal SDK expansion content, not user-authored.
 
 ---
 
-### 3. URL Session ID Mismatch with Relay — Bug (P2)
+### 4. Flood of 503 on GET /messages During Streaming — Bug (P2)
 
-**Observed:** When Relay is enabled, clicking "New Session" creates a URL with `?session=7dd04b5c-...` (the Agent-ID from relay context), but the actual SDK session ID is `21b09157-...` (JSONL filename). The sidebar displays the SDK session ID. After page reload/navigation, the URL switches to the correct SDK session ID.
+**Observed:** Network log shows ~30+ GET `/api/sessions/:id/messages` returning 503 during active streaming. Mixed with successful 200 responses.
 
-**Expected:** URL `?session=` parameter should always contain the SDK session ID for consistency with JSONL lookups, API calls, and sidebar display.
+**Expected:** GET /messages should return 200 or 304, never 503.
 
-**Root cause:** Not fully traced. The session creation flow in Relay mode likely returns the agent-ID as the session identifier instead of the SDK session ID.
+**Root cause:** `session-broadcaster.ts:86,93` — SSE connection limits (10 per session, 500 global) in `registerClient()`. The 503 is triggered when the SSE registration path is hit. The GET /messages endpoint itself doesn't return 503, but TanStack Query's refetchInterval causes repeated GET /messages calls which in the network log may be interleaved with GET /stream SSE registrations that DO return 503.
 
-**Recommendation:** Investigate where `?session=` is set during new session creation in Relay mode. Ensure it uses the SDK session ID from the JSONL filename, not the agent ID.
+Additionally, `sessions.ts:351` passes the Agent-ID (not SDK-Session-ID) to `registerClient()`, which could create duplicate watchers for the same JSONL file under different keys.
 
----
+**Key files:**
+- `apps/server/src/services/session/session-broadcaster.ts:83-101` — SSE limit enforcement
+- `apps/server/src/config/constants.ts:29-34` — `SSE.MAX_CLIENTS_PER_SESSION: 10`
+- `apps/server/src/routes/sessions.ts:351` — no Agent-ID → SDK-Session-ID translation for SSE
 
-### 4. API `/messages` Returns Empty for Relay Sessions — Bug (P2)
-
-**Observed:** `GET /api/sessions/21b09157-.../messages` returns `{ messages: [] }` even though the JSONL has 37 lines with 5 complete exchanges.
-
-**Expected:** API should return parsed messages from the JSONL file.
-
-**Root cause:** Not fully traced. The `TranscriptReader` may be failing to find or parse the JSONL file, or the session lookup by ID may not match the Relay-mode session.
-
-**Recommendation:** Investigate `transcript-reader.ts` session lookup logic when Relay is enabled. The session ID should resolve to the correct JSONL file path.
+**Recommendation:** Add session ID translation in the SSE registration path. Investigate whether the client opens multiple EventSource connections for the same session. Consider increasing per-session limit or making it configurable.
 
 ---
 
-### 5. Session Title Never Updates — UX Issue (P3)
+### 5. No Progress Indicator During Skill Execution — UX Issue (P2)
 
-**Observed:** Session displays as "Session 21b09157" throughout the test. No meaningful title was ever generated despite 5 exchanges.
+**Observed:** Message 3 triggered the `frontend-design` Skill (JSONL line 17: `tool_use: Skill`). The client displayed partial text (318 tokens) with the stop button for 2+ minutes. No indication that a skill was actively running. From the user's perspective, the response appeared completely frozen.
 
-**Expected:** Session title should update to something descriptive (e.g., "Bubble Sort Function") after the first message.
+**Expected:** UI should show a tool call card or progress indicator (e.g., "Using skill: frontend-design") during skill execution.
 
-**Root cause:** Title extraction in `transcript-reader.ts` uses the first user message text. When Relay is enabled, the user message is wrapped in `<relay_context>` XML, which may cause the title extractor to fail or return the raw XML instead of the user's actual message.
+**Root cause:** The `tool_call_start` SSE event for the Skill tool call may not be forwarded through the relay pipeline. The client only sees `text_delta` events, missing the intermediate tool invocations. The JSONL clearly shows `tool_use: Skill` at line 17, but this was never rendered in the client.
 
-**Recommendation:** Strip `<relay_context>` wrapper when extracting session titles.
+**Recommendation:** Ensure `tool_call_start`/`tool_call_end` events for all tool types (including Skill) are forwarded through the relay SSE pipeline. This gives users visibility into agent activity during long operations.
 
 ---
 
-### 6. Model Display Shows Full Model ID in History — UX Issue (P3)
+### 6. Model Display Shows Full ID on History Reload — UX Issue (P3)
 
-**Observed:** During live streaming, status bar shows friendly "Haiku 4.5". After page reload, it shows the full model ID `claude-haiku-4-5-20251001`.
+**Observed:** Live session shows "Haiku 4.5". After reload, shows `claude-haiku-4-5-20251001`.
 
-**Expected:** Consistent display using the friendly name ("Haiku 4.5") regardless of whether viewing live or from history.
+**Expected:** Consistent friendly name in both modes.
 
-**Root cause:** Live streaming likely uses the user-selected model name from local state, while history reload reads the raw model ID from the JSONL init message and doesn't map it to the friendly display name.
-
-**Recommendation:** Apply the same model ID → display name mapping used in the model selector to the history-loaded model value.
+**Recommendation:** Apply model ID → display name mapping in the history-loaded code path.
 
 ## Observations (No Issues)
 
-- **Code block rendering** — JavaScript, TypeScript, HTML all render correctly with syntax highlighting and line numbers in both live and history views.
-- **Tool call cards** — TodoWrite card renders properly with checkmark, expand/collapse chevron, and task list.
-- **Session sidebar** — Updates correctly when new sessions are created, shows relative timestamps.
-- **Permission mode and model selectors** — Work correctly, changes reflected in status bar.
-- **Cost tracking** — "$0.03" and "0%" context usage appeared during live session.
-- **Multi-turn context** — Haiku correctly referenced prior messages (TypeScript types applied to previous bubble sort).
-- **Timestamps** — Correct timestamps shown on user messages (05:44 AM, 05:45 AM).
-- **Markdown rendering** — Bold text, bullet lists, inline code all render correctly.
+- **Message 1 (bubble sort)**: Clean completion in ~13s, code block with syntax highlighting
+- **Message 4 (TodoWrite)**: Tool call card rendered correctly with green checkmark, tasks listed with completed status
+- **Message 5 (2+2)**: Clean completion in ~14s, "2 + 2 = **4**" rendered correctly
+- **Code block rendering**: JS, TS, HTML all render with syntax highlighting, line numbers, copy/download buttons
+- **Session creation**: New session flow works correctly
+- **Model/permission selection**: Dropdowns work, status bar updates immediately
+- **Sidebar**: Sessions appear with correct timestamps and SDK session IDs
+- **Cost tracking**: Shows cumulative cost ($0.03-0.04) and cache percentage
+- **TodoWrite card**: Renders with green checkmark, collapsible, tasks display correctly on both live and history
+- **Multi-turn context**: Haiku correctly referenced prior messages
+
+## Message-by-Message Results
+
+| # | Message | Stream Time | Tokens | Freeze? | Notes |
+|---|---------|------------|--------|---------|-------|
+| 1 | Bubble sort | 13s | ~372 | No | Clean completion |
+| 2 | TypeScript types | 22s text, 44s+ stop button | ~357 | **YES** | `done` event not delivered |
+| 3 | HTML page | 2m+ (stopped manually) | ~318 | No (skill) | Agent triggered frontend-design skill |
+| 4 | TodoWrite tasks | ~8s | — | No | Tool call + text, clean |
+| 5 | 2+2 | 14s | ~3 | No | Clean completion |
+
+## History Reload Results
+
+| Check | Result |
+|-------|--------|
+| Message count | **FAIL** — 6 DOM elements vs expected 10+ |
+| User messages | **FAIL** — All 5 user messages missing |
+| Code blocks | PASS — Properly rendered |
+| Tool call cards | **FAIL** — Skill tool_result leaks as user message |
+| Task list | PASS — Tasks visible with correct status |
+| Model display | MINOR — Shows full model ID |
+| Scroll position | PASS — Near bottom |
+
+## Comparison with Run 1
+
+| Issue | Run 1 (pre-fix) | Run 2 (post-fix) | Status |
+|-------|-----------------|-------------------|--------|
+| SSE freeze rate | 3/5 messages (60%) | 1/5 messages (20%) | **Improved** |
+| Freeze duration | 60-80+ seconds | 25+ seconds | **Improved** |
+| User messages in history | Not tested | All missing | **New finding** |
+| Tool result leak | Not tested | Confirmed | **New finding** |
+| 503 errors | Not tested | ~30+ during session | **New finding** |
+| Response truncation | Confirmed | Not observed | **Fixed** |

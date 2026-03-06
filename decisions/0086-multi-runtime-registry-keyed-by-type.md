@@ -1,7 +1,7 @@
 ---
 number: 86
 title: Multi-Runtime Registry Keyed by Type
-status: draft
+status: proposed
 created: 2026-03-06
 spec: agent-runtime-abstraction
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: agent-runtime-abstraction)
+Proposed
 
 ## Context
 

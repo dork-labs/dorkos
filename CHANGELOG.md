@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Curate ADRs, add agent-runtime-review-remediation spec, and update guides
 - Reconcile guides for eslint-config and icons package gaps
 - Decompose root eslint.config.js into per-package configs with shared @dorkos/eslint-config
 - Extract AgentRuntime interface and RuntimeRegistry abstraction

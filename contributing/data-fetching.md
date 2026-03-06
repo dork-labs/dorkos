@@ -15,6 +15,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | Session entity hooks   | `apps/client/src/layers/entities/session/`                         |
 | Command entity hooks   | `apps/client/src/layers/entities/command/`                         |
 | Agent entity hooks     | `apps/client/src/layers/entities/agent/`                           |
+| Runtime entity hooks   | `apps/client/src/layers/entities/runtime/`                         |
 | Chat feature hooks     | `apps/client/src/layers/features/chat/model/use-chat-session.ts`  |
 | Express routes         | `apps/server/src/routes/`                                          |
 | Zod schemas            | `packages/shared/src/schemas.ts`                                   |
@@ -403,6 +404,40 @@ export function useResolvedAgents(paths: string[]) {
     enabled: paths.length > 0,
     staleTime: 60_000,
   });
+}
+```
+
+## Runtime Entity Hooks
+
+The runtime entity layer (`entities/runtime/`) provides hooks for querying runtime capabilities. These are static for the server's lifetime, so `staleTime: Infinity` prevents unnecessary refetches.
+
+### useRuntimeCapabilities
+
+Fetches capability flags for all registered runtimes via `transport.getCapabilities()`.
+
+```typescript
+// apps/client/src/layers/entities/runtime/model/use-runtime-capabilities.ts
+export function useRuntimeCapabilities() {
+  const transport = useTransport();
+
+  return useQuery({
+    queryKey: ['capabilities'],
+    queryFn: () => transport.getCapabilities(),
+    staleTime: Infinity,
+  });
+}
+```
+
+### useDefaultCapabilities
+
+Convenience hook that returns the default runtime's capability flags. Returns `undefined` while loading.
+
+```typescript
+// apps/client/src/layers/entities/runtime/model/use-runtime-capabilities.ts
+export function useDefaultCapabilities(): RuntimeCapabilities | undefined {
+  const { data } = useRuntimeCapabilities();
+  if (!data) return undefined;
+  return data.capabilities[data.defaultRuntime];
 }
 ```
 

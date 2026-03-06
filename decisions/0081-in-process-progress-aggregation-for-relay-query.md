@@ -1,7 +1,7 @@
 ---
 number: 81
 title: Use In-Process Progress Aggregation for relay_query (MCP Single-Response Constraint)
-status: draft
+status: proposed
 created: 2026-03-05
 spec: relay-inbox-lifecycle
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: relay-inbox-lifecycle)
+Proposed
 
 ## Context
 

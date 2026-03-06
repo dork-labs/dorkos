@@ -1,11 +1,77 @@
 ---
-description: "Self-test the DorkOS chat UI in a live browser session — drives real interactions, monitors JSONL transcript, compares API vs UI, researches issues, and creates a spec for improvements"
-argument-hint: "[url]"
-allowed-tools: Read, Write, Bash, Grep, Glob, Task, TaskOutput, AskUserQuestion, Skill, WebSearch, WebFetch, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__computer
+description: "Self-test the DorkOS chat UI in a live browser session — drives real interactions, monitors JSONL transcript, compares API vs UI, researches issues, and produces an evidence-based findings report"
+argument-hint: "[url] [focus:area1,area2]"
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Task, TaskOutput, AskUserQuestion, Skill, WebSearch, WebFetch, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__computer
 category: testing
 ---
 
-Self-test the DorkOS chat UI in a live browser session. This command drives real interactions through the full stack, monitors JSONL transcripts on disk, compares API vs UI state at every step, researches any issues found, and produces an evidence-based findings report. If bugs or significant UX issues are found, it creates a spec for an improvement cycle.
+Self-test the DorkOS chat UI in a live browser session. This command drives real interactions through the full stack, monitors JSONL transcripts on disk, compares API vs UI state at every step, researches any issues found, and produces an evidence-based findings report. If bugs or significant UX issues are found, it generates a prompt for the `/ideate` command.
+
+---
+
+## Argument Parsing
+
+Parse `$ARGUMENTS` for two optional inputs:
+
+1. **URL**: Any argument starting with `http` — use as `TEST_URL`. Default:
+   ```
+   TEST_URL="http://localhost:4241/?dir=/Users/doriancollier/Keep/temp/empty"
+   ```
+
+2. **Focus areas**: An argument starting with `focus:` — comma-separated list of specific areas to test. Examples:
+   - `focus:streaming` — Focus on SSE streaming, freeze detection, chunk delivery
+   - `focus:history` — Focus on reload-from-history, message persistence, JSONL fidelity
+   - `focus:tasks` — Focus on TaskCreate/TaskUpdate UI, task state rendering
+   - `focus:tools` — Focus on tool call cards, approval flows, expand/collapse
+   - `focus:scroll` — Focus on auto-scroll, viewport overflow, scroll anchoring
+   - `focus:sidebar` — Focus on session list, new session, session switching
+   - `focus:status` — Focus on status bar, model selector, permission mode
+   - `focus:code` — Focus on code block rendering, syntax highlighting, copy button
+   - `focus:relay` — Focus on Relay-specific behavior (when enabled)
+   - `focus:commands` — Focus on slash command palette, command discovery
+   - `focus:markdown` — Focus on markdown rendering, links, lists, headings
+
+   Multiple areas can be combined: `focus:streaming,history,tasks`
+
+   When focus areas are specified:
+   - **Phase 4 messages are tailored** to exercise those areas specifically
+   - **Phase 5b checks are weighted** toward those areas
+   - **Phase 6 research digs deeper** into focused areas
+   - Unfocused areas still get basic coverage but with less depth
+
+   When no focus is specified, run the full default test suite.
+
+Store parsed values as `TEST_URL` and `FOCUS_AREAS` (array, possibly empty).
+
+---
+
+## Results File Setup
+
+Results are saved to `test-results/chat-self-test/` with a unique filename per run.
+
+Generate the filename using a timestamp:
+
+```bash
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+RESULTS_DIR="test-results/chat-self-test"
+mkdir -p "$RESULTS_DIR"
+RESULTS_FILE="$RESULTS_DIR/$TIMESTAMP.md"
+```
+
+**Write the initial file immediately** with the header and test config (filled in as known so far). This file is updated incrementally throughout the test — every phase appends its findings as it completes. This ensures partial results are preserved if the test is interrupted.
+
+```markdown
+# Chat Self-Test — YYYY-MM-DD HH:MM
+
+## Test Config
+- **URL:** [test URL]
+- **Focus areas:** [areas or "Full suite"]
+- **Started:** [timestamp]
+- **Status:** IN PROGRESS
+
+---
+
+```
 
 ---
 
@@ -55,6 +121,8 @@ curl -s "http://localhost:$API_PORT/api/models" | jq '.models[].value'
 
 Navigate the browser to `TEST_URL`. Use `mcp__claude-in-chrome__tabs_context_mcp` first to get tab context, then `mcp__claude-in-chrome__navigate`. Take a screenshot and read the page. Capture any pre-existing console errors as a baseline via `mcp__claude-in-chrome__read_console_messages` (filter: `error`).
 
+**Update the results file** — fill in the remaining Test Config fields (API port, Relay/Pulse status, available models, baseline console errors).
+
 ---
 
 ## Phase 2 — Create New Session
@@ -90,6 +158,8 @@ The file may not exist yet — re-run this check after the first message is sent
 
 5. Take a screenshot of the new empty session.
 
+**Update the results file** — append session IDs and JSONL path.
+
 ---
 
 ## Phase 3 — Configure Session
@@ -98,31 +168,38 @@ The file may not exist yet — re-run this check after the first message is sent
 2. **Set permission mode:** Click the permission mode selector in the status bar. Choose "Accept Edits" so tool-use file writes do not require manual approval during the test.
 3. Take a screenshot after configuring both settings. Verify both settings are reflected in the status bar.
 
+**Update the results file** — append model and permission mode used.
+
 ---
 
-## Phase 4 — Send Messages & Observe (5 rounds)
+## Phase 4 — Send Messages & Observe
 
-Send the following messages in sequence. For each message:
+### Message Selection
 
-**Message script:**
+**When focus areas are specified**, tailor messages to exercise those areas. Design 3-5 messages that specifically stress the focused functionality. For example:
 
-| # | Message | Notes |
+| Focus | Tailored Messages |
+|-------|-------------------|
+| `streaming` | Long code generation, multi-tool sequences, rapid follow-ups |
+| `history` | Messages that produce varied content types (code, text, tools) |
+| `tasks` | `Use TodoWrite to create 3 tasks`, `Mark the first task done`, `Add a 4th task` |
+| `tools` | `Use Bash to list files in /tmp`, `Read the contents of /etc/hostname` |
+| `code` | `Write a Python class with decorators`, `Write a React component with JSX` |
+| `markdown` | `Explain quicksort with headings, bullet lists, and a table` |
+| `scroll` | Generate very long responses, send many messages in sequence |
+| `commands` | Type `/` in chat input and test palette, try various commands |
+
+**When no focus is specified**, use the default 5-message script:
+
+| # | Message | Tests |
 |---|---------|-------|
-| 1 | `Write a JavaScript bubble sort function with comments` | Tests code rendering |
-| 2 | `Add TypeScript types to the function` | Tests multi-turn context |
-| 3 | `Write a minimal HTML page with a <h1>Hello World</h1> heading` | Tests HTML in code blocks |
-| 4 | `Use TodoWrite to create a task list with 3 tasks for our current conversation` | Tests task UI |
-| 5 | `What is 2+2?` | Tests simple text response |
+| 1 | `Write a JavaScript bubble sort function with comments` | Code rendering |
+| 2 | `Add TypeScript types to the function` | Multi-turn context |
+| 3 | `Write a minimal HTML page with a <h1>Hello World</h1> heading` | HTML in code blocks |
+| 4 | `Use TodoWrite to create a task list with 3 tasks for our current conversation` | Task UI |
+| 5 | `What is 2+2?` | Simple text response |
 
-**Extended test messages (optional, adds significant time):**
-
-| # | Message | Notes |
-|---|---------|-------|
-| E1 | `Use the Task tool to launch a background agent that counts the number of files in /tmp and reports back` | Tests background agents |
-| E2 | `Use the Bash tool in the background to watch /tmp for 5 seconds and report any changes` | Tests background tasks |
-| E3 | `Mark the first task as completed` | Tests task updates |
-
-**Per-message observation loop (repeat for each message):**
+### Per-message observation loop (repeat for each message):
 
 **a. Send the message:**
 Click the chat input (use `mcp__claude-in-chrome__find` for "Message Claude input"), type the message text, and press `Meta+Enter` (Cmd+Enter) to submit.
@@ -171,18 +248,31 @@ for line in open('$JSONL_FILE'):
 "
 ```
 
-**i. For task list messages (message 4):**
+**i. For task list messages:**
 After sending, check whether task list UI elements are visible in the DOM. Compare rendered tasks against:
 - `task_update` SSE events captured in the network log
 - `TaskCreate`/`TaskUpdate` tool_use blocks in the JSONL
 
 **j. Record any discrepancy or anomaly** — data mismatch, console error, broken element, missing state update, unexpected blank area, scroll regression, SSE freeze, etc.
 
+**k. Update the results file** — after EACH message, append the observation for that message. Use this per-message format:
+
+```markdown
+### Message [N]: `[message text]`
+- **Streaming duration:** [Xs or "SSE freeze detected"]
+- **Console warnings:** [count new]
+- **Network status:** [POST status code]
+- **DOM message count:** [count] (expected: [count])
+- **JSONL message count:** [count]
+- **API match:** [yes/no/skipped]
+- **Observations:** [any issues or "Clean"]
+```
+
 ---
 
 ## Phase 5 — Final State Capture
 
-After all 5 rounds:
+After all messages:
 
 1. Full-page screenshot.
 2. Console messages at `debug` level (comprehensive log) via `mcp__claude-in-chrome__read_console_messages`.
@@ -204,6 +294,8 @@ for i, line in enumerate(open('$JSONL_FILE')):
 ```bash
 curl -s "http://localhost:$API_PORT/api/sessions/$SDK_SESSION_ID" | jq '{model, permissionMode, title}'
 ```
+
+**Update the results file** — append final state summary.
 
 ---
 
@@ -241,6 +333,8 @@ Compare the history-loaded screenshots against the live-session screenshots from
 - Timestamp correctness
 - Any layout shifts or blank areas
 
+**Update the results file** — append reload comparison results.
+
 ---
 
 ## Phase 6 — Issue Analysis & Deep Research
@@ -261,29 +355,19 @@ Classify each observation into one of:
 4. **Validate the assumption.** Confirm the bug exists in actual code, not just in observation.
 5. **Research best practices.** Use `WebSearch` if the fix isn't clear from the codebase alone.
 
+When focus areas were specified, go deeper on issues within those areas — trace full call stacks, read all related tests, check git history for recent regressions.
+
 Only after completing this research: form a concrete recommendation with file paths and line references.
 
 ---
 
-## Phase 7 — Write Findings Report
+## Phase 7 — Write Final Report
 
-Save the report to: `plans/YYYY-MM-DD-chat-self-test-findings.md`
-
-Use this structure:
+**Update the results file** with the complete findings. Replace the `Status: IN PROGRESS` with `Status: COMPLETE` and append:
 
 ```markdown
-# Chat Self-Test Findings — [DATE]
-
-## Test Config
-- URL: [test URL]
-- Session ID (URL/Agent): [URL_SESSION_ID]
-- Session ID (SDK/JSONL): [SDK_SESSION_ID]
-- Model: [model used]
-- Permission mode: [mode used]
-- Relay enabled: [yes/no]
-- Messages sent: 5
-
 ## Summary
+
 [2-3 sentences: overall quality, number of issues, anything critical]
 
 ## Issues Found
@@ -296,20 +380,81 @@ Use this structure:
 **Research:** [what you found]
 **Recommendation:** [concrete suggestion with specifics]
 
+[Repeat for each issue]
+
 ## Observations (No Issues)
 [What worked well — important to preserve in future changes]
 
 ## Passing Verdict (if applicable)
 [Note if all checks passed]
+
+---
+
+**Completed:** [timestamp]
+**Duration:** [total time]
+**Focus areas:** [areas or "Full suite"]
 ```
 
 ---
 
-## Phase 8 — Create Spec (if warranted)
+## Phase 8 — Ideation Prompt (if warranted)
 
-- **If bugs or significant UX issues were found:** invoke `Skill` with `skill: "spec:create"`, describing the improvement area. Let that skill drive the full spec process.
-- **If only minor improvements:** note them in the report with priority labels (P1/P2/P3). Stop there — no spec needed.
-- **If no issues found:** note "All checks passed" in the report.
+If bugs or significant UX issues were found, generate a prompt for the `/ideate` command and present it to the user.
+
+The `/ideate` command takes a `<task-brief>` argument and performs structured discovery (parallel codebase exploration + research agents), interactive clarification, and writes an ideation document to `specs/`. It works best when the task brief:
+
+- **States the problem clearly** — what's broken or suboptimal, with specifics
+- **Includes evidence** — reference the self-test findings file, specific observations, file paths
+- **Scopes the work** — what's in and out of scope
+- **Mentions affected areas** — components, hooks, services discovered during research
+- **Implies a desired outcome** — what "fixed" or "improved" looks like
+
+**Generate the prompt like this:**
+
+```
+Based on the self-test findings, compose a task brief for /ideate that:
+
+1. Opens with a clear problem statement (1-2 sentences)
+2. References the findings file: test-results/chat-self-test/[TIMESTAMP].md
+3. Lists the specific issues discovered (summarized, not copy-pasted)
+4. Names the affected code areas found during Phase 6 research (file paths)
+5. States what success looks like
+6. Explicitly scopes out unrelated areas
+```
+
+**Present the prompt to the user** in a copyable format:
+
+```
+═══════════════════════════════════════════════════
+         SELF-TEST COMPLETE — ISSUES FOUND
+═══════════════════════════════════════════════════
+
+Results: test-results/chat-self-test/[TIMESTAMP].md
+
+Issues: [N] bugs, [N] UX issues, [N] improvements
+
+To start an improvement cycle, run:
+
+/ideate [generated task brief]
+
+═══════════════════════════════════════════════════
+```
+
+If only minor improvements were found, note them with priority labels (P1/P2/P3) and suggest the user can run `/ideate` if they want to address them.
+
+If no issues were found:
+
+```
+═══════════════════════════════════════════════════
+         SELF-TEST COMPLETE — ALL CLEAR
+═══════════════════════════════════════════════════
+
+Results: test-results/chat-self-test/[TIMESTAMP].md
+
+All checks passed. No bugs or significant issues found.
+
+═══════════════════════════════════════════════════
+```
 
 ---
 

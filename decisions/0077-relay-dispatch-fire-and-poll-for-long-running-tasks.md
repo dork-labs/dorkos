@@ -1,7 +1,7 @@
 ---
 number: 77
 title: relay_dispatch Fire-and-Poll Pattern for Long-Running Agent Tasks
-status: draft
+status: proposed
 created: 2026-03-05
 spec: relay-async-query
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: relay-async-query)
+Proposed
 
 ## Context
 

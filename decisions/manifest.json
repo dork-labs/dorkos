@@ -1,12 +1,30 @@
 {
   "version": 1,
-  "nextNumber": 90,
+  "nextNumber": 92,
   "decisions": [
+    {
+      "number": 91,
+      "slug": "callback-based-watchsession-for-session-sync",
+      "title": "Callback-Based watchSession for Session Sync",
+      "status": "proposed",
+      "created": "2026-03-06",
+      "extractedFrom": "agent-runtime-review-remediation",
+      "specSlug": "agent-runtime-review-remediation"
+    },
+    {
+      "number": 90,
+      "slug": "narrow-port-interfaces-for-cross-package-di",
+      "title": "Narrow Port Interfaces for Cross-Package DI",
+      "status": "proposed",
+      "created": "2026-03-06",
+      "extractedFrom": "agent-runtime-review-remediation",
+      "specSlug": "agent-runtime-review-remediation"
+    },
     {
       "number": 89,
       "slug": "sdk-import-confinement-via-lint-rule",
       "title": "Confine SDK Imports to Runtime Implementation via Lint Rule",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-06",
       "extractedFrom": "eslint-per-package-config",
       "specSlug": "eslint-per-package-config"
@@ -15,7 +33,7 @@
       "number": 88,
       "slug": "per-package-eslint-config-with-shared-package",
       "title": "Per-Package ESLint Config with Shared Config Package",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-06",
       "extractedFrom": "eslint-per-package-config",
       "specSlug": "eslint-per-package-config"

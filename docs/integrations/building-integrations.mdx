@@ -29,6 +29,7 @@ interface Transport {
   listFiles(cwd: string): Promise<FileListResponse>;
   getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError>;
   health(): Promise<HealthResponse>;
+  getCapabilities(): Promise<{ capabilities: Record<string, RuntimeCapabilities>; defaultRuntime: string }>;
   getConfig(): Promise<ServerConfig>;
 }
 ```
