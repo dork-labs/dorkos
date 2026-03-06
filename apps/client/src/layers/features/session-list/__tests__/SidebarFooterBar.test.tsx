@@ -35,9 +35,9 @@ describe('SidebarFooterBar', () => {
   it('renders branding link with correct href, target, and rel', () => {
     render(<SidebarFooterBar />);
 
-    const link = screen.getByText('DorkOS by Dorkian');
+    const link = screen.getByRole('link');
     expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute('href', 'https://dorkian.com');
+    expect(link).toHaveAttribute('href', 'https://dorkos.ai');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });

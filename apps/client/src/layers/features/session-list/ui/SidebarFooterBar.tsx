@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { Sun, Moon, Monitor, Settings, Bug } from 'lucide-react';
+import { DorkLogo } from '@dorkos/icons/logos';
 import { useAppStore, useTheme, type Theme } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 
@@ -28,12 +29,12 @@ export function SidebarFooterBar() {
   return (
     <div className="border-border flex items-center border-t px-2 py-1.5">
       <a
-        href="https://dorkian.com"
+        href="https://dorkos.ai"
         target="_blank"
         rel="noopener noreferrer"
-        className="text-2xs text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
+        className="text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-150"
       >
-        DorkOS by Dorkian
+        <DorkLogo size={60} className="opacity-50 transition-opacity duration-150 hover:opacity-100" />
       </a>
       <div className="ml-auto flex items-center gap-0.5">
         <button

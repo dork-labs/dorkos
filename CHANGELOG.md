@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replace text branding with DorkOS logo linking to dorkos.ai
 - Update guides for renamed MCP tools, new relay tools, and discovery entity
 - Rename pulse and agent tools to follow domain_verb_noun convention
 
