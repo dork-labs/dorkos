@@ -14,7 +14,7 @@ Agent backends are abstracted behind the `AgentRuntime` interface (`packages/sha
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with five apps and seven shared packages:
+This is a Turborepo monorepo with five apps and eight shared packages:
 
 ```
 dorkos/
@@ -32,6 +32,7 @@ dorkos/
 │   ├── db/               # @dorkos/db - Drizzle ORM schemas (SQLite)
 │   ├── relay/            # @dorkos/relay - Inter-agent message bus
 │   ├── mesh/             # @dorkos/mesh - Agent discovery & registry
+│   ├── eslint-config/    # @dorkos/eslint-config - Shared ESLint presets (base, react, node, test)
 │   ├── typescript-config/ # @dorkos/typescript-config - Shared tsconfig presets
 │   └── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
 ├── decisions/            # Architecture Decision Records (ADRs)
@@ -114,7 +115,7 @@ Services organized under `services/core/` (shared infrastructure), `services/run
 - **`services/runtimes/claude-code/sdk-event-mapper.ts`** - Pure async generator `mapSdkMessage()` that transforms SDK messages (`stream_event`, `tool_use_summary`, `result`, `system/init`) into DorkOS `StreamEvent` types.
 - **`services/runtimes/claude-code/tool-filter.ts`** - Per-agent MCP tool filtering. `resolveToolConfig()` merges agent manifest `enabledToolGroups` with global defaults, gated by server feature flags. `buildAllowedTools()` produces the `allowedTools` list for SDK `query()`. Implicit grouping: binding tools follow adapter toggle, trace tools follow relay toggle. Core tools (`ping`, `get_server_info`, `get_session_count`, `get_current_agent`) are always enabled.
 - **`services/runtimes/claude-code/context-builder.ts`** - `buildSystemPromptAppend(cwd, meshCore?, toolConfig?)` — gathers runtime context (env info, git status, agent identity/persona, peer agents) and formats as XML blocks (`<env>`, `<git_status>`, `<agent_identity>`, `<agent_persona>`, `<peer_agents>`, `<pulse_tools>`, `<relay_tools>`, `<mesh_tools>`, `<adapter_tools>`) for the SDK `systemPrompt.append`. Never throws. Agent persona injection is conditional on `personaEnabled` flag in the agent manifest. When `toolConfig` is provided, blocks are gated per-agent (omitted when the domain is disabled); otherwise falls back to global config checks. The peer agents block lists registered Mesh agents for cross-agent awareness.
-- **`lib/sdk-utils.ts`** - `makeUserPrompt()` (wraps string as `AsyncIterable<SDKUserMessage>`) and `resolveClaudeCliPath()` (Claude CLI path resolution for Electron compatibility).
+- **`services/runtimes/claude-code/sdk-utils.ts`** - `makeUserPrompt()` (wraps string as `AsyncIterable<SDKUserMessage>`) and `resolveClaudeCliPath()` (Claude CLI path resolution for Electron compatibility).
 - **`lib/resolve-root.ts`** - Single source of truth for the server's default working directory. Exports `DEFAULT_CWD`: prefers `DORKOS_DEFAULT_CWD` env var, falls back to repo root resolved from the file's own location. Consumed by routes and services that need the default CWD.
 - **`lib/dork-home.ts`** - Resolves the DorkOS data directory (`dorkHome`). Priority: `DORK_HOME` env var > `.temp/.dork` (dev) > `~/.dork` (production). Called once at startup; result broadcast via `process.env.DORK_HOME` and passed as required parameter to services. See `.claude/rules/dork-home.md`.
 - **`env.ts`** - Zod-validated environment module. Parses and type-validates all server env vars at startup; exits with a clear error if required vars are missing or invalid. Exports a typed `env` object consumed throughout the server. Each app has its own `env.ts` (`apps/client/src/env.ts`, `apps/site/src/env.ts`, `packages/cli/src/env.ts`) with app-specific schemas.
@@ -312,11 +313,13 @@ Tests live alongside source in `__tests__/` directories within each app and pack
 
 ## Code Quality
 
-**ESLint 9** (flat config at `eslint.config.js`) + **Prettier** (`.prettierrc`) enforce code quality and formatting across the monorepo.
+**ESLint 9** with **per-package flat configs** + **Prettier** (`.prettierrc`) enforce code quality and formatting across the monorepo. Shared presets live in `packages/eslint-config/` (`@dorkos/eslint-config`) with four composable presets: `base.js` (TypeScript + TSDoc + Prettier), `react.js` (React hooks + React Compiler), `node.js` (Node.js-specific rules), and `test.js` (Vitest globals). Each app and package has its own `eslint.config.js` that composes the relevant presets and adds package-specific rules. The root `eslint.config.js` is a thin ~15-line file that only lints root-level files, ignoring `apps/` and `packages/` (which have their own configs). Turbo caches lint per-package via `dependsOn: ["^lint"]`.
 
 - **Warn-first approach**: Most rules are warnings to avoid blocking development. Only critical issues (FSD layer violations) are errors.
 - **No type-checked lint rules**: The typecheck hook already runs `tsc --noEmit` — ESLint uses syntax-only TypeScript rules (`tseslint.configs.recommended`).
-- **FSD layer enforcement**: `no-restricted-imports` rules enforce the unidirectional layer dependency hierarchy as hard errors. Cross-feature model imports are enforced by the Claude Code rule in `.claude/rules/fsd-layers.md`.
+- **FSD layer enforcement**: `no-restricted-imports` rules in the client's `eslint.config.js` enforce the unidirectional layer dependency hierarchy as hard errors. Cross-feature model imports are enforced by the Claude Code rule in `.claude/rules/fsd-layers.md`.
+- **SDK import confinement**: The server's `eslint.config.js` bans `@anthropic-ai/claude-agent-sdk` imports outside of `services/runtimes/claude-code/` via `no-restricted-imports`.
+- **os.homedir() ban**: The server's `eslint.config.js` bans importing `homedir` from `os` in `apps/server/src/**/*.ts` (with a carve-out for `lib/dork-home.ts`). See `.claude/rules/dork-home.md`.
 - **React Compiler rules**: Bundled with `eslint-plugin-react-hooks` v7, downgraded to warnings.
 - **TSDoc**: `eslint-plugin-jsdoc` enforces TSDoc on exported functions/classes (warn-first). See `.claude/rules/documentation.md` for conventions.
 - **Prettier + Tailwind**: `prettier-plugin-tailwindcss` sorts Tailwind classes automatically.

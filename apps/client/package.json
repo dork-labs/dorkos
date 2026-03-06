@@ -57,6 +57,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@tailwindcss/vite": "^4.0.0",

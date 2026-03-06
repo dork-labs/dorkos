@@ -826,10 +826,14 @@ dorkos/                               # Turborepo monorepo root
 │   │           └── plugin.css        # Obsidian theme bridge + text selection fix
 │   └── server/src/
 │       ├── services/
-│       │   ├── agent-manager.ts      # SDK wrapper (CLI resolution, cwd)
-│       │   ├── transcript-reader.ts  # JSONL session reader
-│       │   ├── command-registry.ts   # Slash command discovery
-│       │   └── stream-adapter.ts     # SSE helpers
+│       │   ├── core/
+│       │   │   ├── runtime-registry.ts  # Registry of AgentRuntime instances
+│       │   │   └── stream-adapter.ts    # SSE helpers
+│       │   └── runtimes/claude-code/
+│       │       ├── claude-code-runtime.ts  # AgentRuntime implementation (SDK wrapper)
+│       │       ├── transcript-reader.ts    # JSONL session reader
+│       │       ├── command-registry.ts     # Slash command discovery
+│       │       └── context-builder.ts      # System prompt builder
 │       ├── routes/
 │       └── index.ts                  # Express server entry
 ```
@@ -904,7 +908,7 @@ If you don't see "main.js module loaded", the error is in module evaluation (top
 | "Cannot find module 'X'"              | Node built-in not externalized                          | Ensure `builtinModules` are in `external` array                          |
 | "The URL must be of scheme file"      | Vite `import.meta.url` polyfill uses `document.baseURI` | `fixDirnamePolyfill()` plugin replaces with `__dirname`                  |
 | "must be EventEmitter or EventTarget" | SDK passes browser AbortSignal to Node.js APIs          | `patchElectronCompat()` plugin patches spawn + setMaxListeners           |
-| "Claude Code executable not found"    | SDK resolves `cli.js` inside `Obsidian.app`             | `resolveClaudeCliPath()` (in `lib/sdk-utils.ts`) finds CLI via PATH      |
+| "Claude Code executable not found"    | SDK resolves `cli.js` inside `Obsidian.app`             | `resolveClaudeCliPath()` (in `services/runtimes/claude-code/sdk-utils.ts`) finds CLI via PATH      |
 | ENOENT for `.claude/commands/`        | Service receives vault path instead of repo root        | Pass `repoRoot = path.resolve(vaultPath, '..')` to services              |
 | Optional dep crashes on require       | `@emotion/is-prop-valid`, `ajv-*` etc                   | Add to `safeRequires()` plugin in Vite config                            |
 | Text not selectable                   | Obsidian sets `user-select: none` on views              | Override with `user-select: text` in `.copilot-view-content`             |
@@ -928,7 +932,7 @@ If you don't see "main.js module loaded", the error is in module evaluation (top
 
 **Vite import.meta.url Polyfill:** Vite converts `import.meta.url` to a browser polyfill using `document.baseURI`, which resolves to `app://obsidian.md/...` in Electron. The `fixDirnamePolyfill()` plugin replaces these with native `__dirname`/`__filename`.
 
-**Claude Code CLI Path:** The SDK resolves `cli.js` relative to `import.meta.url`, which breaks in the bundled plugin. `resolveClaudeCliPath()` (in `lib/sdk-utils.ts`) finds the CLI via `require.resolve` or `which claude` and passes it to the SDK.
+**Claude Code CLI Path:** The SDK resolves `cli.js` relative to `import.meta.url`, which breaks in the bundled plugin. `resolveClaudeCliPath()` (in `services/runtimes/claude-code/sdk-utils.ts`) finds the CLI via `require.resolve` or `which claude` and passes it to the SDK.
 
 ### Development Workflow
 
@@ -1000,7 +1004,7 @@ These are injected via `<TransportProvider transport={transport}>`.
 
 ### Claude Code CLI Resolution
 
-The SDK spawns Claude Code as a child process. In the bundled plugin, the SDK's default path resolution breaks (resolves inside `Obsidian.app`). `ClaudeCodeRuntime` handles this via `resolveClaudeCliPath()` (from `lib/sdk-utils.ts`):
+The SDK spawns Claude Code as a child process. In the bundled plugin, the SDK's default path resolution breaks (resolves inside `Obsidian.app`). `ClaudeCodeRuntime` handles this via `resolveClaudeCliPath()` (from `services/runtimes/claude-code/sdk-utils.ts`):
 
 1. Try `require.resolve('@anthropic-ai/claude-agent-sdk/cli.js')` (works in dev)
 2. Fall back to `which claude` on PATH (finds globally installed CLI)

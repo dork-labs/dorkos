@@ -9,6 +9,9 @@
     "./react-helpers": "./src/react-helpers.tsx",
     "./sse-helpers": "./src/sse-helpers.ts"
   },
+  "scripts": {
+    "lint": "eslint ."
+  },
   "dependencies": {
     "@dorkos/db": "workspace:*",
     "@dorkos/shared": "workspace:*"
@@ -22,6 +25,7 @@
     }
   },
   "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
     "@dorkos/relay": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@tanstack/react-query": "^5.90.20",

@@ -45,6 +45,7 @@
   },
   "scripts": {
     "build": "tsx scripts/build.ts",
+    "lint": "eslint .",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
@@ -64,6 +65,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "esbuild": "^0.24.0",
     "tsx": "^4.19.0",

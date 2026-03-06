@@ -30,6 +30,7 @@
     }
   },
   "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
     "@dorkos/relay": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",

@@ -234,10 +234,11 @@ All Claude Code-specific services live under `services/runtimes/claude-code/`:
 | `command-registry.ts` | Slash command discovery |
 | `build-task-event.ts` | Task event builder |
 | `task-reader.ts` | Task state parser |
+| `sdk-utils.ts` | `makeUserPrompt()`, `resolveClaudeCliPath()` |
 | `mcp-tools/` | MCP tool server (core, pulse, relay, mesh, adapter, binding tools) |
 | `index.ts` | Barrel export for `ClaudeCodeRuntime` |
 
-SDK imports (`@anthropic-ai/claude-agent-sdk`) are contained exclusively within `services/runtimes/claude-code/` and `lib/sdk-utils.ts`. No other server code imports the SDK directly.
+SDK imports (`@anthropic-ai/claude-agent-sdk`) are contained exclusively within `services/runtimes/claude-code/`. No other server code imports the SDK directly. This is enforced by a `no-restricted-imports` rule in the server's `eslint.config.js`.
 
 ## Per-Session Tool Filtering
 
@@ -397,6 +398,7 @@ apps/
           session-lock.ts     -- Session write locks with auto-expiry
           build-task-event.ts -- TaskUpdateEvent builder from tool call inputs
           task-reader.ts      -- Task state parser from JSONL transcript lines
+          sdk-utils.ts        -- makeUserPrompt(), resolveClaudeCliPath()
           mcp-tools/          -- In-process MCP tool server for Claude Agent SDK
           index.ts            -- Barrel export for ClaudeCodeRuntime
       pulse/                  -- Pulse scheduler services
@@ -418,7 +420,6 @@ apps/
         mesh-state.ts         -- Mesh subsystem internal state tracking
       discovery/              -- Agent discovery (delegates to @dorkos/mesh unified scanner)
     lib/
-      sdk-utils.ts          -- makeUserPrompt(), resolveClaudeCliPath()
       resolve-root.ts       -- DEFAULT_CWD (prefers DORKOS_DEFAULT_CWD, falls back to repo root)
       boundary.ts           -- Directory boundary validation (enforces 403 for out-of-boundary paths)
       feature-flag.ts       -- Generic feature flag helpers
@@ -496,7 +497,7 @@ resolveDorkHome() priority:
 
 **Required-parameter convention**: Server services (`ConfigManager`, `initLogger`, etc.) accept `dorkHome` or `logDir` as a **required** `string` parameter — no fallback chains. This prevents dev state from silently leaking to `~/.dork`.
 
-**ESLint guardrail**: `no-restricted-imports` in `eslint.config.js` bans importing `homedir` from `os` in `apps/server/src/**/*.ts` (with a carve-out for `lib/dork-home.ts`). See `.claude/rules/dork-home.md`.
+**ESLint guardrail**: `no-restricted-imports` in the server's `eslint.config.js` bans importing `homedir` from `os` in `apps/server/src/**/*.ts` (with a carve-out for `lib/dork-home.ts`). See `.claude/rules/dork-home.md`.
 
 **Packages**: `packages/*/` may use `os.homedir()` as standalone/test safety nets. The server always overrides via constructor options.
 

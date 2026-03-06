@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
-import { resolveClaudeCliPath } from '../lib/sdk-utils.js';
+import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk-utils.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import { UserConfigSchema, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';

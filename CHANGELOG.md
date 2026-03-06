@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Decompose root eslint.config.js into per-package configs with shared @dorkos/eslint-config
 - Extract AgentRuntime interface and RuntimeRegistry abstraction
 - Replace text branding with DorkOS logo linking to dorkos.ai
 - Update guides for renamed MCP tools, new relay tools, and discovery entity

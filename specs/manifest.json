@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 99,
+  "nextNumber": 100,
   "specs": [
     {
       "number": 1,
@@ -685,6 +685,13 @@
       "number": 98,
       "slug": "eslint-per-package-config",
       "title": "ESLint Per-Package Config Refactor",
+      "created": "2026-03-06",
+      "status": "ideation"
+    },
+    {
+      "number": 99,
+      "slug": "agent-runtime-review-remediation",
+      "title": "Agent Runtime Abstraction \u2014 Review Remediation",
       "created": "2026-03-06",
       "status": "ideation"
     }

@@ -9,6 +9,9 @@
     "./brand": "./src/brand.ts",
     "./logos": "./src/logos.tsx"
   },
+  "scripts": {
+    "lint": "eslint ."
+  },
   "dependencies": {
     "lucide-react": "latest"
   },
@@ -16,6 +19,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/react": "^19.0.0"
   }

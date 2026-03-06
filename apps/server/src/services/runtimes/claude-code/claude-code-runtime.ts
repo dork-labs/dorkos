@@ -35,7 +35,7 @@ import { SessionLockManager } from './session-lock.js';
 import { createCanUseTool } from './interactive-handlers.js';
 import { type AgentSession, createToolState } from './agent-types.js';
 import { mapSdkMessage } from './sdk-event-mapper.js';
-import { makeUserPrompt, resolveClaudeCliPath } from '../../../lib/sdk-utils.js';
+import { makeUserPrompt, resolveClaudeCliPath } from './sdk-utils.js';
 import { buildSystemPromptAppend } from './context-builder.js';
 import { resolveToolConfig, buildAllowedTools } from './tool-filter.js';
 import { validateBoundary } from '../../../lib/boundary.js';

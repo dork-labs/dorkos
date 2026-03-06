@@ -1,21 +1,30 @@
 {
   "version": 1,
-  "nextNumber": 88,
+  "nextNumber": 90,
   "decisions": [
     {
-      "number": 84,
-      "slug": "pending-buffer-for-late-relay-subscribers",
-      "title": "Pending Buffer with TTL for Late Relay Subscribers",
+      "number": 89,
+      "slug": "sdk-import-confinement-via-lint-rule",
+      "title": "Confine SDK Imports to Runtime Implementation via Lint Rule",
       "status": "draft",
       "created": "2026-03-06",
-      "extractedFrom": "fix-relay-sse-delivery-pipeline",
-      "specSlug": "fix-relay-sse-delivery-pipeline"
+      "extractedFrom": "eslint-per-package-config",
+      "specSlug": "eslint-per-package-config"
+    },
+    {
+      "number": 88,
+      "slug": "per-package-eslint-config-with-shared-package",
+      "title": "Per-Package ESLint Config with Shared Config Package",
+      "status": "draft",
+      "created": "2026-03-06",
+      "extractedFrom": "eslint-per-package-config",
+      "specSlug": "eslint-per-package-config"
     },
     {
       "number": 83,
       "slug": "subscribe-first-sse-handshake",
       "title": "Subscribe-First SSE Handshake for Relay Delivery",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-06",
       "extractedFrom": "fix-relay-sse-delivery-pipeline",
       "specSlug": "fix-relay-sse-delivery-pipeline"
@@ -24,34 +33,16 @@
       "number": 82,
       "slug": "unify-discovery-scanners",
       "title": "Unify Discovery Scanners into Single Implementation",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-06",
       "extractedFrom": "unify-discovery-system",
       "specSlug": "unify-discovery-system"
     },
     {
-      "number": 79,
-      "slug": "derive-endpoint-type-from-subject-prefix",
-      "title": "Derive Endpoint Type from Subject Prefix at List Time",
-      "status": "draft",
-      "created": "2026-03-05",
-      "extractedFrom": "relay-inbox-lifecycle",
-      "specSlug": "relay-inbox-lifecycle"
-    },
-    {
-      "number": 80,
-      "slug": "periodic-sweeper-for-dispatch-inbox-ttl",
-      "title": "Use Periodic Sweeper for Dispatch Inbox TTL Management",
-      "status": "draft",
-      "created": "2026-03-05",
-      "extractedFrom": "relay-inbox-lifecycle",
-      "specSlug": "relay-inbox-lifecycle"
-    },
-    {
       "number": 81,
       "slug": "in-process-progress-aggregation-for-relay-query",
       "title": "Use In-Process Progress Aggregation for relay_query (MCP Single-Response Constraint)",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-05",
       "extractedFrom": "relay-inbox-lifecycle",
       "specSlug": "relay-inbox-lifecycle"
@@ -60,16 +51,7 @@
       "number": 77,
       "slug": "relay-dispatch-fire-and-poll-for-long-running-tasks",
       "title": "relay_dispatch Fire-and-Poll Pattern for Long-Running Agent Tasks",
-      "status": "draft",
-      "created": "2026-03-05",
-      "extractedFrom": "relay-async-query",
-      "specSlug": "relay-async-query"
-    },
-    {
-      "number": 78,
-      "slug": "cca-dispatch-streaming-gated-on-inbox-prefix",
-      "title": "CCA Dispatch Streaming Gated on relay.inbox.dispatch.* Prefix",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-05",
       "extractedFrom": "relay-async-query",
       "specSlug": "relay-async-query"
@@ -673,28 +655,10 @@
       "specSlug": "agent-tools-elevation"
     },
     {
-      "number": 73,
-      "slug": "split-relay-init-for-mesh-dependency-ordering",
-      "title": "Split Relay Initialization for meshCore Dependency Ordering",
-      "status": "draft",
-      "created": "2026-03-04",
-      "extractedFrom": "fix-relay-agent-routing-cwd",
-      "specSlug": "fix-relay-agent-routing-cwd"
-    },
-    {
-      "number": 74,
-      "slug": "persistent-agent-session-mapping-json-file",
-      "title": "Persist Agent Session Mapping in JSON File for Cross-Restart Continuity",
-      "status": "draft",
-      "created": "2026-03-04",
-      "extractedFrom": "fix-relay-agent-routing-cwd",
-      "specSlug": "fix-relay-agent-routing-cwd"
-    },
-    {
       "number": 75,
       "slug": "promise-chain-queue-for-cca-concurrency",
       "title": "Use Per-AgentId Promise Chain Queue for CCA Concurrency Serialization",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-04",
       "extractedFrom": "fix-relay-agent-routing-cwd",
       "specSlug": "fix-relay-agent-routing-cwd"
@@ -703,7 +667,7 @@
       "number": 76,
       "slug": "mesh-ulid-vs-sdk-uuid-dual-id-traceability",
       "title": "Separate Mesh Agent ULID (Routing) from SDK Session UUID (Conversation) with Dual-ID Traceability",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-04",
       "extractedFrom": "fix-relay-agent-routing-cwd",
       "specSlug": "fix-relay-agent-routing-cwd"
@@ -712,7 +676,7 @@
       "number": 85,
       "slug": "agent-runtime-interface-as-universal-abstraction",
       "title": "Use AgentRuntime Interface as Universal Abstraction",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-06",
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction"
@@ -721,7 +685,7 @@
       "number": 86,
       "slug": "multi-runtime-registry-keyed-by-type",
       "title": "Multi-Runtime Registry Keyed by Type",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-06",
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction"
@@ -730,7 +694,7 @@
       "number": 87,
       "slug": "runtime-owns-session-storage",
       "title": "Runtime Owns Session Storage",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-06",
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction"
