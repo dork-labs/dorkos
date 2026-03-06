@@ -18,7 +18,7 @@ import { getMeshTools } from './mesh-tools.js';
 export type { McpToolDeps } from './types.js';
 export { handlePing, handleGetServerInfo, createGetSessionCountHandler, createGetCurrentAgentHandler } from './core-tools.js';
 export { createListSchedulesHandler, createCreateScheduleHandler, createUpdateScheduleHandler, createDeleteScheduleHandler, createGetRunHistoryHandler } from './pulse-tools.js';
-export { createRelaySendHandler, createRelayInboxHandler, createRelayListEndpointsHandler, createRelayRegisterEndpointHandler, createRelayDispatchHandler, createRelayUnregisterEndpointHandler } from './relay-tools.js';
+export { createRelaySendHandler, createRelayInboxHandler, createRelayListEndpointsHandler, createRelayRegisterEndpointHandler, createRelayQueryHandler, createRelayDispatchHandler, createRelayUnregisterEndpointHandler } from './relay-tools.js';
 export { createRelayListAdaptersHandler, createRelayEnableAdapterHandler, createRelayDisableAdapterHandler, createRelayReloadAdaptersHandler } from './adapter-tools.js';
 export { createBindingListHandler, createBindingCreateHandler, createBindingDeleteHandler } from './binding-tools.js';
 export { createRelayGetTraceHandler, createRelayGetMetricsHandler } from './trace-tools.js';

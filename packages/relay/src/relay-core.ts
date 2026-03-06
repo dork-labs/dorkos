@@ -37,6 +37,7 @@ import { AdapterDelivery } from './adapter-delivery.js';
 import { WatcherManager } from './watcher-manager.js';
 import type { RelayEnvelope, Signal } from '@dorkos/shared/relay-schemas';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
+import { inferEndpointType } from './types.js';
 import type {
   RateLimitConfig,
   BackpressureConfig,
@@ -151,6 +152,9 @@ export class RelayCore {
   private backpressureConfig: BackpressureConfig;
   private readonly configPath: string;
   private configWatcher: FSWatcher | null = null;
+  private readonly dispatchInboxTtlMs: number;
+  private readonly ttlSweepIntervalMs: number;
+  private ttlSweepInterval?: ReturnType<typeof setInterval>;
   private closed = false;
   private readonly adapterRegistry?: AdapterRegistryLike;
   private readonly traceStore?: TraceStoreLike;
@@ -232,6 +236,10 @@ export class RelayCore {
     this.configPath = path.join(dataDir, 'config.json');
     this.loadReliabilityConfig();
     this.startConfigWatcher();
+
+    this.dispatchInboxTtlMs = options?.dispatchInboxTtlMs ?? 30 * 60 * 1000;
+    this.ttlSweepIntervalMs = options?.ttlSweepIntervalMs ?? 5 * 60 * 1000;
+    this.startTtlSweeper();
 
     // Wire optional trace store for delivery span recording
     if (options?.traceStore) {
@@ -517,6 +525,11 @@ export class RelayCore {
     return this.endpointRegistry.listEndpoints();
   }
 
+  /** Returns the configured dispatch inbox TTL in milliseconds. */
+  getDispatchInboxTtlMs(): number {
+    return this.dispatchInboxTtlMs;
+  }
+
   /**
    * Get a single message from the index by ID.
    *
@@ -672,6 +685,12 @@ export class RelayCore {
     if (this.closed) return;
     this.closed = true;
 
+    // Stop TTL sweeper first to prevent sweep races during shutdown
+    if (this.ttlSweepInterval) {
+      clearInterval(this.ttlSweepInterval);
+      this.ttlSweepInterval = undefined;
+    }
+
     // Clear all subscriptions to prevent leaked handlers
     this.subscriptionRegistry.clear();
 
@@ -716,6 +735,32 @@ export class RelayCore {
   private findMatchingEndpoints(subject: string): EndpointInfo[] {
     const endpoints = this.endpointRegistry.listEndpoints();
     return endpoints.filter((ep) => matchesPattern(ep.subject, subject));
+  }
+
+  /**
+   * Start the periodic TTL sweeper for dispatch inboxes.
+   *
+   * Runs every `ttlSweepIntervalMs`. Checks all registered endpoints;
+   * unregisters dispatch inboxes older than `dispatchInboxTtlMs`.
+   * Uses `.unref()` so the timer does not prevent process exit.
+   *
+   * Race safety: `unregisterEndpoint()` returns `false` gracefully for
+   * already-removed endpoints (e.g., caller cleaned up between sweeps).
+   */
+  private startTtlSweeper(): void {
+    this.ttlSweepInterval = setInterval(async () => {
+      const now = Date.now();
+      for (const endpoint of this.endpointRegistry.listEndpoints()) {
+        if (inferEndpointType(endpoint.subject) === 'dispatch') {
+          const age = now - new Date(endpoint.registeredAt).getTime();
+          if (age > this.dispatchInboxTtlMs) {
+            await this.unregisterEndpoint(endpoint.subject).catch(() => undefined);
+          }
+        }
+      }
+    }, this.ttlSweepIntervalMs);
+    // Don't prevent process exit if close() is not called
+    this.ttlSweepInterval.unref();
   }
 
   /**

@@ -419,14 +419,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    // Distinguish dispatch inboxes (relay.inbox.dispatch.*) from query inboxes
-    // (relay.inbox.query.*) and other relay.inbox.* addresses.
-    // - Dispatch inboxes receive incremental progress events + final agent_result
-    // - Query inboxes receive a single aggregated agent_result (backward compat)
-    // - Other addresses (relay.human.console.*, relay.agent.*) stream raw events
-    const isDispatchInbox = envelope.replyTo?.startsWith('relay.inbox.dispatch.');
-    // Non-dispatch inbox replyTo (relay.inbox.query.* etc.) → existing aggregated behavior
-    const isQueryInbox = envelope.replyTo?.startsWith('relay.inbox.') && !isDispatchInbox;
+    // All relay.inbox.* replyTos (dispatch, query, persistent) receive full streaming:
+    // incremental progress events + final agent_result.
+    // relay_query accumulates progress internally and presents a single MCP response.
+    // Other addresses (relay.human.console.*, relay.agent.*) receive raw event streaming.
+    const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
 
     try {
       const eventStream = this.deps.agentManager.sendMessage(ccaSessionKey, prompt, {
@@ -442,50 +439,37 @@ export class ClaudeCodeAdapter implements RelayAdapter {
         eventCount++;
 
         if (envelope.replyTo && this.relay) {
-          if (isDispatchInbox) {
-            // Accumulate text deltas into buffer
+          if (isInboxReplyTo) {
+            // All relay.inbox.* — same progress streaming as dispatch (formerly dispatch-only)
             if (event.type === 'text_delta') {
               const data = event.data as { text: string };
               messageBuffer += data.text;
               collectedText += data.text;
             }
-            // tool_call_start signals end of prior text block — flush buffer as progress
             if (event.type === 'tool_call_start' && messageBuffer) {
               stepCounter++;
               await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
               messageBuffer = '';
             }
-            // tool_result events publish a progress step
             if (event.type === 'tool_result') {
               stepCounter++;
               const data = event.data as { content?: string; tool_use_id?: string };
               const text = typeof data.content === 'string' ? data.content : JSON.stringify(data);
               await this.publishDispatchProgress(envelope, stepCounter, 'tool_result', text, ccaSessionKey);
             }
-          } else if (isQueryInbox) {
-            // Existing aggregated behavior: collect text_delta only for single agent_result
-            if (event.type === 'text_delta') {
-              const data = event.data as { text: string };
-              collectedText += data.text;
-            }
           } else {
-            // Existing behavior: stream raw events (relay.agent.*, relay.human.*)
+            // relay.agent.*, relay.human.* — existing raw event streaming (unchanged)
             await this.publishResponse(envelope, event, ccaSessionKey);
           }
         }
       }
 
-      // Dispatch inbox: flush remaining text buffer, then publish final agent_result
-      if (isDispatchInbox && envelope.replyTo && this.relay) {
+      // After loop — flush and publish final result for all relay.inbox.* replyTos
+      if (isInboxReplyTo && envelope.replyTo && this.relay) {
         if (messageBuffer) {
           stepCounter++;
           await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
         }
-        await this.publishAgentResult(envelope, collectedText, ccaSessionKey);
-      }
-
-      // Query inbox: publish single aggregated result (existing behavior unchanged)
-      if (isQueryInbox && envelope.replyTo && this.relay && collectedText) {
         await this.publishAgentResult(envelope, collectedText, ccaSessionKey);
       }
 

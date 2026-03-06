@@ -1,8 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import type { RelayProgressPayload } from '@dorkos/shared/relay-schemas';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
+
+/**
+ * Derive the logical type of a Relay endpoint from its subject prefix.
+ *
+ * Mirrors the prefix-matching convention used in RelayCore and ClaudeCodeAdapter.
+ * Inlined here to avoid a runtime dependency on the @dorkos/relay dist output.
+ */
+function inferEndpointType(subject: string): 'dispatch' | 'query' | 'persistent' | 'agent' | 'unknown' {
+  if (subject.startsWith('relay.inbox.dispatch.')) return 'dispatch';
+  if (subject.startsWith('relay.inbox.query.'))    return 'query';
+  if (subject.startsWith('relay.inbox.'))           return 'persistent';
+  if (subject.startsWith('relay.agent.'))           return 'agent';
+  return 'unknown';
+}
 
 /** Guard that returns an error response when Relay is disabled. */
 function requireRelay(deps: McpToolDeps) {
@@ -83,8 +98,18 @@ export function createRelayListEndpointsHandler(deps: McpToolDeps) {
   return async () => {
     const err = requireRelay(deps);
     if (err) return err;
-    const endpoints = deps.relayCore!.listEndpoints();
-    return jsonContent({ endpoints, count: endpoints.length });
+    const relay = deps.relayCore!;
+    const endpoints = relay.listEndpoints();
+    const dispatchTtlMs = relay.getDispatchInboxTtlMs();
+    const typed = endpoints.map((ep) => {
+      const type = inferEndpointType(ep.subject);
+      const expiresAt =
+        type === 'dispatch'
+          ? new Date(new Date(ep.registeredAt).getTime() + dispatchTtlMs).toISOString()
+          : null;
+      return { ...ep, type, expiresAt };
+    });
+    return jsonContent({ endpoints: typed, count: typed.length });
   };
 }
 
@@ -156,30 +181,50 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
       }
 
       const timeoutMs = args.timeout_ms ?? 60_000;
-      const reply = await new Promise<{ payload: unknown; from: string; id: string }>(
-        (resolve, reject) => {
-          // `cleanup` is initialised before subscribe() so the timeout handler
-          // can call it even if the timer fires during event-loop reentry.
-          let cleanup: () => void = () => {};
+      const progressEvents: RelayProgressPayload[] = [];
 
-          const timer = setTimeout(() => {
-            cleanup();
-            reject(new Error(`relay_query timed out after ${timeoutMs}ms (sent ${sentMessageId})`));
-          }, timeoutMs);
+      const reply = await new Promise<{
+        payload: unknown;
+        progress: RelayProgressPayload[];
+        from: string;
+        id: string;
+      }>((resolve, reject) => {
+        // `cleanup` is initialised before subscribe() so the timeout handler
+        // can call it even if the timer fires during event-loop reentry.
+        let cleanup: () => void = () => {};
 
-          const unsub = relay.subscribe(inboxSubject, (envelope) => {
-            cleanup();
-            resolve({ payload: envelope.payload, from: envelope.from, id: envelope.id });
-          });
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error(`relay_query timed out after ${timeoutMs}ms (sent ${sentMessageId})`));
+        }, timeoutMs);
 
-          cleanup = () => {
-            clearTimeout(timer);
-            unsub();
-          };
-        },
-      );
+        const unsub = relay.subscribe(inboxSubject, (envelope) => {
+          const payload = envelope.payload as Record<string, unknown>;
 
-      return jsonContent({ reply: reply.payload, from: reply.from, replyMessageId: reply.id, sentMessageId });
+          // Accumulate progress events (type:progress, done:false) without resolving
+          if (payload?.type === 'progress' && payload?.done === false) {
+            progressEvents.push(payload as RelayProgressPayload);
+            return;
+          }
+
+          // Any final message (agent_result with done:true, or plain payload for non-CCA compat)
+          cleanup();
+          resolve({ payload, progress: progressEvents, from: envelope.from, id: envelope.id });
+        });
+
+        cleanup = () => {
+          clearTimeout(timer);
+          unsub();
+        };
+      });
+
+      return jsonContent({
+        reply: reply.payload,
+        progress: reply.progress,
+        from: reply.from,
+        replyMessageId: reply.id,
+        sentMessageId,
+      });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Query failed';
       const code = message.includes('timed out')
@@ -320,7 +365,9 @@ export function getRelayTools(deps: McpToolDeps) {
     ),
     tool(
       'relay_list_endpoints',
-      'List all registered Relay endpoints.',
+      'List all registered Relay endpoints. Each endpoint includes subject, hash, maildirPath, ' +
+      'registeredAt, type (\'dispatch\'|\'query\'|\'persistent\'|\'agent\'|\'unknown\'), and expiresAt ' +
+      '(ISO timestamp for dispatch endpoints indicating 30-min TTL expiry; null for others).',
       {},
       createRelayListEndpointsHandler(deps)
     ),
@@ -335,7 +382,11 @@ export function getRelayTools(deps: McpToolDeps) {
     ),
     tool(
       'relay_query',
-      'Send a message to an agent and WAIT for the reply in a single call. Preferred over relay_send + relay_inbox polling for request/reply patterns. Internally registers an ephemeral inbox, sends the message with replyTo set, and blocks until the target agent replies or the timeout elapses.',
+      'Send a message to an agent and WAIT for the reply in a single call. Preferred over relay_send + relay_inbox polling for request/reply patterns. Internally registers an ephemeral inbox, sends the message with replyTo set, and blocks until the target agent replies or the timeout elapses. ' +
+      'Response shape: { reply, progress, from, replyMessageId, sentMessageId }. ' +
+      'progress: array of intermediate steps emitted before the final reply (empty [] for quick replies; populated for multi-step CCA tasks). ' +
+      'Each progress step: { type: "progress", step: number, step_type: "message"|"tool_result", text: string, done: false }. ' +
+      'Callers that only use { reply, from, replyMessageId } are unaffected — progress is additive.',
       {
         to_subject: z
           .string()

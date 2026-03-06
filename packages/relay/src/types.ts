@@ -169,6 +169,17 @@ export interface RelayOptions {
    * Called with the subject; returns enriched context (e.g., Mesh agent info) or undefined.
    */
   adapterContextBuilder?: (subject: string) => AdapterContext | undefined;
+  /**
+   * TTL for dispatch inboxes in milliseconds.
+   * Dispatch inboxes older than this are swept automatically.
+   * Default: 30 * 60 * 1000 (30 minutes)
+   */
+  dispatchInboxTtlMs?: number;
+  /**
+   * Interval between TTL sweep runs in milliseconds.
+   * Default: 5 * 60 * 1000 (5 minutes)
+   */
+  ttlSweepIntervalMs?: number;
 }
 
 export interface PublishOptions {
@@ -363,4 +374,23 @@ export interface DeliveryResult {
   responseMessageId?: string;
   /** Delivery duration in milliseconds */
   durationMs?: number;
+}
+
+/** Categorization of a Relay endpoint by subject prefix. */
+export type EndpointType = 'dispatch' | 'query' | 'persistent' | 'agent' | 'unknown';
+
+/**
+ * Derive the logical type of a Relay endpoint from its subject prefix.
+ *
+ * Mirrors the prefix-matching convention used in ClaudeCodeAdapter and
+ * throughout the subject hierarchy. Zero schema change — type is never stored.
+ *
+ * @param subject - The endpoint's full subject string
+ */
+export function inferEndpointType(subject: string): EndpointType {
+  if (subject.startsWith('relay.inbox.dispatch.')) return 'dispatch';
+  if (subject.startsWith('relay.inbox.query.'))    return 'query';
+  if (subject.startsWith('relay.inbox.'))           return 'persistent';
+  if (subject.startsWith('relay.agent.'))           return 'agent';
+  return 'unknown';
 }

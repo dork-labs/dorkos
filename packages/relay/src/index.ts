@@ -81,6 +81,10 @@ export type {
   ReliabilityConfig,
 } from './types.js';
 
+// Endpoint type inference
+export { inferEndpointType } from './types.js';
+export type { EndpointType } from './types.js';
+
 // Adapter types
 export type {
   RelayPublisher,

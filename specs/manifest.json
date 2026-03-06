@@ -638,7 +638,21 @@
       "title": "Relay Async Dispatch + CCA Streaming Progress",
       "created": "2026-03-04",
       "status": "draft"
+    },
+    {
+      "number": 92,
+      "slug": "relay-inbox-lifecycle",
+      "title": "Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_query Streaming",
+      "created": "2026-03-05",
+      "status": "ideation"
+    },
+    {
+      "number": 93,
+      "slug": "chat-streaming-session-reliability",
+      "title": "Chat Streaming & Session Reliability Fixes",
+      "created": "2026-03-05",
+      "status": "draft"
     }
   ],
-  "nextNumber": 92
+  "nextNumber": 94
 }

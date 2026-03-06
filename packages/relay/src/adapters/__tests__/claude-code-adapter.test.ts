@@ -384,7 +384,7 @@ describe('ClaudeCodeAdapter', () => {
   // === Inbox replyTo path ===
 
   describe('inbox replyTo path', () => {
-    it('publishes one aggregated agent_result to relay.inbox.* — not raw stream events', async () => {
+    it('publishes progress events + final agent_result to relay.inbox.* — unified streaming', async () => {
       vi.mocked(agentManager.sendMessage).mockReturnValue(
         (async function* () {
           yield { type: 'text_delta', data: { text: 'Hello' } } as StreamEvent;
@@ -399,11 +399,16 @@ describe('ClaudeCodeAdapter', () => {
       await adapter.deliver(envelope.subject, envelope);
 
       const calls = vi.mocked(relay.publish).mock.calls;
-      expect(calls).toHaveLength(1);
-      expect(calls[0][0]).toBe('relay.inbox.sender');
-      expect(calls[0][1]).toMatchObject({ type: 'agent_result', text: 'Hello world' });
+      // Text-only stream: post-loop flushes buffer as progress (1) + agent_result (1) = 2 calls
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+      expect(calls.every(([subject]) => subject === 'relay.inbox.sender')).toBe(true);
 
-      // No text_delta payloads published
+      // Final publish must be the agent_result with full accumulated text
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[0]).toBe('relay.inbox.sender');
+      expect(lastCall[1]).toMatchObject({ type: 'agent_result', text: 'Hello world' });
+
+      // No raw text_delta payloads published (progress uses dispatch_progress type)
       const hasTextDelta = calls.some(
         ([, payload]) => (payload as Record<string, unknown>).type === 'text_delta',
       );

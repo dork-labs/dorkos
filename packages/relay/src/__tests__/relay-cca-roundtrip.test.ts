@@ -180,7 +180,7 @@ describe('relay → CCA round-trip', () => {
     );
   });
 
-  it('publishes single agent_result to relay.inbox.* replyTo — not individual StreamEvents', async () => {
+  it('publishes progress events + final agent_result to relay.inbox.* replyTo — unified streaming', async () => {
     await relay.registerEndpoint('relay.inbox.sender-session');
 
     const receivedPayloads: unknown[] = [];
@@ -199,16 +199,17 @@ describe('relay → CCA round-trip', () => {
     // AgentManager called exactly once — no loop from inbox replyTo
     expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
 
-    // Inbox receives exactly one aggregated result, not individual stream events
-    expect(receivedPayloads).toHaveLength(1);
-    expect(receivedPayloads[0]).toMatchObject({ type: 'agent_result', text: 'Deus' });
+    // Inbox receives progress events + final agent_result (unified streaming for all relay.inbox.*)
+    expect(receivedPayloads.length).toBeGreaterThanOrEqual(1);
+    const lastPayload = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
+    expect(lastPayload).toMatchObject({ type: 'agent_result', text: 'Deus' });
 
-    // No raw streaming events published to the inbox
-    const hasStreamEvents = receivedPayloads.some(
+    // No raw stream events (text_delta, done) published to the inbox
+    const hasRawStreamEvents = receivedPayloads.some(
       (p) => (p as Record<string, unknown>).type === 'text_delta' ||
                (p as Record<string, unknown>).type === 'done',
     );
-    expect(hasStreamEvents).toBe(false);
+    expect(hasRawStreamEvents).toBe(false);
   });
 
   it('publishes multiple progress events followed by agent_result for relay.inbox.dispatch.* replyTo', async () => {
@@ -259,10 +260,9 @@ describe('relay → CCA round-trip', () => {
     });
   });
 
-  it('still publishes single agent_result for relay.inbox.query.* replyTo (backward compat)', async () => {
-    // Purpose: regression guard — relay_query inbox behavior must not change.
-    // relay_query subscribes via EventEmitter and resolves on the FIRST message;
-    // streaming would break it.
+  it('publishes progress events + agent_result for relay.inbox.query.* replyTo (unified streaming)', async () => {
+    // Purpose: verify relay.inbox.query.* now uses the same unified streaming as dispatch.
+    // All relay.inbox.* addresses receive incremental progress events + final agent_result.
     await relay.registerEndpoint('relay.inbox.query.existing-test');
 
     const receivedPayloads: unknown[] = [];
@@ -286,13 +286,17 @@ describe('relay → CCA round-trip', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    // Still exactly one message, still agent_result, still no progress events
-    expect(receivedPayloads).toHaveLength(1);
-    expect(receivedPayloads[0]).toMatchObject({ type: 'agent_result' });
-    const hasProgress = receivedPayloads.some(
-      (p) => (p as Record<string, unknown>).type === 'progress',
+    // Receives progress events + final agent_result (unified streaming for all relay.inbox.*)
+    expect(receivedPayloads.length).toBeGreaterThanOrEqual(1);
+    const lastPayload = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
+    expect(lastPayload).toMatchObject({ type: 'agent_result' });
+
+    // No raw stream events (text_delta, done) published to the query inbox
+    const hasRawStreamEvents = receivedPayloads.some(
+      (p) => (p as Record<string, unknown>).type === 'text_delta' ||
+               (p as Record<string, unknown>).type === 'done',
     );
-    expect(hasProgress).toBe(false);
+    expect(hasRawStreamEvents).toBe(false);
   });
 
   it('step_type field is "message" for text completions and "tool_result" for tool events', async () => {
@@ -331,5 +335,61 @@ describe('relay → CCA round-trip', () => {
 
     expect(messageSteps.length).toBeGreaterThan(0);
     expect(toolSteps.length).toBeGreaterThan(0);
+  });
+
+  it('TTL sweeper unregisters dispatch inboxes after configured TTL', async () => {
+    // Purpose: guard against TTL sweeper regression — dispatch inboxes must auto-expire.
+    // Uses real timers with a very short TTL to avoid chokidar/fake-timer conflicts.
+    const shortRelay = new RelayCore({
+      dataDir: path.join(tmpDir, 'ttl-test'),
+      dispatchInboxTtlMs: 10,      // 10ms TTL
+      ttlSweepIntervalMs: 5,       // 5ms sweep
+      adapterRegistry: new SingleAdapterRegistry(cca),
+    });
+
+    await shortRelay.registerEndpoint('relay.inbox.dispatch.ttl-test-uuid');
+    expect(shortRelay.listEndpoints()).toHaveLength(1);
+
+    // Wait for TTL (10ms) + two sweep intervals (10ms) + buffer — well under 100ms
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(shortRelay.listEndpoints()).toHaveLength(0);
+
+    await shortRelay.close();
+  });
+
+  it('relay_query resolves with populated progress array for CCA progress streaming', async () => {
+    // Purpose: end-to-end guard for relay_query Phase 3 enhancement.
+    // relay_query must accumulate progress events from query inbox and return them
+    // in the response, not prematurely resolve on the first progress event.
+
+    // This test validates the subscribe-level behavior by using RelayCore directly.
+    // Register a query inbox and simulate the message flow that relay_query uses.
+    const inboxSubject = 'relay.inbox.query.e2e-test';
+    await relay.registerEndpoint(inboxSubject);
+
+    const progressEvents: unknown[] = [];
+    let finalPayload: unknown;
+
+    relay.subscribe(inboxSubject, (envelope) => {
+      const payload = envelope.payload as Record<string, unknown>;
+      if (payload?.type === 'progress' && payload?.done === false) {
+        progressEvents.push(payload);
+      } else {
+        finalPayload = payload;
+      }
+    });
+
+    // Simulate CCA publishing: 2 progress events + final agent_result
+    await relay.publish(inboxSubject, { type: 'progress', step: 1, step_type: 'message', text: 'step1', done: false }, { from: 'relay.agent.cca' });
+    await relay.publish(inboxSubject, { type: 'progress', step: 2, step_type: 'tool_result', text: 'tool output', done: false }, { from: 'relay.agent.cca' });
+    await relay.publish(inboxSubject, { type: 'agent_result', text: 'Final answer', done: true }, { from: 'relay.agent.cca' });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(progressEvents).toHaveLength(2);
+    expect(finalPayload).toMatchObject({ type: 'agent_result', done: true });
+
+    await relay.unregisterEndpoint(inboxSubject);
   });
 });

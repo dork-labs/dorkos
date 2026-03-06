@@ -16,7 +16,7 @@ DorkOS Relay is a pub/sub message bus for inter-agent communication.
 Subject hierarchy:
   relay.agent.{agentId}                — activate a specific agent session
   relay.inbox.query.{UUID}             — ephemeral inbox for relay_query (auto-managed)
-  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_dispatch (caller-managed)
+  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_dispatch (auto-expires after ~35 min)
   relay.inbox.{agentId}                — persistent agent reply inbox
   relay.human.console.{clientId}       — reach a human in the DorkOS UI
   relay.system.console                 — system broadcast channel
@@ -26,7 +26,8 @@ Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
 1. mesh_list() to find available agents and their agent IDs
 2. relay_query(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
    → Blocks until reply (max 10 min / 600 000 ms)
-   → Returns: { reply, from, replyMessageId, sentMessageId }
+   → Returns: { reply, from, replyMessageId, sentMessageId, progress: ProgressEvent[] }
+   → progress[] contains intermediate steps: { type: "progress", step, step_type, text, done: false }
 
 Workflow: Dispatch to another agent — LONG tasks (>10 min)
 1. relay_dispatch(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
@@ -55,6 +56,9 @@ inherit the parent MCP server). The orchestrator pattern workaround:
 IMPORTANT: When YOU receive a relay message, respond naturally — do NOT call relay_send.
 Your response is automatically forwarded by the relay system.
 Only call relay_send/relay_query/relay_dispatch to INITIATE a new message.
+
+relay_list_endpoints returns type ("dispatch"|"query"|"persistent"|"agent"|"unknown") and expiresAt
+(ISO string or null) for each endpoint. Use these to identify active inboxes and their expiry.
 
 Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND,
              TIMEOUT, QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED

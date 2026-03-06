@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "nextNumber": 79,
+  "nextNumber": 82,
   "decisions": [
+    {
+      "number": 79,
+      "slug": "derive-endpoint-type-from-subject-prefix",
+      "title": "Derive Endpoint Type from Subject Prefix at List Time",
+      "status": "draft",
+      "created": "2026-03-05",
+      "extractedFrom": "relay-inbox-lifecycle",
+      "specSlug": "relay-inbox-lifecycle"
+    },
+    {
+      "number": 80,
+      "slug": "periodic-sweeper-for-dispatch-inbox-ttl",
+      "title": "Use Periodic Sweeper for Dispatch Inbox TTL Management",
+      "status": "draft",
+      "created": "2026-03-05",
+      "extractedFrom": "relay-inbox-lifecycle",
+      "specSlug": "relay-inbox-lifecycle"
+    },
+    {
+      "number": 81,
+      "slug": "in-process-progress-aggregation-for-relay-query",
+      "title": "Use In-Process Progress Aggregation for relay_query (MCP Single-Response Constraint)",
+      "status": "draft",
+      "created": "2026-03-05",
+      "extractedFrom": "relay-inbox-lifecycle",
+      "specSlug": "relay-inbox-lifecycle"
+    },
     {
       "number": 77,
       "slug": "relay-dispatch-fire-and-poll-for-long-running-tasks",
