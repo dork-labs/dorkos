@@ -113,7 +113,7 @@ router.get('/:id/tasks', async (req, res) => {
 });
 
 // GET /api/sessions/:id/messages - Get message history from SDK transcript
-router.get('/:id/messages', async (req, res) => {
+router.get('/:id/messages', async (req, res, next) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -123,20 +123,24 @@ router.get('/:id/messages', async (req, res) => {
 
   const cwd = cwdParam || vaultRoot;
 
-  // Translate client-facing session ID to backend-internal session ID
-  const runtime = runtimeRegistry.getDefault();
-  const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  try {
+    // Translate client-facing session ID to backend-internal session ID
+    const runtime = runtimeRegistry.getDefault();
+    const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
 
-  const etag = await runtime.getSessionETag(cwd, internalSessionId);
-  if (etag) {
-    res.setHeader('ETag', etag);
-    if (req.headers['if-none-match'] === etag) {
-      return res.status(304).end();
+    const etag = await runtime.getSessionETag(cwd, internalSessionId);
+    if (etag) {
+      res.setHeader('ETag', etag);
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
     }
-  }
 
-  const messages = await runtime.getMessageHistory(cwd, internalSessionId);
-  res.json({ messages });
+    const messages = await runtime.getMessageHistory(cwd, internalSessionId);
+    res.json({ messages });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // PATCH /api/sessions/:id - Update session settings

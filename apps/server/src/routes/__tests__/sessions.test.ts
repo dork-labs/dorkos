@@ -70,11 +70,12 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 
 // Dynamically import after mocks are set up
 import request from 'supertest';
-import { createApp } from '../../app.js';
+import { createApp, finalizeApp } from '../../app.js';
 import { parseSSEResponse } from '@dorkos/test-utils/sse-helpers';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const app = createApp();
+finalizeApp(app);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const S1 = '00000000-0000-4000-8000-000000000001';
@@ -488,6 +489,17 @@ describe('Sessions Routes', () => {
         expect.any(String),
         'sdk-uuid-123'
       );
+    });
+
+    it('returns 500 when getMessageHistory throws', async () => {
+      mockRuntime.getMessageHistory.mockRejectedValueOnce(new Error('I/O error'));
+
+      const res = await request(app)
+        .get(`/api/sessions/${S1}/messages`)
+        .set('x-client-id', 'test-client');
+
+      expect(res.status).toBe(500);
+      expect(res.body).toHaveProperty('error');
     });
 
     it('GET /messages falls back to URL session ID when not in runtime', async () => {

@@ -208,8 +208,8 @@ export function useChatSession(sessionId: string, options: ChatSessionOptions = 
     }
 
     if (historySeededRef.current && !isStreaming) {
-      const currentMessages = messagesRef.current;
-      const newMessages = history.slice(currentMessages.length);
+      const currentIds = new Set(messagesRef.current.map((m) => m.id));
+      const newMessages = history.filter((m) => !currentIds.has(m.id));
 
       if (newMessages.length > 0) {
         setMessages((prev) => [...prev, ...newMessages.map(mapHistoryMessage)]);

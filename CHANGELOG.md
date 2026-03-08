@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Improve message history retrieval and error handling in session routes
 - Resolve streaming vs history inconsistencies via queueMicrotask and scroll-intent tracking
 - Prevent relay-mode polling storm and tool-call spinner regression
 - Upgrade streamdown to ^2.4.0 to fix inline code truncation
