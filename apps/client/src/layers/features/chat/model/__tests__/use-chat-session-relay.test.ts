@@ -572,4 +572,225 @@ describe('useChatSession relay protocol', () => {
       expect(mockTransport.getSession).not.toHaveBeenCalled();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Bug 1: 503 storm — refetchInterval fires in relay mode (regression)
+  // Root cause: refetchInterval has no `relayEnabled` guard, so it polls
+  // GET /messages every ACTIVE_TAB_REFETCH_MS (3 000 ms) even when Relay SSE
+  // already handles history invalidation via sync_update events.
+  // Fix: add `|| relayEnabled` to the refetchInterval callback.
+  // ---------------------------------------------------------------------------
+  describe('relay mode disables GET /messages polling (Bug 1: 503 storm regression)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('does not re-poll GET /messages every 3 s when relay is enabled', async () => {
+      mockUseRelayEnabled.mockReturnValue(true);
+      vi.mocked(mockTransport.getMessages).mockResolvedValue({ messages: [] });
+
+      renderHook(() => useChatSession('session-1'), {
+        wrapper: createWrapper(mockTransport),
+      });
+
+      // Flush the initial TanStack Query fetch triggered on mount
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const callCountAfterMount = vi.mocked(mockTransport.getMessages).mock.calls.length;
+
+      // Advance past two ACTIVE_TAB_REFETCH_MS intervals (3 000 ms each).
+      // Without the fix, TanStack Query fires two more getMessages calls here.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_100);
+      });
+
+      // In relay mode, polling must stay at the initial call count.
+      // Regression: without the relayEnabled guard, getMessages is called 2 more times.
+      expect(vi.mocked(mockTransport.getMessages).mock.calls.length).toBe(callCountAfterMount);
+    });
+
+    it('still polls GET /messages when relay is disabled', async () => {
+      mockUseRelayEnabled.mockReturnValue(false);
+      vi.mocked(mockTransport.getMessages).mockResolvedValue({ messages: [] });
+
+      renderHook(() => useChatSession('session-1'), {
+        wrapper: createWrapper(mockTransport),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const callCountAfterMount = vi.mocked(mockTransport.getMessages).mock.calls.length;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_100);
+      });
+
+      // Legacy mode: polling IS expected — at least 2 more calls after mount
+      expect(vi.mocked(mockTransport.getMessages).mock.calls.length).toBeGreaterThan(callCountAfterMount);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Bug 2: tool call spinner stuck after streaming completes (regression)
+  // Root cause: in relay mode the relay EventSource emits sync_update during
+  // streaming → invalidateQueries → getMessages refetch → if historySeededRef
+  // is still false (empty session on mount), the first-seed branch fires and
+  // overwrites messages state with history. The history assistant message has a
+  // different id than the streaming assistant message, so subsequent
+  // updateAssistantMessage calls (from tool_call_end) become no-ops.
+  // Result: the history-loaded assistant message retains status 'running'
+  // even after the stream completes.
+  // Fix: guard the sync_update invalidation with isStreamingRef so it doesn't
+  // trigger a state-clobbering refetch mid-stream, OR sweep any remaining
+  // 'running' tool calls to 'complete' in the done handler.
+  // ---------------------------------------------------------------------------
+  describe('tool call spinner regression in relay mode (Bug 2)', () => {
+    /** Wrap a stream event payload in the relay_message envelope format. */
+    function relayEvent(type: string, data: unknown) {
+      return { payload: { type, data } };
+    }
+
+    it('transitions tool call from running to complete after tool_call_end + done (happy path)', async () => {
+      mockUseRelayEnabled.mockReturnValue(true);
+      vi.mocked(mockTransport.sendMessageRelay).mockResolvedValue({
+        messageId: 'msg-1',
+        traceId: 'trace-1',
+      });
+      vi.mocked(mockTransport.getMessages).mockResolvedValue({ messages: [] });
+
+      const { result } = renderHook(() => useChatSession('session-1'), {
+        wrapper: createWrapper(mockTransport),
+      });
+
+      const es = MockEventSource.instances[0];
+      act(() => { es?.emit('stream_ready', {}); });
+      act(() => { result.current.setInput('use TodoWrite'); });
+      await act(async () => { await result.current.handleSubmit(); });
+
+      // Emit tool lifecycle events in order
+      act(() => {
+        es?.emit('relay_message', relayEvent('tool_call_start', {
+          toolCallId: 'tc-todo', toolName: 'TodoWrite', input: '',
+        }));
+      });
+      act(() => {
+        es?.emit('relay_message', relayEvent('tool_call_end', { toolCallId: 'tc-todo' }));
+      });
+      act(() => {
+        es?.emit('relay_message', relayEvent('done', {}));
+      });
+
+      await waitFor(() => expect(result.current.status).toBe('idle'));
+
+      const assistantMsg = result.current.messages.find((m) => m.role === 'assistant');
+      const toolCall = assistantMsg?.toolCalls?.find((tc) => tc.toolCallId === 'tc-todo');
+      expect(toolCall, 'tool call should exist in assistant message').toBeDefined();
+      // Regression guard: tool call must be complete, not running
+      expect(toolCall?.status).toBe('complete');
+    });
+
+    it('tool call stays complete after sync_update races with tool_call_end during streaming (race condition)', async () => {
+      mockUseRelayEnabled.mockReturnValue(true);
+
+      // Assign distinct UUIDs so we can track which message is which:
+      // call 1 → clientIdRef (hook init), call 2 → user message, call 3 → assistantIdRef
+      mockUUID
+        .mockReturnValueOnce('client-id-1')
+        .mockReturnValueOnce('streaming-user-id')
+        .mockReturnValueOnce('streaming-assistant-id');
+
+      vi.mocked(mockTransport.sendMessageRelay).mockResolvedValue({
+        messageId: 'msg-1',
+        traceId: 'trace-1',
+      });
+
+      // Initial mount returns empty → historySeededRef stays false.
+      // After sync_update invalidation: returns stale history with a DIFFERENT
+      // assistant id and the tool call still in 'running' state.
+      // This simulates the JSONL being partially written when sync_update fires.
+      vi.mocked(mockTransport.getMessages)
+        .mockResolvedValueOnce({ messages: [] })
+        .mockResolvedValue({
+          messages: [
+            {
+              id: 'history-user-1',
+              role: 'user' as const,
+              content: 'use TodoWrite',
+              parts: [{ type: 'text' as const, text: 'use TodoWrite' }],
+              timestamp: new Date().toISOString(),
+            },
+            {
+              // Crucially: id differs from 'streaming-assistant-id'
+              id: 'history-assistant-1',
+              role: 'assistant' as const,
+              content: '',
+              parts: [{
+                type: 'tool_call' as const,
+                toolCallId: 'tc-todo',
+                toolName: 'TodoWrite',
+                input: '',
+                status: 'running' as const,
+              }],
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        });
+
+      const { result } = renderHook(() => useChatSession('session-1'), {
+        wrapper: createWrapper(mockTransport),
+      });
+
+      // Wait for initial empty getMessages call to resolve
+      await act(async () => { await Promise.resolve(); });
+
+      const es = MockEventSource.instances[0];
+      act(() => { es?.emit('stream_ready', {}); });
+      act(() => { result.current.setInput('use TodoWrite'); });
+      await act(async () => { await result.current.handleSubmit(); });
+
+      // tool_call_start: streaming assistant message created (id='streaming-assistant-id'),
+      // tool call pushed to currentPartsRef with status 'running'
+      act(() => {
+        es?.emit('relay_message', relayEvent('tool_call_start', {
+          toolCallId: 'tc-todo', toolName: 'TodoWrite', input: '',
+        }));
+      });
+
+      // sync_update fires (relay SSE always active).
+      // With the fix: statusRef.current === 'streaming', so invalidateQueries is
+      // skipped — getMessages is NOT called a second time, and messages state is
+      // NOT overwritten with stale history.
+      act(() => { es?.emit('sync_update', {}); });
+
+      // Verify the fix: sync_update during streaming must NOT trigger a refetch
+      await act(async () => { await Promise.resolve(); });
+      expect(vi.mocked(mockTransport.getMessages)).toHaveBeenCalledTimes(1);
+
+      // tool_call_end: updateAssistantMessage('streaming-assistant-id') correctly
+      // finds and updates the streaming assistant message (state was not overwritten)
+      act(() => {
+        es?.emit('relay_message', relayEvent('tool_call_end', { toolCallId: 'tc-todo' }));
+      });
+      act(() => {
+        es?.emit('relay_message', relayEvent('done', {}));
+      });
+
+      await waitFor(() => expect(result.current.status).toBe('idle'));
+
+      // Tool call must be 'complete' — the streaming update was NOT a no-op
+      // because the fix prevented the history from clobbering streaming state.
+      const assistantMsg = result.current.messages.find((m) => m.role === 'assistant');
+      const toolCall = assistantMsg?.toolCalls?.find((tc) => tc.toolCallId === 'tc-todo');
+      expect(toolCall, 'tool call should exist in the visible assistant message').toBeDefined();
+      expect(toolCall?.status).toBe('complete');
+    });
+  });
 });

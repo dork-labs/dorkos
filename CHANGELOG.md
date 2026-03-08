@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent relay-mode polling storm and tool-call spinner regression
 - Upgrade streamdown to ^2.4.0 to fix inline code truncation
 - Resolve history gaps, SSE session mismatch, and done event loss
 - Export health thresholds to eliminate fragile hardcoded test values

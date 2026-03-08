@@ -182,7 +182,7 @@ export function useChatSession(sessionId: string, options: ChatSessionOptions = 
     staleTime: QUERY_TIMING.MESSAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
     refetchInterval: () => {
-      if (isStreaming) return false;
+      if (isStreaming || relayEnabled) return false;
       return isTabVisible
         ? QUERY_TIMING.ACTIVE_TAB_REFETCH_MS
         : QUERY_TIMING.BACKGROUND_TAB_REFETCH_MS;
@@ -268,6 +268,10 @@ export function useChatSession(sessionId: string, options: ChatSessionOptions = 
     });
 
     eventSource.addEventListener('sync_update', () => {
+      // Don't invalidate during streaming — a mid-stream refetch can overwrite
+      // the optimistic assistant message with a stale history snapshot, causing
+      // tool call status updates to become no-ops (spinner stuck on 'running').
+      if (statusRef.current === 'streaming') return;
       queryClient.invalidateQueries({ queryKey: ['messages', sessionId, selectedCwdRef.current] });
       queryClient.invalidateQueries({ queryKey: ['tasks', sessionId, selectedCwdRef.current] });
     });
