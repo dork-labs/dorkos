@@ -80,13 +80,20 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
       {...(animationProps as Record<string, unknown>)}
       data-testid="session-item"
       className={cn(
-        'group rounded-lg transition-colors duration-150',
+        'group relative rounded-lg transition-colors duration-150',
         isActive
-          ? 'bg-secondary text-foreground border-primary border-l-2'
-          : 'hover:bg-secondary/50 border-l-2 border-transparent'
+          ? 'text-foreground border-primary border-l-2'
+          : 'border-l-2 border-transparent'
       )}
     >
-      <div
+      {isActive && (
+        <motion.div
+          layoutId="active-session-bg"
+          className="absolute inset-0 rounded-lg bg-secondary"
+          transition={{ type: 'spring', stiffness: 280, damping: 32 }}
+        />
+      )}
+      <motion.div
         role="button"
         tabIndex={0}
         onClick={() => {
@@ -98,7 +105,9 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
             onClick();
           }
         }}
-        className="cursor-pointer px-3 py-2"
+        whileTap={{ scale: 0.98 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+        className="relative z-10 cursor-pointer px-3 py-2"
       >
         {/* Line 1: relative time + permission icon + expand */}
         <div className="text-muted-foreground flex items-center gap-1 text-xs">
@@ -132,7 +141,7 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
 
         {/* Line 2: title */}
         <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">{session.title}</div>
-      </div>
+      </motion.div>
 
       <AnimatePresence initial={false}>
         {expanded && (

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, useContext } from 'react';
+import { motion } from 'motion/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore, useIsMobile } from '@/layers/shared/model';
 import { groupSessionsByTime, TIMING } from '@/layers/shared/lib';
@@ -133,6 +134,7 @@ export function SessionSidebar() {
       </SidebarHeader>
 
       <SidebarContent data-testid="session-list">
+        <motion.div layout>
         {groupedSessions.length > 0 ? (
           <>
             {groupedSessions.map((group) => {
@@ -165,6 +167,7 @@ export function SessionSidebar() {
             <p className="text-muted-foreground/60 text-sm">No conversations yet</p>
           </div>
         )}
+        </motion.div>
       </SidebarContent>
 
       <SidebarFooter className="border-t p-3">

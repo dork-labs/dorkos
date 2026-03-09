@@ -222,6 +222,19 @@ Choose the right transition type for the animation feel.
 />
 ```
 
+### Chat Microinteraction Spring Presets
+
+DorkOS uses a small set of named spring presets for chat interactions. Prefer these over ad-hoc values for consistency:
+
+| Use case | Preset | Character |
+|---|---|---|
+| Message entry (new messages) | `{ type: 'spring', stiffness: 320, damping: 28 }` | Snappy, no bounce, settles ~250ms |
+| Sidebar active indicator slide | `{ type: 'spring', stiffness: 280, damping: 32 }` | Smooth, deliberate navigation feel |
+| Tap feedback (buttons, session rows) | `{ type: 'spring', stiffness: 400, damping: 30 }` | Quick response, already used in ToolCallCard chevron |
+| Session crossfade | `{ duration: 0.15, ease: 'easeInOut' }` | Linear opacity — intentional, not spring |
+
+Session crossfade uses duration-based easing rather than spring physics because opacity fades are perceptually linear and a spring would add unnecessary overshoot to a simple visibility transition.
+
 ### LayoutId Selection Indicator
 
 Use for a sliding pill/highlight effect as keyboard focus moves between items in a list. The indicator animates its position between items using Motion's `layoutId` feature.
@@ -258,6 +271,8 @@ Key details:
 - Item content must be `position: relative` with `z-10` to render above the indicator
 - Wrap the list in `<LayoutGroup>` to scope the `layoutId` and prevent conflicts with other layout animations
 - Spring config: `stiffness: 500`, `damping: 40` for a snappy feel
+
+**Session sidebar usage**: The `SessionItem` component uses `layoutId="active-session-bg"` for the active session background. The `SidebarContent` ancestor carries the `layout` prop to enable correct position measurement during list scroll. The spring preset for this indicator is `{ type: 'spring', stiffness: 280, damping: 32 }` (smooth slide, not the snappier button preset).
 - Respects `prefers-reduced-motion` via the existing `<MotionConfig reducedMotion="user">` wrapper in `App.tsx`
 
 ### Stagger on Open (Not on Every Keystroke)

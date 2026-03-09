@@ -69,20 +69,49 @@ describe('SessionItem', () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  it('applies active styling when isActive', () => {
+  it('renders layoutId active background when isActive', () => {
     const { container } = render(
       <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
     );
-    const item = container.firstChild as HTMLElement;
-    expect(item.className).toContain('bg-secondary');
+    // The layoutId motion.div (rendered as plain div by mock) has class bg-secondary
+    const bg = container.querySelector('.bg-secondary');
+    expect(bg).not.toBeNull();
   });
 
-  it('applies hover styling when not active', () => {
+  it('does not render layoutId active background when not active', () => {
     const { container } = render(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
-    const item = container.firstChild as HTMLElement;
-    expect(item.className).toContain('hover:bg-secondary/50');
+    const bg = container.querySelector('.bg-secondary');
+    expect(bg).toBeNull();
+  });
+
+  it('renders layoutId background element when isActive', () => {
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
+    );
+    // The layoutId motion.div renders as a plain div under the mock
+    // It should have the absolute inset-0 bg-secondary classes
+    const bg = container.querySelector('.absolute.inset-0.bg-secondary');
+    expect(bg).not.toBeNull();
+  });
+
+  it('does not render layoutId background element when not active', () => {
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    const bg = container.querySelector('.absolute.inset-0.bg-secondary');
+    expect(bg).toBeNull();
+  });
+
+  it('clickable surface is rendered with relative z-10 classes', () => {
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    const clickable = container.querySelector('[role="button"]');
+    expect(clickable).not.toBeNull();
+    expect(clickable!.className).toContain('relative');
+    expect(clickable!.className).toContain('z-10');
   });
 
   it('shows permission warning for bypassPermissions mode', () => {

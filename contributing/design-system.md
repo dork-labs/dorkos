@@ -160,7 +160,13 @@ Animation should feel like physics, not decoration. Things should move because t
 
 ### Animation Catalog
 
-**Message entrance:** Fade in + slide up 8px, 200ms ease-out. Only animate the _newest_ message; history loads instantly.
+**Message entrance:** Fade in + slide up 8px, spring `stiffness:320 damping:28` (settles ~250ms, no bounce). User messages also scale from 0.97→1. Only animate the _newest_ message; history loads instantly.
+
+**Session switch:** 150ms opacity crossfade via `AnimatePresence mode="wait"`. Total transition 300ms (old exits, then new enters). Duration-based easing, not spring.
+
+**Sidebar active indicator:** `layoutId` sliding background via spring `stiffness:280 damping:32` (smooth, deliberate slide). Animates across sidebar groups.
+
+**Session row tap:** `whileTap` scale to 0.98, spring `stiffness:400 damping:30` (quick press feedback).
 
 **Tool card expand:** Height + opacity transition, 300ms ease-in-out.
 

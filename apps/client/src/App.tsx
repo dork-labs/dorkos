@@ -162,15 +162,25 @@ export function App({ transformContent, embedded }: AppProps = {}) {
               </AnimatePresence>
 
               <main className="h-full flex-1 overflow-hidden">
-                {activeSessionId ? (
-                  <ChatPanel
-                    key={activeSessionId}
-                    sessionId={activeSessionId}
-                    transformContent={transformContent}
-                  />
-                ) : (
-                  <ChatEmptyState />
-                )}
+                <AnimatePresence mode="wait">
+                  {activeSessionId ? (
+                    <motion.div
+                      key={activeSessionId}
+                      className="h-full"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15, ease: 'easeInOut' }}
+                    >
+                      <ChatPanel
+                        sessionId={activeSessionId}
+                        transformContent={transformContent}
+                      />
+                    </motion.div>
+                  ) : (
+                    <ChatEmptyState />
+                  )}
+                </AnimatePresence>
               </main>
             </div>
           </div>
@@ -214,15 +224,25 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                       <SidebarTrigger className="-ml-0.5" />
                     </header>
                     <main className="flex-1 overflow-hidden">
-                      {activeSessionId ? (
-                        <ChatPanel
-                          key={activeSessionId}
-                          sessionId={activeSessionId}
-                          transformContent={transformContent}
-                        />
-                      ) : (
-                        <ChatEmptyState />
-                      )}
+                      <AnimatePresence mode="wait">
+                        {activeSessionId ? (
+                          <motion.div
+                            key={activeSessionId}
+                            className="h-full"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15, ease: 'easeInOut' }}
+                          >
+                            <ChatPanel
+                              sessionId={activeSessionId}
+                              transformContent={transformContent}
+                            />
+                          </motion.div>
+                        ) : (
+                          <ChatEmptyState />
+                        )}
+                      </AnimatePresence>
                     </main>
                   </SidebarInset>
                 </SidebarProvider>

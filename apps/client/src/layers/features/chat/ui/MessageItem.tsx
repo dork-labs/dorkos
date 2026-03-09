@@ -145,9 +145,9 @@ export function MessageItem({
 
   return (
     <motion.div
-      initial={isNew ? { opacity: 0, y: 8 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+      initial={isNew ? { opacity: 0, y: 8, scale: isUser ? 0.97 : 1 } : false}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 28 }}
       data-testid="message-item"
       data-role={message.role}
       className={cn(

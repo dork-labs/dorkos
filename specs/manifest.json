@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 104,
+  "nextNumber": 105,
   "specs": [
     {
       "number": 1,
@@ -722,6 +722,13 @@
       "title": "Fix Relay-Mode SSE Subscriber Race Condition (Ghost Messages)",
       "created": "2026-03-08",
       "status": "specified"
+    },
+    {
+      "number": 104,
+      "slug": "chat-microinteractions-polish",
+      "title": "Chat Microinteractions & Animation Polish",
+      "created": "2026-03-09",
+      "status": "ideation"
     }
   ]
 }

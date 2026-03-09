@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add chat microinteraction polish — spring physics, layoutId, session crossfade
 - Unify discovery scanners and fix onboarding scan root
 - Add endpoint types, dispatch TTL sweeper, and relay_query progress accumulation
 - Add /chat:self-test slash command
