@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Unify page title and favicon system, remove dead code
 - Update MessageItem typography to use font-light for improved readability
 - Tighten chat typography to text-sm (14px)
 - Address 12 agent-runtime code review issues from bc0fe8b

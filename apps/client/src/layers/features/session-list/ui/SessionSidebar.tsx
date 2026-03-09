@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef, useContext } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore, useIsMobile } from '@/layers/shared/model';
-import { groupSessionsByTime, TIMING, updateTabBadge } from '@/layers/shared/lib';
+import { groupSessionsByTime, TIMING } from '@/layers/shared/lib';
 import {
   SidebarContent,
   SidebarContext,
@@ -99,24 +99,12 @@ export function SessionSidebar() {
     prevUnviewedRef.current = unviewedCount;
   }, [unviewedCount, enablePulseNotifications, setPulseOpen]);
 
-  // Tab title badge for background tab awareness
+  // Flow badge count to Zustand so useDocumentTitle can render it
+  const setPulseBadgeCount = useAppStore((s) => s.setPulseBadgeCount);
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden) {
-        updateTabBadge(unviewedCount);
-      } else {
-        updateTabBadge(0);
-      }
-    };
-    if (document.hidden && unviewedCount > 0) {
-      updateTabBadge(unviewedCount);
-    }
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      updateTabBadge(0);
-    };
-  }, [unviewedCount]);
+    setPulseBadgeCount(unviewedCount);
+    return () => setPulseBadgeCount(0);
+  }, [unviewedCount, setPulseBadgeCount]);
 
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
 

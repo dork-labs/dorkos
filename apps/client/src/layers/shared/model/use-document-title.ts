@@ -10,20 +10,41 @@ interface UseDocumentTitleOptions {
   agentName?: string;
   /** Agent emoji override — when provided, replaces CWD-hashed emoji */
   agentEmoji?: string;
+  /** Pulse badge count — shown as (N) prefix when tab is hidden */
+  pulseBadgeCount?: number;
 }
 
-function buildTitle(
-  cwd: string,
-  activeForm: string | null,
-  prefix: string,
-  agentName?: string,
-  agentEmoji?: string
-): string {
+const MAX_ACTIVE_FORM_LENGTH = 40;
+
+interface BuildTitleOpts {
+  cwd: string;
+  activeForm: string | null;
+  prefix: string;
+  agentName?: string;
+  agentEmoji?: string;
+  pulseBadgeCount?: number;
+  isTabHidden?: boolean;
+}
+
+function buildTitle({
+  cwd,
+  activeForm,
+  prefix,
+  agentName,
+  agentEmoji,
+  pulseBadgeCount,
+  isTabHidden,
+}: BuildTitleOpts): string {
+  const badgePrefix =
+    isTabHidden && pulseBadgeCount && pulseBadgeCount > 0 ? `(${pulseBadgeCount}) ` : '';
   const emoji = agentEmoji ?? hashToEmoji(cwd);
   const label = agentName ?? (cwd.split('/').filter(Boolean).pop() ?? cwd);
-  let title = `${prefix}${emoji} ${label}`;
+  let title = `${badgePrefix}${prefix}${emoji} ${label}`;
   if (activeForm) {
-    const truncated = activeForm.length > 40 ? activeForm.slice(0, 40) + '\u2026' : activeForm;
+    const truncated =
+      activeForm.length > MAX_ACTIVE_FORM_LENGTH
+        ? activeForm.slice(0, MAX_ACTIVE_FORM_LENGTH) + '\u2026'
+        : activeForm;
     title += ` \u2014 ${truncated}`;
   }
   title += ' \u2014 DorkOS';
@@ -37,41 +58,41 @@ export function useDocumentTitle({
   isWaitingForUser,
   agentName,
   agentEmoji,
+  pulseBadgeCount,
 }: UseDocumentTitleOptions) {
   const isTabHiddenRef = useRef(document.hidden);
   const hasUnseenResponseRef = useRef(false);
   const wasStreamingRef = useRef(isStreaming);
 
-  // Refs to keep visibility handler in sync with latest prop values
-  const cwdRef = useRef(cwd);
-  const activeFormRef = useRef(activeForm);
-  const isWaitingForUserRef = useRef(isWaitingForUser);
-  const agentNameRef = useRef(agentName);
-  const agentEmojiRef = useRef(agentEmoji);
+  // Single ref to keep visibility handler in sync with latest prop values
+  const optionsRef = useRef({ cwd, activeForm, isWaitingForUser, agentName, agentEmoji, pulseBadgeCount });
   useEffect(() => {
-    cwdRef.current = cwd;
-    activeFormRef.current = activeForm;
-    isWaitingForUserRef.current = isWaitingForUser;
-    agentNameRef.current = agentName;
-    agentEmojiRef.current = agentEmoji;
-  }, [cwd, activeForm, isWaitingForUser, agentName, agentEmoji]);
+    optionsRef.current = { cwd, activeForm, isWaitingForUser, agentName, agentEmoji, pulseBadgeCount };
+  }, [cwd, activeForm, isWaitingForUser, agentName, agentEmoji, pulseBadgeCount]);
 
-  // Track tab visibility and clear 🏁 on return
+  // Track tab visibility and rebuild title on return (clears 🏁 and badge)
   useEffect(() => {
     const handler = () => {
       isTabHiddenRef.current = document.hidden;
-      if (!document.hidden && hasUnseenResponseRef.current) {
-        hasUnseenResponseRef.current = false;
-        // Rebuild title — preserve 🔔 if still waiting
-        if (cwdRef.current) {
-          const prefix = isWaitingForUserRef.current ? '🔔 ' : '';
-          document.title = buildTitle(
-            cwdRef.current,
-            activeFormRef.current,
-            prefix,
-            agentNameRef.current,
-            agentEmojiRef.current
-          );
+      if (!document.hidden) {
+        const opts = optionsRef.current;
+        // Rebuild when returning from hidden: clears (N) badge and/or 🏁 prefix
+        const hadUnseenResponse = hasUnseenResponseRef.current;
+        const hadBadge = (opts.pulseBadgeCount ?? 0) > 0;
+        if (hadUnseenResponse || hadBadge) {
+          hasUnseenResponseRef.current = false;
+          if (opts.cwd) {
+            const prefix = opts.isWaitingForUser ? '🔔 ' : '';
+            document.title = buildTitle({
+              cwd: opts.cwd,
+              activeForm: opts.activeForm,
+              prefix,
+              agentName: opts.agentName,
+              agentEmoji: opts.agentEmoji,
+              pulseBadgeCount: opts.pulseBadgeCount,
+              isTabHidden: false,
+            });
+          }
         }
       }
     };
@@ -102,6 +123,14 @@ export function useDocumentTitle({
       prefix = '🏁 ';
     }
 
-    document.title = buildTitle(cwd, activeForm, prefix, agentName, agentEmoji);
-  }, [cwd, activeForm, isStreaming, isWaitingForUser, agentName, agentEmoji]);
+    document.title = buildTitle({
+      cwd,
+      activeForm,
+      prefix,
+      agentName,
+      agentEmoji,
+      pulseBadgeCount,
+      isTabHidden: isTabHiddenRef.current,
+    });
+  }, [cwd, activeForm, isStreaming, isWaitingForUser, agentName, agentEmoji, pulseBadgeCount]);
 }

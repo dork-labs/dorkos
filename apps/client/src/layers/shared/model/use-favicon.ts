@@ -64,13 +64,17 @@ export function useFavicon({ cwd, isStreaming, color: colorOverride }: UseFavico
 
     // Pre-generate pulse frames; if streaming is active when they resolve, start pulsing
     let cancelled = false;
-    generatePulseFrames(solid).then((frames) => {
-      if (cancelled) return;
-      framesRef.current = frames;
-      if (isStreamingRef.current) {
-        startPulsing();
-      }
-    });
+    generatePulseFrames(solid)
+      .then((frames) => {
+        if (cancelled) return;
+        framesRef.current = frames;
+        if (isStreamingRef.current) {
+          startPulsing();
+        }
+      })
+      .catch(() => {
+        // Static favicon remains as graceful fallback
+      });
 
     return () => {
       cancelled = true;

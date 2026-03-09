@@ -46,6 +46,7 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       recentCwds: [],
       enablePulseNotifications: false,
       pulseOpen: false,
+      setPulseBadgeCount: vi.fn(),
     };
     return selector ? selector(state) : state;
   },
@@ -123,7 +124,6 @@ vi.mock('sonner', () => ({
 
 // Mock favicon-utils
 vi.mock('@/layers/shared/lib/favicon-utils', () => ({
-  updateTabBadge: vi.fn(),
   hashToHslColor: (_s: string) => 'hsl(0, 70%, 55%)',
   hashToEmoji: (_s: string) => '🤖',
 }));

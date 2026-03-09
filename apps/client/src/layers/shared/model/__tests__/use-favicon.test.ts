@@ -14,7 +14,7 @@ vi.mock('@/layers/shared/lib', () => ({
   setFavicon: vi.fn(),
 }));
 
-import { generateCircleFavicon, setFavicon } from '@/layers/shared/lib';
+import { generateCircleFavicon, generatePulseFrames, setFavicon } from '@/layers/shared/lib';
 
 describe('useFavicon', () => {
   beforeEach(() => {
@@ -70,6 +70,20 @@ describe('useFavicon', () => {
     expect(frameCalls[1][0]).toBe('data:frame1');
     expect(frameCalls[2][0]).toBe('data:frame2');
     expect(frameCalls[3][0]).toBe('data:frame3');
+    vi.useRealTimers();
+  });
+
+  it('handles generatePulseFrames rejection gracefully', async () => {
+    vi.useFakeTimers();
+    vi.mocked(generatePulseFrames).mockRejectedValueOnce(new Error('Canvas unavailable'));
+
+    // Should not throw — solid favicon remains as fallback
+    renderHook(() => useFavicon({ cwd: '/test', isStreaming: false }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(setFavicon).toHaveBeenCalledWith('data:image/png;base64,solid');
     vi.useRealTimers();
   });
 

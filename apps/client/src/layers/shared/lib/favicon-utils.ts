@@ -49,38 +49,23 @@ export function hashToEmoji(cwd: string): string {
   return EMOJI_SET[fnv1aHash(cwd) % EMOJI_SET.length];
 }
 
+const FAVICON_SIZE = 32;
+const FAVICON_CENTER = FAVICON_SIZE / 2;
+const FAVICON_RADIUS = FAVICON_SIZE / 2 - 1;
+
 export function generateCircleFavicon(hslColor: string): string {
   const canvas = document.createElement('canvas');
-  canvas.width = 32;
-  canvas.height = 32;
+  canvas.width = FAVICON_SIZE;
+  canvas.height = FAVICON_SIZE;
   const ctx = canvas.getContext('2d');
   if (!ctx) return '';
 
   ctx.fillStyle = hslColor;
   ctx.beginPath();
-  ctx.arc(16, 16, 15, 0, Math.PI * 2);
+  ctx.arc(FAVICON_CENTER, FAVICON_CENTER, FAVICON_RADIUS, 0, Math.PI * 2);
   ctx.fill();
 
   return canvas.toDataURL('image/png');
-}
-
-export function generateDimmedFavicon(solidDataUrl: string, opacity = 0.4): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 32;
-    canvas.height = 32;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return reject(new Error('Canvas context unavailable'));
-
-    const img = new Image();
-    img.onload = () => {
-      ctx.globalAlpha = opacity;
-      ctx.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = reject;
-    img.src = solidDataUrl;
-  });
 }
 
 /**
@@ -104,8 +89,8 @@ export function generatePulseFrames(
         const opacity = 1 - t * (1 - minOpacity);
 
         const canvas = document.createElement('canvas');
-        canvas.width = 32;
-        canvas.height = 32;
+        canvas.width = FAVICON_SIZE;
+        canvas.height = FAVICON_SIZE;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           reject(new Error('Canvas context unavailable'));
@@ -131,11 +116,4 @@ export function setFavicon(dataUrl: string): void {
     document.head.appendChild(link);
   }
   link.href = dataUrl;
-}
-
-const DEFAULT_TITLE = 'DorkOS';
-
-/** Update the document title with a badge count prefix for background tab notifications. */
-export function updateTabBadge(count: number): void {
-  document.title = count > 0 ? `(${count}) ${DEFAULT_TITLE}` : DEFAULT_TITLE;
 }

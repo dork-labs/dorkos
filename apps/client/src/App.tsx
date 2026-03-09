@@ -39,6 +39,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
   const isStreaming = useAppStore((s) => s.isStreaming);
   const activeForm = useAppStore((s) => s.activeForm);
   const isWaitingForUser = useAppStore((s) => s.isWaitingForUser);
+  const pulseBadgeCount = useAppStore((s) => s.pulseBadgeCount);
   const { data: currentAgent } = useCurrentAgent(embedded ? null : selectedCwd);
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
   useFavicon({
@@ -53,6 +54,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
     isWaitingForUser,
     agentName: currentAgent?.name,
     agentEmoji: currentAgent ? agentVisual.emoji : undefined,
+    pulseBadgeCount,
   });
 
   // First-run onboarding detection

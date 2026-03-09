@@ -125,6 +125,8 @@ interface AppState {
   setIsWaitingForUser: (v: boolean) => void;
   activeForm: string | null;
   setActiveForm: (v: string | null) => void;
+  pulseBadgeCount: number;
+  setPulseBadgeCount: (v: number) => void;
 
   contextFiles: ContextFile[];
   addContextFile: (file: Omit<ContextFile, 'id'>) => void;
@@ -406,6 +408,8 @@ export const useAppStore = create<AppState>()(
       setIsWaitingForUser: (v) => set({ isWaitingForUser: v }),
       activeForm: null,
       setActiveForm: (v) => set({ activeForm: v }),
+      pulseBadgeCount: 0,
+      setPulseBadgeCount: (v) => set({ pulseBadgeCount: v }),
 
       contextFiles: [],
       addContextFile: (file) =>

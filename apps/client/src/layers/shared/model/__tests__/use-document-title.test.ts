@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useDocumentTitle } from '../use-document-title';
 
-const defaults = { isStreaming: false, isWaitingForUser: false };
+const defaults = { isStreaming: false, isWaitingForUser: false, pulseBadgeCount: 0 };
 
 describe('useDocumentTitle', () => {
   beforeEach(() => {
@@ -202,5 +202,112 @@ describe('status prefixes', () => {
     Object.defineProperty(document, 'hidden', { value: false, configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
     expect(document.title).toMatch(/^🔔 /);
+  });
+});
+
+describe('pulse badge count', () => {
+  beforeEach(() => {
+    document.title = '';
+  });
+
+  afterEach(() => {
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+  });
+
+  it('shows (N) prefix when tab is hidden and badge count > 0', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        isStreaming: false,
+        isWaitingForUser: false,
+        pulseBadgeCount: 3,
+      })
+    );
+    expect(document.title).toMatch(/^\(3\) /);
+  });
+
+  it('does not show (N) when tab is visible', () => {
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        isStreaming: false,
+        isWaitingForUser: false,
+        pulseBadgeCount: 3,
+      })
+    );
+    expect(document.title).not.toMatch(/^\(\d+\)/);
+  });
+
+  it('does not show (N) when badge count is 0', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        isStreaming: false,
+        isWaitingForUser: false,
+        pulseBadgeCount: 0,
+      })
+    );
+    expect(document.title).not.toMatch(/^\(\d+\)/);
+  });
+
+  it('coexists with status prefix', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        isStreaming: false,
+        isWaitingForUser: true,
+        pulseBadgeCount: 5,
+      })
+    );
+    expect(document.title).toMatch(/^\(5\) 🔔 /);
+  });
+
+  it('clears (N) when tab becomes visible after streaming ends', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    const { rerender } = renderHook(
+      ({ isStreaming }) =>
+        useDocumentTitle({
+          cwd: '/test',
+          activeForm: null,
+          isStreaming,
+          isWaitingForUser: false,
+          pulseBadgeCount: 2,
+        }),
+      { initialProps: { isStreaming: true } }
+    );
+    rerender({ isStreaming: false });
+    expect(document.title).toMatch(/^\(2\) 🏁 /);
+
+    // User returns — badge should disappear
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(document.title).not.toMatch(/^\(\d+\)/);
+  });
+
+  it('clears (N) when tab becomes visible without streaming transition', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        isStreaming: false,
+        isWaitingForUser: false,
+        pulseBadgeCount: 4,
+      })
+    );
+    expect(document.title).toMatch(/^\(4\) /);
+
+    // User returns — badge should disappear even without unseen response
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(document.title).not.toMatch(/^\(\d+\)/);
   });
 });
