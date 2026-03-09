@@ -267,12 +267,36 @@ if (tc.interactiveType === 'approval') {
 ```typescript
 // Approve
 await transport.approveTool(sessionId, toolCallId);
+onDecided?.(); // Optimistically update indicator (see below)
 
 // Deny
 await transport.denyTool(sessionId, toolCallId);
+onDecided?.();
 ```
 
-**6. Transport resolves the deferred promise**
+**6. Optimistic indicator update via `markToolCallResponded`**
+
+After the user clicks Approve or Deny, the transport call resolves the server-side promise — but the server's `tool_result` event can take seconds for slow tools (e.g., Bash). Without an optimistic update, the `InferenceIndicator` would stay stuck on "Waiting for your approval" during that gap.
+
+The fix: `ToolApproval` receives an `onDecided` callback (threaded from `useChatSession` → `ChatPanel` → `MessageList` → `MessageItem` → `ToolApproval`). This calls `markToolCallResponded(toolCallId)`, which immediately sets the tool call part's status from `'pending'` to `'running'` in the message state:
+
+```typescript
+// useChatSession.ts — markToolCallResponded
+const part = currentPartsRef.current.find(
+  (p) => p.type === 'tool_call' && p.toolCallId === toolCallId
+);
+if (part && part.type === 'tool_call') {
+  part.status = 'running';
+  // Trigger re-render with updated parts
+  const parts = currentPartsRef.current.map((p) => ({ ...p }));
+  const derived = deriveFromParts(parts);
+  setMessages((prev) => prev.map((m) => /* update matching message */));
+}
+```
+
+This clears `isWaitingForUser` (which checks for `status === 'pending'`), so the indicator immediately switches back to rotating verbs. The server's `tool_result` event later sets status to `'complete'`.
+
+**7. Transport resolves the deferred promise**
 
 Both `approveTool` and `denyTool` call `runtime.approveTool(sessionId, toolCallId, approved)` with `true` or `false`. The pending interaction's `resolve(approved)` is called, returning `{ behavior: 'allow' }` or `{ behavior: 'deny' }` to the SDK.
 

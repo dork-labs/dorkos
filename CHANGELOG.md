@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Update interactive-tools and api-reference guides for recent changes
 - Clean up URL query params — remove dead code, add pushState, fix setTimeout hack
 - Unify page title and favicon system, remove dead code
 - Update MessageItem typography to use font-light for improved readability

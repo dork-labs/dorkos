@@ -1,6 +1,5 @@
 import { App, TFile } from 'obsidian';
 import { PlatformAdapter } from '@dorkos/client/lib/platform';
-import { useAppStore } from '@dorkos/client/stores/app-store';
 
 export function createObsidianAdapter(app: App): PlatformAdapter {
   return {

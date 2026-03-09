@@ -446,6 +446,10 @@ SSE event stream for real-time relay activity. Supports server-side subject filt
 
 When `DORKOS_RELAY_ENABLED` is true, this endpoint publishes the message to Relay instead of streaming directly. The response changes from SSE to a JSON receipt.
 
+**Request body (additional fields):**
+
+- `correlationId` (optional, UUID) — Client-generated identifier that tags all response events for this specific message. The adapter echoes this ID in every `relay_message` event, allowing the client to filter out late-arriving events from previous messages. See ADR-0094 for the design rationale.
+
 **Responses:**
 
 - `202` - Message accepted for Relay delivery:
@@ -457,7 +461,7 @@ When `DORKOS_RELAY_ENABLED` is true, this endpoint publishes the message to Rela
 }
 ```
 
-Response chunks are delivered asynchronously via the SSE stream (`GET /api/sessions/:id/stream`) as `relay_message` events.
+Response chunks are delivered asynchronously via the SSE stream (`GET /api/sessions/:id/stream`) as `relay_message` events. Each event includes the `correlationId` if one was provided in the request.
 
 ### GET /api/relay/messages/:id/trace
 
