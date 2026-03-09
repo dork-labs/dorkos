@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extract 4 hooks + 1 component from ChatPanel (617 → 267 lines)
 - Update interactive-tools and api-reference guides for recent changes
 - Clean up URL query params — remove dead code, add pushState, fix setTimeout hack
 - Unify page title and favicon system, remove dead code
