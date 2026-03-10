@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 104,
+  "nextNumber": 106,
   "decisions": [
     {
       "number": 103,
@@ -806,6 +806,24 @@
       "created": "2026-03-06",
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction"
+    },
+    {
+      "number": 104,
+      "slug": "client-side-message-queue-with-auto-flush",
+      "title": "Client-Side Message Queue with Auto-Flush",
+      "status": "draft",
+      "created": "2026-03-10",
+      "extractedFrom": "chat-input-always-editable",
+      "specSlug": "chat-input-always-editable"
+    },
+    {
+      "number": 105,
+      "slug": "header-as-agent-identity-surface",
+      "title": "Header as Agent Identity Surface",
+      "status": "draft",
+      "created": "2026-03-10",
+      "extractedFrom": "update-top-nav",
+      "specSlug": "update-top-nav"
     }
   ]
 }

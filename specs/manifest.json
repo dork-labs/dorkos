@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 112,
+  "nextNumber": 113,
   "specs": [
     {
       "number": 1,
@@ -777,7 +777,14 @@
       "slug": "chat-input-always-editable",
       "title": "Chat Input Always Editable + Message Queuing",
       "created": "2026-03-10",
-      "status": "ideation"
+      "status": "specified"
+    },
+    {
+      "number": 112,
+      "slug": "update-top-nav",
+      "title": "Update Top Nav — Agent Identity, Command Palette Trigger, 10x Elevation",
+      "created": "2026-03-10",
+      "status": "specified"
     }
   ]
 }
