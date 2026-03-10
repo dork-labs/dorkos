@@ -22,6 +22,10 @@ import { setMeshEnabled, setMeshInitError } from './services/mesh/mesh-state.js'
 import { createAgentsRouter } from './routes/agents.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createAdminRouter } from './routes/admin.js';
+import { createExternalMcpServer } from './services/core/mcp-server.js';
+import { createMcpRouter } from './routes/mcp.js';
+import { mcpApiKeyAuth } from './middleware/mcp-auth.js';
+import { validateMcpOrigin } from './middleware/mcp-origin.js';
 import { createDb, runMigrations } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
@@ -209,6 +213,12 @@ async function start() {
   claudeRuntime.setMcpServerFactory(() => ({ dorkos: createDorkOsToolServer(mcpToolDeps) }));
 
   const app = createApp();
+
+  // Mount external MCP server at /mcp (protocol endpoint, not REST API)
+  const externalMcpServer = createExternalMcpServer(mcpToolDeps);
+  app.use('/mcp', validateMcpOrigin, mcpApiKeyAuth, createMcpRouter(externalMcpServer));
+  const mcpAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
+  logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
   // Mount Pulse routes if enabled
   if (pulseEnabled && pulseStore) {

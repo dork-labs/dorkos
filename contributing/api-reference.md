@@ -988,3 +988,94 @@ Invalid requests return HTTP 400 with a structured error body:
 ```
 
 The `details` field contains Zod's formatted error output, mapping field names to their validation errors.
+
+## MCP Server
+
+The DorkOS server embeds a standards-compliant MCP server at `/mcp` using Streamable HTTP transport. External agents (Claude Code, Cursor, Windsurf, custom Agent SDK apps) can connect and use all DorkOS tools.
+
+The MCP endpoint is a protocol endpoint, not a REST API. It speaks JSON-RPC and is mounted at `/mcp` (not under `/api/`).
+
+### Endpoint
+
+| Method | Path   | Description                                         |
+| ------ | ------ | --------------------------------------------------- |
+| POST   | `/mcp` | JSON-RPC requests (tool calls, initialize, etc.)    |
+| GET    | `/mcp` | Returns 405 (stateless mode, no SSE)                |
+| DELETE | `/mcp` | Returns 405 (stateless mode, no session termination) |
+
+The server operates in **stateless mode** — each POST request creates a fresh transport. There are no persistent sessions or SSE streams on the MCP endpoint.
+
+### Authentication
+
+Optional API key authentication via the `MCP_API_KEY` environment variable. When set, all requests must include:
+
+```
+Authorization: Bearer <MCP_API_KEY>
+```
+
+When `MCP_API_KEY` is not set, authentication is disabled (localhost-only access assumed). Generate a key with `openssl rand -hex 32`.
+
+### Origin Validation
+
+The MCP endpoint validates the `Origin` header to prevent DNS rebinding attacks, as required by the MCP specification. Non-browser clients (curl, Claude Code CLI, Agent SDK apps) do not send an `Origin` header and pass through. Browser-based requests must originate from `localhost:{DORKOS_PORT}`, `127.0.0.1:{DORKOS_PORT}`, or the active tunnel URL.
+
+### Middleware Chain
+
+Requests to `/mcp` pass through this middleware chain in order:
+
+1. `validateMcpOrigin` — DNS rebinding protection (checks `Origin` header)
+2. `mcpApiKeyAuth` — API key authentication (checks `Authorization` header)
+3. `mcpRouter` — Streamable HTTP transport handler
+
+### Available Tools
+
+All DorkOS tools are registered on the external MCP server: core tools (ping, server info, session count, agent identity), Pulse scheduling tools, Relay messaging tools, adapter management tools, binding tools, trace/metrics tools, and Mesh discovery tools. Feature-guarded tools return descriptive errors when their service is disabled rather than being omitted from the tool list.
+
+### Client Configuration
+
+**Claude Code** (`~/.claude/settings.json` or project `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "dorkos": {
+      "type": "http",
+      "url": "http://localhost:4242/mcp"
+    }
+  }
+}
+```
+
+With API key:
+
+```json
+{
+  "mcpServers": {
+    "dorkos": {
+      "type": "http",
+      "url": "http://localhost:4242/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+Via ngrok tunnel:
+
+```json
+{
+  "mcpServers": {
+    "dorkos": {
+      "type": "http",
+      "url": "https://your-tunnel.ngrok-free.app/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+**Cursor / Windsurf:** Add an MCP server in settings with URL `http://localhost:4242/mcp` and type `http`. If using an API key, configure the `Authorization: Bearer <key>` header in the MCP server settings.

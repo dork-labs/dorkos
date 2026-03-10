@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
+    "@modelcontextprotocol/sdk": "latest",
     "@asteasolutions/zod-to-openapi": "^8.4.0",
     "@dorkos/db": "workspace:*",
     "@dorkos/mesh": "workspace:*",

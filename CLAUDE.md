@@ -113,6 +113,7 @@ Express server on `DORKOS_PORT` (default 4242). Routes obtain the active runtime
 - `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/`). See `.claude/rules/dork-home.md`
 - `lib/resolve-root.ts` resolves the default working directory (`DORKOS_DEFAULT_CWD` env var or repo root)
 - Each app has its own `env.ts` with Zod-validated env vars
+- External MCP server at `/mcp` — Streamable HTTP transport, stateless, optional API key auth (`MCP_API_KEY`). Exposes all DorkOS tools to external agents (Claude Code, Cursor, Windsurf).
 
 ### Sessions
 

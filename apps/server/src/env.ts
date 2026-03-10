@@ -14,6 +14,8 @@ const serverEnvSchema = z.object({
   DORK_HOME: z.string().optional(),
   DORKOS_VERSION: z.string().optional(),
   CLIENT_DIST_PATH: z.string().optional(),
+  // MCP external server — optional API key for authenticated access
+  MCP_API_KEY: z.string().optional(),
   // Feature flags (boolean after transform)
   DORKOS_PULSE_ENABLED: boolFlag,
   DORKOS_RELAY_ENABLED: boolFlag,
