@@ -1,6 +1,6 @@
 import { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import { useInteractiveShortcuts } from '@/layers/shared/model';
-import type { InteractiveToolHandle } from '../ui/MessageItem';
+import type { InteractiveToolHandle } from '../ui/message';
 
 interface ActiveInteraction {
   interactiveType?: string;

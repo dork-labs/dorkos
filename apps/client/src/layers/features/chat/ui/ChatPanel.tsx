@@ -134,7 +134,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   });
 
   return (
-    <div data-testid="chat-panel" className="flex h-full flex-col">
+    <div data-testid="chat-panel" className="mx-auto flex h-full w-full max-w-7xl flex-col">
       <div className="relative min-h-0 flex-1">
         {isLoadingHistory ? (
           <div className="flex h-full items-center justify-center">

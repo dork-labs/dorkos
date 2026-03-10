@@ -10,8 +10,8 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ChatMessage, MessageGrouping } from '../model/use-chat-session';
 import type { PermissionMode } from '@dorkos/shared/types';
-import { MessageItem } from './MessageItem';
-import type { InteractiveToolHandle } from './MessageItem';
+import { MessageItem } from './message';
+import type { InteractiveToolHandle } from './message';
 import { InferenceIndicator } from './InferenceIndicator';
 
 export function computeGrouping(messages: ChatMessage[]): MessageGrouping[] {

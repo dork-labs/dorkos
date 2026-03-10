@@ -111,6 +111,16 @@
   --color-status-pending: hsl(var(--status-pending));
   --color-status-pending-bg: hsl(var(--status-pending-bg));
   --color-status-pending-fg: hsl(var(--status-pending-fg));
+
+  /* Message tokens */
+  --color-msg-command-fg: hsl(var(--msg-command-fg));
+  --color-msg-compaction-fg: hsl(var(--msg-compaction-fg));
+  --color-msg-timestamp: var(--msg-timestamp-color);
+  --shadow-msg-tool: var(--msg-tool-shadow);
+  --shadow-msg-tool-hover: var(--msg-tool-shadow-hover);
+  --radius-msg: var(--msg-radius);
+  --radius-msg-tight: var(--msg-radius-tight);
+  --radius-msg-tool: var(--msg-tool-radius);
 }
 
 :root {
@@ -180,11 +190,12 @@
   --msg-padding-y-mid: 0.125rem;
   --msg-padding-y-end: 0.75rem;
   --msg-gap: 0.75rem;
-  --msg-leading-width: 1rem;
-  --msg-content-max-width: 80ch;
+  --msg-content-max-width: 100ch;
+  --msg-user-max-width: 85%;
 
   /* === Shape tokens === */
-  --msg-radius: 0;
+  --msg-radius: 1.25rem;
+  --msg-radius-tight: 4px;
   --msg-tool-radius: var(--radius);
   --msg-divider-color: hsl(var(--border) / 0.2);
 

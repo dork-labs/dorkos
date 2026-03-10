@@ -86,7 +86,7 @@ export function ToolApproval({
     return (
       <div
         className={cn(
-          'my-1 rounded border px-3 py-2 text-sm transition-colors duration-200',
+          'my-1 rounded-msg-tool border px-3 py-2 text-sm transition-colors duration-200',
           approvalState({ state: decided === 'approved' ? 'approved' : 'denied' })
         )}
         data-testid="tool-approval-decided"
@@ -101,7 +101,7 @@ export function ToolApproval({
   return (
     <div
       className={cn(
-        'my-1 rounded border p-3 text-sm transition-all duration-200',
+        'my-1 rounded-msg-tool border p-3 text-sm transition-all duration-200',
         approvalState({ state: 'pending' }),
         isActive && 'ring-2 ring-status-warning/30'
       )}

@@ -1,5 +1,4 @@
 import { motion } from 'motion/react';
-import { ChevronRight } from 'lucide-react';
 import type { ChatMessage, MessageGrouping } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
@@ -53,7 +52,6 @@ export function MessageItem({
   const isUser = message.role === 'user';
   const { showTimestamps } = useAppStore();
   const { position, groupIndex } = grouping;
-  const showIndicator = position === 'only' || position === 'first';
   const isGroupStart = position === 'only' || position === 'first';
 
   const styles = messageItem({
@@ -66,36 +64,26 @@ export function MessageItem({
       value={{ sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided }}
     >
       <motion.div
-        initial={isNew ? { opacity: 0, y: 8, scale: isUser ? 0.97 : 1 } : false}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
+        initial={isNew ? { opacity: 0, y: 8, x: isUser ? 12 : 0, scale: isUser ? 0.97 : 1 } : false}
+        animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         data-testid="message-item"
         data-role={message.role}
         className={styles.root()}
       >
-        {isGroupStart && groupIndex > 0 && <div className={styles.divider()} />}
+        {isGroupStart && groupIndex > 0 && !isUser && <div className={styles.divider()} />}
         {message.timestamp && (
           <span
             className={cn(
               styles.timestamp(),
               showTimestamps
-                ? 'text-muted-foreground/60'
-                : 'text-muted-foreground/0 group-hover:text-muted-foreground/60'
+                ? 'text-msg-timestamp'
+                : 'text-transparent group-hover:text-msg-timestamp'
             )}
           >
             {formatTime(message.timestamp)}
           </span>
         )}
-        <div className={styles.leading()}>
-          {showIndicator &&
-            (isUser ? (
-              <ChevronRight className="text-muted-foreground size-(--size-icon-md)" />
-            ) : (
-              <span className="text-muted-foreground flex size-(--size-icon-md) items-center justify-center text-[10px]">
-                ●
-              </span>
-            ))}
-        </div>
         <div className={styles.content()}>
           {isUser ? (
             <UserMessageContent message={message} />

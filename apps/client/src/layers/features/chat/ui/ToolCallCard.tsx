@@ -26,7 +26,7 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
 
   return (
     <div
-      className="bg-muted/50 hover:border-border mt-px rounded border text-sm transition-all duration-150 first:mt-1 hover:shadow-sm"
+      className="bg-muted/50 hover:border-border mt-px rounded-msg-tool border text-sm shadow-msg-tool transition-all duration-150 first:mt-1 hover:shadow-msg-tool-hover"
       data-testid="tool-call-card"
       data-tool-name={toolCall.toolName}
       data-status={toolCall.status}

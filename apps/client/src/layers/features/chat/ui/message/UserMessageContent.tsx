@@ -12,7 +12,7 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
 
   if (message.messageType === 'command') {
     return (
-      <div className="text-muted-foreground truncate font-mono text-sm">{message.content}</div>
+      <div className="text-msg-command-fg truncate font-mono text-sm">{message.content}</div>
     );
   }
 
@@ -21,7 +21,7 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
       <div className="w-full">
         <button
           onClick={() => setCompactionExpanded(!compactionExpanded)}
-          className="text-muted-foreground/60 hover:text-muted-foreground flex w-full items-center gap-2 text-xs transition-colors"
+          className="text-msg-compaction-fg flex w-full items-center gap-2 text-xs"
         >
           <div className="bg-border/40 h-px flex-1" />
           <ChevronRight
@@ -31,7 +31,7 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
           <div className="bg-border/40 h-px flex-1" />
         </button>
         {compactionExpanded && (
-          <div className="text-muted-foreground/60 mt-2 text-xs whitespace-pre-wrap">
+          <div className="text-msg-compaction-fg mt-2 text-xs whitespace-pre-wrap">
             {message.content}
           </div>
         )}

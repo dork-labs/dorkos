@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
-import { MessageItem } from '../ui/MessageItem';
+import { MessageItem } from '../ui/message';
 import { useAppStore } from '@/layers/shared/model';
 import type { MessageGrouping } from '../model/use-chat-session';
 
@@ -42,7 +42,6 @@ vi.mock('../QuestionPrompt', () => ({
 const onlyGrouping: MessageGrouping = { position: 'only', groupIndex: 0 };
 const firstGrouping: MessageGrouping = { position: 'first', groupIndex: 0 };
 const middleGrouping: MessageGrouping = { position: 'middle', groupIndex: 0 };
-const lastGrouping: MessageGrouping = { position: 'last', groupIndex: 0 };
 
 describe('MessageItem', () => {
   it('renders user messages as plain text', () => {
@@ -168,62 +167,6 @@ describe('MessageItem', () => {
     expect(screen.getByText('Old message')).toBeDefined();
   });
 
-  it('renders dot indicator for assistant messages (first in group)', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Reply',
-      parts: [{ type: 'text' as const, text: 'Reply' }],
-      timestamp: new Date().toISOString(),
-    };
-    render(<MessageItem message={msg} sessionId="test-session" grouping={firstGrouping} />);
-    expect(screen.getByText('●')).toBeDefined();
-  });
-
-  it('hides indicator for middle messages in a group', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Reply',
-      parts: [{ type: 'text' as const, text: 'Reply' }],
-      timestamp: new Date().toISOString(),
-    };
-    render(<MessageItem message={msg} sessionId="test-session" grouping={middleGrouping} />);
-    expect(screen.queryByText('●')).toBeNull();
-  });
-
-  it('hides indicator for last messages in a group', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Reply',
-      parts: [{ type: 'text' as const, text: 'Reply' }],
-      timestamp: new Date().toISOString(),
-    };
-    render(<MessageItem message={msg} sessionId="test-session" grouping={lastGrouping} />);
-    expect(screen.queryByText('●')).toBeNull();
-  });
-
-  it('shows chevron indicator for user on first and only positions', () => {
-    const msg = {
-      id: '1',
-      role: 'user' as const,
-      content: 'Test',
-      parts: [{ type: 'text' as const, text: 'Test' }],
-      timestamp: new Date().toISOString(),
-    };
-    const { container: c1 } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={firstGrouping} />
-    );
-    // ChevronRight renders as an SVG
-    expect(c1.querySelector('svg')).not.toBeNull();
-    cleanup();
-    const { container: c2 } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />
-    );
-    expect(c2.querySelector('svg')).not.toBeNull();
-  });
-
   it('renders timestamp from message on hover', () => {
     const ts = '2026-02-07T10:30:00.000Z';
     const msg = {
@@ -236,7 +179,7 @@ describe('MessageItem', () => {
     const { container } = render(
       <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />
     );
-    const timeEl = container.querySelector('.group-hover\\:text-muted-foreground\\/60');
+    const timeEl = container.querySelector('.group-hover\\:text-msg-timestamp');
     expect(timeEl).not.toBeNull();
     expect(timeEl!.textContent).toBeTruthy();
   });
@@ -312,7 +255,7 @@ describe('MessageItem', () => {
     expect(contentContainer?.querySelector('.msg-assistant')).not.toBeNull();
   });
 
-  it('applies tight spacing for middle messages', () => {
+  it('applies tight spacing for middle user messages', () => {
     const msg = {
       id: '1',
       role: 'user' as const,
@@ -324,11 +267,10 @@ describe('MessageItem', () => {
       <MessageItem message={msg} sessionId="test-session" grouping={middleGrouping} />
     );
     const el = container.firstElementChild;
-    expect(el?.className).toContain('pt-[var(--msg-padding-y-mid)]');
-    expect(el?.className).toContain('pb-[var(--msg-padding-y-mid)]');
+    expect(el?.className).toContain('my-px');
   });
 
-  it('applies larger spacing for first-in-group messages', () => {
+  it('applies larger spacing for first-in-group user messages', () => {
     const msg = {
       id: '1',
       role: 'user' as const,
@@ -340,7 +282,7 @@ describe('MessageItem', () => {
       <MessageItem message={msg} sessionId="test-session" grouping={firstGrouping} />
     );
     const el = container.firstElementChild;
-    expect(el?.className).toContain('pt-[var(--msg-padding-y-start)]');
+    expect(el?.className).toContain('mt-3');
   });
 
   it('new user message has initial scale 0.97', () => {
@@ -389,6 +331,67 @@ describe('MessageItem', () => {
       <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} isNew={false} />
     );
     expect(screen.getByText('Old message')).toBeDefined();
+  });
+
+  it('renders user messages as right-aligned bubbles', () => {
+    const msg = {
+      id: '1',
+      role: 'user' as const,
+      content: 'Hello',
+      parts: [{ type: 'text' as const, text: 'Hello' }],
+      timestamp: new Date().toISOString(),
+    };
+    const { container } = render(
+      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />
+    );
+    const el = container.firstElementChild;
+    expect(el?.className).toContain('ml-auto');
+    expect(el?.className).toContain('max-w-[var(--msg-user-max-width)]');
+    expect(el?.className).toContain('rounded-msg');
+  });
+
+  it('applies tight right corners for grouped user bubbles', () => {
+    const msg = {
+      id: '1',
+      role: 'user' as const,
+      content: 'Grouped',
+      parts: [{ type: 'text' as const, text: 'Grouped' }],
+      timestamp: new Date().toISOString(),
+    };
+    // first in group: bottom-right tight
+    const { container: c1 } = render(
+      <MessageItem message={msg} sessionId="test-session" grouping={firstGrouping} />
+    );
+    expect(c1.firstElementChild?.className).toContain('rounded-br-msg-tight');
+
+    // middle: both right corners tight
+    const { container: c2 } = render(
+      <MessageItem message={msg} sessionId="test-session" grouping={middleGrouping} />
+    );
+    expect(c2.firstElementChild?.className).toContain('rounded-r-msg-tight');
+
+    // last: top-right tight
+    const lastGrouping: MessageGrouping = { position: 'last', groupIndex: 0 };
+    const { container: c3 } = render(
+      <MessageItem message={msg} sessionId="test-session" grouping={lastGrouping} />
+    );
+    expect(c3.firstElementChild?.className).toContain('rounded-tr-msg-tight');
+  });
+
+  it('does not render divider for user messages even when groupIndex > 0', () => {
+    const msg = {
+      id: '1',
+      role: 'user' as const,
+      content: 'Hello',
+      parts: [{ type: 'text' as const, text: 'Hello' }],
+      timestamp: new Date().toISOString(),
+    };
+    const grouping: MessageGrouping = { position: 'first', groupIndex: 1 };
+    const { container } = render(
+      <MessageItem message={msg} sessionId="test-session" grouping={grouping} />
+    );
+    const divider = container.querySelector('.bg-\\[var\\(--msg-divider-color\\)\\]');
+    expect(divider).toBeNull();
   });
 
   it('renders text parts adjacent to tool call without orphaned standalone rendering', () => {
