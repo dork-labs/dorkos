@@ -337,9 +337,18 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     };
   }, []);
 
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim() || status === 'streaming') return;
-
+  /**
+   * Core submission logic shared by `handleSubmit` and `submitContent`.
+   *
+   * @param content - The trimmed message text to send.
+   * @param clearInput - When true, clears the `input` state after enqueueing (used by handleSubmit). When false, the textarea draft is preserved (used by submitContent/queue flush).
+   * @param restoreContentOnLock - Content to restore to `input` if the session is locked. Only meaningful when clearInput is true.
+   */
+  const executeSubmission = useCallback(async (
+    content: string,
+    clearInput: boolean,
+    restoreContentOnLock: string,
+  ) => {
     // Create session on first message if no active session
     let targetSessionId = sessionId;
     if (!targetSessionId) {
@@ -355,17 +364,16 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       onSessionIdChangeRef.current?.(targetSessionId);
     }
 
-    const userContent = input.trim();
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: userContent,
-      parts: [{ type: 'text', text: userContent }],
+      content,
+      parts: [{ type: 'text', text: content }],
       timestamp: new Date().toISOString(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput('');
+    if (clearInput) setInput('');
     setStatus('streaming');
     statusRef.current = 'streaming'; // Sync ref immediately — closes the timing window where sync_update could invalidate stale history
     setError(null);
@@ -383,13 +391,13 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     abortRef.current = abortController;
 
     try {
-      const finalContent = options.transformContent
-        ? await options.transformContent(userMessage.content)
-        : userMessage.content;
+      const finalContent = transformContentRef.current
+        ? await transformContentRef.current(content)
+        : content;
 
       // Update optimistic message with file prefix so pills render immediately
       // rather than waiting for the JSONL transcript refresh after streaming.
-      if (finalContent !== userMessage.content) {
+      if (finalContent !== content) {
         setMessages((prev) =>
           prev.map((m) => (m.id === userMessage.id ? { ...m, content: finalContent } : m))
         );
@@ -429,7 +437,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       if ((err as Error).name !== 'AbortError') {
         if ((err as { code?: string }).code === 'SESSION_LOCKED') {
           setSessionBusy(true);
-          setInput(userMessage.content);
+          if (clearInput) setInput(restoreContentOnLock);
           if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
           sessionBusyTimerRef.current = setTimeout(() => {
             setSessionBusy(false);
@@ -445,7 +453,25 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       setIsTextStreaming(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: stable refs for transport/options/cwd
-  }, [input, status, sessionId, relayEnabled, streamEventHandler, queryClient]);
+  }, [sessionId, relayEnabled, streamEventHandler, queryClient, resetStalenessTimer]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!input.trim() || status === 'streaming') return;
+    const userContent = input.trim();
+    await executeSubmission(userContent, true, userContent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeSubmission is stable; input/status drive re-creation
+  }, [input, status, executeSubmission]);
+
+  /**
+   * Submit a message by content string directly, without clearing the `input` state.
+   * Used by the auto-flush mechanism to send queued messages while preserving the
+   * user's current draft in the textarea.
+   */
+  const submitContent = useCallback(async (content: string) => {
+    if (!content.trim() || status === 'streaming') return;
+    await executeSubmission(content.trim(), false, '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeSubmission is stable; status drives re-creation
+  }, [status, executeSubmission]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -499,6 +525,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     input,
     setInput,
     handleSubmit,
+    submitContent,
     status,
     error,
     sessionBusy,

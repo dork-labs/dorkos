@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Always-editable input with message queuing during streaming
 - Dev build detection, upgrade dismiss, and version display overhaul
 
 ### Changed

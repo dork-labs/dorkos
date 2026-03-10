@@ -2,6 +2,7 @@ import { useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowDown } from 'lucide-react';
 import { useChatSession } from '../model/use-chat-session';
+import { useMessageQueue } from '../model/use-message-queue';
 import { useCommands } from '@/layers/entities/command';
 import { useTaskState } from '../model/use-task-state';
 import { useToolShortcuts } from '../model/use-tool-shortcuts';
@@ -86,6 +87,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     input,
     setInput,
     handleSubmit,
+    submitContent,
     status,
     error,
     sessionBusy,
@@ -132,6 +134,84 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     fileEntries: allFileEntries,
     chatInputRef,
   });
+
+  // Draft ref preserves the user's in-progress composition when they navigate into the queue
+  const draftRef = useRef('');
+
+  const messageQueue = useMessageQueue({
+    status,
+    sessionBusy,
+    sessionId,
+    selectedCwd: cwd,
+    onFlush: submitContent,
+  });
+
+  const handleQueue = useCallback(() => {
+    if (input.trim()) {
+      messageQueue.addToQueue(input.trim());
+      setInput('');
+    }
+  }, [input, messageQueue, setInput]);
+
+  const handleQueueEdit = useCallback(
+    (index: number) => {
+      if (messageQueue.editingIndex === null) {
+        draftRef.current = input;
+      }
+      const content = messageQueue.startEditing(index);
+      setInput(content);
+      chatInputRef.current?.focus();
+    },
+    [input, messageQueue, setInput]
+  );
+
+  const handleQueueSaveEdit = useCallback(() => {
+    if (messageQueue.editingIndex !== null && input.trim()) {
+      messageQueue.saveEditing(input.trim());
+      setInput(draftRef.current);
+    }
+  }, [input, messageQueue, setInput]);
+
+  const handleQueueCancelEdit = useCallback(() => {
+    messageQueue.cancelEditing();
+    setInput(draftRef.current);
+  }, [messageQueue, setInput]);
+
+  const handleQueueRemove = useCallback(
+    (index: number) => {
+      if (messageQueue.editingIndex === index) {
+        setInput(draftRef.current);
+      }
+      messageQueue.removeFromQueue(index);
+    },
+    [messageQueue, setInput]
+  );
+
+  const handleQueueNavigateUp = useCallback(() => {
+    if (messageQueue.editingIndex === null) {
+      draftRef.current = input;
+      const content = messageQueue.startEditing(messageQueue.queue.length - 1);
+      setInput(content);
+    } else if (messageQueue.editingIndex > 0) {
+      const content = messageQueue.startEditing(messageQueue.editingIndex - 1);
+      setInput(content);
+    } else {
+      messageQueue.cancelEditing();
+      setInput(draftRef.current);
+    }
+  }, [input, messageQueue, setInput]);
+
+  const handleQueueNavigateDown = useCallback(() => {
+    if (messageQueue.editingIndex !== null) {
+      if (messageQueue.editingIndex < messageQueue.queue.length - 1) {
+        const content = messageQueue.startEditing(messageQueue.editingIndex + 1);
+        setInput(content);
+      } else {
+        messageQueue.cancelEditing();
+        setInput(draftRef.current);
+      }
+    }
+  }, [messageQueue, setInput]);
 
   return (
     <div data-testid="chat-panel" className="mx-auto flex h-full w-full max-w-7xl flex-col">
@@ -261,6 +341,15 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         onFilesSelected={fileUpload.addFiles}
         onFileRemove={fileUpload.removeFile}
         isUploading={fileUpload.isUploading}
+        queue={messageQueue.queue}
+        editingIndex={messageQueue.editingIndex}
+        onQueue={handleQueue}
+        onQueueRemove={handleQueueRemove}
+        onQueueEdit={handleQueueEdit}
+        onQueueSaveEdit={handleQueueSaveEdit}
+        onQueueCancelEdit={handleQueueCancelEdit}
+        onQueueNavigateUp={handleQueueNavigateUp}
+        onQueueNavigateDown={handleQueueNavigateDown}
       />
     </div>
   );

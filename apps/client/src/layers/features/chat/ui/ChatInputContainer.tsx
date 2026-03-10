@@ -7,10 +7,12 @@ import { ChatInput } from './ChatInput';
 import type { ChatInputHandle } from './ChatInput';
 import { ChatStatusSection } from './ChatStatusSection';
 import { FileChipBar } from './FileChipBar';
+import { QueuePanel } from './QueuePanel';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import type { useInputAutocomplete } from '../model/use-input-autocomplete';
 import type { PendingFile } from '../model/use-file-upload';
+import type { QueueItem } from '../model/use-message-queue';
 
 interface ChatInputContainerProps {
   chatInputRef: RefObject<ChatInputHandle | null>;
@@ -31,6 +33,24 @@ interface ChatInputContainerProps {
   onFileRemove: (id: string) => void;
   /** Whether an upload batch is in flight. */
   isUploading: boolean;
+  /** Current message queue contents. */
+  queue: QueueItem[];
+  /** Index of the queue item being edited, or null. */
+  editingIndex: number | null;
+  /** Queue the current input for later sending. */
+  onQueue: () => void;
+  /** Remove a queue item by index. */
+  onQueueRemove: (index: number) => void;
+  /** Load a queue item into the textarea for editing. */
+  onQueueEdit: (index: number) => void;
+  /** Save the currently edited queue item. */
+  onQueueSaveEdit: () => void;
+  /** Cancel editing the current queue item. */
+  onQueueCancelEdit: () => void;
+  /** Navigate up through the queue (shell-history style). */
+  onQueueNavigateUp: () => void;
+  /** Navigate down through the queue (shell-history style). */
+  onQueueNavigateDown: () => void;
 }
 
 /** Container for chat input, autocomplete palettes, drag-and-drop, and status chips. */
@@ -49,6 +69,15 @@ export function ChatInputContainer({
   onFilesSelected,
   onFileRemove,
   isUploading,
+  queue,
+  editingIndex,
+  onQueue,
+  onQueueRemove,
+  onQueueEdit,
+  onQueueSaveEdit,
+  onQueueCancelEdit,
+  onQueueNavigateUp,
+  onQueueNavigateDown,
 }: ChatInputContainerProps) {
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -123,12 +152,20 @@ export function ChatInputContainer({
         <FileChipBar files={pendingFiles} onRemove={onFileRemove} />
       )}
 
+      <QueuePanel
+        queue={queue}
+        editingIndex={editingIndex}
+        onEdit={onQueueEdit}
+        onRemove={onQueueRemove}
+      />
+
       <ChatInput
         ref={chatInputRef}
         value={input}
         onChange={autocomplete.handleInputChange}
         onSubmit={handleSubmit}
-        isLoading={status === 'streaming' || isUploading}
+        isStreaming={status === 'streaming'}
+        isUploading={isUploading}
         sessionBusy={sessionBusy}
         onStop={stop}
         onEscape={autocomplete.dismissPalettes}
@@ -143,6 +180,21 @@ export function ChatInputContainer({
         activeDescendantId={autocomplete.activeDescendantId}
         onCursorChange={autocomplete.handleCursorChange}
         onAttach={onFilesSelected}
+        editingQueueItem={editingIndex !== null}
+        queueDepth={queue.length}
+        onQueue={onQueue}
+        onSaveEdit={onQueueSaveEdit}
+        onCancelEdit={onQueueCancelEdit}
+        onQueueNavigateUp={onQueueNavigateUp}
+        onQueueNavigateDown={onQueueNavigateDown}
+        queueHasItems={queue.length > 0}
+        placeholder={(() => {
+          const isStreaming = status === 'streaming';
+          if (editingIndex !== null) return '';
+          if (isStreaming && queue.length > 0) return `Compose another \u2014 ${queue.length} queued`;
+          if (isStreaming) return 'Compose next \u2014 will send when ready';
+          return 'Message Claude...';
+        })()}
       />
 
       <ChatStatusSection

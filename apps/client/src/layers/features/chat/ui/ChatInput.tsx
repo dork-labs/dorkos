@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { motion } from 'motion/react';
-import { ArrowUp, CornerDownLeft, Square, X, Paperclip } from 'lucide-react';
+import { ArrowUp, CornerDownLeft, Square, X, Paperclip, Clock, Check } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 
@@ -9,13 +9,28 @@ export interface ChatInputHandle {
   focusAt: (pos: number) => void;
 }
 
+type ButtonState = 'send' | 'stop' | 'queue' | 'update' | 'hidden';
+
 interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
-  isLoading: boolean;
+  /** Agent is streaming a response. Replaces the old isLoading prop. */
+  isStreaming: boolean;
+  /** File upload is in progress. */
+  isUploading?: boolean;
   sessionBusy?: boolean;
+  /** Currently editing a queued message item. */
+  editingQueueItem?: boolean;
+  /** Number of items currently in the message queue (for badge display). */
+  queueDepth?: number;
   onStop?: () => void;
+  /** Queue the current input for sending after streaming completes. */
+  onQueue?: () => void;
+  /** Save the queue item currently being edited. */
+  onSaveEdit?: () => void;
+  /** Cancel editing the current queue item and restore draft. */
+  onCancelEdit?: () => void;
   onEscape?: () => void;
   onClear?: () => void;
   isPaletteOpen?: boolean;
@@ -26,6 +41,14 @@ interface ChatInputProps {
   onCursorChange?: (pos: number) => void;
   /** Callback when files are selected via the paperclip button. */
   onAttach?: (files: File[]) => void;
+  /** Custom placeholder text for the textarea. Defaults to "Message Claude...". */
+  placeholder?: string;
+  /** Navigate up through the message queue (shell-history style). */
+  onQueueNavigateUp?: () => void;
+  /** Navigate down through the message queue (shell-history style). */
+  onQueueNavigateDown?: () => void;
+  /** Whether the queue has items (enables arrow key navigation). */
+  queueHasItems?: boolean;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
@@ -33,9 +56,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     value,
     onChange,
     onSubmit,
-    isLoading,
+    isStreaming,
+    isUploading = false,
     sessionBusy = false,
+    editingQueueItem = false,
+    queueDepth = 0,
     onStop,
+    onQueue,
+    onSaveEdit,
+    onCancelEdit,
     onEscape,
     onClear,
     isPaletteOpen,
@@ -45,6 +74,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     activeDescendantId,
     onCursorChange,
     onAttach,
+    placeholder = 'Message Claude...',
+    onQueueNavigateUp,
+    onQueueNavigateDown,
+    queueHasItems = false,
   },
   ref
 ) {
@@ -66,6 +99,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Escape while editing a queue item cancels the edit (priority over normal Escape)
+      if (e.key === 'Escape' && editingQueueItem) {
+        onCancelEdit?.();
+        return;
+      }
+
       if (e.key === 'Escape') {
         const now = Date.now();
         if (isPaletteOpen) {
@@ -79,6 +118,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           lastEscapeRef.current = now;
         }
         return;
+      }
+
+      // --- Queue navigation (takes priority over palette when queue has items and palette is closed) ---
+      if (!isPaletteOpen && queueHasItems) {
+        if (e.key === 'ArrowUp') {
+          const textarea = textareaRef.current;
+          const isAtStart = !textarea || textarea.selectionStart === 0;
+          const isEmpty = !value.trim();
+          if (isEmpty || isAtStart) {
+            e.preventDefault();
+            onQueueNavigateUp?.();
+            return;
+          }
+        }
+        if (e.key === 'ArrowDown') {
+          const textarea = textareaRef.current;
+          const isAtEnd = !textarea || textarea.selectionStart === textarea.value.length;
+          if (editingQueueItem && isAtEnd) {
+            e.preventDefault();
+            onQueueNavigateDown?.();
+            return;
+          }
+        }
       }
 
       // --- Palette-open interceptions ---
@@ -106,17 +168,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       }
 
       // --- Default behavior (palette closed) ---
-      // Desktop: Enter submits, Shift+Enter for newline
+      // Desktop: Enter submits/queues/saves; Shift+Enter for newline
       // Mobile: Enter inserts newline, submit via button only
       if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault();
-        if (!isLoading && value.trim()) {
+        // Priority: edit save > queue > submit
+        if (editingQueueItem && value.trim()) {
+          onSaveEdit?.();
+        } else if (isStreaming && value.trim()) {
+          onQueue?.();
+        } else if (!isStreaming && !sessionBusy && value.trim()) {
           onSubmit();
         }
       }
     },
     [
-      isLoading,
+      isStreaming,
       isMobile,
       value,
       onSubmit,
@@ -126,6 +193,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       onArrowUp,
       onArrowDown,
       onCommandSelect,
+      editingQueueItem,
+      onQueue,
+      onSaveEdit,
+      onCancelEdit,
+      queueHasItems,
+      onQueueNavigateUp,
+      onQueueNavigateDown,
+      sessionBusy,
     ]
   );
 
@@ -180,11 +255,60 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   }, [value]);
 
   const hasText = value.trim().length > 0;
-  const showButton = isLoading || hasText;
-  const showClear = hasText && !isLoading && !sessionBusy;
+  // Combined loading flag: uploading files is also a "loading" state for submission
+  const isLoading = isStreaming || isUploading;
+  // Only server lock disables the textarea — streaming alone keeps it editable
+  const isInputDisabled = sessionBusy;
+  // Clear works whenever there's text, regardless of streaming state
+  const showClear = hasText && !sessionBusy;
+
   const SendIcon = isMobile ? ArrowUp : CornerDownLeft;
-  const Icon = isLoading ? Square : SendIcon;
-  const isDisabled = isLoading || sessionBusy;
+
+  // Four-state button machine: the correct action depends on context
+  const buttonState: ButtonState = (() => {
+    if (editingQueueItem && hasText) return 'update';
+    if (isStreaming && hasText) return 'queue';
+    if (isLoading) return 'stop';
+    if (hasText) return 'send';
+    return 'hidden';
+  })();
+  const showButton = buttonState !== 'hidden';
+
+  const buttonConfig = {
+    send: {
+      icon: SendIcon,
+      className: 'bg-primary text-primary-foreground hover:bg-primary/90',
+      label: 'Send message',
+      onClick: onSubmit,
+    },
+    stop: {
+      icon: Square,
+      className: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+      label: 'Stop generating',
+      onClick: onStop,
+    },
+    queue: {
+      icon: Clock,
+      className: 'bg-muted text-muted-foreground hover:bg-muted/80',
+      label: 'Queue message',
+      onClick: onQueue,
+    },
+    update: {
+      icon: Check,
+      className: 'bg-primary text-primary-foreground hover:bg-primary/90',
+      label: 'Save edit',
+      onClick: onSaveEdit,
+    },
+    hidden: {
+      icon: SendIcon,
+      className: '',
+      label: '',
+      onClick: undefined,
+    },
+  } satisfies Record<ButtonState, { icon: React.ElementType; className: string; label: string; onClick: (() => void) | undefined }>;
+
+  const config = buttonConfig[buttonState];
+  const ButtonIcon = config.icon;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -193,10 +317,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           Session is busy. Please wait...
         </div>
       )}
+      {editingQueueItem && (
+        <div className="text-muted-foreground px-0.5 text-xs">
+          Editing message{queueDepth > 0 ? ' \u2014' : ''}
+        </div>
+      )}
       <div
         className={cn(
           'border-input flex items-end gap-1.5 rounded-md border bg-transparent p-1.5 shadow-xs transition-[color,box-shadow]',
           isFocused && 'border-ring ring-ring/50 ring-[3px]',
+          editingQueueItem && 'border-primary/40',
           !onAttach && 'pl-3'
         )}
       >
@@ -217,7 +347,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isDisabled}
               className="text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md p-1.5 transition-colors disabled:opacity-50"
               aria-label="Attach file"
             >
@@ -244,10 +373,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           }
           aria-expanded={isPaletteOpen ?? false}
           aria-activedescendant={isPaletteOpen ? activeDescendantId : undefined}
-          placeholder="Message Claude..."
+          placeholder={placeholder}
           className="max-h-[200px] min-h-[24px] flex-1 resize-none bg-transparent py-0.5 text-sm focus:outline-none"
           rows={1}
-          disabled={isDisabled}
+          disabled={isInputDisabled}
         />
         <motion.button
           animate={{ opacity: showClear ? 0.5 : 0, scale: showClear ? 1 : 0.8 }}
@@ -264,24 +393,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         >
           <X className="size-(--size-icon-sm)" />
         </motion.button>
-        <motion.button
-          animate={{ opacity: showButton ? 1 : 0, scale: showButton ? 1 : 0.8 }}
-          transition={{ duration: 0.15 }}
-          whileHover={showButton && !sessionBusy ? { scale: 1.1 } : undefined}
-          whileTap={showButton && !sessionBusy ? { scale: 0.9 } : undefined}
-          onClick={isLoading ? onStop : onSubmit}
-          disabled={!showButton || sessionBusy}
-          className={cn(
-            'shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2',
-            isLoading
-              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-              : 'bg-primary text-primary-foreground hover:bg-primary/90',
-            (!showButton || sessionBusy) && 'pointer-events-none opacity-50'
+        <div className="relative">
+          <motion.button
+            animate={{ opacity: showButton ? 1 : 0, scale: showButton ? 1 : 0.8 }}
+            transition={{ duration: 0.15 }}
+            whileHover={showButton && !sessionBusy ? { scale: 1.1 } : undefined}
+            whileTap={showButton && !sessionBusy ? { scale: 0.9 } : undefined}
+            onClick={config.onClick}
+            disabled={!showButton || (buttonState === 'send' && sessionBusy)}
+            className={cn(
+              'shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2',
+              config.className,
+              (!showButton || (buttonState === 'send' && sessionBusy)) && 'pointer-events-none opacity-50'
+            )}
+            aria-label={config.label}
+          >
+            <ButtonIcon className="size-(--size-icon-sm)" />
+          </motion.button>
+          {queueDepth > 0 && buttonState === 'queue' && (
+            <span className="bg-foreground text-background absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium">
+              {queueDepth}
+            </span>
           )}
-          aria-label={isLoading ? 'Stop generating' : 'Send message'}
-        >
-          <Icon className="size-(--size-icon-sm)" />
-        </motion.button>
+        </div>
       </div>
     </div>
   );

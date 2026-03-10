@@ -28,12 +28,22 @@ describe('ChatInput', () => {
     value: '',
     onChange: vi.fn(),
     onSubmit: vi.fn(),
-    isLoading: false,
+    isStreaming: false,
   };
 
   it('renders textarea with placeholder', () => {
     render(<ChatInput {...defaultProps} />);
     expect(screen.getByPlaceholderText(/Message Claude/)).toBeDefined();
+  });
+
+  it('renders custom placeholder when provided', () => {
+    render(<ChatInput {...defaultProps} placeholder="Compose next" />);
+    expect(screen.getByPlaceholderText('Compose next')).toBeDefined();
+  });
+
+  it('uses default placeholder when not provided', () => {
+    render(<ChatInput {...defaultProps} />);
+    expect(screen.getByPlaceholderText('Message Claude...')).toBeDefined();
   });
 
   it('calls onChange when typing', () => {
@@ -64,33 +74,45 @@ describe('ChatInput', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('does not submit when loading', () => {
+  it('does not submit when streaming', () => {
     const onSubmit = vi.fn();
-    render(<ChatInput {...defaultProps} value="hello" isLoading={true} onSubmit={onSubmit} />);
+    render(<ChatInput {...defaultProps} value="hello" isStreaming={true} onSubmit={onSubmit} />);
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('disables textarea when loading', () => {
-    render(<ChatInput {...defaultProps} isLoading={true} />);
+  it('does NOT disable textarea when streaming', () => {
+    render(<ChatInput {...defaultProps} isStreaming={true} />);
+    expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
+  });
+
+  it('textarea is NOT disabled during streaming', () => {
+    render(<ChatInput {...defaultProps} isStreaming={true} />);
+    expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
+  });
+
+  it('textarea IS disabled when sessionBusy is true', () => {
+    render(<ChatInput {...defaultProps} sessionBusy={true} />);
     expect(screen.getByRole('combobox')).toHaveProperty('disabled', true);
   });
 
-  it('shows stop button when loading', () => {
-    render(<ChatInput {...defaultProps} isLoading={true} onStop={vi.fn()} />);
+  it('shows stop button when streaming (no text)', () => {
+    render(<ChatInput {...defaultProps} isStreaming={true} onStop={vi.fn()} />);
     expect(screen.getByLabelText('Stop generating')).toBeDefined();
   });
 
-  it('shows send button when not loading and has text', () => {
+  it('shows send button when not streaming and has text', () => {
     render(<ChatInput {...defaultProps} value="hello" />);
     expect(screen.getByLabelText('Send message')).toBeDefined();
   });
 
   it('hides send button when value is empty', () => {
     render(<ChatInput {...defaultProps} value="" />);
-    const btn = screen.getByLabelText('Send message');
-    expect(btn.getAttribute('disabled')).toBeDefined();
-    expect(btn.className).toContain('pointer-events-none');
+    // No visible button when hidden state — check button is not displayed or is disabled
+    // The button is rendered with opacity 0 and pointer-events-none
+    const btn = screen.queryByLabelText('Send message');
+    // In hidden state, no aria-label matches any active button
+    expect(btn).toBeNull();
   });
 
   it('shows send button when value is non-empty', () => {
@@ -100,7 +122,7 @@ describe('ChatInput', () => {
 
   it('calls onStop when stop button is clicked', () => {
     const onStop = vi.fn();
-    render(<ChatInput {...defaultProps} isLoading={true} onStop={onStop} />);
+    render(<ChatInput {...defaultProps} isStreaming={true} onStop={onStop} />);
     fireEvent.click(screen.getByLabelText('Stop generating'));
     expect(onStop).toHaveBeenCalled();
   });
@@ -110,6 +132,19 @@ describe('ChatInput', () => {
     render(<ChatInput {...defaultProps} onEscape={onEscape} />);
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
     expect(onEscape).toHaveBeenCalled();
+  });
+
+  it('paperclip button is NOT disabled during streaming', () => {
+    const onAttach = vi.fn();
+    render(<ChatInput {...defaultProps} isStreaming={true} onAttach={onAttach} />);
+    const btn = screen.getByLabelText('Attach file');
+    expect(btn).not.toHaveProperty('disabled', true);
+  });
+
+  it('clear button works during streaming', () => {
+    render(<ChatInput {...defaultProps} value="hello" isStreaming={true} />);
+    const btn = screen.getByLabelText('Clear message');
+    expect(btn.className).not.toContain('pointer-events-none');
   });
 
   describe('palette-open keyboard handling', () => {
@@ -267,10 +302,10 @@ describe('ChatInput', () => {
       expect(btn.className).toContain('pointer-events-none');
     });
 
-    it('is hidden when loading', () => {
-      render(<ChatInput {...defaultProps} value="hello" isLoading={true} />);
+    it('is visible during streaming (clear works while agent responds)', () => {
+      render(<ChatInput {...defaultProps} value="hello" isStreaming={true} />);
       const btn = screen.getByLabelText('Clear message');
-      expect(btn.className).toContain('pointer-events-none');
+      expect(btn.className).not.toContain('pointer-events-none');
     });
 
     it('calls onClear when clicked', () => {
@@ -419,6 +454,172 @@ describe('ChatInput', () => {
       render(<ChatInput {...defaultProps} value="hello" sessionBusy={true} />);
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).toContain('pointer-events-none');
+    });
+  });
+
+  describe('queue button states', () => {
+    it('send button shows Queue icon during streaming with text', () => {
+      render(<ChatInput {...defaultProps} isStreaming={true} value="text" onQueue={vi.fn()} />);
+      expect(screen.getByLabelText('Queue message')).toBeDefined();
+    });
+
+    it('send button shows Update icon when editing queue item', () => {
+      render(<ChatInput {...defaultProps} editingQueueItem={true} value="text" onSaveEdit={vi.fn()} />);
+      expect(screen.getByLabelText('Save edit')).toBeDefined();
+    });
+
+    it('send button shows Stop icon during streaming without text', () => {
+      render(<ChatInput {...defaultProps} isStreaming={true} value="" onStop={vi.fn()} />);
+      expect(screen.getByLabelText('Stop generating')).toBeDefined();
+    });
+
+    it('queue badge renders with correct count', () => {
+      render(<ChatInput {...defaultProps} isStreaming={true} value="text" queueDepth={3} />);
+      expect(screen.getByText('3')).toBeDefined();
+    });
+
+    it('queue badge not rendered when queueDepth is 0', () => {
+      render(<ChatInput {...defaultProps} isStreaming={true} value="text" queueDepth={0} />);
+      expect(screen.queryByText('0')).toBeNull();
+    });
+
+    it('editing label shows when editingQueueItem is true', () => {
+      render(<ChatInput {...defaultProps} editingQueueItem={true} value="text" />);
+      expect(screen.getByText(/Editing message/)).toBeDefined();
+    });
+
+    it('editing border applied when editingQueueItem is true', () => {
+      const { container } = render(<ChatInput {...defaultProps} editingQueueItem={true} />);
+      const wrapper = container.querySelector('.border-primary\\/40');
+      expect(wrapper).toBeDefined();
+    });
+  });
+
+  describe('Enter key queue-aware behavior', () => {
+    it('Enter key queues message during streaming when onQueue provided', () => {
+      const onQueue = vi.fn();
+      render(<ChatInput {...defaultProps} isStreaming={true} value="test" onQueue={onQueue} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onQueue).toHaveBeenCalled();
+    });
+
+    it('Enter key saves edit when editingQueueItem is true', () => {
+      const onSaveEdit = vi.fn();
+      render(<ChatInput {...defaultProps} editingQueueItem={true} value="edited" onSaveEdit={onSaveEdit} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSaveEdit).toHaveBeenCalled();
+    });
+
+    it('Enter key prioritizes edit save over queue', () => {
+      const onSaveEdit = vi.fn();
+      const onQueue = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          editingQueueItem={true}
+          isStreaming={true}
+          value="text"
+          onSaveEdit={onSaveEdit}
+          onQueue={onQueue}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSaveEdit).toHaveBeenCalled();
+      expect(onQueue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('arrow key queue navigation', () => {
+    it('Up arrow navigates to queue when queue has items and textarea is empty', () => {
+      const onQueueNavigateUp = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          queueHasItems={true}
+          value=""
+          isPaletteOpen={false}
+          onQueueNavigateUp={onQueueNavigateUp}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowUp' });
+      expect(onQueueNavigateUp).toHaveBeenCalled();
+    });
+
+    it('Up arrow does NOT navigate when palette is open', () => {
+      const onQueueNavigateUp = vi.fn();
+      const onArrowUp = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          queueHasItems={true}
+          isPaletteOpen={true}
+          onQueueNavigateUp={onQueueNavigateUp}
+          onArrowUp={onArrowUp}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowUp' });
+      expect(onArrowUp).toHaveBeenCalled();
+      expect(onQueueNavigateUp).not.toHaveBeenCalled();
+    });
+
+    it('Up arrow does NOT navigate when queue is empty', () => {
+      const onQueueNavigateUp = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          queueHasItems={false}
+          value=""
+          onQueueNavigateUp={onQueueNavigateUp}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowUp' });
+      expect(onQueueNavigateUp).not.toHaveBeenCalled();
+    });
+
+    it('Down arrow does NOT navigate when not editing queue item', () => {
+      const onQueueNavigateDown = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          queueHasItems={true}
+          editingQueueItem={false}
+          onQueueNavigateDown={onQueueNavigateDown}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
+      expect(onQueueNavigateDown).not.toHaveBeenCalled();
+    });
+
+    it('Escape cancels edit when editingQueueItem is true', () => {
+      const onCancelEdit = vi.fn();
+      const onEscape = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          editingQueueItem={true}
+          onCancelEdit={onCancelEdit}
+          onEscape={onEscape}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onCancelEdit).toHaveBeenCalled();
+      expect(onEscape).not.toHaveBeenCalled();
+    });
+
+    it('Escape does NOT cancel edit when not editing', () => {
+      const onCancelEdit = vi.fn();
+      const onEscape = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          editingQueueItem={false}
+          onCancelEdit={onCancelEdit}
+          onEscape={onEscape}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalled();
+      expect(onCancelEdit).not.toHaveBeenCalled();
     });
   });
 });
