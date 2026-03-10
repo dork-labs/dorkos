@@ -60,6 +60,12 @@ Transport defines methods for every operation the client needs, organized by dom
 | `startTunnel` | Start the ngrok tunnel and return the public URL |
 | `stopTunnel` | Stop the ngrok tunnel |
 
+### File Uploads
+
+| Method | Purpose |
+|---|---|
+| `uploadFiles` | Upload files to the session's working directory for agent access |
+
 ### Pulse, Relay, Mesh
 
 Transport also exposes full Pulse scheduler methods (`listSchedules`, `createSchedule`, `triggerSchedule`, `listRuns`, etc.), Relay messaging methods (`sendRelayMessage`, `listRelayAdapters`, `getRelayTrace`, etc.), and Mesh discovery methods (`listMeshAgents`, `registerMeshAgent`, `getMeshTopology`, etc.). These follow the same pattern as the core session methods.

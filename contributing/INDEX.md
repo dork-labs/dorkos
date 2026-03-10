@@ -43,10 +43,10 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | Guide | Last Reviewed | Reviewer | Notes |
 |---|---|---|---|
 | `project-structure.md` | 2026-03-06 | Claude | Added eslint-config and icons packages |
-| `architecture.md` | 2026-03-06 | Claude | SDK confinement, dorkHome lint refs |
+| `architecture.md` | 2026-03-09 | Claude | Added Transport.uploadFiles(), upload-handler, mcp-server, mcp middleware |
 | `design-system.md` | 2026-03-06 | Claude | Reviewed — no content changes required |
-| `api-reference.md` | 2026-03-06 | Claude | Reconciled — no content impact from ESLint migration |
-| `configuration.md` | 2026-03-06 | Claude | Reconciled — no content impact from ESLint migration |
+| `api-reference.md` | 2026-03-09 | Claude | Added POST /api/uploads endpoint documentation |
+| `configuration.md` | 2026-03-09 | Claude | Added uploads config section (maxFileSize, maxFiles, allowedTypes) |
 | `interactive-tools.md` | 2026-03-06 | Claude | Fixed INTERACTION_TIMEOUT_MS constant ref, reject implementations, auto-approve logic, InteractiveSession type |
 | `keyboard-shortcuts.md` | 2026-03-06 | Claude | Fixed useInteractiveShortcuts location (shared/model, not features/chat), corrected PaletteFooter shortcut table |
 | `obsidian-plugin-development.md` | 2026-03-06 | Claude | Updated sdk-utils paths for runtime abstraction |
@@ -58,7 +58,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `relay-adapters.md` | 2026-03-06 | Claude | Reviewed — no content changes required |
 | `adapter-catalog.md` | 2026-03-06 | Claude | Reviewed — no content changes required |
 | `browser-testing.md` | 2026-03-06 | Claude | Reconciled — no content impact from ESLint migration |
-| `environment-variables.md` | 2026-03-06 | Claude | Reconciled — no content impact from ESLint migration |
+| `environment-variables.md` | 2026-03-09 | Claude | Added MCP_API_KEY env var |
 
 ## External Docs Coverage
 
@@ -109,14 +109,14 @@ Maps `docs/` MDX files (Fumadocs content for the marketing site) to the source c
 | `docs/getting-started/configuration.mdx` | 2026-03-06 | Claude | Reconciled — no content impact from ESLint migration |
 | `docs/concepts/architecture.mdx` | 2026-03-06 | Claude | Added to coverage map |
 | `docs/concepts/sessions.mdx` | 2026-03-06 | Claude | Added to coverage map |
-| `docs/concepts/transport.mdx` | 2026-03-06 | Claude | Added to coverage map |
+| `docs/concepts/transport.mdx` | 2026-03-09 | Claude | Added uploadFiles to Transport method tables |
 | `docs/concepts/relay.mdx` | 2026-03-06 | Claude | Added to coverage map |
 | `docs/concepts/mesh.mdx` | 2026-03-06 | Claude | Added to coverage map |
 | `docs/integrations/sse-protocol.mdx` | 2026-02-17 | Claude | Written from scratch |
-| `docs/integrations/building-integrations.mdx` | 2026-03-06 | Claude | Added getCapabilities() to Transport listing |
+| `docs/integrations/building-integrations.mdx` | 2026-03-09 | Claude | Added uploadFiles() to Transport interface listing |
 | `docs/self-hosting/deployment.mdx` | 2026-03-06 | Claude | Reconciled — no content impact from ESLint migration |
 | `docs/self-hosting/reverse-proxy.mdx` | 2026-02-17 | Claude | Written from scratch |
-| `docs/contributing/architecture.mdx` | 2026-03-06 | Claude | Updated for AgentRuntime, RuntimeRegistry, ClaudeCodeRuntime |
+| `docs/contributing/architecture.mdx` | 2026-03-09 | Claude | Added uploads.ts, mcp.ts routes; upload-handler, mcp-server services |
 | `docs/contributing/testing.mdx` | 2026-03-06 | Claude | Reconciled — no content impact from ESLint migration |
 | `docs/contributing/development-setup.mdx` | 2026-03-06 | Claude | Added eslint-config and icons packages |
 | `docs/guides/cli-usage.mdx` | 2026-03-06 | Claude | Reconciled — no content impact from ESLint migration |

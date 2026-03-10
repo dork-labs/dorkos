@@ -43,6 +43,9 @@ interface Transport {
   getModels(): Promise<ModelOption[]>;
   getCapabilities(): Promise<{ capabilities: Record<string, RuntimeCapabilities>; defaultRuntime: string }>;
 
+  // File uploads
+  uploadFiles(files: UploadFile[], cwd: string, onProgress?): Promise<UploadResult[]>;
+
   // Tunnel
   startTunnel(): Promise<{ url: string }>;
   stopTunnel(): Promise<void>;

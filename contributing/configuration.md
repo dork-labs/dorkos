@@ -87,6 +87,9 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `scheduler.timezone` | string \| null              | `null`    | Default timezone for cron expressions (`null` = system timezone) |
 | `scheduler.retentionCount` | integer              | `100`     | Number of completed run records to retain in the database |
 | `mesh.scanRoots`  | string[]                       | `[]`      | Directories to scan for agent discovery    |
+| `uploads.maxFileSize` | integer | `10485760` (10 MB) | Maximum file size in bytes per uploaded file |
+| `uploads.maxFiles` | integer (1--50) | `10` | Maximum number of files per upload request |
+| `uploads.allowedTypes` | string[] | `["*/*"]` | Allowed MIME types (e.g., `["image/*", "text/plain"]`) |
 | `agentContext.relayTools` | boolean                 | `true`    | Include Relay messaging tool documentation in agent context |
 | `agentContext.meshTools`  | boolean                 | `true`    | Include Mesh discovery tool documentation in agent context  |
 | `agentContext.adapterTools` | boolean               | `true`    | Include adapter tool documentation in agent context         |
@@ -240,6 +243,21 @@ When `scanRoots` is empty (default), the reconciler scans from the server's defa
 
 ```bash
 dorkos config set mesh.scanRoots '["/home/user/projects", "/home/user/agents"]'
+```
+
+### uploads
+
+Controls file upload limits for the `POST /api/uploads` endpoint. The upload handler reads these values dynamically on each request from the config manager.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `uploads.maxFileSize` | `number` | `10485760` (10 MB) | Maximum file size in bytes |
+| `uploads.maxFiles` | `number` | `10` | Maximum files per request (1--50) |
+| `uploads.allowedTypes` | `string[]` | `["*/*"]` | Allowed MIME types |
+
+```bash
+dorkos config set uploads.maxFileSize 52428800    # 50 MB
+dorkos config set uploads.maxFiles 20
 ```
 
 ### agentContext
@@ -431,6 +449,7 @@ $ dorkos config list
   "relay": { "enabled": true, "dataDir": null },
   "scheduler": { "enabled": true, "maxConcurrentRuns": 1, "timezone": null, "retentionCount": 100 },
   "mesh": { "scanRoots": [] },
+  "uploads": { "maxFileSize": 10485760, "maxFiles": 10, "allowedTypes": ["*/*"] },
   "agentContext": { "relayTools": true, "meshTools": true, "adapterTools": true, "pulseTools": true }
 }
 ```
@@ -533,6 +552,7 @@ Content-Type: application/json
     "relay": { "enabled": true, "dataDir": null },
     "scheduler": { "enabled": true, "maxConcurrentRuns": 1, "timezone": null, "retentionCount": 100 },
     "mesh": { "scanRoots": [] },
+    "uploads": { "maxFileSize": 10485760, "maxFiles": 10, "allowedTypes": ["*/*"] },
     "agentContext": { "relayTools": true, "meshTools": true, "adapterTools": true, "pulseTools": true }
   }
 }

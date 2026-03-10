@@ -67,6 +67,9 @@ Transport
   -- Mesh Topology --
   getMeshTopology / updateMeshAccessRule / getMeshAgentAccess
 
+  -- File Uploads --
+  uploadFiles(files, cwd, onProgress?) -> UploadResult[]
+
   -- Agent Identity --
   getAgentByPath(cwd)        -> AgentManifest | null
   createAgent(cwd, name?, description?, runtime?) -> AgentManifest
@@ -80,6 +83,15 @@ Transport
 
 - **HttpTransport** parses SSE events from a `ReadableStream` and calls `onEvent`
 - **DirectTransport** iterates the `AsyncGenerator` from the runtime and calls `onEvent`
+
+### File Uploads
+
+`uploadFiles` uses a different pattern per transport:
+
+- **HttpTransport** sends files via XHR (`XMLHttpRequest`) with `FormData` to `POST /api/uploads?cwd=...`. XHR is used instead of `fetch()` because it supports `upload.onprogress` events for real-time progress reporting.
+- **DirectTransport** copies files directly to `{cwd}/.dork/.temp/uploads/` using Node.js `fs` — no HTTP, no serialization.
+
+The `UploadFile` interface (`packages/shared/src/transport.ts`) abstracts over the browser `File` API so the shared package stays free of DOM lib dependencies.
 
 Consumers (hooks, components) see the same interface regardless of transport.
 
@@ -125,6 +137,7 @@ Communicates with the Express server over HTTP and SSE:
 - Standard `fetch()` for CRUD operations
 - `POST + ReadableStream` for SSE streaming in `sendMessage`
 - Parses `text/event-stream` lines into `StreamEvent` objects
+- `uploadFiles` uses XHR with `FormData` for progress tracking
 - Constructor takes `baseUrl` (defaults to `/api`)
 
 ### DirectTransport (`apps/client/src/layers/shared/lib/direct-transport.ts`)
@@ -134,6 +147,7 @@ Calls service instances directly in the same process:
 - No HTTP, no port binding, no serialization
 - Uses `DirectTransportServices` interface (narrow typed subset of service methods)
 - `sendMessage` iterates `AsyncGenerator<StreamEvent>` from the runtime
+- `uploadFiles` copies files to disk via Node.js `fs` (no HTTP)
 - `createSession` generates UUIDs via `crypto.randomUUID()`
 - Respects `AbortSignal` for cancellation
 
@@ -382,6 +396,8 @@ apps/
         update-checker.ts     -- npm registry version check with 1-hour cache
         file-lister.ts        -- Directory file listing
         git-status.ts         -- Git branch and changed files
+        upload-handler.ts     -- File upload service (multer config, storage, MIME validation)
+        mcp-server.ts         -- External MCP server factory (Streamable HTTP transport)
         openapi-registry.ts   -- Auto-generated OpenAPI spec from Zod schemas
       runtimes/               -- Agent backend implementations
         index.ts              -- Barrel export for runtimes
@@ -428,11 +444,16 @@ apps/
     routes/
       sessions.ts / commands.ts / health.ts / directory.ts / config.ts
       files.ts / git.ts / tunnel.ts / pulse.ts / agents.ts
+      uploads.ts            -- POST /api/uploads (multipart file upload)
       relay.ts              -- Relay HTTP routes (feature-flag guarded)
       mesh.ts               -- Mesh HTTP routes (always mounted)
+      mcp.ts                -- MCP server endpoint (/mcp, Streamable HTTP transport)
       models.ts             -- GET /api/models (dynamic via runtimeRegistry.getDefault())
       capabilities.ts       -- GET /api/capabilities (all runtime capability flags)
       discovery.ts          -- POST /api/discovery/scan (SSE agent discovery)
+    middleware/
+      mcp-auth.ts           -- MCP API key auth middleware
+      mcp-origin.ts         -- MCP Origin header validation (DNS rebinding protection)
     index.ts                -- Express server entry
 ```
 

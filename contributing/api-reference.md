@@ -974,6 +974,51 @@ SSE endpoint that streams agent discovery results. Performs a BFS filesystem sca
 
 All `roots` paths are validated against the configured directory boundary (403 if outside).
 
+## File Uploads
+
+### POST /api/uploads
+
+Upload files to a session's working directory for agent access. Files are stored in `{cwd}/.dork/.temp/uploads/` with sanitized filenames. The returned `savedPath` values can be injected into message text so the agent reads them with its existing filesystem tools.
+
+**Content-Type:** `multipart/form-data`
+
+**Query parameters:**
+
+| Parameter | Type   | Required | Description                                                       |
+| --------- | ------ | -------- | ----------------------------------------------------------------- |
+| `cwd`     | string | Yes      | Working directory where files will be stored                      |
+
+**Form field:** `files` (one or more files)
+
+**Limits** (from `uploads` config section):
+
+| Setting        | Default | Description                         |
+| -------------- | ------- | ----------------------------------- |
+| `maxFileSize`  | 10 MB   | Maximum size per file               |
+| `maxFiles`     | 10      | Maximum number of files per request |
+| `allowedTypes` | `*/*`   | MIME type filter                    |
+
+**Success response (200):**
+
+```json
+{
+  "uploads": [
+    {
+      "originalName": "design.png",
+      "savedPath": "/home/user/myproject/.dork/.temp/uploads/1741567200000-design.png",
+      "filename": "1741567200000-design.png",
+      "size": 204800,
+      "mimeType": "image/png"
+    }
+  ]
+}
+```
+
+**Error responses:**
+
+- `400` — Missing `cwd`, no files provided, file too large, or MIME type not allowed
+- `403` — `cwd` is outside the configured directory boundary
+
 ## Validation Errors
 
 Invalid requests return HTTP 400 with a structured error body:

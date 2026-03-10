@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reconcile guides for file uploads and MCP server features
 - Increase floating sidebar shadow depth
 - Message-first session creation — eliminate POST /sessions
 - Add pattern-first development principle to CLAUDE.md
