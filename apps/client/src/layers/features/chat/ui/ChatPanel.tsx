@@ -14,13 +14,10 @@ import { useAppStore } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
 import { MessageList } from './MessageList';
 import type { MessageListHandle } from './MessageList';
-import { ChatInput } from './ChatInput';
 import type { ChatInputHandle } from './ChatInput';
+import { ChatInputContainer } from './ChatInputContainer';
 import { TaskListPanel } from './TaskListPanel';
 import { CelebrationOverlay } from './CelebrationOverlay';
-import { ChatStatusSection } from './ChatStatusSection';
-import { CommandPalette } from '@/layers/features/commands';
-import { FilePalette } from '@/layers/features/files';
 import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
@@ -216,52 +213,18 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         </div>
       )}
 
-      <div className="chat-input-container relative border-t p-4">
-        <AnimatePresence>
-          {autocomplete.commands.show && (
-            <CommandPalette
-              filteredCommands={autocomplete.commands.filtered}
-              selectedIndex={autocomplete.commands.selectedIndex}
-              onSelect={autocomplete.handleCommandSelect}
-            />
-          )}
-          {autocomplete.files.show && (
-            <FilePalette
-              filteredFiles={autocomplete.files.filtered}
-              selectedIndex={autocomplete.files.selectedIndex}
-              onSelect={autocomplete.handleFileSelect}
-            />
-          )}
-        </AnimatePresence>
-
-        <ChatInput
-          ref={chatInputRef}
-          value={input}
-          onChange={autocomplete.handleInputChange}
-          onSubmit={handleSubmit}
-          isLoading={status === 'streaming'}
-          sessionBusy={sessionBusy}
-          onStop={stop}
-          onEscape={autocomplete.dismissPalettes}
-          onClear={() => {
-            setInput('');
-            autocomplete.dismissPalettes();
-          }}
-          isPaletteOpen={autocomplete.isPaletteOpen}
-          onArrowUp={autocomplete.handleArrowUp}
-          onArrowDown={autocomplete.handleArrowDown}
-          onCommandSelect={autocomplete.handleKeyboardSelect}
-          activeDescendantId={autocomplete.activeDescendantId}
-          onCursorChange={autocomplete.handleCursorChange}
-        />
-
-        <ChatStatusSection
-          sessionId={sessionId}
-          sessionStatus={sessionStatus}
-          isStreaming={status === 'streaming'}
-          onChipClick={autocomplete.handleChipClick}
-        />
-      </div>
+      <ChatInputContainer
+        chatInputRef={chatInputRef}
+        input={input}
+        autocomplete={autocomplete}
+        handleSubmit={handleSubmit}
+        status={status}
+        sessionBusy={sessionBusy}
+        stop={stop}
+        setInput={setInput}
+        sessionId={sessionId}
+        sessionStatus={sessionStatus}
+      />
     </div>
   );
 }
