@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Increase floating sidebar shadow depth
 - Message-first session creation — eliminate POST /sessions
 - Add pattern-first development principle to CLAUDE.md
 - Add codebase excellence principles and CLAUDE.md anti-bloat guards
