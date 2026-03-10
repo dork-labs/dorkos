@@ -400,6 +400,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         await transport.sendMessageRelay(targetSessionId, finalContent, {
           clientId: clientIdRef.current,
           correlationId,
+          cwd: selectedCwdRef.current ?? undefined,
         });
         // Start the staleness detector — if the `done` event is lost, this fires after
         // DONE_STALENESS_MS of silence and polls the backend to recover gracefully.

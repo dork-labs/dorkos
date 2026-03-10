@@ -100,7 +100,7 @@ export class HttpTransport implements Transport {
   declare sendMessageRelay: (
     sessionId: string,
     content: string,
-    options?: { clientId?: string; correlationId?: string },
+    options?: { clientId?: string; correlationId?: string; cwd?: string },
   ) => Promise<{ messageId: string; traceId: string }>;
   declare getRelayTrace: (
     messageId: string,

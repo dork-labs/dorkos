@@ -199,7 +199,7 @@ export interface Transport {
   sendMessageRelay(
     sessionId: string,
     content: string,
-    options?: { clientId?: string; correlationId?: string }
+    options?: { clientId?: string; correlationId?: string; cwd?: string }
   ): Promise<{ messageId: string; traceId: string }>;
   /** Get full trace for a message. */
   getRelayTrace(messageId: string): Promise<{ traceId: string; spans: TraceSpan[] }>;

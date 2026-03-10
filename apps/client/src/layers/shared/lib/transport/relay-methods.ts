@@ -99,7 +99,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
     async sendMessageRelay(
       sessionId: string,
       content: string,
-      options?: { clientId?: string; correlationId?: string },
+      options?: { clientId?: string; correlationId?: string; cwd?: string },
     ): Promise<{ messageId: string; traceId: string }> {
       const res = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -110,6 +110,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
         body: JSON.stringify({
           content,
           ...(options?.correlationId ? { correlationId: options.correlationId } : {}),
+          ...(options?.cwd ? { cwd: options.cwd } : {}),
         }),
       });
       if (res.status !== 202 && !res.ok) {

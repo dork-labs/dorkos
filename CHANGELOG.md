@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pass cwd from client in relay message POST body
 - Forward ?dir= cwd from payload in handleAgentMessage
 - Use currentColor for sidebar logo to support light/dark mode
 ---
