@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { motion } from 'motion/react';
-import { ArrowUp, CornerDownLeft, Square, X } from 'lucide-react';
+import { ArrowUp, CornerDownLeft, Square, X, Paperclip } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 
@@ -24,6 +24,8 @@ interface ChatInputProps {
   onCommandSelect?: () => void;
   activeDescendantId?: string;
   onCursorChange?: (pos: number) => void;
+  /** Callback when files are selected via the paperclip button. */
+  onAttach?: (files: File[]) => void;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
@@ -42,10 +44,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onCommandSelect,
     activeDescendantId,
     onCursorChange,
+    onAttach,
   },
   ref
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const lastEscapeRef = useRef(0);
 
   useImperativeHandle(ref, () => ({
@@ -191,10 +195,36 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       )}
       <div
         className={cn(
-          'flex items-end gap-1.5 rounded-xl border p-1.5 pl-3 transition-colors duration-150',
-          isFocused ? 'border-ring' : 'border-border'
+          'border-input flex items-end gap-1.5 rounded-md border bg-transparent p-1.5 shadow-xs transition-[color,box-shadow]',
+          isFocused && 'border-ring ring-ring/50 ring-[3px]',
+          !onAttach && 'pl-3'
         )}
       >
+        {onAttach && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 0) onAttach(files);
+                // Reset so the same file can be re-selected after removal
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isDisabled}
+              className="text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md p-1.5 transition-colors disabled:opacity-50"
+              aria-label="Attach file"
+            >
+              <Paperclip className="size-4" />
+            </button>
+          </>
+        )}
         <textarea
           ref={textareaRef}
           value={value}

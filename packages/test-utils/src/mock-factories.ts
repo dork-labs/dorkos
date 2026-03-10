@@ -235,6 +235,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     updateConfig: vi.fn().mockResolvedValue(undefined),
     // Discovery
     scan: vi.fn().mockResolvedValue(undefined),
+    // Uploads
+    uploadFiles: vi.fn().mockResolvedValue([]),
     // Admin Operations
     resetAllData: vi.fn().mockResolvedValue({ message: 'Reset initiated. Server will restart.' }),
     restartServer: vi.fn().mockResolvedValue({ message: 'Restart initiated.' }),

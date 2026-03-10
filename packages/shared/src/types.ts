@@ -60,6 +60,8 @@ export type {
   MessageDeliveredEvent,
   RelayMessageEvent,
   ModelOption,
+  UploadResult,
+  UploadProgress,
 } from './schemas.js';
 
 export type {

@@ -1,4 +1,4 @@
-import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
+import type { Transport, AdapterListItem, UploadFile } from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { TraceSpan, DeliveryMetrics, CatalogEntry, AdapterBinding, CreateBindingRequest, RelayConversation } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest, DiscoveryCandidate, DenialRecord, AgentHealth, MeshStatus, TopologyView, CrossNamespaceRule, UpdateAccessRuleRequest, TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
@@ -23,6 +23,8 @@ import type {
   UpdateScheduleRequest,
   ListRunsQuery,
   PulsePreset,
+  UploadResult,
+  UploadProgress,
 } from '@dorkos/shared/types';
 
 export interface DirectTransportServices {
@@ -523,5 +525,42 @@ export class DirectTransport implements Transport {
     _signal?: AbortSignal,
   ): Promise<void> {
     throw new Error('Discovery scan is not supported in Obsidian plugin mode.');
+  }
+
+  // --- File Uploads ---
+
+  /** Upload files to `{cwd}/.dork/.temp/uploads/` using direct filesystem access. */
+  async uploadFiles(
+    files: UploadFile[],
+    cwd: string,
+    _onProgress?: (progress: UploadProgress) => void,
+  ): Promise<UploadResult[]> {
+    const fs = await import('fs/promises');
+    const pathMod = await import('path');
+    const { randomUUID } = await import('crypto');
+
+    const uploadDir = pathMod.default.join(cwd, '.dork', '.temp', 'uploads');
+    await fs.default.mkdir(uploadDir, { recursive: true });
+
+    const results: UploadResult[] = [];
+    for (const file of files) {
+      const base = pathMod.default.basename(file.name);
+      const safe = base.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filename = `${randomUUID().slice(0, 8)}-${safe}`;
+      const savedPath = pathMod.default.join(uploadDir, filename);
+
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await fs.default.writeFile(savedPath, buffer);
+
+      results.push({
+        originalName: file.name,
+        savedPath,
+        filename,
+        size: file.size,
+        mimeType: file.type,
+      });
+    }
+
+    return results;
   }
 }

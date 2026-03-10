@@ -8,6 +8,7 @@ import { useToolShortcuts } from '../model/use-tool-shortcuts';
 import { useScrollOverlay } from '../model/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
+import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
 import { useAppStore } from '@/layers/shared/model';
@@ -35,6 +36,39 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   const taskState = useTaskState(sessionId ?? '');
   const celebrations = useCelebrations();
   const enableNotificationSound = useAppStore((s) => s.enableNotificationSound);
+  const [cwd] = useDirectoryState();
+
+  const fileUpload = useFileUpload();
+
+  /**
+   * Transform applied to outgoing message content on submit.
+   *
+   * Uploads any pending files, converts their absolute saved paths to paths
+   * relative to the selected working directory, then prepends a read-files
+   * instruction block before delegating to any caller-supplied transform.
+   */
+  const fileTransformContent = useCallback(
+    async (content: string): Promise<string> => {
+      let result = content;
+
+      if (fileUpload.hasPendingFiles) {
+        const savedPaths = await fileUpload.uploadAndGetPaths();
+        const relativePaths = cwd
+          ? savedPaths.map((p) => (p.startsWith(cwd) ? p.slice(cwd.length).replace(/^\//, '') : p))
+          : savedPaths;
+
+        if (relativePaths.length > 0) {
+          const fileList = relativePaths.map((p) => `- ${p}`).join('\n');
+          result = `Please read the following uploaded file(s):\n${fileList}\n\n${result}`;
+        }
+
+        fileUpload.clearFiles();
+      }
+
+      return transformContent ? transformContent(result) : result;
+    },
+    [fileUpload, cwd, transformContent]
+  );
 
   const handleTaskEventWithCelebrations = useCallback(
     (event: TaskUpdateEvent) => {
@@ -66,7 +100,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     activeInteraction,
     markToolCallResponded,
   } = useChatSession(sessionId, {
-    transformContent,
+    transformContent: fileTransformContent,
     onTaskEvent: handleTaskEventWithCelebrations,
     onSessionIdChange: setSessionId,
     onStreamingDone: useCallback(() => {
@@ -83,7 +117,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
 
   useChatStatusSync(status, isWaitingForUser, taskState.activeForm);
 
-  const [cwd] = useDirectoryState();
   const { data: registry } = useCommands(cwd);
   const allCommands = useMemo(() => registry?.commands ?? [], [registry]);
   const { data: fileList } = useFiles(cwd);
@@ -224,6 +257,10 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         setInput={setInput}
         sessionId={sessionId ?? ''}
         sessionStatus={sessionStatus}
+        pendingFiles={fileUpload.pendingFiles}
+        onFilesSelected={fileUpload.addFiles}
+        onFileRemove={fileUpload.removeFile}
+        isUploading={fileUpload.isUploading}
       />
     </div>
   );

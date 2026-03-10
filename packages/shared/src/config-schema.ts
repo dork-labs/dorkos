@@ -88,6 +88,17 @@ export const UserConfigSchema = z.object({
       pulseTools: z.boolean().default(true),
     })
     .default(() => ({ relayTools: true, meshTools: true, adapterTools: true, pulseTools: true })),
+  uploads: z
+    .object({
+      maxFileSize: z.number().int().positive().default(10 * 1024 * 1024), // 10MB
+      maxFiles: z.number().int().min(1).max(50).default(10),
+      allowedTypes: z.array(z.string()).default(() => ['*/*']),
+    })
+    .default(() => ({
+      maxFileSize: 10 * 1024 * 1024,
+      maxFiles: 10,
+      allowedTypes: ['*/*'],
+    })),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- File uploads in chat — drag-and-drop, paperclip, and paste to attach files
+- File uploads in chat — drag-and-drop, paperclip, and paste to attach files
 - Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
 - Add chat microinteraction polish — spring physics, layoutId, session crossfade
 - Unify discovery scanners and fix onboarding scan root

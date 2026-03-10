@@ -21,6 +21,7 @@ describe('UserConfigSchema', () => {
       mesh: { scanRoots: [] },
       onboarding: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
+      uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
     });
   });
 
@@ -207,6 +208,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       mesh: { scanRoots: [] },
       onboarding: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
+      uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
     });
   });
 

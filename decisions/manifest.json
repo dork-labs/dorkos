@@ -1,7 +1,43 @@
 {
   "version": 1,
-  "nextNumber": 100,
+  "nextNumber": 104,
   "decisions": [
+    {
+      "number": 103,
+      "slug": "optional-api-key-auth-for-mcp",
+      "title": "Optional API Key Authentication for MCP",
+      "status": "draft",
+      "created": "2026-03-09",
+      "extractedFrom": "mcp-server",
+      "specSlug": "mcp-server"
+    },
+    {
+      "number": 102,
+      "slug": "stateless-mcp-transport-mode",
+      "title": "Stateless MCP Transport Mode",
+      "status": "draft",
+      "created": "2026-03-09",
+      "extractedFrom": "mcp-server",
+      "specSlug": "mcp-server"
+    },
+    {
+      "number": 101,
+      "slug": "embed-mcp-server-in-express-process",
+      "title": "Embed MCP Server in Express Process",
+      "status": "draft",
+      "created": "2026-03-09",
+      "extractedFrom": "mcp-server",
+      "specSlug": "mcp-server"
+    },
+    {
+      "number": 100,
+      "slug": "file-path-injection-for-agent-uploads",
+      "title": "File Path Injection for Agent File Access",
+      "status": "draft",
+      "created": "2026-03-09",
+      "extractedFrom": "upload-files",
+      "specSlug": "upload-files"
+    },
     {
       "number": 99,
       "slug": "message-context-for-prop-drilling-elimination",

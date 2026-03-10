@@ -783,3 +783,33 @@ export const ConfigPatchResponseSchema = z
   .openapi('ConfigPatchResponse');
 
 export type ConfigPatchResponse = z.infer<typeof ConfigPatchResponseSchema>;
+
+// === Upload Schemas ===
+
+export const UploadResultSchema = z
+  .object({
+    originalName: z.string(),
+    savedPath: z.string(),
+    filename: z.string(),
+    size: z.number().int().nonnegative(),
+    mimeType: z.string(),
+  })
+  .openapi('UploadResult');
+
+export type UploadResult = z.infer<typeof UploadResultSchema>;
+
+export const UploadResponseSchema = z
+  .object({
+    uploads: z.array(UploadResultSchema),
+  })
+  .openapi('UploadResponse');
+
+export type UploadResponse = z.infer<typeof UploadResponseSchema>;
+
+export const UploadProgressSchema = z.object({
+  loaded: z.number(),
+  total: z.number(),
+  percentage: z.number(),
+});
+
+export type UploadProgress = z.infer<typeof UploadProgressSchema>;

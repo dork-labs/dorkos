@@ -25,8 +25,10 @@ import type {
   UpdateScheduleRequest,
   ListRunsQuery,
   PulsePreset,
+  UploadResult,
+  UploadProgress,
 } from '@dorkos/shared/types';
-import type { Transport, AdapterListItem } from '@dorkos/shared/transport';
+import type { Transport, AdapterListItem, UploadFile } from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type {
   TraceSpan,
@@ -436,5 +438,55 @@ export class HttpTransport implements Transport {
     for await (const event of parseSSEStream<TransportScanEvent['data']>(reader)) {
       onEvent({ type: event.type, data: event.data } as TransportScanEvent);
     }
+  }
+
+  // --- File Uploads ---
+
+  async uploadFiles(
+    files: UploadFile[],
+    cwd: string,
+    onProgress?: (progress: UploadProgress) => void,
+  ): Promise<UploadResult[]> {
+    const formData = new FormData();
+    for (const file of files) {
+      const buffer = await file.arrayBuffer();
+      formData.append('files', new Blob([buffer], { type: file.type }), file.name);
+    }
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/uploads?cwd=${encodeURIComponent(cwd)}`);
+
+      if (onProgress) {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            onProgress({
+              loaded: e.loaded,
+              total: e.total,
+              percentage: Math.round((e.loaded / e.total) * 100),
+            });
+          }
+        });
+      }
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data.uploads);
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText).error || `HTTP ${xhr.status}`;
+            reject(new Error(error));
+          } catch {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
+
+      xhr.send(formData);
+    });
   }
 }

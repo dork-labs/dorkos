@@ -27,6 +27,8 @@ import type {
   UpdateScheduleRequest,
   ListRunsQuery,
   PulsePreset,
+  UploadResult,
+  UploadProgress,
 } from './types.js';
 import type { AdapterConfig, AdapterStatus, TraceSpan, DeliveryMetrics, CatalogEntry, RelayConversation, AdapterBinding, CreateBindingRequest } from './relay-schemas.js';
 import type {
@@ -48,6 +50,23 @@ import type { RuntimeCapabilities } from './agent-runtime.js';
 export interface AdapterListItem {
   config: AdapterConfig;
   status: AdapterStatus;
+}
+
+/**
+ * Minimal file interface for upload — matches the browser File API.
+ *
+ * Using a custom interface (rather than the DOM `File` type) keeps the shared
+ * package free of DOM lib dependencies so it can be used in Node.js contexts.
+ */
+export interface UploadFile {
+  /** Original filename as provided by the user. */
+  name: string;
+  /** File size in bytes. */
+  size: number;
+  /** MIME type of the file. */
+  type: string;
+  /** Read the file contents as an ArrayBuffer. */
+  arrayBuffer(): Promise<ArrayBuffer>;
 }
 
 export interface Transport {
@@ -279,6 +298,25 @@ export interface Transport {
     onEvent: (event: TransportScanEvent) => void,
     signal?: AbortSignal,
   ): Promise<void>;
+
+  // --- File Uploads ---
+
+  /**
+   * Upload files to the session's working directory for agent access.
+   *
+   * Files are stored in `{cwd}/.dork/.temp/uploads/` with sanitized filenames.
+   * The returned `savedPath` values can be injected into message text so the
+   * Claude Code agent reads them with its existing filesystem tools.
+   *
+   * @param files - Files to upload (browser File objects or UploadFile-compatible objects)
+   * @param cwd - Working directory where files will be stored
+   * @param onProgress - Optional callback for upload progress (useful for remote/tunnel uploads)
+   */
+  uploadFiles(
+    files: UploadFile[],
+    cwd: string,
+    onProgress?: (progress: UploadProgress) => void
+  ): Promise<UploadResult[]>;
 
   // --- Admin Operations ---
 

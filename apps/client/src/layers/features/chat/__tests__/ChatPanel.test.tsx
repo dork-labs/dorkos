@@ -43,6 +43,19 @@ vi.mock('../model/use-task-state', () => ({
   }),
 }));
 
+// Mock useFileUpload — avoids TransportProvider requirement
+vi.mock('../model/use-file-upload', () => ({
+  useFileUpload: () => ({
+    pendingFiles: [],
+    addFiles: vi.fn(),
+    removeFile: vi.fn(),
+    clearFiles: vi.fn(),
+    uploadAndGetPaths: vi.fn().mockResolvedValue([]),
+    hasPendingFiles: false,
+    isUploading: false,
+  }),
+}));
+
 // Mock useSessionId
 vi.mock('@/layers/entities/session/model/use-session-id', () => ({
   useSessionId: () => ['test-session', vi.fn()],
