@@ -27,6 +27,13 @@ export function createMcpRouter(serverFactory: () => McpServer): Router {
       });
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
+
+      // Clean up per-request server+transport when the response closes.
+      // Removes internal Protocol event listeners (per SDK stateless example).
+      res.on('close', () => {
+        transport.close().catch(() => {});
+        server.close().catch(() => {});
+      });
     } catch (err) {
       logger.error('[MCP] Request handling error', err);
       if (!res.headersSent) {

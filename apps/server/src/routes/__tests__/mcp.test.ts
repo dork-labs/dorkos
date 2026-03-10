@@ -8,6 +8,7 @@ const { mockHandleRequest, mockTransportConstructor } = vi.hoisted(() => {
   const mockHandleRequest = vi.fn();
   const mockTransportConstructor = vi.fn().mockImplementation(() => ({
     handleRequest: mockHandleRequest,
+    close: vi.fn().mockResolvedValue(undefined),
   }));
   return { mockHandleRequest, mockTransportConstructor };
 });
@@ -38,7 +39,7 @@ describe('MCP Route Handler', () => {
   const mockConnect = vi.fn().mockResolvedValue(undefined);
 
   function createMockServer() {
-    return { connect: mockConnect };
+    return { connect: mockConnect, close: vi.fn().mockResolvedValue(undefined) };
   }
 
   beforeEach(() => {

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Enhance MCP request handling with cleanup on response close
 - Embed MCP server with Streamable HTTP transport
 - Embed MCP server with Streamable HTTP transport
 - Embed MCP server with Streamable HTTP transport
