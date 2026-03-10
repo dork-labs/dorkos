@@ -155,6 +155,71 @@ describe('VersionItem', () => {
     });
   });
 
+  describe('dev mode', () => {
+    it('renders DEV badge when isDevMode is true', () => {
+      render(<VersionItem version="0.0.0" latestVersion={null} isDevMode />);
+      expect(screen.getByText('DEV')).toBeInTheDocument();
+    });
+
+    it('does not show version number in dev mode', () => {
+      render(<VersionItem version="0.0.0" latestVersion={null} isDevMode />);
+      expect(screen.queryByText('v0.0.0')).not.toBeInTheDocument();
+    });
+
+    it('does not show upgrade indicator in dev mode even with latestVersion', () => {
+      render(<VersionItem version="0.0.0" latestVersion="1.0.0" isDevMode />);
+      expect(screen.queryByText('available')).not.toBeInTheDocument();
+      expect(screen.queryByText('Upgrade available')).not.toBeInTheDocument();
+      expect(screen.getByText('DEV')).toBeInTheDocument();
+    });
+
+    it('has correct aria-label for dev badge', () => {
+      render(<VersionItem version="0.0.0" latestVersion={null} isDevMode />);
+      expect(screen.getByLabelText('Development build')).toBeInTheDocument();
+    });
+
+    it('renders amber-styled badge', () => {
+      render(<VersionItem version="0.0.0" latestVersion={null} isDevMode />);
+      const badge = screen.getByText('DEV');
+      expect(badge.className).toContain('bg-amber-500/15');
+      expect(badge.className).toContain('text-amber-600');
+    });
+  });
+
+  describe('dismiss', () => {
+    it('renders dismiss button in upgrade popover', () => {
+      render(<VersionItem version="1.2.3" latestVersion="1.3.0" />);
+      fireEvent.click(screen.getByRole('button'));
+      expect(screen.getByText('Dismiss this version')).toBeInTheDocument();
+    });
+
+    it('calls onDismiss with latest version when dismiss clicked', () => {
+      const onDismiss = vi.fn();
+      render(<VersionItem version="1.2.3" latestVersion="1.3.0" onDismiss={onDismiss} />);
+      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByText('Dismiss this version'));
+      expect(onDismiss).toHaveBeenCalledWith('1.3.0');
+    });
+
+    it('shows plain version when isDismissed is true', () => {
+      render(<VersionItem version="1.2.3" latestVersion="1.3.0" isDismissed />);
+      expect(screen.getByText('v1.2.3')).toBeInTheDocument();
+      expect(screen.queryByText('Upgrade available')).not.toBeInTheDocument();
+    });
+
+    it('does not show upgrade indicator when dismissed', () => {
+      render(<VersionItem version="1.2.3" latestVersion="1.2.4" isDismissed />);
+      expect(screen.getByText('v1.2.3')).toBeInTheDocument();
+      expect(screen.queryByText('available')).not.toBeInTheDocument();
+    });
+
+    it('renders dismiss button for patch updates too', () => {
+      render(<VersionItem version="1.2.3" latestVersion="1.2.4" />);
+      fireEvent.click(screen.getByRole('button'));
+      expect(screen.getByText('Dismiss this version')).toBeInTheDocument();
+    });
+  });
+
   describe('isFeatureUpdate classification', () => {
     it('major bump is feature update', () => {
       render(<VersionItem version="1.0.0" latestVersion="2.0.0" />);

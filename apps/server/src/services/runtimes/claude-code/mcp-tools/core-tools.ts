@@ -2,6 +2,7 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { readManifest } from '@dorkos/shared/manifest';
 import { env } from '../../../../env.js';
+import { SERVER_VERSION } from '../../../../lib/version.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -32,7 +33,7 @@ export async function handleGetServerInfo(args: { include_uptime?: boolean }) {
   const info: Record<string, unknown> = {
     product: 'DorkOS',
     port: env.DORKOS_PORT,
-    version: env.DORKOS_VERSION ?? 'development',
+    version: SERVER_VERSION,
   };
   if (args.include_uptime) {
     info.uptime_seconds = Math.floor(process.uptime());

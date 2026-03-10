@@ -12,7 +12,7 @@ Each app and package now exports a typed, validated `env` object from a local `e
 
 | App / Package    | env.ts path                              | Env vars covered                                                                                                                                                 |
 | ---------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, DORKOS_HOST, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, MCP_API_KEY, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
+| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, DORKOS_HOST, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION_OVERRIDE, CLIENT_DIST_PATH, MCP_API_KEY, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
 | `apps/client`    | `apps/client/src/env.ts`                 | MODE, DEV (Vite built-ins)                                                                                                                                       |
 | `apps/site`      | `apps/site/src/env.ts`                   | NODE_ENV, NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST                                                                                                      |
 | `packages/cli`   | `packages/cli/src/env.ts`                | NODE_ENV, DORK_HOME, LOG_LEVEL                                                                                                                                   |
@@ -97,7 +97,7 @@ To add a new `VITE_*` var:
 | DORKOS_BOUNDARY           | server         | string \| undefined | —                       | Directory access boundary for file browsing security                        |
 | DORKOS_LOG_LEVEL          | server         | number \| undefined | —                       | Log verbosity: 0=Fatal 1=Error 2=Warn 3=Info 4=Debug 5=Trace               |
 | DORK_HOME                 | server         | string \| undefined | —                       | Config/storage directory (defaults to `~/.dork` in production)             |
-| DORKOS_VERSION            | server         | string \| undefined | —                       | Server version injected at build time by CLI package                        |
+| DORKOS_VERSION_OVERRIDE   | server         | string \| undefined | —                       | Override reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. |
 | CLIENT_DIST_PATH          | server         | string \| undefined | —                       | Path to built React client assets (set by CLI package)                      |
 | MCP_API_KEY               | server         | string \| undefined | —                       | API key for authenticated access to the MCP endpoint (`/mcp`). When set, requests must include `Authorization: Bearer <key>`. When unset, MCP auth is disabled (localhost-only assumed). |
 | DORKOS_PULSE_ENABLED      | server         | boolean           | `false`                   | Enable the Pulse scheduler subsystem                                        |

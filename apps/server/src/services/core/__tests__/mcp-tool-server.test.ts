@@ -15,6 +15,11 @@ import {
   createRelayUnregisterEndpointHandler,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 
+vi.mock('../../../lib/version.js', () => ({
+  SERVER_VERSION: '1.0.0',
+  IS_DEV_BUILD: false,
+}));
+
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(),
 }));
@@ -128,14 +133,10 @@ describe('MCP Tool Handlers', () => {
       vi.unstubAllEnvs();
     });
 
-    it('uses DORKOS_VERSION env var when set', async () => {
-      vi.stubEnv('DORKOS_VERSION', '2.0.0');
-      vi.resetModules();
-      const { handleGetServerInfo: handler } = await import('../../runtimes/claude-code/mcp-tools/core-tools.js');
-      const result = await handler({});
+    it('uses SERVER_VERSION from version module', async () => {
+      const result = await handleGetServerInfo({});
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.version).toBe('2.0.0');
-      vi.unstubAllEnvs();
+      expect(parsed.version).toBe('1.0.0');
     });
 
     it('defaults port to 4242 when env var unset', async () => {
@@ -148,10 +149,10 @@ describe('MCP Tool Handlers', () => {
       vi.unstubAllEnvs();
     });
 
-    it('defaults version to development when env var unset', async () => {
+    it('includes version from SERVER_VERSION constant', async () => {
       const result = await handleGetServerInfo({});
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.version).toBe('development');
+      expect(parsed.version).toBe('1.0.0');
     });
   });
 

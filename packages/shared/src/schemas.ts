@@ -501,7 +501,13 @@ export const ServerConfigSchema = z
     latestVersion: z
       .string()
       .nullable()
-      .openapi({ description: 'Latest available version from npm, or null if unknown' }),
+      .openapi({ description: 'Latest available version from npm, or null if dev mode or unknown' }),
+    isDevMode: z
+      .boolean()
+      .openapi({ description: 'Whether the server is running a development build' }),
+    dismissedUpgradeVersions: z
+      .array(z.string())
+      .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),
     port: z.number().int(),
     uptime: z.number(),
     workingDirectory: z.string(),

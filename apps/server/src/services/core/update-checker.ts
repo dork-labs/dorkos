@@ -9,6 +9,8 @@
  * @module services/update-checker
  */
 
+import { IS_DEV_BUILD } from '../../lib/version.js';
+
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const FETCH_TIMEOUT = 5000; // 5 seconds
 
@@ -24,6 +26,9 @@ let lastChecked = 0;
  * @returns The latest version string, or null if unknown
  */
 export async function getLatestVersion(): Promise<string | null> {
+  // Skip npm registry fetch entirely in dev mode — no phoning home
+  if (IS_DEV_BUILD) return null;
+
   if (Date.now() - lastChecked < CACHE_TTL) return cachedLatest;
 
   try {

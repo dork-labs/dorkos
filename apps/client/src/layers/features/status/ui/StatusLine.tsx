@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSessionStatus } from '@/layers/entities/session';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { CwdItem } from './CwdItem';
@@ -40,11 +40,26 @@ export function StatusLine({ sessionId, sessionStatus, isStreaming }: StatusLine
   } = useAppStore();
   const { data: gitStatus } = useGitStatus(status.cwd);
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const { data: serverConfig } = useQuery({
     queryKey: ['config'],
     queryFn: () => transport.getConfig(),
     staleTime: 5 * 60 * 1000,
   });
+
+  const dismissedVersions = useMemo(
+    () => serverConfig?.dismissedUpgradeVersions ?? [],
+    [serverConfig?.dismissedUpgradeVersions]
+  );
+
+  const handleDismissVersion = useCallback(
+    async (version: string) => {
+      const updated = [...dismissedVersions, version];
+      await transport.updateConfig({ ui: { dismissedUpgradeVersions: updated } });
+      queryClient.invalidateQueries({ queryKey: ['config'] });
+    },
+    [dismissedVersions, transport, queryClient]
+  );
 
   // Build ordered list of visible item entries with stable keys
   const entries: { key: string; node: React.ReactNode }[] = [];
@@ -101,12 +116,19 @@ export function StatusLine({ sessionId, sessionStatus, isStreaming }: StatusLine
     });
   }
   if (showStatusBarVersion && serverConfig) {
+    const isDismissed = serverConfig.latestVersion
+      ? dismissedVersions.includes(serverConfig.latestVersion)
+      : false;
+
     entries.push({
       key: 'version',
       node: (
         <VersionItem
           version={serverConfig.version}
           latestVersion={serverConfig.latestVersion}
+          isDevMode={serverConfig.isDevMode}
+          isDismissed={isDismissed}
+          onDismiss={handleDismissVersion}
         />
       ),
     });

@@ -47,8 +47,12 @@ export const UserConfigSchema = z.object({
   ui: z
     .object({
       theme: z.enum(['light', 'dark', 'system']).default('system'),
+      dismissedUpgradeVersions: z
+        .array(z.string())
+        .default(() => [])
+        .describe('Version strings the user has dismissed upgrade notifications for'),
     })
-    .default(() => ({ theme: 'system' as const })),
+    .default(() => ({ theme: 'system' as const, dismissedUpgradeVersions: [] })),
   logging: LoggingConfigSchema.default(() => ({ level: 'info' as const, maxLogSizeKb: 500, maxLogFiles: 14 })),
   relay: z
     .object({

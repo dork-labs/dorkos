@@ -113,6 +113,15 @@ Returns server runtime information (version, port, uptime, working directory, tu
 
 - `200` - Server config JSON
 
+**Notable response fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | `string` | Current server version string |
+| `latestVersion` | `string \| null` | Latest version from npm, or `null` if dev mode or lookup failed |
+| `isDevMode` | `boolean` | Whether the server is running a development build (from `pnpm dev` or `tsx watch`). When `true`, `latestVersion` will be `null` and upgrade notifications are suppressed in the UI. |
+| `dismissedUpgradeVersions` | `string[]` | List of version strings the user has dismissed upgrade notifications for. Managed via `PATCH /api/config` with `{ ui: { dismissedUpgradeVersions: [...] } }`. |
+
 ### PATCH /api/config
 
 Update user configuration. Accepts a partial config object that is deep-merged with the current `~/.dork/config.json`. The merged result is validated against `UserConfigSchema` before persisting.

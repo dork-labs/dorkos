@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { cn, TIMING } from '@/layers/shared/lib';
+import { isNewer } from '@/layers/features/status';
 
 interface ServerTabProps {
   config: ServerConfig | undefined;
@@ -8,6 +9,7 @@ interface ServerTabProps {
   onOpenTunnelDialog?: () => void;
 }
 
+/** Settings panel tab displaying server status, version, and tunnel controls. */
 export function ServerTab({ config, isLoading, onOpenTunnelDialog }: ServerTabProps) {
   return (
     <div className="space-y-3">
@@ -24,24 +26,37 @@ export function ServerTab({ config, isLoading, onOpenTunnelDialog }: ServerTabPr
         </div>
       ) : config ? (
         <div className="space-y-1">
-          <ConfigRow label="Version" value={config.version} />
-
-          {/* Update notice — shown when latestVersion is newer */}
-          {config.latestVersion && isNewer(config.latestVersion, config.version) && (
+          {config.isDevMode ? (
             <div className="bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 -mx-1 rounded border px-2 py-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-amber-800 dark:text-amber-200 text-sm font-medium">
-                  Update available: v{config.latestVersion}
-                </span>
-              </div>
+              <span className="text-amber-800 dark:text-amber-200 text-sm font-medium">
+                Development Build
+              </span>
               <p className="text-amber-700 dark:text-amber-300 mt-0.5 text-xs">
-                Run{' '}
-                <code className="bg-amber-100 dark:bg-amber-900/50 rounded px-1 py-0.5 font-mono text-[10px]">
-                  npm update -g dorkos
-                </code>{' '}
-                to update
+                Running from source — version checks disabled
               </p>
             </div>
+          ) : (
+            <>
+              <ConfigRow label="Version" value={config.version} />
+
+              {/* Update notice — shown when latestVersion is newer */}
+              {config.latestVersion && isNewer(config.latestVersion, config.version) && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 -mx-1 rounded border px-2 py-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-amber-800 dark:text-amber-200 text-sm font-medium">
+                      Update available: v{config.latestVersion}
+                    </span>
+                  </div>
+                  <p className="text-amber-700 dark:text-amber-300 mt-0.5 text-xs">
+                    Run{' '}
+                    <code className="bg-amber-100 dark:bg-amber-900/50 rounded px-1 py-0.5 font-mono text-[10px]">
+                      npm update -g dorkos
+                    </code>{' '}
+                    to update
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
           <ConfigRow label="Port" value={String(config.port)} />
@@ -128,14 +143,6 @@ function ConfigRow({
   );
 }
 
-/** Simple semver comparison: returns true if a > b */
-function isNewer(a: string, b: string): boolean {
-  const [aMaj, aMin, aPat] = a.split('.').map(Number);
-  const [bMaj, bMin, bPat] = b.split('.').map(Number);
-  if (aMaj !== bMaj) return aMaj > bMaj;
-  if (aMin !== bMin) return aMin > bMin;
-  return aPat > bPat;
-}
 
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600);

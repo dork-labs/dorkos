@@ -4,10 +4,14 @@ import { ArrowUp, Clipboard, Check, ExternalLink } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { TIMING } from '@/layers/shared/lib/constants';
 import { Popover, PopoverTrigger, PopoverContent } from '@/layers/shared/ui';
+import { isNewer, isFeatureUpdate } from '../lib/version-compare';
 
 interface VersionItemProps {
   version: string;
   latestVersion: string | null;
+  isDevMode?: boolean;
+  isDismissed?: boolean;
+  onDismiss?: (version: string) => void;
 }
 
 const UPDATE_COMMAND = 'npm update -g dorkos';
@@ -16,14 +20,13 @@ const RELEASES_URL_BASE = 'https://github.com/dork-labs/dorkos/releases/tag/v';
 /**
  * Status bar version badge with two-tier update indicator and popover card.
  *
+ * Shows an amber `DEV` badge when `isDevMode` is true (running from source).
  * Shows `v{version}` when up to date. For patches, shows `v{latest} available`
  * with a subtle amber dot. For feature updates, shows `Upgrade available` with
  * an animated amber dot and accent color text.
  */
-export function VersionItem({ version, latestVersion }: VersionItemProps) {
+export function VersionItem({ version, latestVersion, isDevMode, isDismissed, onDismiss }: VersionItemProps) {
   const [copied, setCopied] = useState(false);
-  const hasUpdate = latestVersion !== null && isNewer(latestVersion, version);
-  const isFeature = hasUpdate && isFeatureUpdate(latestVersion!, version);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(UPDATE_COMMAND);
@@ -31,7 +34,23 @@ export function VersionItem({ version, latestVersion }: VersionItemProps) {
     setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
   }, []);
 
-  if (!hasUpdate) {
+  // Dev mode: render DEV badge — no update checks
+  if (isDevMode) {
+    return (
+      <span
+        className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-amber-600 dark:text-amber-400"
+        aria-label="Development build"
+      >
+        DEV
+      </span>
+    );
+  }
+
+  const hasUpdate = latestVersion !== null && isNewer(latestVersion, version);
+  const isFeature = hasUpdate && isFeatureUpdate(latestVersion!, version);
+
+  // No update or dismissed: show plain version
+  if (!hasUpdate || isDismissed) {
     return (
       <span
         className="cursor-default text-xs text-muted-foreground"
@@ -129,6 +148,14 @@ export function VersionItem({ version, latestVersion }: VersionItemProps) {
               <ExternalLink className="size-3" />
             </a>
           )}
+
+          <button
+            type="button"
+            onClick={() => onDismiss?.(latestVersion!)}
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Dismiss this version
+          </button>
         </div>
       </PopoverContent>
     </Popover>
@@ -151,18 +178,4 @@ function AmberDot({ pulse }: { pulse: boolean }) {
   );
 }
 
-/** Simple semver comparison: returns true if a > b. */
-function isNewer(a: string, b: string): boolean {
-  const [aMaj, aMin, aPat] = a.split('.').map(Number);
-  const [bMaj, bMin, bPat] = b.split('.').map(Number);
-  if (aMaj !== bMaj) return aMaj > bMaj;
-  if (aMin !== bMin) return aMin > bMin;
-  return aPat > bPat;
-}
 
-/** Returns true if major or minor version changed (not just patch). */
-function isFeatureUpdate(latest: string, current: string): boolean {
-  const [latMaj, latMin] = latest.split('.').map(Number);
-  const [curMaj, curMin] = current.split('.').map(Number);
-  return latMaj !== curMaj || latMin !== curMin;
-}

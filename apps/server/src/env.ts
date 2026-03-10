@@ -12,7 +12,7 @@ const serverEnvSchema = z.object({
   DORKOS_BOUNDARY: z.string().optional(),
   DORKOS_LOG_LEVEL: z.coerce.number().int().min(0).max(5).optional(),
   DORK_HOME: z.string().optional(),
-  DORKOS_VERSION: z.string().optional(),
+  DORKOS_VERSION_OVERRIDE: z.string().optional(),
   CLIENT_DIST_PATH: z.string().optional(),
   // MCP external server — optional API key for authenticated access
   MCP_API_KEY: z.string().optional(),

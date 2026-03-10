@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 110,
+  "nextNumber": 112,
   "specs": [
     {
       "number": 1,
@@ -764,6 +764,20 @@
       "title": "File Upload Chat History Visibility",
       "created": "2026-03-10",
       "status": "implemented"
+    },
+    {
+      "number": 110,
+      "slug": "dev-version-display-upgrade-ux",
+      "title": "Dev Version Display & Upgrade UX Overhaul",
+      "created": "2026-03-10",
+      "status": "specified"
+    },
+    {
+      "number": 111,
+      "slug": "chat-input-always-editable",
+      "title": "Chat Input Always Editable + Message Queuing",
+      "created": "2026-03-10",
+      "status": "ideation"
     }
   ]
 }

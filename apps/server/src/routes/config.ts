@@ -9,7 +9,7 @@ import { isPulseEnabled, getPulseInitError } from '../services/pulse/pulse-state
 import { isRelayEnabled, getRelayInitError } from '../services/relay/relay-state.js';
 import { getMeshInitError } from '../services/mesh/mesh-state.js';
 import { getBoundary } from '../lib/boundary.js';
-import { SERVER_VERSION } from '../lib/version.js';
+import { SERVER_VERSION, IS_DEV_BUILD } from '../lib/version.js';
 
 const router = Router();
 
@@ -84,6 +84,10 @@ router.get('/', async (_req, res) => {
   res.json({
     version: SERVER_VERSION,
     latestVersion,
+    isDevMode: IS_DEV_BUILD,
+    dismissedUpgradeVersions:
+      (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
+        ?.dismissedUpgradeVersions ?? [],
     port: env.DORKOS_PORT,
     uptime: process.uptime(),
     workingDirectory: process.cwd(),

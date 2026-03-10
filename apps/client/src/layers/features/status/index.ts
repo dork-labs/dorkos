@@ -7,3 +7,4 @@ export { StatusLine } from './ui/StatusLine';
 export { VersionItem } from './ui/VersionItem';
 export { useGitStatus } from './model/use-git-status';
 export { TunnelItem } from './ui/TunnelItem';
+export { isNewer, isFeatureUpdate } from './lib/version-compare';

@@ -1,14 +1,32 @@
 import { createRequire } from 'module';
 
+import { env } from '../env.js';
+
 declare const __CLI_VERSION__: string | undefined;
+
+const DEV_VERSION_PATTERN = /^0\.0\.0/;
 
 /**
  * Resolved server version string.
  *
- * Uses the build-time injected `__CLI_VERSION__` when bundled via the CLI package,
- * and falls back to reading `package.json` in dev mode.
+ * Priority: DORKOS_VERSION_OVERRIDE > __CLI_VERSION__ (esbuild) > package.json fallback.
  */
-export const SERVER_VERSION: string =
-  typeof __CLI_VERSION__ !== 'undefined'
-    ? __CLI_VERSION__
-    : (createRequire(import.meta.url)('../../package.json') as { version: string }).version;
+export const SERVER_VERSION: string = resolveVersion();
+
+/** Whether the server is running a development build (not from CLI bundle). */
+export const IS_DEV_BUILD: boolean = checkDevBuild(SERVER_VERSION);
+
+function resolveVersion(): string {
+  if (env.DORKOS_VERSION_OVERRIDE) return env.DORKOS_VERSION_OVERRIDE;
+  if (typeof __CLI_VERSION__ !== 'undefined') return __CLI_VERSION__;
+  return (createRequire(import.meta.url)('../../package.json') as { version: string }).version;
+}
+
+function checkDevBuild(version: string): boolean {
+  // Override explicitly opts out of dev mode
+  if (env.DORKOS_VERSION_OVERRIDE) return false;
+  // CLI bundle injects __CLI_VERSION__ — not a dev build
+  if (typeof __CLI_VERSION__ !== 'undefined') return false;
+  // Sentinel version from package.json
+  return DEV_VERSION_PATTERN.test(version);
+}

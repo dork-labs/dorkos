@@ -99,10 +99,11 @@ The `onboarding` section tracks first-time setup wizard state (`completedSteps`,
 
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:
 
-| Environment Variable    | Default                       | Description                                                |
-| ----------------------- | ----------------------------- | ---------------------------------------------------------- |
-| `DORKOS_RELAY_ENABLED`  | `false`                       | Enable the Relay message bus subsystem at the process level |
-| `DORKOS_CORS_ORIGIN`    | localhost on DORKOS_PORT/VITE_PORT | CORS allowed origin(s). Set to `*` for wildcard or a comma-separated list to override. |
+| Environment Variable       | Default                            | Description                                                |
+| -------------------------- | ---------------------------------- | ---------------------------------------------------------- |
+| `DORKOS_RELAY_ENABLED`     | `false`                            | Enable the Relay message bus subsystem at the process level |
+| `DORKOS_CORS_ORIGIN`       | localhost on DORKOS_PORT/VITE_PORT | CORS allowed origin(s). Set to `*` for wildcard or a comma-separated list to override. |
+| `DORKOS_VERSION_OVERRIDE`  | (none)                             | Override the reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. Example: `DORKOS_VERSION_OVERRIDE=0.1.0` simulates running an old version so the upgrade notification appears. |
 
 The config file also contains a `version` field (always `1`) used for schema migrations.
 

@@ -209,6 +209,8 @@ export class DirectTransport implements Transport {
     return {
       version: '0.1.0',
       latestVersion: null,
+      isDevMode: true,
+      dismissedUpgradeVersions: [],
       port: 0,
       uptime: 0,
       workingDirectory: this.services.vaultRoot,

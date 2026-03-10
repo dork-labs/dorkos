@@ -4,6 +4,7 @@ import type { GitStatusResponse } from '@dorkos/shared/types';
 import { readManifest } from '@dorkos/shared/manifest';
 import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
+import { SERVER_VERSION } from '../../../lib/version.js';
 import { isRelayEnabled } from '../../relay/relay-state.js';
 import { isPulseEnabled } from '../../pulse/pulse-state.js';
 import { configManager } from '../../core/config-manager.js';
@@ -258,7 +259,7 @@ async function buildEnvBlock(cwd: string): Promise<string> {
   const lines = [
     `Working directory: ${cwd}`,
     `Product: DorkOS`,
-    `Version: ${env.DORKOS_VERSION ?? 'development'}`,
+    `Version: ${SERVER_VERSION}`,
     `Port: ${env.DORKOS_PORT}`,
     `Platform: ${os.platform()}`,
     `OS Version: ${os.release()}`,

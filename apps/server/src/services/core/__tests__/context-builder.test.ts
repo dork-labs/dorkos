@@ -18,6 +18,10 @@ vi.mock('../../../lib/logger.js', () => ({
     withTag: vi.fn().mockReturnThis(),
   },
 }));
+vi.mock('../../../lib/version.js', () => ({
+  SERVER_VERSION: '1.2.3',
+  IS_DEV_BUILD: false,
+}));
 vi.mock('../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn(() => true),
 }));
@@ -131,10 +135,9 @@ describe('buildSystemPromptAppend', () => {
     expect(parsed.toISOString()).toBe(dateMatch![1]);
   });
 
-  it('Version defaults to "development" when env unset', async () => {
-    delete process.env.DORKOS_VERSION;
+  it('Version uses SERVER_VERSION from version module', async () => {
     const result = await buildSystemPromptAppend('/test/dir');
-    expect(result).toContain('Version: development');
+    expect(result).toContain('Version: 1.2.3');
   });
 
   it('<git_status> shows "Is git repo: false" for non-git dirs', async () => {

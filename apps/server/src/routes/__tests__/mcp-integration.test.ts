@@ -7,9 +7,13 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 vi.mock('../../env.js', () => ({
   env: {
     DORKOS_PORT: 4242,
-    DORKOS_VERSION: 'test',
     MCP_API_KEY: undefined,
   },
+}));
+
+vi.mock('../../lib/version.js', () => ({
+  SERVER_VERSION: 'test',
+  IS_DEV_BUILD: false,
 }));
 
 // Mock logger to suppress output during tests
