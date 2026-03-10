@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { FolderOpen } from 'lucide-react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import {
   ResponsiveDialog,
@@ -7,6 +8,7 @@ import {
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
   ResponsiveDialogFullscreenToggle,
+  PathBreadcrumb,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -52,8 +54,12 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
               Agent configuration
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
-          <div className="flex h-32 items-center justify-center">
+          <div className="flex h-32 flex-col items-center justify-center gap-2">
             <p className="text-muted-foreground text-sm">No agent registered</p>
+            <div className="text-muted-foreground/60 flex items-center gap-1.5">
+              <FolderOpen className="size-3.5 flex-shrink-0" />
+              <PathBreadcrumb path={projectPath} maxSegments={3} size="sm" />
+            </div>
           </div>
         </ResponsiveDialogContent>
       </ResponsiveDialog>
@@ -74,6 +80,10 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
           <ResponsiveDialogDescription className="text-muted-foreground text-xs">
             Agent configuration
           </ResponsiveDialogDescription>
+          <div className="text-muted-foreground/60 flex items-center gap-1.5 pt-1">
+            <FolderOpen className="size-3 flex-shrink-0" />
+            <PathBreadcrumb path={projectPath} maxSegments={3} size="sm" />
+          </div>
         </ResponsiveDialogHeader>
 
         <Tabs

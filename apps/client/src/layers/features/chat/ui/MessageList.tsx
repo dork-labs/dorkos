@@ -13,7 +13,7 @@ import type { PermissionMode } from '@dorkos/shared/types';
 import { MessageItem } from './message';
 import type { InteractiveToolHandle } from './message';
 import { InferenceIndicator } from './InferenceIndicator';
-import { ScrollArea } from '@/layers/shared/ui';
+import { ScrollThumb } from './ScrollThumb';
 
 export function computeGrouping(messages: ChatMessage[]): MessageGrouping[] {
   let groupIndex = 0;
@@ -80,7 +80,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   },
   ref
 ) {
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
   const [historyCount, setHistoryCount] = useState<number | null>(null);
   const isAtBottomRef = useRef(true);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -95,7 +95,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   const virtualizer = useVirtualizer({
     count: messages.length,
-    getScrollElement: () => viewportRef.current,
+    getScrollElement: () => parentRef.current,
     estimateSize: () => 80,
     overscan: 5,
     measureElement: (el) => el?.getBoundingClientRect().height ?? 80,
@@ -107,7 +107,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   // Track scroll position and report to parent
   const handleScroll = useCallback(() => {
-    const container = viewportRef.current;
+    const container = parentRef.current;
     if (!container) return;
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight;
@@ -126,7 +126,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   }, [onScrollStateChange]);
 
   useEffect(() => {
-    const container = viewportRef.current;
+    const container = parentRef.current;
     if (!container) return;
     const onTouchStart = () => {
       isTouchActiveRef.current = true;
@@ -169,7 +169,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // sidebar tabs), the virtualizer loses its scroll position. Detect
   // visibility changes and scroll to bottom when re-shown.
   useEffect(() => {
-    const container = viewportRef.current;
+    const container = parentRef.current;
     if (!container || messages.length === 0) return;
     let wasHidden = false;
     const observer = new IntersectionObserver(
@@ -180,7 +180,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           wasHidden = false;
           // Small delay so the virtualizer can re-measure after layout
           requestAnimationFrame(() => {
-            const scrollEl = viewportRef.current;
+            const scrollEl = parentRef.current;
             if (scrollEl) {
               scrollEl.scrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
             }
@@ -205,7 +205,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         // fires, reducing the window where scrollHeight fluctuates mid-scroll.
         queueMicrotask(() => {
           rafIdRef.current = requestAnimationFrame(() => {
-            const scrollEl = viewportRef.current;
+            const scrollEl = parentRef.current;
             if (scrollEl) {
               scrollEl.scrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
             }
@@ -225,7 +225,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   useEffect(() => {
     if (messages.length > 0 && isAtBottomRef.current && !isTouchActiveRef.current) {
       requestAnimationFrame(() => {
-        const scrollEl = viewportRef.current;
+        const scrollEl = parentRef.current;
         if (scrollEl) {
           scrollEl.scrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
         }
@@ -234,7 +234,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   }, [messages.length]);
 
   const scrollToBottom = useCallback(() => {
-    const scrollEl = viewportRef.current;
+    const scrollEl = parentRef.current;
     if (scrollEl) {
       scrollEl.scrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
     }
@@ -249,69 +249,66 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   );
 
   return (
-    <ScrollArea
-      type="scroll"
-      className="chat-scroll-area h-full"
-      viewportClassName="pt-12"
-      viewportRef={viewportRef}
-      data-testid="message-list"
-    >
-      <div
-        ref={contentRef}
-        style={{
-          height: virtualizer.getTotalSize(),
-          position: 'relative',
-          width: '100%',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualRow) => {
-          const msg = messages[virtualRow.index];
-          const isNew = historyCount !== null && virtualRow.index >= historyCount;
-          const isLastAssistant =
-            virtualRow.index === messages.length - 1 && msg.role === 'assistant';
-          const isStreaming = isLastAssistant && !!isTextStreaming;
-
-          return (
-            <div
-              key={virtualRow.key}
-              data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            >
-              <MessageItem
-                message={msg}
-                grouping={groupings[virtualRow.index]}
-                sessionId={sessionId}
-                isNew={isNew}
-                isStreaming={isStreaming}
-                activeToolCallId={activeToolCallId}
-                onToolRef={onToolRef}
-                focusedOptionIndex={focusedOptionIndex}
-                onToolDecided={onToolDecided}
-              />
-            </div>
-          );
-        })}
-        {/* Inference status indicator */}
+    <div data-testid="message-list" className="relative h-full">
+      <div ref={parentRef} className="chat-scroll-area hide-scrollbar h-full overflow-y-auto pt-12">
         <div
-          style={{ position: 'absolute', top: virtualizer.getTotalSize(), left: 0, width: '100%' }}
+          ref={contentRef}
+          style={{
+            height: virtualizer.getTotalSize(),
+            position: 'relative',
+            width: '100%',
+          }}
         >
-          <InferenceIndicator
-            status={status ?? 'idle'}
-            streamStartTime={streamStartTime ?? null}
-            estimatedTokens={estimatedTokens ?? 0}
-            permissionMode={permissionMode}
-            isWaitingForUser={isWaitingForUser}
-            waitingType={waitingType}
-          />
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const msg = messages[virtualRow.index];
+            const isNew = historyCount !== null && virtualRow.index >= historyCount;
+            const isLastAssistant =
+              virtualRow.index === messages.length - 1 && msg.role === 'assistant';
+            const isStreaming = isLastAssistant && !!isTextStreaming;
+
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <MessageItem
+                  message={msg}
+                  grouping={groupings[virtualRow.index]}
+                  sessionId={sessionId}
+                  isNew={isNew}
+                  isStreaming={isStreaming}
+                  activeToolCallId={activeToolCallId}
+                  onToolRef={onToolRef}
+                  focusedOptionIndex={focusedOptionIndex}
+                  onToolDecided={onToolDecided}
+                />
+              </div>
+            );
+          })}
+          {/* Inference status indicator */}
+          <div
+            style={{ position: 'absolute', top: virtualizer.getTotalSize(), left: 0, width: '100%' }}
+          >
+            <InferenceIndicator
+              status={status ?? 'idle'}
+              streamStartTime={streamStartTime ?? null}
+              estimatedTokens={estimatedTokens ?? 0}
+              permissionMode={permissionMode}
+              isWaitingForUser={isWaitingForUser}
+              waitingType={waitingType}
+            />
+          </div>
         </div>
       </div>
-    </ScrollArea>
+      <ScrollThumb scrollRef={parentRef} />
+    </div>
   );
 });

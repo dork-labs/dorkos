@@ -66,6 +66,9 @@ interface AppState {
   globalPaletteOpen: boolean;
   setGlobalPaletteOpen: (open: boolean) => void;
   toggleGlobalPalette: () => void;
+  globalPaletteInitialSearch: string | null;
+  openGlobalPaletteWithSearch: (text: string) => void;
+  clearGlobalPaletteInitialSearch: () => void;
 
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
@@ -215,6 +218,10 @@ export const useAppStore = create<AppState>()(
       globalPaletteOpen: false,
       setGlobalPaletteOpen: (open) => set({ globalPaletteOpen: open }),
       toggleGlobalPalette: () => set((s) => ({ globalPaletteOpen: !s.globalPaletteOpen })),
+      globalPaletteInitialSearch: null,
+      openGlobalPaletteWithSearch: (text) =>
+        set({ globalPaletteOpen: true, globalPaletteInitialSearch: text }),
+      clearGlobalPaletteInitialSearch: () => set({ globalPaletteInitialSearch: null }),
 
       sessionId: null,
       setSessionId: (id) => set({ sessionId: id }),

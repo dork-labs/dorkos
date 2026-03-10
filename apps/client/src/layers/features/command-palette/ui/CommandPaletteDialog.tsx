@@ -1,7 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
-import { useTheme } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
@@ -15,11 +14,10 @@ import {
   CommandSeparator,
   ScrollArea,
 } from '@/layers/shared/ui';
-import { useDirectoryState } from '@/layers/entities/session';
 import { usePaletteItems } from '../model/use-palette-items';
-import { useAgentFrecency } from '../model/use-agent-frecency';
 import { useGlobalPalette } from '../model/use-global-palette';
 import { usePaletteSearch } from '../model/use-palette-search';
+import { usePaletteActions } from '../model/use-palette-actions';
 import { AgentCommandItem } from './AgentCommandItem';
 import { AgentPreviewPanel } from './AgentPreviewPanel';
 import { AgentSubMenu } from './AgentSubMenu';
@@ -40,6 +38,12 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Moon,
 };
 
+/** Ease-out curve for entrances (design system standard). */
+const EASE_OUT = [0, 0, 0.2, 1] as const;
+
+/** Ease-in curve for exits (design system standard). */
+const EASE_IN = [0.4, 0, 1, 1] as const;
+
 /** Dialog entrance/exit animation variants. */
 const dialogVariants = {
   hidden: { opacity: 0, scale: 0.96, y: -8 },
@@ -47,13 +51,13 @@ const dialogVariants = {
     opacity: 1,
     scale: 1,
     y: 0,
-    transition: { type: 'spring', stiffness: 500, damping: 35 },
+    transition: { duration: 0.2, ease: EASE_OUT },
   },
   exit: {
     opacity: 0,
     scale: 0.96,
     y: -8,
-    transition: { duration: 0.12 },
+    transition: { duration: 0.12, ease: EASE_IN },
   },
 } as const;
 
@@ -61,7 +65,7 @@ const dialogVariants = {
 const listVariants = {
   hidden: {},
   visible: {
-    transition: { staggerChildren: 0.04, delayChildren: 0.05 },
+    transition: { staggerChildren: 0.035, delayChildren: 0.04 },
   },
 } as const;
 
@@ -71,7 +75,7 @@ const itemVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { type: 'spring', stiffness: 400, damping: 30 },
+    transition: { duration: 0.15, ease: EASE_OUT },
   },
 } as const;
 
@@ -87,6 +91,7 @@ const itemVariants = {
 export function CommandPaletteDialog() {
   const { globalPaletteOpen, setGlobalPaletteOpen } = useGlobalPalette();
   const [search, setSearch] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
   const [selectedValue, setSelectedValue] = useState('');
   // cmdk pages stack: each entry is a page name; last entry is the active page
   const [pages, setPages] = useState<string[]>([]);
@@ -96,10 +101,28 @@ export function CommandPaletteDialog() {
   // staggerKey drives the stagger entrance animation: incremented on dialog open
   // and page transitions, but NOT on search keystrokes.
   const [staggerKey, setStaggerKey] = useState(0);
-  const [selectedCwd, setDir] = useDirectoryState();
-  const { recordUsage } = useAgentFrecency();
-  const { setTheme, theme } = useTheme();
   const isMobile = useIsMobile();
+
+  const globalPaletteInitialSearch = useAppStore((s) => s.globalPaletteInitialSearch);
+  const clearGlobalPaletteInitialSearch = useAppStore((s) => s.clearGlobalPaletteInitialSearch);
+
+  const closePalette = useCallback(() => {
+    setGlobalPaletteOpen(false);
+    clearGlobalPaletteInitialSearch();
+    setSearch('');
+    setSelectedValue('');
+    setPages([]);
+    setSubMenuAgent(null);
+  }, [setGlobalPaletteOpen, clearGlobalPaletteInitialSearch]);
+
+  const {
+    handleAgentSelect,
+    handleFeatureAction,
+    handleQuickAction,
+    recordUsage,
+    setDir,
+    selectedCwd,
+  } = usePaletteActions(closePalette);
 
   const { recentAgents, allAgents, features, commands, quickActions, searchableItems, suggestions } =
     usePaletteItems(selectedCwd);
@@ -181,76 +204,24 @@ export function CommandPaletteDialog() {
     setStaggerKey((k) => k + 1);
   }, []);
 
-  const setPulseOpen = useAppStore((s) => s.setPulseOpen);
-  const setRelayOpen = useAppStore((s) => s.setRelayOpen);
-  const setMeshOpen = useAppStore((s) => s.setMeshOpen);
-  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
-  const setPickerOpen = useAppStore((s) => s.setPickerOpen);
-  const setPreviousCwd = useAppStore((s) => s.setPreviousCwd);
-
-  const closePalette = useCallback(() => {
-    setGlobalPaletteOpen(false);
-    setSearch('');
-    setSelectedValue('');
-    setPages([]);
-    setSubMenuAgent(null);
-  }, [setGlobalPaletteOpen]);
-
-  const handleAgentSelect = useCallback(
-    (agent: AgentPathEntry) => {
-      // Track previous CWD for 'switch back' suggestions before switching
-      if (selectedCwd && selectedCwd !== agent.projectPath) {
-        setPreviousCwd(selectedCwd);
-      }
-      recordUsage(agent.id);
-      setDir(agent.projectPath);
-      closePalette();
-    },
-    [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd],
-  );
-
-  const handleFeatureAction = useCallback(
-    (action: string) => {
-      closePalette();
-      switch (action) {
-        case 'openPulse':
-          setPulseOpen(true);
-          break;
-        case 'openRelay':
-          setRelayOpen(true);
-          break;
-        case 'openMesh':
-          setMeshOpen(true);
-          break;
-        case 'openSettings':
-          setSettingsOpen(true);
-          break;
-        default:
-          break;
-      }
-    },
-    [closePalette, setPulseOpen, setRelayOpen, setMeshOpen, setSettingsOpen],
-  );
-
-  const handleQuickAction = useCallback(
-    (action: string) => {
-      closePalette();
-      switch (action) {
-        case 'discoverAgents':
-          setMeshOpen(true);
-          break;
-        case 'browseFilesystem':
-          setPickerOpen(true);
-          break;
-        case 'toggleTheme':
-          setTheme(theme === 'dark' ? 'light' : 'dark');
-          break;
-        default:
-          break;
-      }
-    },
-    [closePalette, setMeshOpen, setPickerOpen, setTheme, theme],
-  );
+  // Consume initial search text when palette opens (e.g. "@" from AgentIdentityChip click).
+  // Uses useEffect because globalPaletteInitialSearch and globalPaletteOpen are set
+  // simultaneously in the store, so the value isn't available in handleOpenChange's closure.
+  useEffect(() => {
+    if (globalPaletteOpen && globalPaletteInitialSearch != null) {
+      setSearch(globalPaletteInitialSearch);
+      clearGlobalPaletteInitialSearch();
+      // Place cursor after the prefix so typing appends instead of replacing.
+      // Deferred to next frame so the input value has been committed by React.
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (el) {
+          const len = globalPaletteInitialSearch.length;
+          el.setSelectionRange(len, len);
+        }
+      });
+    }
+  }, [globalPaletteOpen, globalPaletteInitialSearch, clearGlobalPaletteInitialSearch]);
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -302,11 +273,11 @@ export function CommandPaletteDialog() {
           'overflow-hidden p-0 !min-h-0 transition-[max-width] duration-200',
           // Align the DialogContent close button with the CommandInput row (h-9 / px-3)
           '[&>button:last-child]:top-2 [&>button:last-child]:right-2.5',
-          hasAgentSelected ? 'max-w-[720px]' : 'max-w-[480px]',
-          isMobile && 'min-h-[90vh]',
+          hasAgentSelected ? 'max-w-[640px]' : 'max-w-[480px]',
+          isMobile && 'h-[85vh]',
         )}
       >
-        {/* Dialog entrance animation — spring scale + fade + y slide */}
+        {/* Dialog entrance animation — scale + fade + y slide */}
         <motion.div
           variants={dialogVariants}
           initial="hidden"
@@ -359,6 +330,7 @@ export function CommandPaletteDialog() {
               </div>
             )}
             <CommandInput
+              ref={inputRef}
               placeholder={page === 'agent-actions' ? `${subMenuAgent?.name ?? 'Agent'} actions...` : 'Search agents, features, commands...'}
               value={search}
               onValueChange={setSearch}
@@ -406,14 +378,13 @@ export function CommandPaletteDialog() {
                                       const agent = allAgents.find((a) => a.id === agentId);
                                       if (agent) handleAgentSelect(agent);
                                     } else if (s.action.startsWith('continueSession:')) {
-                                      // Continue session navigates to the session
                                       closePalette();
                                     }
                                   }}
                                 >
                                   <motion.div
                                     whileHover={{ x: 2 }}
-                                    transition={{ type: 'spring', stiffness: 600, damping: 40 }}
+                                    transition={{ duration: 0.1, ease: EASE_OUT }}
                                     className="flex items-center gap-2 w-full"
                                   >
                                     {Icon && <Icon className="size-4" />}
@@ -432,10 +403,8 @@ export function CommandPaletteDialog() {
                       {/* Zero-query state: Recent Agents group */}
                       {isZeroQuery && recentAgents.length > 0 && (
                         <CommandGroup heading="Recent Agents">
-                          {/* LayoutGroup scopes the sliding selection layoutId to this list */}
                           <LayoutGroup id="cmd-palette-recent">
                             {recentAgents.map((agent, index) => (
-                              // Stagger only the first 8 items for performance
                               <motion.div key={agent.id} variants={index < 8 ? itemVariants : undefined}>
                                 <AgentCommandItem
                                   agent={agent}
@@ -452,7 +421,6 @@ export function CommandPaletteDialog() {
                       {/* Search state: All Agents — always shown in @ mode or when searching */}
                       {!isZeroQuery && searchAgents.length > 0 && (
                         <CommandGroup heading="All Agents">
-                          {/* LayoutGroup scopes the sliding selection layoutId to this list */}
                           <LayoutGroup id="cmd-palette-all">
                             {searchAgents.map((agent, index) => (
                               <motion.div key={agent.id} variants={index < 8 ? itemVariants : undefined}>
@@ -475,9 +443,9 @@ export function CommandPaletteDialog() {
                       )}
 
                       {/* Features — hidden in @ and > mode; shown in zero-query and non-prefix search */}
-                      {!isAtMode && !isCommandMode && (
+                      {!isAtMode && !isCommandMode && searchFeatures.length > 0 && (
                         <>
-                          {searchFeatures.length > 0 && <CommandSeparator />}
+                          <CommandSeparator />
                           <CommandGroup heading="Features">
                             {searchFeatures.map((f, index) => {
                               const Icon = ICON_MAP[f.icon];
@@ -487,10 +455,9 @@ export function CommandPaletteDialog() {
                                     value={f.label}
                                     onSelect={() => handleFeatureAction(f.action)}
                                   >
-                                    {/* Item hover nudge: 2px rightward, Linear-style spring */}
                                     <motion.div
                                       whileHover={{ x: 2 }}
-                                      transition={{ type: 'spring', stiffness: 600, damping: 40 }}
+                                      transition={{ duration: 0.1, ease: EASE_OUT }}
                                       className="flex items-center gap-2 w-full"
                                     >
                                       {Icon && <Icon className="size-4" />}
@@ -519,7 +486,7 @@ export function CommandPaletteDialog() {
                                 <CommandItem value={cmd.name}>
                                   <motion.div
                                     whileHover={{ x: 2 }}
-                                    transition={{ type: 'spring', stiffness: 600, damping: 40 }}
+                                    transition={{ duration: 0.1, ease: EASE_OUT }}
                                     className="flex items-center gap-2 w-full"
                                   >
                                     <span className="font-mono text-xs">{cmd.name}</span>
@@ -551,7 +518,7 @@ export function CommandPaletteDialog() {
                                   >
                                     <motion.div
                                       whileHover={{ x: 2 }}
-                                      transition={{ type: 'spring', stiffness: 600, damping: 40 }}
+                                      transition={{ duration: 0.1, ease: EASE_OUT }}
                                       className="flex items-center gap-2 w-full"
                                     >
                                       {Icon && <Icon className="size-4" />}

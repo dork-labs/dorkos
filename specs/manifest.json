@@ -800,6 +800,13 @@
       "created": "2026-03-10",
       "status": "ideation"
     }
+    {
+      "number": 115,
+      "slug": "switch-agent-via-identity-chip",
+      "title": "Switch Agent via Identity Chip Click",
+      "created": "2026-03-10",
+      "status": "specification"
+    }
   ],
-  "nextNumber": 115
+  "nextNumber": 116
 }

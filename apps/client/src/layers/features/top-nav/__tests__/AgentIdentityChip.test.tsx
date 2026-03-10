@@ -8,11 +8,11 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AgentVisual } from '@/layers/entities/agent';
 
 // Mock app store
-const mockSetAgentDialogOpen = vi.fn();
+const mockOpenGlobalPaletteWithSearch = vi.fn();
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
-      setAgentDialogOpen: mockSetAgentDialogOpen,
+      openGlobalPaletteWithSearch: mockOpenGlobalPaletteWithSearch,
     };
     return selector ? selector(state) : state;
   },
@@ -82,22 +82,22 @@ describe('AgentIdentityChip', () => {
     expect(screen.getByText('No agent')).toBeInTheDocument();
   });
 
-  it('opens agent dialog on click', () => {
+  it('opens command palette with @ prefix on click', () => {
     render(
       <AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />,
       { wrapper: Wrapper },
     );
-    fireEvent.click(screen.getByLabelText('backend-bot \u2014 agent settings'));
-    expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByLabelText('backend-bot \u2014 switch agent'));
+    expect(mockOpenGlobalPaletteWithSearch).toHaveBeenCalledWith('@');
   });
 
-  it('opens agent dialog on click when no agent', () => {
+  it('opens command palette with @ prefix on click when no agent', () => {
     render(
       <AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />,
       { wrapper: Wrapper },
     );
-    fireEvent.click(screen.getByLabelText('Configure agent'));
-    expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByLabelText('Switch agent'));
+    expect(mockOpenGlobalPaletteWithSearch).toHaveBeenCalledWith('@');
   });
 
   it('renders color dot with agent color', () => {
@@ -126,7 +126,7 @@ describe('AgentIdentityChip', () => {
       <AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />,
       { wrapper: Wrapper },
     );
-    expect(screen.getByLabelText('backend-bot \u2014 agent settings')).toBeInTheDocument();
+    expect(screen.getByLabelText('backend-bot \u2014 switch agent')).toBeInTheDocument();
   });
 
   it('has correct aria-label when no agent', () => {
@@ -134,7 +134,7 @@ describe('AgentIdentityChip', () => {
       <AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />,
       { wrapper: Wrapper },
     );
-    expect(screen.getByLabelText('Configure agent')).toBeInTheDocument();
+    expect(screen.getByLabelText('Switch agent')).toBeInTheDocument();
   });
 
   it('renders agent emoji when agent is configured', () => {
@@ -159,7 +159,7 @@ describe('AgentIdentityChip', () => {
       { wrapper: Wrapper },
     );
     // ChevronDown is aria-hidden, verify the button contains more than just text
-    const button = screen.getByLabelText('backend-bot \u2014 agent settings');
+    const button = screen.getByLabelText('backend-bot \u2014 switch agent');
     expect(button).toBeInTheDocument();
     // The chevron SVG should be inside the button
     const svgs = button.querySelectorAll('svg');

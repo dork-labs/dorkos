@@ -62,7 +62,7 @@ export function AgentCommandItem({
         <motion.div
           layoutId="cmd-palette-selection"
           className="bg-accent absolute inset-0 rounded-sm"
-          transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+          transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
         />
       )}
 

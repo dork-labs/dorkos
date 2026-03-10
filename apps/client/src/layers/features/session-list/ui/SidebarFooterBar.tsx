@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { Sun, Moon, Monitor, Settings, Bug } from 'lucide-react';
+import { Sun, Moon, Monitor, Settings, Bug, Pencil } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
 import { useAppStore, useTheme, type Theme } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
@@ -17,7 +17,7 @@ const THEME_ICONS = {
  * theme cycle toggle (light → dark → system), and a devtools toggle in DEV mode.
  */
 export function SidebarFooterBar() {
-  const { setSettingsOpen, devtoolsOpen, toggleDevtools } = useAppStore();
+  const { setSettingsOpen, setAgentDialogOpen, devtoolsOpen, toggleDevtools } = useAppStore();
   const { theme, setTheme } = useTheme();
   const ThemeIcon = THEME_ICONS[theme];
 
@@ -37,6 +37,13 @@ export function SidebarFooterBar() {
         <DorkLogo variant="current" size={60} />
       </a>
       <div className="ml-auto flex items-center gap-0.5">
+        <button
+          onClick={() => setAgentDialogOpen(true)}
+          className="text-muted-foreground/50 hover:text-muted-foreground rounded-md p-1 transition-colors duration-150"
+          aria-label="Edit agent"
+        >
+          <Pencil className="size-(--size-icon-sm)" />
+        </button>
         <button
           onClick={() => setSettingsOpen(true)}
           className="text-muted-foreground/50 hover:text-muted-foreground rounded-md p-1 transition-colors duration-150"

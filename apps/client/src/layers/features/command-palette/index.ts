@@ -23,6 +23,7 @@ export { usePaletteItems } from './model/use-palette-items';
 export type { PaletteItems, SuggestionItem } from './model/use-palette-items';
 export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
+export { usePaletteActions } from './model/use-palette-actions';
 
 /** @internal Exported for testing only. */
 export { usePreviewData } from './model/use-preview-data';

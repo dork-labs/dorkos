@@ -49,6 +49,7 @@ const mockSetPickerOpen = vi.fn();
 let mockGlobalPaletteOpen = true;
 
 const mockSetPreviousCwd = vi.fn();
+const mockClearGlobalPaletteInitialSearch = vi.fn();
 
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
@@ -59,6 +60,8 @@ vi.mock('@/layers/shared/model', () => ({
       setMeshOpen: mockSetMeshOpen,
       setPickerOpen: mockSetPickerOpen,
       setPreviousCwd: mockSetPreviousCwd,
+      globalPaletteInitialSearch: null,
+      clearGlobalPaletteInitialSearch: mockClearGlobalPaletteInitialSearch,
     };
     return selector ? selector(state) : state;
   },

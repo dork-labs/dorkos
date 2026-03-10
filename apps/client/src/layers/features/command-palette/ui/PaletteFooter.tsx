@@ -1,15 +1,18 @@
 interface PaletteFooterProps {
   /** Current cmdk page (undefined for root) */
   page: string | undefined;
-  /** Whether an agent item is currently selected */
+  /** Whether an agent item is currently selected (desktop only) */
   hasAgentSelected: boolean;
 }
+
+const KBD_CLASS = 'bg-muted rounded px-1 py-0.5 font-mono text-[10px]' as const;
 
 /**
  * Dynamic keyboard hint bar at the bottom of the command palette.
  *
  * Shows context-appropriate shortcuts based on the current page
- * and selection state.
+ * and selection state. Agent-specific hints (Enter/Cmd+Enter) are
+ * hidden on mobile since the preview panel isn't visible.
  *
  * @param page - Current cmdk page name (undefined for root)
  * @param hasAgentSelected - Whether an agent item is currently selected
@@ -19,31 +22,31 @@ export function PaletteFooter({ page, hasAgentSelected }: PaletteFooterProps) {
   const modKey = isMac ? '\u2318' : 'Ctrl';
 
   return (
-    <div className="border-t px-3 py-1.5 flex items-center gap-4 text-xs text-muted-foreground">
-      <span>
-        <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">{'\u2191\u2193'}</kbd>{' '}
+    <div className="border-t px-3 py-1.5 flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
+      <span className="inline-flex items-center gap-1">
+        <kbd className={KBD_CLASS}>{'\u2191\u2193'}</kbd>
         Navigate
       </span>
       {!page && hasAgentSelected && (
-        <span>
-          <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">Enter</kbd>{' '}
+        <span className="inline-flex items-center gap-1">
+          <kbd className={KBD_CLASS}>Enter</kbd>
           Open
         </span>
       )}
       {!page && hasAgentSelected && (
-        <span>
-          <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">{modKey}+Enter</kbd>{' '}
+        <span className="inline-flex items-center gap-1">
+          <kbd className={KBD_CLASS}>{modKey}Enter</kbd>
           New Tab
         </span>
       )}
       {page && (
-        <span>
-          <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">Backspace</kbd>{' '}
+        <span className="inline-flex items-center gap-1">
+          <kbd className={KBD_CLASS}>Backspace</kbd>
           Back
         </span>
       )}
-      <span className="ml-auto">
-        <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">esc</kbd>{' '}
+      <span className="ml-auto inline-flex items-center gap-1">
+        <kbd className={KBD_CLASS}>esc</kbd>
         Close
       </span>
     </div>

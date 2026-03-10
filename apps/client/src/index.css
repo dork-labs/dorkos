@@ -495,13 +495,13 @@ body {
   pointer-events: auto;
 }
 
-/* Radix ScrollArea injects a `display:table` wrapper inside the Viewport to
-   handle horizontal sizing. This causes measurement oscillation with TanStack
-   Virtual's absolute-positioned items, resulting in jerky scrolling. Override
-   to block layout for virtualized scroll containers. */
-.chat-scroll-area [data-slot="scroll-area-viewport"] > div {
-  display: block !important;
-  min-width: unset !important;
+/* Hide native scrollbar while preserving scroll functionality.
+   Used on containers with a custom ScrollThumb overlay. */
+.hide-scrollbar {
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Command palette list: capped height, overflow delegated to Radix ScrollArea */
@@ -509,6 +509,14 @@ body {
   max-height: min(var(--cmdk-list-height), 60vh);
   transition: max-height 150ms cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden !important;
+}
+
+/* Mobile: list fills drawer and scrolls natively */
+@media (max-width: 767px) {
+  [cmdk-list] {
+    max-height: none !important;
+    overflow-y: auto !important;
+  }
 }
 
 /* Radix ScrollArea inside command palette: fade scrollbar in/out */

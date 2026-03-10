@@ -45,6 +45,11 @@ vi.mock('../QuestionPrompt', () => ({
   QuestionPrompt: () => <div data-testid="question-prompt">Question prompt</div>,
 }));
 
+// Mock ScrollThumb to avoid scroll measurement in unit tests
+vi.mock('../ui/ScrollThumb', () => ({
+  ScrollThumb: () => null,
+}));
+
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getVirtualItems: () =>
@@ -213,7 +218,22 @@ describe('MessageList', () => {
     expect(screen.getByText('Read ...')).toBeDefined();
   });
 
-  it('has scroll container', () => {
+  it('has scroll container with overflow', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: '1',
+        role: 'user',
+        content: 'Test',
+        parts: [{ type: 'text', text: 'Test' }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    const { container } = render(<MessageList sessionId="test-session" messages={messages} />);
+    const scrollContainer = container.querySelector('.overflow-y-auto');
+    expect(scrollContainer).not.toBeNull();
+  });
+
+  it('scroll container does not have flex-1 class', () => {
     const messages: ChatMessage[] = [
       {
         id: '1',
@@ -225,22 +245,7 @@ describe('MessageList', () => {
     ];
     render(<MessageList sessionId="test-session" messages={messages} />);
     const scrollContainer = screen.getByTestId('message-list');
-    expect(scrollContainer).not.toBeNull();
-  });
-
-  it('scroll viewport does not have flex-1 class', () => {
-    const messages: ChatMessage[] = [
-      {
-        id: '1',
-        role: 'user',
-        content: 'Test',
-        parts: [{ type: 'text', text: 'Test' }],
-        timestamp: new Date().toISOString(),
-      },
-    ];
-    const { container } = render(<MessageList sessionId="test-session" messages={messages} />);
-    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]');
-    expect(viewport?.classList.contains('flex-1')).toBe(false);
+    expect(scrollContainer.classList.contains('flex-1')).toBe(false);
   });
 
   it('does not render scroll-to-bottom button', () => {
@@ -327,8 +332,7 @@ describe('MessageList', () => {
       />
     );
 
-    // Event listeners attach to the Radix ScrollArea Viewport, not the root
-    const scrollEl = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
 
     // Simulate scrollHeight > clientHeight + scrollTop (would compute distanceFromBottom > 200)
     // by setting scroll properties before firing the event
@@ -364,8 +368,7 @@ describe('MessageList', () => {
       />
     );
 
-    // Event listeners attach to the Radix ScrollArea Viewport, not the root
-    const scrollEl = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
 
     // Simulate user scrolling: wheel event first sets the intent flag
     scrollEl.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
@@ -403,8 +406,7 @@ describe('MessageList', () => {
       />
     );
 
-    // Event listeners attach to the Radix ScrollArea Viewport, not the root
-    const scrollEl = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
 
     // User scrolls via wheel
     scrollEl.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));

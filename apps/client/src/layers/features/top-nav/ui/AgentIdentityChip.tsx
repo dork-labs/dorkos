@@ -22,19 +22,19 @@ interface AgentIdentityChipProps {
  * Agent name transitions with a slide animation when switching agents.
  */
 export function AgentIdentityChip({ agent, visual, isStreaming }: AgentIdentityChipProps) {
-  const setAgentDialogOpen = useAppStore((s) => s.setAgentDialogOpen);
+  const openGlobalPaletteWithSearch = useAppStore((s) => s.openGlobalPaletteWithSearch);
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <motion.button
-          onClick={() => setAgentDialogOpen(true)}
+          onClick={() => openGlobalPaletteWithSearch('@')}
           className="hover:bg-accent flex h-7 items-center gap-1.5 rounded-md px-2 transition-colors"
           whileTap={{ scale: 0.97 }}
           aria-label={
             agent
-              ? `${agent.name} \u2014 agent settings`
-              : 'Configure agent'
+              ? `${agent.name} \u2014 switch agent`
+              : 'Switch agent'
           }
         >
           {/* Color dot — solid when agent exists, dashed border when no agent */}

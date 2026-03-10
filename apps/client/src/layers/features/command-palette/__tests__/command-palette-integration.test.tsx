@@ -64,6 +64,8 @@ vi.mock('@/layers/shared/model', () => ({
       setMeshOpen: mockSetMeshOpen,
       setPickerOpen: mockSetPickerOpen,
       setPreviousCwd: mockSetPreviousCwd,
+      globalPaletteInitialSearch: null,
+      clearGlobalPaletteInitialSearch: vi.fn(),
     };
     return selector ? selector(state) : state;
   },

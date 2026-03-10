@@ -16,9 +16,8 @@ import {
 } from '@/layers/shared/ui';
 import { usePulseEnabled, useCompletedRunBadge } from '@/layers/entities/pulse';
 import { toast } from 'sonner';
-import { useSessions, useDirectoryState } from '@/layers/entities/session';
+import { useSessions } from '@/layers/entities/session';
 import { SessionItem } from './SessionItem';
-import { AgentHeader } from './AgentHeader';
 import { AgentContextChips } from './AgentContextChips';
 import { SidebarFooterBar } from './SidebarFooterBar';
 import { Plus } from 'lucide-react';
@@ -28,13 +27,12 @@ import type { Session } from '@dorkos/shared/types';
 
 export function SessionSidebar() {
   const { sessions, activeSessionId, setActiveSession } = useSessions();
-  const { setSidebarOpen, setPulseOpen, setPickerOpen, setAgentDialogOpen, setOnboardingStep } =
+  const { setSidebarOpen, setPulseOpen, setOnboardingStep } =
     useAppStore();
   const isMobile = useIsMobile();
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   // Suppresses auto-select after user intentionally clicks "New session"
   const intentionallyNullRef = useRef(false);
-  const [selectedCwd] = useDirectoryState();
   const pulseEnabled = usePulseEnabled();
   const { unviewedCount, clearBadge } = useCompletedRunBadge(pulseEnabled);
   const enablePulseNotifications = useAppStore((s) => s.enablePulseNotifications);
@@ -111,13 +109,6 @@ export function SessionSidebar() {
   return (
     <>
       <SidebarHeader className="border-b p-3">
-        {selectedCwd && (
-          <AgentHeader
-            cwd={selectedCwd}
-            onOpenPicker={() => setPickerOpen(true)}
-            onOpenAgentDialog={() => setAgentDialogOpen(true)}
-          />
-        )}
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton

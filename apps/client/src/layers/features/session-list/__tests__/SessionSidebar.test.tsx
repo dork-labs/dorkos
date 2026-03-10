@@ -236,12 +236,6 @@ describe('SessionSidebar', () => {
     expect(mockSetSessionId).toHaveBeenCalledWith(null);
   });
 
-  it('renders AgentHeader when selectedCwd is set', () => {
-    renderWithQuery(<SessionSidebar />);
-    // AgentHeader renders a directory picker button when selectedCwd is present
-    expect(screen.getByLabelText('Change working directory')).toBeDefined();
-  });
-
   it('hides "Today" header when it is the only group', async () => {
     mockTransport = createMockTransport({
       listSessions: vi
