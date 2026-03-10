@@ -215,8 +215,8 @@ async function start() {
   const app = createApp();
 
   // Mount external MCP server at /mcp (protocol endpoint, not REST API)
-  const externalMcpServer = createExternalMcpServer(mcpToolDeps);
-  app.use('/mcp', validateMcpOrigin, mcpApiKeyAuth, createMcpRouter(externalMcpServer));
+  // Stateless mode: each POST creates a fresh McpServer + transport (per SDK docs).
+  app.use('/mcp', validateMcpOrigin, mcpApiKeyAuth, createMcpRouter(() => createExternalMcpServer(mcpToolDeps)));
   const mcpAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 

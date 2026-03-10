@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 11 / 13
+**Status:** Complete
+**Tasks Completed:** 13 / 13
 
 ## Tasks Completed
 
@@ -24,6 +24,8 @@
 - Task #7: [mcp-server] [P3] Mount MCP endpoint in Express app and add startup logging
 - Task #10: [mcp-server] [P4] Write unit tests for MCP server factory
 - Task #11: [mcp-server] [P4] Write unit tests for MCP route handler
+- Task #12: [mcp-server] [P4] Write integration test for MCP endpoint JSON-RPC round-trip
+- Task #13: [mcp-server] [P5] Add MCP Server section to API reference and update CLAUDE.md
 
 ## Files Modified/Created
 
@@ -34,31 +36,37 @@
 - `apps/server/src/middleware/mcp-auth.ts` — New: API key auth middleware
 - `apps/server/src/middleware/mcp-origin.ts` — New: Origin validation middleware
 - `apps/server/src/services/core/mcp-server.ts` — New: MCP server factory (33 tools registered)
-- `apps/server/src/routes/mcp.ts` — New: MCP route handler (POST/GET/DELETE)
+- `apps/server/src/routes/mcp.ts` — New: MCP route handler (POST/GET/DELETE, per-request server factory)
 - `apps/server/src/index.ts` — Mount MCP endpoint at `/mcp` with middleware chain
 - `turbo.json` — Added `MCP_API_KEY` to `globalPassThroughEnv`
 - `.env.example` — Added `MCP_API_KEY` documentation
 - `pnpm-lock.yaml` — Updated with new dependency
+- `contributing/api-reference.md` — Added MCP Server section
+- `CLAUDE.md` — Added MCP server mention in Server section
 
 **Test files:**
 
-- `apps/server/src/middleware/__tests__/mcp-auth.test.ts` — 7 tests passing
-- `apps/server/src/middleware/__tests__/mcp-origin.test.ts` — 7 tests passing
-- `apps/server/src/services/core/__tests__/mcp-server.test.ts` — 11 tests passing
-- `apps/server/src/routes/__tests__/mcp.test.ts` — 7 tests passing
+- `apps/server/src/middleware/__tests__/mcp-auth.test.ts` — 7 tests
+- `apps/server/src/middleware/__tests__/mcp-origin.test.ts` — 7 tests
+- `apps/server/src/services/core/__tests__/mcp-server.test.ts` — 11 tests
+- `apps/server/src/routes/__tests__/mcp.test.ts` — 7 tests
+- `apps/server/src/routes/__tests__/mcp-integration.test.ts` — 4 tests
 
 ## Known Issues
 
-- SDK exports `StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk/server/streamableHttp.js`, NOT `NodeStreamableHTTPServerTransport` from `server/node.js` as specified in the spec. All implementation tasks have been corrected.
+- SDK exports `StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk/server/streamableHttp.js`, NOT `NodeStreamableHTTPServerTransport` from `server/node.js` as specified in the spec. All implementation corrected.
 - `server.tool()` API is marked deprecated in favor of `registerTool()` but still works in SDK 1.27.1.
+- Route handler uses per-request server factory pattern (not shared server instance) because `McpServer.connect()` cannot be called twice on the same instance. This matches the SDK's official stateless example.
 
 ## Implementation Notes
 
 ### Session 1
 
-- Batch 1 (4 tasks) completed — foundation: SDK dep, env var, auth middleware, origin middleware
-- Batch 2 (4 tasks) completed — core: server factory (33 tools), route handler, auth tests, origin tests
-- Batch 3 (3 tasks) completed — integration: Express mounting, factory tests (11), route tests (7)
-- Task #7 agent also fixed vi.mock hoisting bugs in batch 2 test files (using vi.hoisted())
+- Batch 1 (4 tasks) — foundation: SDK dep, env var, auth middleware, origin middleware
+- Batch 2 (4 tasks) — core: server factory (33 tools), route handler, auth tests, origin tests
+- Batch 3 (3 tasks) — integration: Express mounting, factory tests, route tests
+- Batch 4 (2 tasks) — integration test, documentation
 - SDK version installed: 1.27.1
-- All 1215 existing tests continue to pass + 32 new MCP tests
+- Import paths: `McpServer` from `server/mcp.js`, `StreamableHTTPServerTransport` from `server/streamableHttp.js`
+- Integration test discovered per-request server creation is required (SDK limitation) — fixed in production code
+- 36 new MCP tests across 5 test files

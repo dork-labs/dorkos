@@ -9,14 +9,19 @@ import { logger } from '../lib/logger.js';
  * Handles POST requests with JSON-RPC bodies. GET and DELETE return 405
  * because this server operates in stateless mode (no session tracking).
  *
- * @param server - The shared McpServer instance with all tools registered
+ * In stateless mode, both a fresh McpServer and transport are created per
+ * request (per MCP SDK docs). The `McpServer.connect()` method binds a
+ * server to a transport and cannot be called twice on the same instance.
+ *
+ * @param serverFactory - Creates a fresh McpServer instance per request
  */
-export function createMcpRouter(server: McpServer): Router {
+export function createMcpRouter(serverFactory: () => McpServer): Router {
   const router = Router();
 
   // POST: JSON-RPC tool calls (primary endpoint)
   router.post('/', async (req, res) => {
     try {
+      const server = serverFactory();
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless
       });

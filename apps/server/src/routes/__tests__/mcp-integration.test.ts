@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 // Mock env for server factory and core-tools handlers
 vi.mock('../../env.js', () => ({
@@ -27,49 +28,85 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
-import { createMcpRouter } from '../mcp.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 
-function createTestApp() {
-  const deps: McpToolDeps = {
+/**
+ * Create minimal McpToolDeps with mock services.
+ * Only required fields are set; optional services are omitted.
+ */
+function createMinimalDeps(): McpToolDeps {
+  return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
   };
+}
 
-  const mcpServer = createExternalMcpServer(deps);
+/**
+ * Create a test Express app that matches the SDK's official stateless pattern:
+ * a new McpServer + transport per POST request. This is the correct stateless
+ * architecture per the SDK's `simpleStatelessStreamableHttp.ts` example.
+ *
+ * Each POST creates a fresh McpServer via `createExternalMcpServer` and a fresh
+ * `StreamableHTTPServerTransport`, connects them, handles the request, then
+ * cleans up on response close.
+ */
+function createStatelessTestApp() {
   const app = express();
   app.use(express.json());
-  app.use('/mcp', createMcpRouter(mcpServer));
+
+  app.post('/mcp', async (req, res) => {
+    try {
+      const server = createExternalMcpServer(createMinimalDeps());
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+      res.on('close', () => {
+        transport.close().catch(() => {});
+        server.close().catch(() => {});
+      });
+    } catch (err) {
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: 'Internal error' },
+          id: null,
+        });
+      }
+    }
+  });
+
   return app;
 }
 
+/** Standard JSON-RPC initialize request body. */
+const INITIALIZE_REQUEST = {
+  jsonrpc: '2.0',
+  method: 'initialize',
+  params: {
+    protocolVersion: '2025-03-26',
+    capabilities: {},
+    clientInfo: { name: 'test-client', version: '1.0.0' },
+  },
+  id: 1,
+};
+
 describe('MCP Integration', () => {
   it('initialize handshake returns 200 with server info', async () => {
-    const app = createTestApp();
+    const app = createStatelessTestApp();
 
     const res = await request(app)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
-      .send({
-        jsonrpc: '2.0',
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-03-26',
-          capabilities: {},
-          clientInfo: { name: 'test-client', version: '1.0.0' },
-        },
-        id: 1,
-      });
+      .send(INITIALIZE_REQUEST);
 
     expect(res.status).toBe(200);
 
-    // The SDK may return the response as JSON or SSE depending on Accept header.
-    // Parse the response body to find the JSON-RPC result.
     const body = parseResponse(res);
-
     expect(body).toMatchObject({
       jsonrpc: '2.0',
       id: 1,
@@ -84,75 +121,49 @@ describe('MCP Integration', () => {
     });
   });
 
-  it('tools/list returns all registered tools', async () => {
-    const app = createTestApp();
+  it('tools/list returns all registered tools after initialization', async () => {
+    const app = createStatelessTestApp();
 
-    // In stateless mode each POST is independent, so we send initialize + notifications/initialized
-    // as a batch, then tools/list in a separate request.
-    // Actually, in stateless mode each request creates its own transport+connection,
-    // so we must send initialize first, then tools/list in a fresh request
-    // (the server will re-initialize on each POST).
-
-    // First: initialize
+    // In stateless mode, each POST creates a fresh server+transport.
+    // The SDK requires `initialize` to be sent alone (not batched).
+    // After initialize, subsequent requests (tools/list) work on their own
+    // fresh transport — stateless mode skips session validation.
     const initRes = await request(app)
+      .post('/mcp')
+      .set('Content-Type', 'application/json')
+      .set('Accept', 'application/json, text/event-stream')
+      .send(INITIALIZE_REQUEST);
+
+    expect(initRes.status).toBe(200);
+
+    // tools/list on a fresh stateless transport (no initialize needed per-request
+    // in stateless mode — session validation is disabled)
+    const toolsRes = await request(app)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
       .send({
         jsonrpc: '2.0',
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-03-26',
-          capabilities: {},
-          clientInfo: { name: 'test-client', version: '1.0.0' },
-        },
-        id: 1,
+        method: 'tools/list',
+        id: 2,
       });
 
-    expect(initRes.status).toBe(200);
+    expect(toolsRes.status).toBe(200);
 
-    // Second: tools/list (new stateless transport — needs its own initialize first)
-    // In stateless mode, each POST creates a fresh session, so we need to batch
-    // initialize + tools/list. The MCP SDK supports JSON-RPC batching.
-    const batchRes = await request(app)
-      .post('/mcp')
-      .set('Content-Type', 'application/json')
-      .set('Accept', 'application/json, text/event-stream')
-      .send([
-        {
-          jsonrpc: '2.0',
-          method: 'initialize',
-          params: {
-            protocolVersion: '2025-03-26',
-            capabilities: {},
-            clientInfo: { name: 'test-client', version: '1.0.0' },
-          },
-          id: 10,
-        },
-        {
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        },
-        {
-          jsonrpc: '2.0',
-          method: 'tools/list',
-          id: 11,
-        },
-      ]);
+    const body = parseResponse(toolsRes);
+    expect(body).toMatchObject({
+      jsonrpc: '2.0',
+      id: 2,
+      result: {
+        tools: expect.any(Array),
+      },
+    });
 
-    expect(batchRes.status).toBe(200);
-
-    const messages = parseAllMessages(batchRes);
-    // Find the tools/list response
-    const toolsResponse = messages.find((m) => m.id === 11 && m.result?.tools);
-
-    expect(toolsResponse).toBeDefined();
-    const tools = toolsResponse!.result!.tools!;
-    expect(tools).toBeInstanceOf(Array);
+    const tools = body.result!.tools!;
     // We registered 33 tools in createExternalMcpServer
     expect(tools.length).toBeGreaterThanOrEqual(30);
 
-    // Verify well-known tools are present
+    // Verify well-known tools from each category are present
     const toolNames = tools.map((t) => t.name);
     expect(toolNames).toContain('ping');
     expect(toolNames).toContain('get_server_info');
@@ -160,50 +171,39 @@ describe('MCP Integration', () => {
     expect(toolNames).toContain('pulse_list_schedules');
     expect(toolNames).toContain('relay_send');
     expect(toolNames).toContain('mesh_discover');
+    expect(toolNames).toContain('binding_list');
+    expect(toolNames).toContain('relay_get_trace');
   });
 
   it('ping tool call returns pong response', async () => {
-    const app = createTestApp();
+    const app = createStatelessTestApp();
 
-    // Batch: initialize + initialized notification + tools/call
     const res = await request(app)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
-      .send([
-        {
-          jsonrpc: '2.0',
-          method: 'initialize',
-          params: {
-            protocolVersion: '2025-03-26',
-            capabilities: {},
-            clientInfo: { name: 'test-client', version: '1.0.0' },
-          },
-          id: 20,
+      .send({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: {
+          name: 'ping',
+          arguments: {},
         },
-        {
-          jsonrpc: '2.0',
-          method: 'notifications/initialized',
-        },
-        {
-          jsonrpc: '2.0',
-          method: 'tools/call',
-          params: {
-            name: 'ping',
-            arguments: {},
-          },
-          id: 21,
-        },
-      ]);
+        id: 3,
+      });
 
     expect(res.status).toBe(200);
 
-    const messages = parseAllMessages(res);
-    const pingResponse = messages.find((m) => m.id === 21 && m.result?.content);
+    const body = parseResponse(res);
+    expect(body).toMatchObject({
+      jsonrpc: '2.0',
+      id: 3,
+      result: {
+        content: expect.any(Array),
+      },
+    });
 
-    expect(pingResponse).toBeDefined();
-    const content = pingResponse!.result!.content!;
-    expect(content).toBeInstanceOf(Array);
+    const content = body.result!.content!;
     expect(content[0].type).toBe('text');
 
     const pingData = JSON.parse(content[0].text) as Record<string, unknown>;
@@ -215,22 +215,13 @@ describe('MCP Integration', () => {
   });
 
   it('no Mcp-Session-Id header in stateless mode', async () => {
-    const app = createTestApp();
+    const app = createStatelessTestApp();
 
     const res = await request(app)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
-      .send({
-        jsonrpc: '2.0',
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-03-26',
-          capabilities: {},
-          clientInfo: { name: 'test-client', version: '1.0.0' },
-        },
-        id: 1,
-      });
+      .send(INITIALIZE_REQUEST);
 
     expect(res.status).toBe(200);
     // In stateless mode, no session ID header should be set
@@ -269,36 +260,12 @@ function parseResponse(res: request.Response): JsonRpcMessage {
   }
 
   if (contentType.includes('text/event-stream')) {
-    // Parse SSE: extract data lines and parse JSON
     const messages = parseSseMessages(res.text);
-    // Return the first (and likely only) message for single requests
     return messages[0];
   }
 
   // Fallback: try to parse body as JSON
   return res.body as JsonRpcMessage;
-}
-
-/**
- * Parse all JSON-RPC messages from a response, handling both JSON and SSE formats.
- * For batch requests, the SDK sends multiple SSE data events.
- */
-function parseAllMessages(res: request.Response): JsonRpcMessage[] {
-  const contentType = (res.headers['content-type'] as string) ?? '';
-
-  if (contentType.includes('application/json')) {
-    // Direct JSON response — could be a single object or array
-    const body = res.body as JsonRpcMessage | JsonRpcMessage[];
-    return Array.isArray(body) ? body : [body];
-  }
-
-  if (contentType.includes('text/event-stream')) {
-    return parseSseMessages(res.text);
-  }
-
-  // Fallback
-  const body = res.body as JsonRpcMessage | JsonRpcMessage[];
-  return Array.isArray(body) ? body : [body];
 }
 
 /**

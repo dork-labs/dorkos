@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Create MCP server per request to avoid connect() reuse
 - Update stale tests and add pre-push test gate via lefthook
 - Eliminate ghost messages via per-message correlation IDs
 - Improve message history retrieval and error handling in session routes
