@@ -5,42 +5,51 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-03-09
+
+> MCP server integration, file uploads, chat UX overhaul, and SSE reliability fixes
 
 ### Added
 
-- `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) and `RuntimeRegistry` abstraction (`services/core/runtime-registry.ts`) — decouples DorkOS from the Claude Agent SDK; all routes obtain the active runtime via `runtimeRegistry.getDefault()`
-- `GET /api/capabilities` endpoint returning `RuntimeCapabilities` flags for all registered runtimes
-- `useRuntimeCapabilities` and `useDefaultCapabilities` client hooks (`entities/runtime/`)
-- `relay_dispatch` MCP tool for fire-and-poll async delegation — agents publish to `relay.agent.*` and return immediately with `{ messageId, inboxSubject }` for polling
-- `relay_unregister_endpoint` MCP tool for cleaning up dispatch inboxes after completion
-- `relay_query` progress accumulation — returns incremental CCA progress in a `progress[]` array
-- Endpoint types (`EndpointType` union with `inferEndpointType()`) for subject-based inbox classification
-- Dispatch inbox TTL sweeper in `RelayCore` — auto-expires dispatch inboxes after 30 minutes
-- Unified discovery scanner in `packages/mesh/src/discovery/unified-scanner.ts` — replaces two separate implementations (`discovery-scanner.ts` and `discovery-engine.ts`) with a single BFS scanner supporting 21 exclude patterns, symlink cycle detection, and configurable timeout
-- `entities/discovery/` FSD entity with Zustand store and `useDiscoveryScan` hook — scan results persist across views without re-scanning
-- `/chat:self-test` slash command for systematic browser-based stack validation
-- Per-package ESLint configs with `@dorkos/eslint-config` shared workspace package providing `base`, `react`, `node`, and `test` presets; enables per-package Turborepo lint caching
-- SDK import confinement lint rule — bans `@anthropic-ai/claude-agent-sdk` imports outside `services/runtimes/claude-code/`
+- Embed MCP server with Streamable HTTP transport — external agents (Claude Code, Cursor, Windsurf) can connect via `/mcp`
+- File uploads in chat — drag-and-drop, paperclip, and paste to attach files
+- Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
+- Add chat microinteraction polish — spring physics, layoutId, session crossfade
+- Unify discovery scanners and fix onboarding scan root
+- Add endpoint types, dispatch TTL sweeper, and relay_query progress accumulation
+- Add /chat:self-test slash command
+- Add relay_dispatch fire-and-poll for long-running tasks
 
 ### Changed
 
-- Renamed 6 MCP tools to follow `domain_verb_noun` convention: `list_schedules` → `pulse_list_schedules`, `create_schedule` → `pulse_create_schedule`, `update_schedule` → `pulse_update_schedule`, `delete_schedule` → `pulse_delete_schedule`, `get_run_history` → `pulse_get_run_history`, `agent_get_current` → `get_current_agent`
-- Replaced text branding with DorkOS logo in sidebar footer
-- `relay_list_endpoints` enriched with `type` and `expiresAt` metadata
-- Discovery route defaults to home directory boundary instead of project root; fixes onboarding scan scanning the wrong root
+- Message-first session creation — eliminate POST /sessions
+- Extract ChatInputContainer from ChatPanel
+- Split http-transport.ts into transport/ subdirectory (742 → 7 files)
+- Extract 4 hooks + 1 component from ChatPanel (617 → 267 lines)
+- Clean up URL query params — remove dead code, add pushState, fix setTimeout hack
+- Unify page title and favicon system, remove dead code
+- Update MessageItem typography to use font-light for improved readability
+- Tighten chat typography to text-sm (14px)
+- Decompose root eslint.config.js into per-package configs with shared @dorkos/eslint-config
+- Extract AgentRuntime interface and RuntimeRegistry abstraction
+- Replace text branding with DorkOS logo linking to dorkos.ai
+- Rename pulse and agent tools to follow domain_verb_noun convention
 
 ### Fixed
 
-- Resolve SSE delivery pipeline causing 40-50% message freezes — stabilize EventSource lifecycle, add subscribe-first handshake, ensure CCA always publishes `done` event on SDK generator throw, buffer messages for pending subscribers
-- Apply SSE backpressure handling to session broadcaster relay writes (`subscribeToRelay()` and `broadcastUpdate()`)
-- Make `sendSSEEvent` async with drain backpressure handling to prevent SSE freeze
-- Strip `<relay_context>` wrapper from user messages in transcript parser so relay-routed messages appear in history reload
-- Translate agent session ID to SDK session ID in SSE stream registration to prevent 503 floods
-- Add client-side staleness detector (15s timeout) to recover from lost `done` events
-- Merge PATCH response into TanStack Query cache instead of replacing it
-- Remove acted candidates (approved/denied) from the discovery list in Mesh panel
-- Export Mesh health thresholds as constants to eliminate fragile hardcoded test values
+- Create MCP server per request to avoid connect() reuse
+- Update stale tests and add pre-push test gate via lefthook
+- Eliminate ghost messages via per-message correlation IDs
+- Improve message history retrieval and error handling in session routes
+- Resolve streaming vs history inconsistencies via queueMicrotask and scroll-intent tracking
+- Prevent relay-mode polling storm and tool-call spinner regression
+- Upgrade streamdown to ^2.4.0 to fix inline code truncation
+- Resolve history gaps, SSE session mismatch, and done event loss
+- Export health thresholds to eliminate fragile hardcoded test values
+- Resolve SSE delivery pipeline causing ~40-50% message freezes
+- Apply SSE backpressure handling to session broadcaster relay writes
+- Resolve SSE freeze, blank refresh, and relay metadata leaks
+- Remove acted candidates from discovery list after approve/deny
 
 ---
 

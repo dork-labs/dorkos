@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.9.0] - 2026-03-09
+
+> MCP server integration, file uploads, chat UX overhaul, and SSE reliability fixes
+
+### Added
+
 - Embed MCP server with Streamable HTTP transport — external agents (Claude Code, Cursor, Windsurf) can connect via `/mcp`
 - File uploads in chat — drag-and-drop, paperclip, and paste to attach files
 - Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
@@ -48,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Apply SSE backpressure handling to session broadcaster relay writes
 - Resolve SSE freeze, blank refresh, and relay metadata leaks
 - Remove acted candidates from discovery list after approve/deny
+
 ---
 
 ## [0.8.0] - 2026-03-04
@@ -325,7 +338,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/dork-labs/dorkos/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/dork-labs/dorkos/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/dork-labs/dorkos/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dork-labs/dorkos/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dork-labs/dorkos/compare/v0.4.0...v0.5.0

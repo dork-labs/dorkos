@@ -1,0 +1,68 @@
+---
+title: DorkOS 0.9.0
+description: External agent connectivity via embedded MCP server, file uploads in chat, a polished chat UX, and major SSE reliability fixes.
+date: 2026-03-09
+author: DorkOS Team
+category: release
+tags: [release, mcp, file-uploads, chat-ux, reliability]
+---
+
+DorkOS 0.9.0 opens the door to external agents and tools. An embedded MCP server lets Claude Code, Cursor, and Windsurf connect directly to your DorkOS instance — while file uploads, a refreshed chat experience, and 13 reliability fixes make the day-to-day smoother.
+
+## Highlights
+
+⭐ **Embedded MCP server** — External agents connect to DorkOS via Streamable HTTP at `/mcp`. Your agents' tools are now accessible from any MCP-compatible client without additional setup.
+
+📎 **File uploads in chat** — Drag-and-drop, click the paperclip, or paste from clipboard. Files flow into your agent conversations naturally.
+
+🔧 **SSE reliability overhaul** — Resolved the SSE delivery pipeline that was causing 40-50% message freezes, eliminated ghost messages, and fixed streaming/history inconsistencies. Chat just works now.
+
+## All Changes
+
+### Added
+
+- Embed MCP server with Streamable HTTP transport — external agents (Claude Code, Cursor, Windsurf) can connect via `/mcp`
+- File uploads in chat — drag-and-drop, paperclip, and paste to attach files
+- Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
+- Add chat microinteraction polish — spring physics, layoutId, session crossfade
+- Unify discovery scanners and fix onboarding scan root
+- Add endpoint types, dispatch TTL sweeper, and relay_query progress accumulation
+- Add /chat:self-test slash command
+- Add relay_dispatch fire-and-poll for long-running tasks
+
+### Changed
+
+- Message-first session creation — eliminate POST /sessions
+- Extract ChatInputContainer from ChatPanel
+- Split http-transport.ts into transport/ subdirectory (742 → 7 files)
+- Extract 4 hooks + 1 component from ChatPanel (617 → 267 lines)
+- Clean up URL query params — remove dead code, add pushState, fix setTimeout hack
+- Unify page title and favicon system, remove dead code
+- Update MessageItem typography to use font-light for improved readability
+- Tighten chat typography to text-sm (14px)
+- Decompose root eslint.config.js into per-package configs with shared @dorkos/eslint-config
+- Extract AgentRuntime interface and RuntimeRegistry abstraction
+- Replace text branding with DorkOS logo linking to dorkos.ai
+- Rename pulse and agent tools to follow domain_verb_noun convention
+
+### Fixed
+
+- Create MCP server per request to avoid connect() reuse
+- Update stale tests and add pre-push test gate via lefthook
+- Eliminate ghost messages via per-message correlation IDs
+- Improve message history retrieval and error handling in session routes
+- Resolve streaming vs history inconsistencies via queueMicrotask and scroll-intent tracking
+- Prevent relay-mode polling storm and tool-call spinner regression
+- Upgrade streamdown to ^2.4.0 to fix inline code truncation
+- Resolve history gaps, SSE session mismatch, and done event loss
+- Export health thresholds to eliminate fragile hardcoded test values
+- Resolve SSE delivery pipeline causing ~40-50% message freezes
+- Apply SSE backpressure handling to session broadcaster relay writes
+- Resolve SSE freeze, blank refresh, and relay metadata leaks
+- Remove acted candidates from discovery list after approve/deny
+
+## Install / Update
+
+```
+npm install -g dorkos@0.9.0
+```
