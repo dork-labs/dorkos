@@ -6,6 +6,12 @@ export default defineConfig([
   { ignores: ['dist/**', '.turbo/**'] },
   ...reactConfig,
 
+  // Shadcn vendored components — exempt from max-lines
+  {
+    files: ['src/layers/shared/ui/**/*.{ts,tsx}'],
+    rules: { 'max-lines': 'off' },
+  },
+
   // process.env carve-outs (client-specific)
   {
     files: ['**/env.ts', '**/*.config.ts', '**/__tests__/**', '**/*.test.ts'],

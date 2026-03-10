@@ -6,6 +6,12 @@ export default defineConfig([
   { ignores: ['dist/**', 'dist-server/**', '.turbo/**'] },
   ...nodeConfig,
 
+  // Generated OpenAPI registry — exempt from max-lines
+  {
+    files: ['src/services/core/openapi-registry.ts'],
+    rules: { 'max-lines': 'off' },
+  },
+
   // process.env carve-outs (server-specific)
   {
     files: [

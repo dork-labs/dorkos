@@ -64,6 +64,17 @@ export default [
     },
   },
 
+  // File size limit: 500 lines max (warn-first)
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    rules: {
+      'max-lines': [
+        'warn',
+        { max: 500, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
+
   // Env var discipline: no raw process.env access outside env.ts
   {
     files: ['**/*.ts', '**/*.tsx'],

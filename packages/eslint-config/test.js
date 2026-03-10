@@ -12,6 +12,7 @@ export default [
       '@typescript-eslint/no-unsafe-function-type': 'off',
       'require-yield': 'off',
       'react/display-name': 'off',
+      'max-lines': 'off',
       'jsdoc/require-jsdoc': 'off',
       'jsdoc/require-description': 'off',
     },
