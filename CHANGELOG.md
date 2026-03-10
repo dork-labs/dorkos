@@ -9,11 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Enhance MCP request handling with cleanup on response close
-- Embed MCP server with Streamable HTTP transport
-- Embed MCP server with Streamable HTTP transport
-- Embed MCP server with Streamable HTTP transport
-- File uploads in chat — drag-and-drop, paperclip, and paste to attach files
+- Embed MCP server with Streamable HTTP transport — external agents (Claude Code, Cursor, Windsurf) can connect via `/mcp`
 - File uploads in chat — drag-and-drop, paperclip, and paste to attach files
 - Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
 - Add chat microinteraction polish — spring physics, layoutId, session crossfade
@@ -24,26 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Reconcile guides for file uploads and MCP server features
-- Increase floating sidebar shadow depth
 - Message-first session creation — eliminate POST /sessions
-- Add pattern-first development principle to CLAUDE.md
-- Add codebase excellence principles and CLAUDE.md anti-bloat guards
 - Extract ChatInputContainer from ChatPanel
 - Split http-transport.ts into transport/ subdirectory (742 → 7 files)
 - Extract 4 hooks + 1 component from ChatPanel (617 → 267 lines)
-- Update interactive-tools and api-reference guides for recent changes
 - Clean up URL query params — remove dead code, add pushState, fix setTimeout hack
 - Unify page title and favicon system, remove dead code
 - Update MessageItem typography to use font-light for improved readability
 - Tighten chat typography to text-sm (14px)
-- Address 12 agent-runtime code review issues from bc0fe8b
-- Curate ADRs, add agent-runtime-review-remediation spec, and update guides
-- Reconcile guides for eslint-config and icons package gaps
 - Decompose root eslint.config.js into per-package configs with shared @dorkos/eslint-config
 - Extract AgentRuntime interface and RuntimeRegistry abstraction
 - Replace text branding with DorkOS logo linking to dorkos.ai
-- Update guides for renamed MCP tools, new relay tools, and discovery entity
 - Rename pulse and agent tools to follow domain_verb_noun convention
 
 ### Fixed
