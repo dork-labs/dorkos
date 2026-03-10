@@ -9,12 +9,6 @@ import { TransportProvider } from '@/layers/shared/model';
 import { AgentHeader } from '../ui/AgentHeader';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
-// Mock useIsMobile — desktop by default
-const mockUseIsMobile = vi.fn(() => false);
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({
-  useIsMobile: () => mockUseIsMobile(),
-}));
-
 // Mock app-store to capture setGlobalPaletteOpen calls
 const mockSetGlobalPaletteOpen = vi.fn();
 vi.mock('@/layers/shared/model/app-store', () => ({
@@ -78,14 +72,13 @@ describe('AgentHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockTransport = createMockTransport();
-    mockUseIsMobile.mockReturnValue(false);
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('renders agent name, description, and Switch button when agent exists', async () => {
+  it('renders path breadcrumb and Switch button when agent exists', async () => {
     vi.mocked(mockTransport.getAgentByPath).mockResolvedValue(mockAgent);
     const Wrapper = createWrapper(mockTransport);
 
@@ -96,10 +89,46 @@ describe('AgentHeader', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('backend-bot')).toBeInTheDocument();
+      expect(screen.getByLabelText('Switch agent')).toBeInTheDocument();
     });
-    expect(screen.getByText('REST API expert')).toBeInTheDocument();
-    expect(screen.getByLabelText('Switch agent')).toBeInTheDocument();
+    expect(screen.getByLabelText('Change working directory')).toBeInTheDocument();
+  });
+
+  it('no longer renders agent identity elements when agent exists', async () => {
+    vi.mocked(mockTransport.getAgentByPath).mockResolvedValue(mockAgent);
+    const Wrapper = createWrapper(mockTransport);
+
+    render(
+      <Wrapper>
+        <AgentHeader cwd="/project" onOpenPicker={onOpenPicker} onOpenAgentDialog={onOpenAgentDialog} />
+      </Wrapper>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Switch agent')).toBeInTheDocument();
+    });
+    // Agent name, description, and gear icon should no longer be rendered
+    expect(screen.queryByText('backend-bot')).not.toBeInTheDocument();
+    expect(screen.queryByText('REST API expert')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Agent settings')).not.toBeInTheDocument();
+  });
+
+  it('clicking directory button calls onOpenPicker when agent exists', async () => {
+    vi.mocked(mockTransport.getAgentByPath).mockResolvedValue(mockAgent);
+    const Wrapper = createWrapper(mockTransport);
+
+    render(
+      <Wrapper>
+        <AgentHeader cwd="/project" onOpenPicker={onOpenPicker} onOpenAgentDialog={onOpenAgentDialog} />
+      </Wrapper>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Change working directory')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText('Change working directory'));
+    expect(onOpenPicker).toHaveBeenCalledOnce();
   });
 
   it('renders "+ Agent" button and Switch button when no agent', async () => {
@@ -119,64 +148,6 @@ describe('AgentHeader', () => {
     expect(screen.getByLabelText('Open command palette')).toBeInTheDocument();
   });
 
-  it('clicking agent identity area calls onOpenAgentDialog on desktop', async () => {
-    mockUseIsMobile.mockReturnValue(false);
-    vi.mocked(mockTransport.getAgentByPath).mockResolvedValue(mockAgent);
-    const Wrapper = createWrapper(mockTransport);
-
-    render(
-      <Wrapper>
-        <AgentHeader cwd="/project" onOpenPicker={onOpenPicker} onOpenAgentDialog={onOpenAgentDialog} />
-      </Wrapper>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('backend-bot')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByLabelText(/Agent settings for/));
-    expect(onOpenAgentDialog).toHaveBeenCalledOnce();
-  });
-
-  it('clicking agent identity area opens palette on mobile', async () => {
-    mockUseIsMobile.mockReturnValue(true);
-    vi.mocked(mockTransport.getAgentByPath).mockResolvedValue(mockAgent);
-    const Wrapper = createWrapper(mockTransport);
-
-    render(
-      <Wrapper>
-        <AgentHeader cwd="/project" onOpenPicker={onOpenPicker} onOpenAgentDialog={onOpenAgentDialog} />
-      </Wrapper>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('backend-bot')).toBeInTheDocument();
-    });
-
-    // On mobile, the identity button has a specific aria-label including the agent name
-    fireEvent.click(screen.getByLabelText('Switch agent (current: backend-bot)'));
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(true);
-    expect(onOpenAgentDialog).not.toHaveBeenCalled();
-  });
-
-  it('clicking gear icon calls onOpenAgentDialog', async () => {
-    vi.mocked(mockTransport.getAgentByPath).mockResolvedValue(mockAgent);
-    const Wrapper = createWrapper(mockTransport);
-
-    render(
-      <Wrapper>
-        <AgentHeader cwd="/project" onOpenPicker={onOpenPicker} onOpenAgentDialog={onOpenAgentDialog} />
-      </Wrapper>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('backend-bot')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByLabelText('Agent settings'));
-    expect(onOpenAgentDialog).toHaveBeenCalled();
-  });
-
   it('clicking Switch button calls setGlobalPaletteOpen(true) when agent exists', async () => {
     vi.mocked(mockTransport.getAgentByPath).mockResolvedValue(mockAgent);
     const Wrapper = createWrapper(mockTransport);
@@ -188,7 +159,7 @@ describe('AgentHeader', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('backend-bot')).toBeInTheDocument();
+      expect(screen.getByLabelText('Switch agent')).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText('Switch agent'));

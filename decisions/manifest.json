@@ -811,7 +811,7 @@
       "number": 104,
       "slug": "client-side-message-queue-with-auto-flush",
       "title": "Client-Side Message Queue with Auto-Flush",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-10",
       "extractedFrom": "chat-input-always-editable",
       "specSlug": "chat-input-always-editable"
@@ -820,7 +820,7 @@
       "number": 105,
       "slug": "header-as-agent-identity-surface",
       "title": "Header as Agent Identity Surface",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-10",
       "extractedFrom": "update-top-nav",
       "specSlug": "update-top-nav"

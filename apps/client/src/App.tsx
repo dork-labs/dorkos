@@ -8,12 +8,14 @@ import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
 import { SessionSidebar } from '@/layers/features/session-list';
 import { ChatPanel } from '@/layers/features/chat';
 import { useOnboarding, OnboardingFlow } from '@/layers/features/onboarding';
+import { AgentIdentityChip, CommandPaletteTrigger } from '@/layers/features/top-nav';
 import {
   Toaster,
   TooltipProvider,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
+  Separator,
   Sidebar,
   SidebarProvider,
   SidebarInset,
@@ -205,8 +207,36 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                     <SessionSidebar />
                   </Sidebar>
                   <SidebarInset className="overflow-hidden">
-                    <header className="flex h-9 shrink-0 items-center gap-2 border-b px-2">
+                    <header
+                      className="relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
+                      style={currentAgent ? {
+                        borderBottomColor: `color-mix(in srgb, ${agentVisual.color} 25%, var(--border))`,
+                      } : undefined}
+                    >
                       <SidebarTrigger className="-ml-0.5" />
+                      <Separator orientation="vertical" className="mr-1 h-4" />
+                      <AgentIdentityChip
+                        agent={currentAgent}
+                        visual={agentVisual}
+                        isStreaming={isStreaming}
+                      />
+                      <div className="flex-1" />
+                      <CommandPaletteTrigger />
+
+                      {/* Streaming scan line — sweeps across header bottom when agent is active */}
+                      <AnimatePresence>
+                        {isStreaming && (
+                          <motion.div
+                            aria-hidden
+                            className="pointer-events-none absolute right-0 bottom-0 left-0 h-px origin-left"
+                            initial={{ scaleX: 0, opacity: 0.8 }}
+                            animate={{ scaleX: [0, 1], opacity: [0.8, 0] }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                            style={{ backgroundColor: agentVisual.color }}
+                          />
+                        )}
+                      </AnimatePresence>
                     </header>
                     <main className="flex-1 overflow-hidden">
                       <ChatPanel

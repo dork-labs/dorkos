@@ -1,7 +1,7 @@
 ---
 number: 104
 title: Client-Side Message Queue with Auto-Flush
-status: draft
+status: proposed
 created: 2026-03-10
 spec: chat-input-always-editable
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: chat-input-always-editable)
+Proposed
 
 ## Context
 
