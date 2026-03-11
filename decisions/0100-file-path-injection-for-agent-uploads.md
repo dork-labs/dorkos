@@ -1,7 +1,7 @@
 ---
 number: 100
 title: File Path Injection for Agent File Access
-status: draft
+status: proposed
 created: 2026-03-09
 spec: upload-files
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: upload-files)
+Proposed
 
 ## Context
 

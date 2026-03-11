@@ -1,7 +1,7 @@
 ---
 number: 107
 title: Use CSS Hidden Toggle for Sidebar View Persistence
-status: draft
+status: proposed
 created: 2026-03-10
 spec: sidebar-tabbed-views
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: sidebar-tabbed-views)
+Proposed
 
 ## Context
 

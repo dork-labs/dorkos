@@ -1,7 +1,7 @@
 ---
 number: 108
 title: Centralized Shortcut Registry as Single Source of Truth
-status: draft
+status: proposed
 created: 2026-03-11
 spec: shortcut-discoverability
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: shortcut-discoverability)
+Proposed
 
 ## Context
 

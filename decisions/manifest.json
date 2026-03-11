@@ -1,12 +1,30 @@
 {
   "version": 1,
-  "nextNumber": 109,
+  "nextNumber": 111,
   "decisions": [
+    {
+      "number": 110,
+      "slug": "warning-level-api-version-checking",
+      "title": "Warning-Level API Version Checking for Adapter Plugins",
+      "status": "draft",
+      "created": "2026-03-11",
+      "extractedFrom": "relay-adapter-dx",
+      "specSlug": "relay-adapter-dx"
+    },
+    {
+      "number": 109,
+      "slug": "optional-base-relay-adapter-class",
+      "title": "Optional BaseRelayAdapter Abstract Class for Adapter DX",
+      "status": "draft",
+      "created": "2026-03-11",
+      "extractedFrom": "relay-adapter-dx",
+      "specSlug": "relay-adapter-dx"
+    },
     {
       "number": 108,
       "slug": "centralized-shortcut-registry",
       "title": "Centralized Shortcut Registry as Single Source of Truth",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-11",
       "extractedFrom": "shortcut-discoverability",
       "specSlug": "shortcut-discoverability"
@@ -15,7 +33,7 @@
       "number": 107,
       "slug": "css-hidden-toggle-for-sidebar-view-persistence",
       "title": "Use CSS Hidden Toggle for Sidebar View Persistence",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-10",
       "extractedFrom": "sidebar-tabbed-views",
       "specSlug": "sidebar-tabbed-views"
@@ -24,7 +42,7 @@
       "number": 106,
       "slug": "convergence-effect-for-optimistic-query-state",
       "title": "Convergence Effect for Optimistic TanStack Query State",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-10",
       "extractedFrom": "fix-chat-streaming-and-model-selector-bugs",
       "specSlug": "fix-chat-streaming-and-model-selector-bugs"
@@ -33,7 +51,7 @@
       "number": 103,
       "slug": "optional-api-key-auth-for-mcp",
       "title": "Optional API Key Authentication for MCP",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-09",
       "extractedFrom": "mcp-server",
       "specSlug": "mcp-server"
@@ -42,7 +60,7 @@
       "number": 102,
       "slug": "stateless-mcp-transport-mode",
       "title": "Stateless MCP Transport Mode",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-09",
       "extractedFrom": "mcp-server",
       "specSlug": "mcp-server"
@@ -51,7 +69,7 @@
       "number": 101,
       "slug": "embed-mcp-server-in-express-process",
       "title": "Embed MCP Server in Express Process",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-09",
       "extractedFrom": "mcp-server",
       "specSlug": "mcp-server"
@@ -60,25 +78,16 @@
       "number": 100,
       "slug": "file-path-injection-for-agent-uploads",
       "title": "File Path Injection for Agent File Access",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-09",
       "extractedFrom": "upload-files",
       "specSlug": "upload-files"
     },
     {
-      "number": 99,
-      "slug": "message-context-for-prop-drilling-elimination",
-      "title": "MessageContext for Prop Drilling Elimination",
-      "status": "draft",
-      "created": "2026-03-09",
-      "extractedFrom": "chat-message-theming",
-      "specSlug": "chat-message-theming"
-    },
-    {
       "number": 98,
       "slug": "semantic-status-tokens-for-tool-state-colors",
       "title": "Semantic Status Tokens for Tool State Colors",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-09",
       "extractedFrom": "chat-message-theming",
       "specSlug": "chat-message-theming"
@@ -87,7 +96,7 @@
       "number": 97,
       "slug": "adopt-tailwind-variants-for-multi-slot-components",
       "title": "Adopt tailwind-variants for Multi-Slot Feature Components",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-03-09",
       "extractedFrom": "chat-message-theming",
       "specSlug": "chat-message-theming"

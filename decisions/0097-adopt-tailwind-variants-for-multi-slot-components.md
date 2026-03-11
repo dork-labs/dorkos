@@ -1,7 +1,7 @@
 ---
 number: 97
 title: Adopt tailwind-variants for Multi-Slot Feature Components
-status: draft
+status: proposed
 created: 2026-03-09
 spec: chat-message-theming
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: chat-message-theming)
+Proposed
 
 ## Context
 
