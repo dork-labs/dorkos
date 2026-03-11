@@ -43,6 +43,9 @@ const DEFAULT_CONFIG: SimpleConfig = {
   dayOfMonth: 1,
 };
 
+/** Default cron expression matching the simple builder's initial config (daily at 9 AM). */
+export const DEFAULT_CRON = '0 9 * * *';
+
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
   { value: '15m', label: 'Every 15 minutes' },
   { value: 'hourly', label: 'Every hour' },

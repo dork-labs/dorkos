@@ -56,6 +56,13 @@ describe('CreateScheduleDialog', () => {
         dispatchEvent: vi.fn(),
       })),
     });
+    // cmdk uses ResizeObserver and scrollIntoView internally
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   beforeEach(() => {
@@ -249,7 +256,7 @@ describe('CreateScheduleDialog', () => {
   });
 
   describe('agent picker and directory escape hatch', () => {
-    it('shows agent list when agents exist (no radio buttons)', async () => {
+    it('shows agent combobox when agents exist (no radio buttons)', async () => {
       const transport = createMockTransport({
         listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
       });
@@ -262,9 +269,8 @@ describe('CreateScheduleDialog', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('api-bot')).toBeTruthy();
+        expect(screen.getByText('Select an agent...')).toBeTruthy();
       });
-      expect(screen.getByText('test-bot')).toBeTruthy();
       // No radio buttons
       expect(screen.queryByLabelText('Run for agent')).toBeNull();
       expect(screen.queryByLabelText('Run in directory')).toBeNull();
@@ -310,7 +316,7 @@ describe('CreateScheduleDialog', () => {
       expect(screen.queryByText('api-bot')).toBeNull();
     });
 
-    it('switches back to agent list from directory mode', async () => {
+    it('switches back to agent combobox from directory mode', async () => {
       const transport = createMockTransport({
         listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
       });
@@ -330,7 +336,7 @@ describe('CreateScheduleDialog', () => {
       fireEvent.click(screen.getByText(/Back to agent selection/));
 
       await waitFor(() => {
-        expect(screen.getByText('api-bot')).toBeTruthy();
+        expect(screen.getByText('Select an agent...')).toBeTruthy();
       });
     });
 
@@ -366,9 +372,11 @@ describe('CreateScheduleDialog', () => {
         </Wrapper>
       );
 
+      // Open combobox dropdown and select agent
       await waitFor(() => {
-        expect(screen.getByText('api-bot')).toBeTruthy();
+        expect(screen.getByText('Select an agent...')).toBeTruthy();
       });
+      fireEvent.click(screen.getByText('Select an agent...'));
       fireEvent.click(screen.getByText('api-bot'));
 
       fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
@@ -436,7 +444,7 @@ describe('CreateScheduleDialog', () => {
       });
     });
 
-    it('pre-selects agent in collapsed state when editing agent-linked schedule', async () => {
+    it('pre-selects agent in combobox trigger when editing agent-linked schedule', async () => {
       const schedule = createMockSchedule({
         id: 'sched-1',
         name: 'Agent schedule',
@@ -458,8 +466,6 @@ describe('CreateScheduleDialog', () => {
       await waitFor(() => {
         expect(screen.getByText('api-bot')).toBeTruthy();
       });
-      expect(screen.queryByText('test-bot')).toBeNull();
-      expect(screen.getByLabelText('Change agent')).toBeTruthy();
     });
   });
 });

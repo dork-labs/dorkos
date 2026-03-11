@@ -7,11 +7,10 @@ interface PulseEmptyStateProps {
 /** Rich empty state for Pulse — faded schedule preview with a "Create Schedule" CTA. */
 export function PulseEmptyState({ onCreateSchedule }: PulseEmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-16">
-      {/* Faded schedule preview */}
-      <div className="mb-8 w-full max-w-md select-none opacity-40 pointer-events-none">
+    <div className="flex flex-col items-center justify-center px-6 py-8 md:py-16">
+      {/* Faded schedule preview — hidden on mobile to keep CTA above the fold */}
+      <div className="mb-6 hidden w-full max-w-md select-none pointer-events-none opacity-40 md:block">
         <div className="space-y-2">
-          {/* Schedule row 1 */}
           <div className="rounded-lg border p-3">
             <div className="flex items-center gap-3">
               <div className="size-2 rounded-full bg-emerald-500" />
@@ -26,7 +25,6 @@ export function PulseEmptyState({ onCreateSchedule }: PulseEmptyStateProps) {
               </div>
             </div>
           </div>
-          {/* Schedule row 2 */}
           <div className="rounded-lg border p-3">
             <div className="flex items-center gap-3">
               <div className="size-2 rounded-full bg-blue-500" />
@@ -41,31 +39,14 @@ export function PulseEmptyState({ onCreateSchedule }: PulseEmptyStateProps) {
               </div>
             </div>
           </div>
-          {/* Schedule row 3 */}
-          <div className="rounded-lg border p-3">
-            <div className="flex items-center gap-3">
-              <div className="size-2 rounded-full bg-muted" />
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Dependency Audit</span>
-                  <span className="text-xs text-muted-foreground">Every Friday at 5:00 PM</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Check for outdated or vulnerable packages
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Text */}
       <h3 className="mb-2 text-lg font-medium">Automate recurring tasks</h3>
       <p className="mb-6 max-w-sm text-center text-sm text-muted-foreground">
         Schedules run Claude Code on a cron — health checks, audits, code reviews, and more.
       </p>
 
-      {/* CTA */}
       <Button onClick={onCreateSchedule}>Create Schedule</Button>
     </div>
   );

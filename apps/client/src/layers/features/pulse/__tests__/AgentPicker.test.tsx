@@ -20,6 +20,13 @@ beforeAll(() => {
       addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
     })),
   });
+  // cmdk uses ResizeObserver and scrollIntoView internally
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 describe('AgentPicker', () => {
@@ -27,61 +34,58 @@ describe('AgentPicker', () => {
     cleanup();
   });
 
-  describe('expanded state', () => {
-    it('renders all agents as selectable rows', () => {
+  describe('trigger button', () => {
+    it('shows placeholder when no agent is selected', () => {
       render(<AgentPicker agents={MOCK_AGENTS} value={undefined} onValueChange={vi.fn()} />);
 
-      expect(screen.getByText('api-bot')).toBeInTheDocument();
-      expect(screen.getByText('test-bot')).toBeInTheDocument();
-      expect(screen.getByText('docs-writer')).toBeInTheDocument();
+      expect(screen.getByText('Select an agent...')).toBeInTheDocument();
     });
 
-    it('calls onValueChange when an agent row is clicked', () => {
-      const onValueChange = vi.fn();
-      render(<AgentPicker agents={MOCK_AGENTS} value={undefined} onValueChange={onValueChange} />);
+    it('shows selected agent name in trigger', () => {
+      render(<AgentPicker agents={MOCK_AGENTS} value="agent-1" onValueChange={vi.fn()} />);
 
-      fireEvent.click(screen.getByText('api-bot'));
-      expect(onValueChange).toHaveBeenCalledWith('agent-1');
+      expect(screen.getByText('api-bot')).toBeInTheDocument();
     });
   });
 
-  describe('collapsed state', () => {
-    it('shows only the selected agent when value is set', () => {
-      render(<AgentPicker agents={MOCK_AGENTS} value="agent-1" onValueChange={vi.fn()} />);
+  describe('dropdown', () => {
+    it('opens dropdown and shows all agents when trigger is clicked', () => {
+      render(<AgentPicker agents={MOCK_AGENTS} value={undefined} onValueChange={vi.fn()} />);
 
-      expect(screen.getByText('api-bot')).toBeInTheDocument();
-      expect(screen.queryByText('test-bot')).not.toBeInTheDocument();
-      expect(screen.queryByText('docs-writer')).not.toBeInTheDocument();
-    });
-
-    it('shows pencil icon in collapsed state', () => {
-      render(<AgentPicker agents={MOCK_AGENTS} value="agent-1" onValueChange={vi.fn()} />);
-
-      expect(screen.getByLabelText('Change agent')).toBeInTheDocument();
-    });
-
-    it('expands when collapsed row is clicked', () => {
-      render(<AgentPicker agents={MOCK_AGENTS} value="agent-1" onValueChange={vi.fn()} />);
-
-      fireEvent.click(screen.getByLabelText('Change agent'));
+      fireEvent.click(screen.getByRole('button', { expanded: false }));
 
       expect(screen.getByText('api-bot')).toBeInTheDocument();
       expect(screen.getByText('test-bot')).toBeInTheDocument();
       expect(screen.getByText('docs-writer')).toBeInTheDocument();
     });
 
-    it('deselects agent when clicking the already-selected agent in expanded mode', () => {
+    it('calls onValueChange when an agent is selected', () => {
       const onValueChange = vi.fn();
-      render(
-        <AgentPicker agents={MOCK_AGENTS} value="agent-1" onValueChange={onValueChange} />
-      );
+      render(<AgentPicker agents={MOCK_AGENTS} value={undefined} onValueChange={onValueChange} />);
 
-      // Expand
-      fireEvent.click(screen.getByLabelText('Change agent'));
-
-      // Click the already-selected agent
+      fireEvent.click(screen.getByRole('button', { expanded: false }));
       fireEvent.click(screen.getByText('api-bot'));
+
+      expect(onValueChange).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('deselects agent when clicking the already-selected agent', () => {
+      const onValueChange = vi.fn();
+      render(<AgentPicker agents={MOCK_AGENTS} value="agent-1" onValueChange={onValueChange} />);
+
+      fireEvent.click(screen.getByRole('button'));
+      // In the dropdown, click the already-selected agent
+      fireEvent.click(screen.getAllByText('api-bot')[1]);
+
       expect(onValueChange).toHaveBeenCalledWith(undefined);
+    });
+
+    it('shows search input in dropdown', () => {
+      render(<AgentPicker agents={MOCK_AGENTS} value={undefined} onValueChange={vi.fn()} />);
+
+      fireEvent.click(screen.getByRole('button'));
+
+      expect(screen.getByPlaceholderText('Search agents...')).toBeInTheDocument();
     });
   });
 
@@ -90,41 +94,6 @@ describe('AgentPicker', () => {
       render(<AgentPicker agents={[]} value={undefined} onValueChange={vi.fn()} />);
 
       expect(screen.getByText(/No agents registered yet/)).toBeInTheDocument();
-    });
-  });
-
-  describe('search filter', () => {
-    it('shows search input when 8+ agents exist', () => {
-      const manyAgents = Array.from({ length: 10 }, (_, i) => ({
-        id: `agent-${i}`,
-        name: `bot-${i}`,
-        projectPath: `/projects/p${i}`,
-      }));
-      render(<AgentPicker agents={manyAgents} value={undefined} onValueChange={vi.fn()} />);
-
-      expect(screen.getByPlaceholderText('Search by name or path...')).toBeInTheDocument();
-    });
-
-    it('does not show search input when fewer than 8 agents', () => {
-      render(<AgentPicker agents={MOCK_AGENTS} value={undefined} onValueChange={vi.fn()} />);
-
-      expect(screen.queryByPlaceholderText('Search by name or path...')).not.toBeInTheDocument();
-    });
-
-    it('filters agents by name when searching', () => {
-      const manyAgents = Array.from({ length: 10 }, (_, i) => ({
-        id: `agent-${i}`,
-        name: `bot-${i}`,
-        projectPath: `/projects/p${i}`,
-      }));
-      render(<AgentPicker agents={manyAgents} value={undefined} onValueChange={vi.fn()} />);
-
-      fireEvent.change(screen.getByPlaceholderText('Search by name or path...'), {
-        target: { value: 'bot-3' },
-      });
-
-      expect(screen.getByText('bot-3')).toBeInTheDocument();
-      expect(screen.queryByText('bot-0')).not.toBeInTheDocument();
     });
   });
 });

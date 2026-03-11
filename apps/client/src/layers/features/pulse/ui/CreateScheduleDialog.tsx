@@ -16,7 +16,7 @@ import {
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { PulseSchedule } from '@dorkos/shared/types';
-import { ScheduleBuilder } from './ScheduleBuilder';
+import { ScheduleBuilder, DEFAULT_CRON } from './ScheduleBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { AgentPicker } from './AgentPicker';
 
@@ -51,7 +51,7 @@ function buildInitialState(editSchedule?: PulseSchedule) {
   return {
     name: '',
     prompt: '',
-    cron: '',
+    cron: DEFAULT_CRON,
     cwd: '',
     agentId: undefined as string | undefined,
     timezone: '',
@@ -134,8 +134,8 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="max-h-[85vh] max-w-lg gap-0 p-0">
-        <ResponsiveDialogHeader className="border-b px-4 py-3">
+      <ResponsiveDialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 p-0">
+        <ResponsiveDialogHeader className="shrink-0 border-b px-4 py-3">
           <ResponsiveDialogTitle>
             {editSchedule ? 'Edit Schedule' : 'New Schedule'}
           </ResponsiveDialogTitle>
@@ -144,8 +144,8 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
-        <form onSubmit={handleSubmit} id="schedule-form">
-          <div className="space-y-5 overflow-y-auto px-4 py-5">
+        <form onSubmit={handleSubmit} id="schedule-form" className="min-h-0 flex-1 overflow-y-auto">
+          <div className="space-y-5 px-4 py-5">
             {/* ── Agent ── */}
             {scheduleTarget === 'agent' ? (
               <div className="space-y-2">
@@ -294,7 +294,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
           </div>
         </form>
 
-        <ResponsiveDialogFooter className="border-t px-4 py-3">
+        <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

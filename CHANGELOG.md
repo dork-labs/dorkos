@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- AgentPicker combobox, dialog layout, and default cron
 - Clean up dead code and minor UX issues from tabbed views
 - Enable Enter and Cmd+Enter in agent sub-menu
 - Override Radix ScrollArea table layout to prevent content overflow
