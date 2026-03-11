@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replace custom gradient button with HoverBorderGradient
+
 ### Fixed
 
 - Handle empty roots array in scan endpoint

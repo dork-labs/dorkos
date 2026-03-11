@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Users, Clock, Radio } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { HoverBorderGradient } from '@/layers/shared/ui';
 import { fireConfetti } from '@/layers/shared/lib';
 import { useOnboarding } from '../model/use-onboarding';
 
@@ -127,18 +127,19 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
         ))}
       </motion.div>
 
-      {/* CTA with glowing border */}
+      {/* CTA */}
       <motion.div
         initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.8, duration: 0.4 }}
       >
-        <div className="relative">
-          <div className="absolute -inset-px animate-[spin_4s_linear_infinite] rounded-lg bg-gradient-to-r from-primary/40 via-transparent to-primary/40 blur-sm" />
-          <Button size="lg" className="relative" onClick={onComplete}>
-            Start your first session
-          </Button>
-        </div>
+        <HoverBorderGradient
+          className="px-6 py-2"
+          duration={1.2}
+          onClick={onComplete}
+        >
+          Start your first session
+        </HoverBorderGradient>
       </motion.div>
     </motion.div>
   );
