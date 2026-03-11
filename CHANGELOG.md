@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make queued messages visible by using explicit motion entry animations
 - Prevent message loss during streaming and model selector flicker
 ---
 
