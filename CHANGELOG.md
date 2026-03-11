@@ -9,36 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add ScheduleBuilder component with progressive disclosure
-- Add ScheduleBuilder helper functions
-- Integrate AgentPicker into CreateScheduleDialog
-- Add tabbed navigation with Sessions, Schedules, and Connections views
-- Add AgentPicker component with direct list selection
-- Switch agent via identity chip and fix scrollbar overlay
-- Auto-hide scrollbars in sidebar and message list
-- Auto-hide scrollbars in sidebar and message list
-- Display agent emoji in identity chip
-- Add agent identity chip and command palette trigger to header
-- Always-editable input with message queuing during streaming
-- Dev build detection, upgrade dismiss, and version display overhaul
-
 ### Changed
-
-- Remove CronPresets and CronVisualBuilder (replaced by ScheduleBuilder)
-- Update CreateScheduleDialog tests for ScheduleBuilder
-- Replace CronPresets + CronVisualBuilder with ScheduleBuilder
-- Delete AgentCombobox, replaced by AgentPicker
-- Convert StatusLine to compound component with Context
 
 ### Fixed
 
-- AgentPicker combobox, dialog layout, and default cron
-- Clean up dead code and minor UX issues from tabbed views
-- Enable Enter and Cmd+Enter in agent sub-menu
-- Override Radix ScrollArea table layout to prevent content overflow
-- Add right padding to prevent content touching edge
-- Make queued messages visible by using explicit motion entry animations
-- Prevent message loss during streaming and model selector flicker
+---
+
+## [0.10.0] - 2026-03-11
+
+> Tabbed sidebar navigation, agent identity chip, ScheduleBuilder, and always-editable chat input
+
+### Added
+
+- Navigate between Sessions, Schedules, and Connections from tabbed sidebar views
+- Build schedules with progressive disclosure — pick frequency, then refine timing
+- Pick agents from a direct-selection list when creating schedules
+- Switch active agent from the identity chip in the top navigation bar
+- See agent emoji in the identity chip at a glance
+- Open the command palette directly from the header
+- Keep typing while agents stream — messages queue and send when ready
+- Auto-hide scrollbars in sidebar and message list until hover
+- Detect dev builds and dismiss upgrade prompts with persistent version display
+
+### Changed
+
+- Replace cron presets and visual builder with unified ScheduleBuilder
+- Replace AgentCombobox dropdown with AgentPicker direct-selection list
+- Restructure StatusLine as a compound component
+
+### Fixed
+
+- Fix agent picker combobox behavior, dialog layout, and default cron expression
+- Fix Enter and Cmd+Enter not working in command palette agent sub-menu
+- Fix sidebar content overflow caused by Radix ScrollArea table layout
+- Fix queued messages not appearing until animation completes
+- Fix message loss during streaming and model selector flicker
+- Fix scrollbar overlay obscuring sidebar content
+
 ---
 
 ## [0.9.1] - 2026-03-10

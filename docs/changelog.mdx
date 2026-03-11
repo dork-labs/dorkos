@@ -5,6 +5,39 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-03-11
+
+> Tabbed sidebar navigation, agent identity chip, ScheduleBuilder, and always-editable chat input
+
+### Added
+
+- Navigate between Sessions, Schedules, and Connections from tabbed sidebar views
+- Build schedules with progressive disclosure — pick frequency, then refine timing
+- Pick agents from a direct-selection list when creating schedules
+- Switch active agent from the identity chip in the top navigation bar
+- See agent emoji in the identity chip at a glance
+- Open the command palette directly from the header
+- Keep typing while agents stream — messages queue and send when ready
+- Auto-hide scrollbars in sidebar and message list until hover
+- Detect dev builds and dismiss upgrade prompts with persistent version display
+
+### Changed
+
+- Replace cron presets and visual builder with unified ScheduleBuilder
+- Replace AgentCombobox dropdown with AgentPicker direct-selection list
+- Restructure StatusLine as a compound component
+
+### Fixed
+
+- Fix agent picker combobox behavior, dialog layout, and default cron expression
+- Fix Enter and Cmd+Enter not working in command palette agent sub-menu
+- Fix sidebar content overflow caused by Radix ScrollArea table layout
+- Fix queued messages not appearing until animation completes
+- Fix message loss during streaming and model selector flicker
+- Fix scrollbar overlay obscuring sidebar content
+
+---
+
 ## [0.9.1] - 2026-03-10
 
 > Chat UX refinements — file attachments rendered inline, message bubbles right-aligned, and relay directory fixes
