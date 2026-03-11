@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, User, Sparkles, Zap, Plug2 } from 'lucide-react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import {
   ResponsiveDialog,
@@ -9,10 +9,11 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogFullscreenToggle,
   PathBreadcrumb,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
+  NavigationLayout,
+  NavigationLayoutSidebar,
+  NavigationLayoutItem,
+  NavigationLayoutContent,
+  NavigationLayoutPanel,
 } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { IdentityTab } from './IdentityTab';
@@ -27,8 +28,8 @@ interface AgentDialogProps {
 }
 
 /**
- * Dialog shell for agent configuration with tabbed navigation.
- * Four tabs: Identity, Persona, Capabilities, and Connections.
+ * Dialog shell for agent configuration with sidebar navigation.
+ * Four sections: Identity, Persona, Capabilities, and Connections.
  */
 export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProps) {
   const [activeTab, setActiveTab] = useState('identity');
@@ -70,7 +71,7 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
         data-testid="agent-dialog"
-        className="max-h-[85vh] max-w-lg gap-0 p-0"
+        className="max-h-[85vh] max-w-2xl gap-0 p-0"
       >
         <ResponsiveDialogFullscreenToggle />
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
@@ -86,43 +87,36 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
           </div>
         </ResponsiveDialogHeader>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="flex flex-1 flex-col overflow-hidden"
-        >
-          <TabsList
-            className="mx-4 mt-3 grid w-full grid-cols-4"
-            style={{ width: 'calc(100% - 2rem)' }}
-          >
-            <TabsTrigger value="identity">Identity</TabsTrigger>
-            <TabsTrigger value="persona">Persona</TabsTrigger>
-            <TabsTrigger value="capabilities">Capabilities</TabsTrigger>
-            <TabsTrigger value="connections">Connections</TabsTrigger>
-          </TabsList>
+        <NavigationLayout value={activeTab} onValueChange={setActiveTab}>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="identity" icon={User}>Identity</NavigationLayoutItem>
+            <NavigationLayoutItem value="persona" icon={Sparkles}>Persona</NavigationLayoutItem>
+            <NavigationLayoutItem value="capabilities" icon={Zap}>Capabilities</NavigationLayoutItem>
+            <NavigationLayoutItem value="connections" icon={Plug2}>Connections</NavigationLayoutItem>
+          </NavigationLayoutSidebar>
 
-          <div className="min-h-[280px] flex-1 overflow-y-auto p-4">
-            <TabsContent value="identity" className="mt-0">
+          <NavigationLayoutContent className="min-h-[280px] p-4">
+            <NavigationLayoutPanel value="identity">
               <IdentityTab
                 agent={agent}
                 projectPath={projectPath}
                 onUpdate={handleUpdate}
               />
-            </TabsContent>
+            </NavigationLayoutPanel>
 
-            <TabsContent value="persona" className="mt-0">
+            <NavigationLayoutPanel value="persona">
               <PersonaTab agent={agent} onUpdate={handleUpdate} />
-            </TabsContent>
+            </NavigationLayoutPanel>
 
-            <TabsContent value="capabilities" className="mt-0">
+            <NavigationLayoutPanel value="capabilities">
               <CapabilitiesTab agent={agent} onUpdate={handleUpdate} />
-            </TabsContent>
+            </NavigationLayoutPanel>
 
-            <TabsContent value="connections" className="mt-0">
+            <NavigationLayoutPanel value="connections">
               <ConnectionsTab agent={agent} />
-            </TabsContent>
-          </div>
-        </Tabs>
+            </NavigationLayoutPanel>
+          </NavigationLayoutContent>
+        </NavigationLayout>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );

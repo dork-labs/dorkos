@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Palette, Settings2, LayoutList, Server, Wrench, Cog } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, useTheme } from '@/layers/shared/model';
 import { FONT_CONFIGS, type FontFamilyKey } from '@/layers/shared/lib';
@@ -7,12 +8,13 @@ import {
   ResponsiveDialogContent,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
+  NavigationLayout,
+  NavigationLayoutSidebar,
+  NavigationLayoutItem,
+  NavigationLayoutContent,
+  NavigationLayoutPanel,
   Switch,
   Label,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
   Select,
   SelectContent,
   SelectItem,
@@ -85,30 +87,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent data-testid="settings-dialog" className="max-h-[85vh] max-w-lg gap-0 p-0">
+      <ResponsiveDialogContent data-testid="settings-dialog" className="max-h-[85vh] max-w-2xl gap-0 p-0">
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
           <ResponsiveDialogTitle className="text-sm font-medium">Settings</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="flex flex-1 flex-col overflow-hidden"
-        >
-          <TabsList
-            className="mx-4 mt-3 grid w-full grid-cols-6"
-            style={{ width: 'calc(100% - 2rem)' }}
-          >
-            <TabsTrigger value="appearance">Appearance</TabsTrigger>
-            <TabsTrigger value="preferences">Preferences</TabsTrigger>
-            <TabsTrigger value="statusBar">Status Bar</TabsTrigger>
-            <TabsTrigger value="server">Server</TabsTrigger>
-            <TabsTrigger value="tools">Tools</TabsTrigger>
-            <TabsTrigger value="advanced">Advanced</TabsTrigger>
-          </TabsList>
+        <NavigationLayout value={activeTab} onValueChange={setActiveTab}>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="appearance" icon={Palette}>Appearance</NavigationLayoutItem>
+            <NavigationLayoutItem value="preferences" icon={Settings2}>Preferences</NavigationLayoutItem>
+            <NavigationLayoutItem value="statusBar" icon={LayoutList}>Status Bar</NavigationLayoutItem>
+            <NavigationLayoutItem value="server" icon={Server}>Server</NavigationLayoutItem>
+            <NavigationLayoutItem value="tools" icon={Wrench}>Tools</NavigationLayoutItem>
+            <NavigationLayoutItem value="advanced" icon={Cog}>Advanced</NavigationLayoutItem>
+          </NavigationLayoutSidebar>
 
-          <div className="min-h-[280px] flex-1 overflow-y-auto p-4">
-            <TabsContent value="appearance" className="mt-0 space-y-6">
+          <NavigationLayoutContent className="min-h-[280px] p-4">
+            <NavigationLayoutPanel value="appearance">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-foreground text-sm font-semibold">Appearance</h3>
@@ -178,9 +173,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </Select>
                 </SettingRow>
               </div>
-            </TabsContent>
+            </NavigationLayoutPanel>
 
-            <TabsContent value="preferences" className="mt-0 space-y-6">
+            <NavigationLayoutPanel value="preferences">
               <div className="space-y-4">
                 <h3 className="text-foreground text-sm font-semibold">Preferences</h3>
 
@@ -247,63 +242,65 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </SettingRow>
 
               </div>
-            </TabsContent>
+            </NavigationLayoutPanel>
 
-            <TabsContent value="statusBar" className="mt-0 space-y-4">
-              <SettingRow label="Show directory" description="Display current working directory">
-                <Switch checked={showStatusBarCwd} onCheckedChange={setShowStatusBarCwd} />
-              </SettingRow>
-              <SettingRow
-                label="Show git status"
-                description="Display branch name and change count"
-              >
-                <Switch checked={showStatusBarGit} onCheckedChange={setShowStatusBarGit} />
-              </SettingRow>
-              <SettingRow
-                label="Show permission mode"
-                description="Display current permission setting"
-              >
-                <Switch
-                  checked={showStatusBarPermission}
-                  onCheckedChange={setShowStatusBarPermission}
-                />
-              </SettingRow>
-              <SettingRow label="Show model" description="Display selected AI model">
-                <Switch checked={showStatusBarModel} onCheckedChange={setShowStatusBarModel} />
-              </SettingRow>
-              <SettingRow label="Show cost" description="Display session cost in USD">
-                <Switch checked={showStatusBarCost} onCheckedChange={setShowStatusBarCost} />
-              </SettingRow>
-              <SettingRow
-                label="Show context usage"
-                description="Display context window utilization"
-              >
-                <Switch checked={showStatusBarContext} onCheckedChange={setShowStatusBarContext} />
-              </SettingRow>
-              <SettingRow label="Show sound toggle" description="Display notification sound toggle">
-                <Switch checked={showStatusBarSound} onCheckedChange={setShowStatusBarSound} />
-              </SettingRow>
-              <SettingRow label="Show remote" description="Display remote control">
-                <Switch checked={showStatusBarTunnel} onCheckedChange={setShowStatusBarTunnel} />
-              </SettingRow>
-            </TabsContent>
+            <NavigationLayoutPanel value="statusBar">
+              <div className="space-y-4">
+                <SettingRow label="Show directory" description="Display current working directory">
+                  <Switch checked={showStatusBarCwd} onCheckedChange={setShowStatusBarCwd} />
+                </SettingRow>
+                <SettingRow
+                  label="Show git status"
+                  description="Display branch name and change count"
+                >
+                  <Switch checked={showStatusBarGit} onCheckedChange={setShowStatusBarGit} />
+                </SettingRow>
+                <SettingRow
+                  label="Show permission mode"
+                  description="Display current permission setting"
+                >
+                  <Switch
+                    checked={showStatusBarPermission}
+                    onCheckedChange={setShowStatusBarPermission}
+                  />
+                </SettingRow>
+                <SettingRow label="Show model" description="Display selected AI model">
+                  <Switch checked={showStatusBarModel} onCheckedChange={setShowStatusBarModel} />
+                </SettingRow>
+                <SettingRow label="Show cost" description="Display session cost in USD">
+                  <Switch checked={showStatusBarCost} onCheckedChange={setShowStatusBarCost} />
+                </SettingRow>
+                <SettingRow
+                  label="Show context usage"
+                  description="Display context window utilization"
+                >
+                  <Switch checked={showStatusBarContext} onCheckedChange={setShowStatusBarContext} />
+                </SettingRow>
+                <SettingRow label="Show sound toggle" description="Display notification sound toggle">
+                  <Switch checked={showStatusBarSound} onCheckedChange={setShowStatusBarSound} />
+                </SettingRow>
+                <SettingRow label="Show remote" description="Display remote control">
+                  <Switch checked={showStatusBarTunnel} onCheckedChange={setShowStatusBarTunnel} />
+                </SettingRow>
+              </div>
+            </NavigationLayoutPanel>
 
-            <TabsContent value="server" className="mt-0">
+            <NavigationLayoutPanel value="server">
               <ServerTab config={config} isLoading={isLoading} onOpenTunnelDialog={() => setTunnelDialogOpen(true)} />
-            </TabsContent>
+            </NavigationLayoutPanel>
 
-            <TabsContent value="tools" className="mt-0">
+            <NavigationLayoutPanel value="tools">
               <ToolsTab />
-            </TabsContent>
+            </NavigationLayoutPanel>
 
-            <TabsContent value="advanced" className="mt-0">
+            <NavigationLayoutPanel value="advanced">
               <AdvancedTab
                 onResetComplete={() => setRestartOverlayOpen(true)}
                 onRestartComplete={() => setRestartOverlayOpen(true)}
               />
-            </TabsContent>
-          </div>
-        </Tabs>
+            </NavigationLayoutPanel>
+          </NavigationLayoutContent>
+        </NavigationLayout>
       </ResponsiveDialogContent>
       <TunnelDialog open={tunnelDialogOpen} onOpenChange={setTunnelDialogOpen} />
       <ServerRestartOverlay

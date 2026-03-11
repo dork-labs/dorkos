@@ -81,6 +81,14 @@ export {
   PopoverDescription,
 } from './popover';
 export {
+  NavigationLayout,
+  NavigationLayoutSidebar,
+  NavigationLayoutItem,
+  NavigationLayoutContent,
+  NavigationLayoutPanel,
+  useNavigationLayout,
+} from './navigation-layout';
+export {
   ResponsiveDialog,
   ResponsiveDialogTrigger,
   ResponsiveDialogContent,

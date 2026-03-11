@@ -37,32 +37,6 @@ vi.mock('@radix-ui/react-dialog', async () => {
   };
 });
 
-// Mock Radix Tabs to render all tab content (no hide/show behavior)
-vi.mock('@radix-ui/react-tabs', () => ({
-  Root: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
-    <div {...props}>{children}</div>
-  ),
-  List: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
-    <div role="tablist" {...props}>
-      {children}
-    </div>
-  ),
-  Trigger: ({
-    children,
-    value,
-    ...props
-  }: Record<string, unknown> & { children?: React.ReactNode; value?: string }) => (
-    <button role="tab" data-value={value} {...props}>
-      {children}
-    </button>
-  ),
-  Content: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
-    <div role="tabpanel" {...props}>
-      {children}
-    </div>
-  ),
-}));
-
 beforeAll(() => {
   // matchMedia mock for useTheme
   Object.defineProperty(window, 'matchMedia', {
@@ -118,6 +92,12 @@ function createWrapper(transport?: Transport) {
   );
 }
 
+/** Click a sidebar navigation item by name to switch panels. */
+function navigateTo(name: RegExp | string) {
+  const tab = screen.getByRole('tab', { name });
+  fireEvent.click(tab);
+}
+
 describe('SettingsDialog', () => {
   // Verifies the dialog renders with the correct title
   it('renders with "Settings" title when open', () => {
@@ -125,11 +105,18 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('Settings')).toBeDefined();
   });
 
-  // Verifies all six preference controls are visible
-  it('displays all preference controls', () => {
+  // Verifies appearance controls are visible on the default tab
+  it('displays appearance controls on the default tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByText('Theme')).toBeDefined();
     expect(screen.getByText('Font size')).toBeDefined();
+    expect(screen.getByText('Font family')).toBeDefined();
+  });
+
+  // Verifies preference controls are visible after navigating
+  it('displays preference controls when navigating to Preferences', () => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(/preferences/i);
     expect(screen.getByText('Show timestamps')).toBeDefined();
     expect(screen.getByText('Expand tool calls')).toBeDefined();
     expect(screen.getByText('Show dev tools')).toBeDefined();
@@ -141,7 +128,7 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
     });
-    // All tab content is rendered (tabs are mocked to show all content)
+    navigateTo(/server/i);
     const version = await screen.findByText('1.0.0');
     expect(version).toBeDefined();
     expect(screen.getByText('4242')).toBeDefined();
@@ -154,6 +141,7 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
     });
+    navigateTo(/server/i);
     const manageBtn = await screen.findByText('Manage');
     expect(manageBtn).toBeDefined();
   });
@@ -170,18 +158,20 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
     });
+    navigateTo(/server/i);
     // 8130s = 2h 15m 30s
     const uptime = await screen.findByText('2h 15m 30s');
     expect(uptime).toBeDefined();
   });
 
-  // Verifies tab navigation structure renders correctly
-  it('renders five tabs: Appearance, Preferences, Status Bar, Server, Advanced', () => {
+  // Verifies sidebar navigation items render correctly
+  it('renders six sidebar items: Appearance, Preferences, Status Bar, Server, Tools, Advanced', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /preferences/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /status bar/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();
   });
 
@@ -200,11 +190,10 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('Font size')).toBeDefined();
   });
 
-  // Verifies Status Bar tab shows toggle switches
-  it('switches to Status Bar tab and shows toggle switches', () => {
+  // Verifies Status Bar section shows toggle switches
+  it('navigates to Status Bar and shows toggle switches', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('tab', { name: /status bar/i }));
-    // All tab content is rendered (tabs are mocked to show all content)
+    navigateTo(/status bar/i);
     expect(screen.getByText(/show directory/i)).toBeDefined();
     expect(screen.getByText(/show permission mode/i)).toBeDefined();
     expect(screen.getByText(/show model/i)).toBeDefined();
@@ -215,12 +204,9 @@ describe('SettingsDialog', () => {
   // Verifies status bar toggles default to ON
   it('has all status bar toggles enabled by default', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('tab', { name: /status bar/i }));
-    // All tab panels are rendered (tabs are mocked). Find the Status Bar panel
-    // by locating the "Show directory" label and walking up to its tabpanel.
-    const statusBarLabel = screen.getByText(/show directory/i);
-    const statusBarPanel = statusBarLabel.closest('[role="tabpanel"]')!;
-    const switches = statusBarPanel.querySelectorAll('[role="switch"]');
+    navigateTo(/status bar/i);
+    const panel = screen.getByText(/show directory/i).closest('[data-slot="navigation-layout-panel"]')!;
+    const switches = panel.querySelectorAll('[role="switch"]');
     expect(switches.length).toBe(8);
     switches.forEach((sw) => {
       expect(sw.getAttribute('data-state')).toBe('checked');
@@ -228,31 +214,32 @@ describe('SettingsDialog', () => {
   });
 
   // Verifies server tab content is accessible
-  it('switches to Server tab and shows config', async () => {
+  it('navigates to Server and shows config', async () => {
     const transport = createSettingsTransport();
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
     });
-    fireEvent.click(screen.getByRole('tab', { name: /server/i }));
+    navigateTo(/server/i);
     await screen.findByText(/version/i);
   });
 
-  it('displays "Show shortcut chips" toggle in Preferences tab', () => {
+  it('displays "Show shortcut chips" toggle in Preferences', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(/preferences/i);
     expect(screen.getByText('Show shortcut chips')).toBeDefined();
     expect(screen.getByText('Display shortcut hints below the message input')).toBeDefined();
   });
 
-  it('shows "Show git status" toggle in Status Bar tab', () => {
+  it('shows "Show git status" toggle in Status Bar', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('tab', { name: /status bar/i }));
+    navigateTo(/status bar/i);
     expect(screen.getByText('Show git status')).toBeDefined();
     expect(screen.getByText('Display branch name and change count')).toBeDefined();
   });
 
   it('has git status toggle enabled by default', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('tab', { name: /status bar/i }));
+    navigateTo(/status bar/i);
     const label = screen.getByText('Show git status');
     const row = label.closest('.flex')!;
     const toggle = row.querySelector('[role="switch"]');
@@ -262,6 +249,7 @@ describe('SettingsDialog', () => {
 
   it('has shortcut chips toggle enabled by default', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(/preferences/i);
     const label = screen.getByText('Show shortcut chips');
     const row = label.closest('.flex')!;
     const toggle = row.querySelector('[role="switch"]');
@@ -269,16 +257,18 @@ describe('SettingsDialog', () => {
     expect(toggle?.getAttribute('data-state')).toBe('checked');
   });
 
-  it('renders "Notification sound" toggle in Preferences tab', () => {
+  it('renders "Notification sound" toggle in Preferences', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(/preferences/i);
     expect(screen.getByText('Notification sound')).toBeDefined();
     expect(
       screen.getByText('Play a sound when AI finishes responding (3s+ responses)')
     ).toBeDefined();
   });
 
-  it('renders "Show sound toggle" in Status Bar tab', () => {
+  it('renders "Show sound toggle" in Status Bar', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(/status bar/i);
     expect(screen.getByText('Show sound toggle')).toBeDefined();
     expect(screen.getByText('Display notification sound toggle')).toBeDefined();
   });

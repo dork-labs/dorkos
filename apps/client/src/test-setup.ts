@@ -69,6 +69,7 @@ vi.mock('motion/react', () => ({
     },
   ),
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
+  LayoutGroup: ({ children }: { children: React.ReactNode }) => children,
   MotionConfig: ({ children }: { children: React.ReactNode }) => children,
   useReducedMotion: () => false,
 }));
