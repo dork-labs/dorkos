@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Delete AgentCombobox, replaced by AgentPicker
 - Convert StatusLine to compound component with Context
 
 ### Fixed
