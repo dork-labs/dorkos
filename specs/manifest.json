@@ -833,8 +833,29 @@
       "slug": "relay-adapter-dx",
       "title": "Relay Adapter DX Improvements",
       "created": "2026-03-11",
-      "status": "draft"
+      "status": "completed"
+    },
+    {
+      "number": 120,
+      "slug": "adapter-binding-ux-overhaul",
+      "title": "Adapter & Binding UX Overhaul",
+      "created": "2026-03-11",
+      "status": "ideation"
+    },
+    {
+      "number": 121,
+      "slug": "fix-chat-ui-reliability-bugs",
+      "title": "Fix Chat UI Reliability Bugs",
+      "created": "2026-03-11",
+      "status": "ideation"
+    },
+    {
+      "number": 122,
+      "slug": "topology-overhaul",
+      "title": "Topology Visualization Overhaul",
+      "created": "2026-03-11",
+      "status": "ideation"
     }
   ],
-  "nextNumber": 120
+  "nextNumber": 123
 }
