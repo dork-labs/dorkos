@@ -19,6 +19,7 @@ vi.mock('cronstrue', () => ({
   default: {
     toString: (cron: string) => {
       if (cron === '0 9 * * 1-5') return 'At 09:00 AM, Monday through Friday';
+      if (cron === '0 9 * * 1,2,3,4,5') return 'At 09:00 AM, Monday through Friday';
       if (cron === 'invalid') throw new Error('Invalid cron');
       return `Cron: ${cron}`;
     },
@@ -116,7 +117,8 @@ describe('CreateScheduleDialog', () => {
       expect(screen.getByDisplayValue('Daily review')).toBeTruthy();
     });
     expect(screen.getByDisplayValue('Review open PRs')).toBeTruthy();
-    expect(screen.getByDisplayValue('0 9 * * 1-5')).toBeTruthy();
+    // ScheduleBuilder parses the cron and shows weekly preview
+    expect(screen.getByText(/every weekday/i)).toBeTruthy();
     expect(screen.getByText('/projects/app')).toBeTruthy();
     // maxRuntime: 300_000ms = 5 minutes
     expect(screen.getByDisplayValue('5')).toBeTruthy();
@@ -143,6 +145,9 @@ describe('CreateScheduleDialog', () => {
       screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
       { target: { value: 'Run the nightly build' } }
     );
+
+    // ScheduleBuilder starts empty. Switch to cron mode and type a cron expression.
+    fireEvent.click(screen.getByText('Use a cron expression'));
     fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
       target: { value: '0 0 * * *' },
     });
@@ -204,21 +209,24 @@ describe('CreateScheduleDialog', () => {
     });
   });
 
-  it('shows cron human-readable preview', () => {
+  it('shows schedule preview in ScheduleBuilder', () => {
     const transport = createMockTransport();
     const Wrapper = createWrapper(transport);
+    const schedule = createMockSchedule({
+      id: 'sched-1',
+      name: 'Test',
+      prompt: 'Test',
+      cron: '0 9 * * 1-5',
+    });
 
     render(
       <Wrapper>
-        <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        <CreateScheduleDialog open={true} onOpenChange={vi.fn()} editSchedule={schedule} />
       </Wrapper>
     );
 
-    fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
-      target: { value: '0 9 * * 1-5' },
-    });
-
-    expect(screen.getByText('At 09:00 AM, Monday through Friday')).toBeTruthy();
+    // ScheduleBuilder parses weekly cron and shows human-readable preview
+    expect(screen.getByText(/every weekday at 9:00 AM/i)).toBeTruthy();
   });
 
   it('shows permission mode warning for bypassPermissions', () => {
@@ -370,6 +378,9 @@ describe('CreateScheduleDialog', () => {
         screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
         { target: { value: 'Do something' } }
       );
+
+      // Use cron escape hatch to set a specific cron
+      fireEvent.click(screen.getByText('Use a cron expression'));
       fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
         target: { value: '0 0 * * *' },
       });
@@ -409,6 +420,9 @@ describe('CreateScheduleDialog', () => {
         screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
         { target: { value: 'Do something' } }
       );
+
+      // Use cron escape hatch to set a specific cron
+      fireEvent.click(screen.getByText('Use a cron expression'));
       fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
         target: { value: '0 0 * * *' },
       });
