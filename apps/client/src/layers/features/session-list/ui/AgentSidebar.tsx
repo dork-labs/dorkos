@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef, useContext } from 'react';
+import { useMemo, useCallback, useEffect, useRef, useContext } from 'react';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import { cn, groupSessionsByTime, TIMING } from '@/layers/shared/lib';
 import {
@@ -29,7 +29,6 @@ export function AgentSidebar() {
   const { setSidebarOpen, setPulseOpen, setOnboardingStep } =
     useAppStore();
   const isMobile = useIsMobile();
-  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   // Suppresses auto-select after user intentionally clicks "New session"
   const intentionallyNullRef = useRef(false);
   const pulseEnabled = usePulseEnabled();
@@ -187,7 +186,6 @@ export function AgentSidebar() {
           <SessionsView
             activeSessionId={activeSessionId}
             groupedSessions={groupedSessions}
-            justCreatedId={justCreatedId}
             onSessionClick={handleSessionClick}
           />
         </div>
@@ -209,7 +207,7 @@ export function AgentSidebar() {
           aria-labelledby="sidebar-tab-connections"
           className={cn(sidebarActiveTab !== 'connections' && 'hidden')}
         >
-          <ConnectionsView toolStatus={toolStatus} projectPath={selectedCwd} />
+          <ConnectionsView toolStatus={toolStatus} />
         </div>
       </SidebarContent>
 

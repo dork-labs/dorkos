@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Clean up dead code and minor UX issues from tabbed views
 - Enable Enter and Cmd+Enter in agent sub-menu
 - Override Radix ScrollArea table layout to prevent content overflow
 - Add right padding to prevent content touching edge

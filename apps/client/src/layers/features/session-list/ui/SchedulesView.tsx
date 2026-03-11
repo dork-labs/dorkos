@@ -63,6 +63,11 @@ export function SchedulesView({ toolStatus }: SchedulesViewProps) {
           <SidebarGroup>
             <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
               Active
+              {activeRunCount > 0 && (
+                <span className="text-muted-foreground/50 ml-auto text-xs font-normal normal-case">
+                  {activeRunCount} running
+                </span>
+              )}
             </SidebarGroupLabel>
             <SidebarMenu>
               {activeSchedules.map((schedule) => (
@@ -73,11 +78,6 @@ export function SchedulesView({ toolStatus }: SchedulesViewProps) {
                   >
                     <span className="size-2 shrink-0 animate-pulse rounded-full bg-green-500" />
                     <span className="truncate">{schedule.name}</span>
-                    {activeRunCount > 0 && (
-                      <span className="text-muted-foreground/50 ml-auto text-xs">
-                        {activeRunCount} running
-                      </span>
-                    )}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

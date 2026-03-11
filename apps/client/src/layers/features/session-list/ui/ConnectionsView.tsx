@@ -14,7 +14,6 @@ import { cn } from '@/layers/shared/lib';
 
 interface ConnectionsViewProps {
   toolStatus: AgentToolStatus;
-  projectPath: string | null;
 }
 
 const ADAPTER_STATE_COLORS: Record<string, string> = {
@@ -24,7 +23,7 @@ const ADAPTER_STATE_COLORS: Record<string, string> = {
 };
 
 /** Read-only adapter and agent summary for the sidebar Connections tab. */
-export function ConnectionsView({ toolStatus, projectPath: _projectPath }: ConnectionsViewProps) {
+export function ConnectionsView({ toolStatus }: ConnectionsViewProps) {
   const { setRelayOpen, setMeshOpen } = useAppStore();
   const relayEnabled = toolStatus.relay !== 'disabled-by-server';
   const meshEnabled = toolStatus.mesh !== 'disabled-by-server';

@@ -38,6 +38,8 @@ export function SidebarTabRow({
   visibleTabs,
 }: SidebarTabRowProps) {
   const tabListRef = useRef<HTMLDivElement>(null);
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+  const modKey = isMac ? '\u2318' : 'Ctrl+';
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -127,7 +129,7 @@ export function SidebarTabRow({
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {tab.label} {`\u2318${tab.shortcut}`}
+              {tab.label} {`${modKey}${tab.shortcut}`}
             </TooltipContent>
           </Tooltip>
         );

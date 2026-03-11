@@ -17,7 +17,6 @@ interface SessionGroup {
 interface SessionsViewProps {
   activeSessionId: string | null;
   groupedSessions: SessionGroup[];
-  justCreatedId: string | null;
   onSessionClick: (sessionId: string) => void;
 }
 
@@ -25,7 +24,6 @@ interface SessionsViewProps {
 export function SessionsView({
   activeSessionId,
   groupedSessions,
-  justCreatedId,
   onSessionClick,
 }: SessionsViewProps) {
   return (
@@ -48,7 +46,6 @@ export function SessionsView({
                         <SessionItem
                           session={session}
                           isActive={session.id === activeSessionId}
-                          isNew={session.id === justCreatedId}
                           onClick={() => onSessionClick(session.id)}
                         />
                       </SidebarMenuItem>
