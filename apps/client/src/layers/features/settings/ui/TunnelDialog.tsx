@@ -119,10 +119,12 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 
     if (wasConnected && !isConnected) {
       toast.error('Remote access disconnected', {
+        id: 'tunnel-status',
         description: 'Attempting to reconnect...',
       });
     } else if (!wasConnected && isConnected && tunnel?.url) {
       toast.success('Remote access reconnected', {
+        id: 'tunnel-status',
         description: tunnel.url,
       });
     }

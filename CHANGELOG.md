@@ -20,8 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Deduplicate remote access toast notifications
 - Filter schedules by agent and show adapter display names
 - Handle empty roots array in scan endpoint
+- Fix toast notifications rendering with transparent backgrounds
 ---
 
 ## [0.10.0] - 2026-03-11
