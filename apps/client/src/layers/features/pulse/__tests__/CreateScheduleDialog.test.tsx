@@ -15,16 +15,6 @@ const MOCK_AGENTS = [
   { id: 'agent-2', name: 'test-bot', projectPath: '/projects/test', icon: '🧪', color: '#22c55e' },
 ];
 
-// jsdom does not implement ResizeObserver (required by cmdk CommandList in AgentCombobox)
-globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
-
-// jsdom does not implement scrollIntoView (required by cmdk item selection)
-Element.prototype.scrollIntoView = vi.fn();
-
 vi.mock('cronstrue', () => ({
   default: {
     toString: (cron: string) => {
@@ -250,38 +240,8 @@ describe('CreateScheduleDialog', () => {
     ).toBeTruthy();
   });
 
-  describe('schedule target radio group', () => {
-    it('shows radio group for agent vs directory', () => {
-      const transport = createMockTransport();
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-
-      expect(screen.getByLabelText('Run for agent')).toBeTruthy();
-      expect(screen.getByLabelText('Run in directory')).toBeTruthy();
-    });
-
-    it('shows directory picker when "Run in directory" is selected', () => {
-      const transport = createMockTransport();
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-
-      fireEvent.click(screen.getByLabelText('Run in directory'));
-
-      expect(screen.getByText('Working Directory')).toBeTruthy();
-      expect(screen.getByLabelText('Browse directories')).toBeTruthy();
-    });
-
-    it('shows agent combobox when "Run for agent" is selected and agents exist', async () => {
+  describe('agent picker and directory escape hatch', () => {
+    it('shows agent list when agents exist (no radio buttons)', async () => {
       const transport = createMockTransport({
         listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
       });
@@ -293,14 +253,80 @@ describe('CreateScheduleDialog', () => {
         </Wrapper>
       );
 
-      fireEvent.click(screen.getByLabelText('Run for agent'));
+      await waitFor(() => {
+        expect(screen.getByText('api-bot')).toBeTruthy();
+      });
+      expect(screen.getByText('test-bot')).toBeTruthy();
+      // No radio buttons
+      expect(screen.queryByLabelText('Run for agent')).toBeNull();
+      expect(screen.queryByLabelText('Run in directory')).toBeNull();
+    });
+
+    it('shows directory escape hatch link', async () => {
+      const transport = createMockTransport({
+        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
 
       await waitFor(() => {
-        expect(screen.getByText('Select agent...')).toBeTruthy();
+        expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
       });
     });
 
-    it('shows "no agents" message when agent mode selected but no agents registered', async () => {
+    it('switches to directory picker when escape hatch is clicked', async () => {
+      const transport = createMockTransport({
+        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText(/Run in a specific directory instead/));
+
+      expect(screen.getByText('Working Directory')).toBeTruthy();
+      expect(screen.getByText(/Back to agent selection/)).toBeTruthy();
+      expect(screen.queryByText('api-bot')).toBeNull();
+    });
+
+    it('switches back to agent list from directory mode', async () => {
+      const transport = createMockTransport({
+        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText(/Run in a specific directory instead/));
+      fireEvent.click(screen.getByText(/Back to agent selection/));
+
+      await waitFor(() => {
+        expect(screen.getByText('api-bot')).toBeTruthy();
+      });
+    });
+
+    it('shows empty state when no agents exist', async () => {
       const transport = createMockTransport({
         listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [] }),
       });
@@ -312,27 +338,30 @@ describe('CreateScheduleDialog', () => {
         </Wrapper>
       );
 
-      fireEvent.click(screen.getByLabelText('Run for agent'));
-
       await waitFor(() => {
-        expect(screen.getByText(/No registered agents found/)).toBeTruthy();
+        expect(screen.getByText(/No agents registered yet/)).toBeTruthy();
       });
+      expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
     });
 
-    it('submits with agentId when agent target selected', async () => {
+    it('submits with agentId when agent is selected', async () => {
       const newSchedule = createMockSchedule({ id: 'sched-new', agentId: 'agent-1' });
       const transport = createMockTransport({
         createSchedule: vi.fn().mockResolvedValue(newSchedule),
         listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
       });
       const Wrapper = createWrapper(transport);
-      const onOpenChange = vi.fn();
 
       render(
         <Wrapper>
-          <CreateScheduleDialog open={true} onOpenChange={onOpenChange} />
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
         </Wrapper>
       );
+
+      await waitFor(() => {
+        expect(screen.getByText('api-bot')).toBeTruthy();
+      });
+      fireEvent.click(screen.getByText('api-bot'));
 
       fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
         target: { value: 'Agent run' },
@@ -345,59 +374,44 @@ describe('CreateScheduleDialog', () => {
         target: { value: '0 0 * * *' },
       });
 
-      // Switch to agent mode and open combobox
-      fireEvent.click(screen.getByLabelText('Run for agent'));
-
-      await waitFor(() => {
-        expect(screen.getByText('Select agent...')).toBeTruthy();
-      });
-
-      // Open the combobox and select an agent
-      fireEvent.click(screen.getByText('Select agent...'));
-      await waitFor(() => {
-        expect(screen.getByText('api-bot')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByText('api-bot'));
-
       fireEvent.click(screen.getByText('Create'));
 
       await waitFor(() => {
         expect(transport.createSchedule).toHaveBeenCalledWith(
-          expect.objectContaining({
-            agentId: 'agent-1',
-          })
+          expect.objectContaining({ agentId: 'agent-1' })
         );
       });
     });
 
-    it('submits with cwd when directory target selected', async () => {
-      const newSchedule = createMockSchedule({ id: 'sched-new', cwd: '/projects/app' });
+    it('submits without agentId in directory mode', async () => {
+      const newSchedule = createMockSchedule({ id: 'sched-new' });
       const transport = createMockTransport({
         createSchedule: vi.fn().mockResolvedValue(newSchedule),
         listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [] }),
       });
       const Wrapper = createWrapper(transport);
-      const onOpenChange = vi.fn();
 
       render(
         <Wrapper>
-          <CreateScheduleDialog open={true} onOpenChange={onOpenChange} />
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
         </Wrapper>
       );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
+      });
+      fireEvent.click(screen.getByText(/Run in a specific directory instead/));
 
       fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
         target: { value: 'Dir run' },
       });
       fireEvent.change(
         screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
-        { target: { value: 'Do something in dir' } }
+        { target: { value: 'Do something' } }
       );
       fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
         target: { value: '0 0 * * *' },
       });
-
-      // Ensure directory mode is active
-      fireEvent.click(screen.getByLabelText('Run in directory'));
 
       fireEvent.click(screen.getByText('Create'));
 
@@ -408,7 +422,7 @@ describe('CreateScheduleDialog', () => {
       });
     });
 
-    it('pre-selects agent mode when editing an agent-linked schedule', async () => {
+    it('pre-selects agent in collapsed state when editing agent-linked schedule', async () => {
       const schedule = createMockSchedule({
         id: 'sched-1',
         name: 'Agent schedule',
@@ -427,11 +441,11 @@ describe('CreateScheduleDialog', () => {
         </Wrapper>
       );
 
-      // Agent radio should be selected
       await waitFor(() => {
-        const agentRadio = screen.getByLabelText('Run for agent') as HTMLInputElement;
-        expect(agentRadio.checked).toBe(true);
+        expect(screen.getByText('api-bot')).toBeTruthy();
       });
+      expect(screen.queryByText('test-bot')).toBeNull();
+      expect(screen.getByLabelText('Change agent')).toBeTruthy();
     });
   });
 });

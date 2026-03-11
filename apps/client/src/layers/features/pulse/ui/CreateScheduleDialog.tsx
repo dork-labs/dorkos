@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import cronstrue from 'cronstrue';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronRight, FolderOpen, Bot } from 'lucide-react';
+import { ChevronRight, ChevronLeft, FolderOpen } from 'lucide-react';
 import { useCreateSchedule, useUpdateSchedule } from '@/layers/entities/pulse';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
@@ -21,7 +21,7 @@ import type { PulseSchedule } from '@dorkos/shared/types';
 import { CronPresets } from './CronPresets';
 import { CronVisualBuilder } from './CronVisualBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
-import { AgentCombobox } from './AgentCombobox';
+import { AgentPicker } from './AgentPicker';
 
 interface Props {
   open: boolean;
@@ -98,17 +98,17 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
   // or if no edit and agents exist; otherwise 'directory'.
   const [scheduleTarget, setScheduleTarget] = useState<ScheduleTarget>(() => {
     if (editSchedule?.agentId) return 'agent';
-    return 'directory';
+    if (editSchedule && !editSchedule.agentId && editSchedule.cwd) return 'directory';
+    return 'agent';
   });
 
   // Reset form when dialog opens or switches between create/edit
   useEffect(() => {
     setForm(buildInitialState(editSchedule));
-    // Default to 'agent' when creating if agents are available
     if (!editSchedule) {
-      setScheduleTarget(agents.length > 0 ? 'agent' : 'directory');
+      setScheduleTarget('agent');
     } else {
-      setScheduleTarget(editSchedule.agentId ? 'agent' : 'directory');
+      setScheduleTarget(editSchedule.agentId ? 'agent' : (editSchedule.cwd ? 'directory' : 'agent'));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- agents.length intentionally excluded to avoid resetting on re-fetch
   }, [editSchedule, open]);
@@ -160,6 +160,59 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
 
         <form onSubmit={handleSubmit} id="schedule-form">
           <div className="space-y-5 overflow-y-auto px-4 py-5">
+            {/* ── Agent ── */}
+            {scheduleTarget === 'agent' ? (
+              <div className="space-y-2">
+                <Label>Agent</Label>
+                <AgentPicker
+                  agents={agents}
+                  value={form.agentId}
+                  onValueChange={(id) => updateField('agentId', id)}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScheduleTarget('directory');
+                    updateField('agentId', undefined);
+                  }}
+                  className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+                >
+                  Run in a specific directory instead...
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setScheduleTarget('agent')}
+                  className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+                >
+                  <ChevronLeft className="size-3" />
+                  Back to agent selection
+                </button>
+                <Label htmlFor="schedule-cwd">Working Directory</Label>
+                <div className="flex gap-2">
+                  <div
+                    className={cn(
+                      'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
+                      form.cwd ? 'text-foreground' : 'text-muted-foreground'
+                    )}
+                  >
+                    {form.cwd || 'Default (server working directory)'}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={() => setCwdPickerOpen(true)}
+                    aria-label="Browse directories"
+                  >
+                    <FolderOpen className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* ── Essential fields ── */}
             <div className="space-y-1.5">
               <Label htmlFor="schedule-name">Name *</Label>
@@ -245,89 +298,13 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
               )}
             </div>
 
-            {/* ── Common fields ── */}
-            <div className="border-t pt-4">
-              <div className="space-y-4">
-                {/* Schedule target: agent or directory */}
-                <div className="space-y-2">
-                  <Label>Run target</Label>
-                  <fieldset className="space-y-1.5">
-                    <legend className="sr-only">Schedule target</legend>
-                    <label className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="scheduleTarget"
-                        value="agent"
-                        aria-label="Run for agent"
-                        checked={scheduleTarget === 'agent'}
-                        onChange={() => setScheduleTarget('agent')}
-                      />
-                      <Bot className="text-muted-foreground size-3.5" />
-                      Run for agent
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="scheduleTarget"
-                        value="directory"
-                        aria-label="Run in directory"
-                        checked={scheduleTarget === 'directory'}
-                        onChange={() => setScheduleTarget('directory')}
-                      />
-                      <FolderOpen className="text-muted-foreground size-3.5" />
-                      Run in directory
-                    </label>
-                  </fieldset>
-                </div>
-
-                {scheduleTarget === 'agent' ? (
-                  <div className="space-y-1.5">
-                    <Label>Agent</Label>
-                    {agents.length === 0 ? (
-                      <p className="text-muted-foreground text-xs">
-                        No registered agents found. Register an agent via the Mesh panel, or switch to directory mode.
-                      </p>
-                    ) : (
-                      <AgentCombobox
-                        agents={agents}
-                        value={form.agentId}
-                        onValueChange={(id) => updateField('agentId', id)}
-                      />
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="schedule-cwd">Working Directory</Label>
-                    <div className="flex gap-2">
-                      <div
-                        className={cn(
-                          'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
-                          form.cwd ? 'text-foreground' : 'text-muted-foreground'
-                        )}
-                      >
-                        {form.cwd || 'Default (server working directory)'}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon-sm"
-                        onClick={() => setCwdPickerOpen(true)}
-                        aria-label="Browse directories"
-                      >
-                        <FolderOpen className="size-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1.5">
-                  <Label>Timezone</Label>
-                  <TimezoneCombobox
-                    value={form.timezone}
-                    onChange={(tz) => updateField('timezone', tz)}
-                  />
-                </div>
-              </div>
+            {/* ── Timezone ── */}
+            <div className="space-y-1.5">
+              <Label>Timezone</Label>
+              <TimezoneCombobox
+                value={form.timezone}
+                onChange={(tz) => updateField('timezone', tz)}
+              />
             </div>
 
             {/* ── Advanced settings (collapsed by default) ── */}

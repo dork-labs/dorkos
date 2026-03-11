@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Integrate AgentPicker into CreateScheduleDialog
 - Add tabbed navigation with Sessions, Schedules, and Connections views
 - Add AgentPicker component with direct list selection
 - Switch agent via identity chip and fix scrollbar overlay
