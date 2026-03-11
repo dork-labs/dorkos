@@ -1,4 +1,6 @@
-import { createRequire } from 'module';
+import { readFileSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { env } from '../env.js';
 
@@ -19,7 +21,10 @@ export const IS_DEV_BUILD: boolean = checkDevBuild(SERVER_VERSION);
 function resolveVersion(): string {
   if (env.DORKOS_VERSION_OVERRIDE) return env.DORKOS_VERSION_OVERRIDE;
   if (typeof __CLI_VERSION__ !== 'undefined') return __CLI_VERSION__;
-  return (createRequire(import.meta.url)('../../package.json') as { version: string }).version;
+  // Dev fallback: read version from package.json on disk.
+  // Avoids `createRequire` which conflicts with the esbuild banner in CLI builds.
+  const pkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../package.json');
+  return (JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version: string }).version;
 }
 
 function checkDevBuild(version: string): boolean {
