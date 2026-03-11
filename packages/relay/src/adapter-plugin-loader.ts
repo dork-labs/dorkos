@@ -16,6 +16,7 @@ import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { AdapterManifestSchema } from '@dorkos/shared/relay-schemas';
 import type { Logger } from '@dorkos/shared/logger';
 import type { RelayAdapter } from './types.js';
+import { RELAY_ADAPTER_API_VERSION } from './version.js';
 
 /** Configuration entry for a single adapter to load. */
 export interface PluginAdapterConfig {
@@ -29,7 +30,7 @@ export interface PluginAdapterConfig {
 
 /** Expected module shape from a plugin package. */
 export interface AdapterPluginModule {
-  default: (config: Record<string, unknown>) => RelayAdapter;
+  default: (id: string, config: Record<string, unknown>) => RelayAdapter;
   getManifest?: () => AdapterManifest;
 }
 
@@ -56,7 +57,7 @@ export interface LoadedAdapter {
  */
 export async function loadAdapters(
   configs: PluginAdapterConfig[],
-  builtinMap: Map<string, (config: Record<string, unknown>) => RelayAdapter>,
+  builtinMap: Map<string, (id: string, config: Record<string, unknown>) => RelayAdapter>,
   configDir: string,
   logger: Logger = console,
 ): Promise<LoadedAdapter[]> {
@@ -73,12 +74,13 @@ export async function loadAdapters(
         // Built-in adapter from the provided factory map
         // Built-in manifests are handled by AdapterManager, not plugin loader
         const factory = builtinMap.get(entry.type)!;
-        adapter = factory(entry.config);
+        adapter = factory(entry.id, entry.config);
       } else if (entry.plugin?.package) {
         // npm package via dynamic import
         const mod = (await import(entry.plugin.package)) as AdapterPluginModule;
         adapter = validateAndCreate(mod, entry);
         manifest = extractManifest(mod, entry, logger);
+        if (manifest) checkApiVersion(manifest, entry.id, logger);
       } else if (entry.plugin?.path) {
         // Local file via dynamic import with pathToFileURL
         const absPath = isAbsolute(entry.plugin.path)
@@ -87,6 +89,7 @@ export async function loadAdapters(
         const mod = (await import(pathToFileURL(absPath).href)) as AdapterPluginModule;
         adapter = validateAndCreate(mod, entry);
         manifest = extractManifest(mod, entry, logger);
+        if (manifest) checkApiVersion(manifest, entry.id, logger);
       }
 
       if (adapter) {
@@ -119,8 +122,8 @@ function validateAndCreate(
       `Module for '${entry.id}' does not export a default factory function`,
     );
   }
-  const factory = m.default as (config: Record<string, unknown>) => RelayAdapter;
-  const adapter = factory(entry.config);
+  const factory = m.default as (id: string, config: Record<string, unknown>) => RelayAdapter;
+  const adapter = factory(entry.id, entry.config);
   validateAdapterShape(adapter, entry.id);
   return adapter;
 }
@@ -167,6 +170,37 @@ function extractManifest(
     configFields: [],
     multiInstance: false,
   };
+}
+
+/**
+ * Check the adapter's declared API version against the host version.
+ *
+ * Emits a warning-level log on major version mismatch (breaking change) or
+ * when the adapter targets a newer minor version than the host supports.
+ * Never throws — version mismatches produce warnings, not hard failures.
+ * Modeled on VS Code's `engines.vscode` behavior.
+ *
+ * @param manifest - The adapter's manifest
+ * @param adapterId - The adapter ID for log messages
+ * @param logger - Logger instance
+ */
+function checkApiVersion(manifest: AdapterManifest, adapterId: string, logger: Logger): void {
+  if (!manifest.apiVersion) return; // no version declared — skip check
+
+  const [hostMajor, hostMinor] = RELAY_ADAPTER_API_VERSION.split('.').map(Number);
+  const [adapterMajor, adapterMinor] = manifest.apiVersion.split('.').map(Number);
+
+  if (hostMajor !== adapterMajor) {
+    logger.warn(
+      `[PluginLoader] Adapter '${adapterId}' targets API v${manifest.apiVersion} ` +
+      `but host is v${RELAY_ADAPTER_API_VERSION} (major version mismatch)`,
+    );
+  } else if (adapterMinor > hostMinor) {
+    logger.warn(
+      `[PluginLoader] Adapter '${adapterId}' targets API v${manifest.apiVersion} ` +
+      `but host is v${RELAY_ADAPTER_API_VERSION} (adapter expects newer features)`,
+    );
+  }
 }
 
 /**

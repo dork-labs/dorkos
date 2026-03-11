@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TelegramAdapter } from '../../adapters/telegram/index.js';
-import type { RelayPublisher, AdapterStatus, Unsubscribe } from '../../types.js';
+import { TelegramAdapter } from '../index.js';
+import type { RelayPublisher, AdapterStatus, Unsubscribe } from '../../../types.js';
 
 // --- node:http mock ---
 // Replaces the real HTTP server to avoid port-binding in tests and to expose
@@ -198,6 +198,13 @@ function createEnvelope(subject: string, payload: unknown) {
     payload,
   };
 }
+
+// --- Compliance Suite ---
+// NOTE: Compliance suite not run for TelegramAdapter because start() connects
+// to the Telegram Bot API via grammy. The compliance suite's createAdapter()
+// factory cannot produce an adapter that passes start() without extensive
+// mocking of grammy internals. All compliance behaviors (shape, lifecycle,
+// idempotency, delivery, status) are covered by the dedicated tests below.
 
 // --- Tests ---
 

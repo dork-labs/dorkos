@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayAdapter, AdapterStatus, DeliveryResult } from '../types.js';
 import { loadAdapters, validateAdapterShape } from '../adapter-plugin-loader.js';
 import type { PluginAdapterConfig, LoadedAdapter } from '../adapter-plugin-loader.js';
+import { RELAY_ADAPTER_API_VERSION } from '../version.js';
 
 // === Mock helpers ===
 
@@ -36,7 +37,7 @@ function createConfig(overrides: Partial<PluginAdapterConfig> = {}): PluginAdapt
 // === Tests ===
 
 describe('loadAdapters', () => {
-  let builtinMap: Map<string, (config: Record<string, unknown>) => RelayAdapter>;
+  let builtinMap: Map<string, (id: string, config: Record<string, unknown>) => RelayAdapter>;
 
   beforeEach(() => {
     builtinMap = new Map();
@@ -56,7 +57,7 @@ describe('loadAdapters', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].adapter.id).toBe('builtin-test');
-    expect(factory).toHaveBeenCalledWith({});
+    expect(factory).toHaveBeenCalledWith('builtin-test', {});
   });
 
   it('returns undefined manifest for built-in adapters', async () => {
@@ -163,6 +164,19 @@ describe('loadAdapters', () => {
     warnSpy.mockRestore();
   });
 
+  it('passes id to built-in factory function', async () => {
+    const mockAdapter = createMockAdapter({ id: 'custom-plugin' });
+    const factory = vi.fn().mockReturnValue(mockAdapter);
+    builtinMap.set('test-type', factory);
+
+    const configs: PluginAdapterConfig[] = [
+      createConfig({ id: 'custom-plugin', type: 'test-type', builtin: true, config: { key: 'val' } }),
+    ];
+
+    await loadAdapters(configs, builtinMap, '/config/dir');
+    expect(factory).toHaveBeenCalledWith('custom-plugin', { key: 'val' });
+  });
+
   it('returns LoadedAdapter[] shape with adapter and manifest fields', async () => {
     const mockAdapter = createMockAdapter({ id: 'shaped' });
     const factory = vi.fn().mockReturnValue(mockAdapter);
@@ -179,6 +193,13 @@ describe('loadAdapters', () => {
     expect(loaded).toHaveProperty('adapter');
     expect(loaded).toHaveProperty('manifest');
     expect(loaded.adapter.id).toBe('shaped');
+  });
+});
+
+describe('RELAY_ADAPTER_API_VERSION', () => {
+  it('exports a semver-like major.minor.patch string', () => {
+    expect(typeof RELAY_ADAPTER_API_VERSION).toBe('string');
+    expect(RELAY_ADAPTER_API_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
 

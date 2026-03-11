@@ -12,6 +12,9 @@
 export { RelayCore } from './relay-core.js';
 export type { PublishResult } from './relay-core.js';
 
+// API versioning
+export { RELAY_ADAPTER_API_VERSION } from './version.js';
+
 // Sub-modules (for advanced usage)
 export { EndpointRegistry, hashSubject } from './endpoint-registry.js';
 export { SubscriptionRegistry } from './subscription-registry.js';
@@ -99,12 +102,15 @@ export type {
   PublishResultLike,
 } from './types.js';
 
+// Base class (optional convenience for adapter authors)
+export { BaseRelayAdapter } from './base-adapter.js';
+
 // Adapter registry
 export { AdapterRegistry } from './adapter-registry.js';
 
 // Adapter implementations
 export { TelegramAdapter, TELEGRAM_MANIFEST } from './adapters/telegram/index.js';
-export { WebhookAdapter, verifySignature, WEBHOOK_MANIFEST } from './adapters/webhook-adapter.js';
+export { WebhookAdapter, verifySignature, WEBHOOK_MANIFEST } from './adapters/webhook/index.js';
 
 // Built-in adapters
 export { ClaudeCodeAdapter, CLAUDE_CODE_MANIFEST } from './adapters/claude-code/index.js';

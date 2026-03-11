@@ -12,11 +12,11 @@
  * - Dual-secret rotation allows zero-downtime secret rotation
  * - All signature comparisons use `crypto.timingSafeEqual` to prevent timing attacks
  *
- * @module relay/adapters/webhook-adapter
+ * @module relay/adapters/webhook
  */
 import crypto from 'node:crypto';
 import type { RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
-import type { RelayAdapter, AdapterStatus, AdapterContext, DeliveryResult, WebhookAdapterConfig, RelayPublisher } from '../types.js';
+import type { RelayAdapter, AdapterStatus, AdapterContext, DeliveryResult, WebhookAdapterConfig, RelayPublisher } from '../../types.js';
 
 /** Stripe-standard timestamp window for replay attack prevention (±5 minutes). */
 const TIMESTAMP_WINDOW_SECS = 300;

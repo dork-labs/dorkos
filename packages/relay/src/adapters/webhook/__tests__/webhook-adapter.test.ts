@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebhookAdapter, verifySignature } from '../webhook-adapter.js';
-import type { RelayPublisher } from '../../types.js';
+import { runAdapterComplianceSuite } from '../../../testing/index.js';
+import type { RelayPublisher } from '../../../types.js';
 
 // --- Constants ---
 
@@ -525,5 +526,28 @@ describe('verifySignature', () => {
     const sigWithPrev = crypto.createHmac('sha256', PREV_SECRET).update(message).digest('hex');
 
     expect(verifySignature(body, timestamp, sigWithPrev, SECRET)).toBe(false);
+  });
+});
+
+// --- Adapter Compliance Suite ---
+// Stub global fetch so outbound deliver() does not make real HTTP requests.
+
+describe('WebhookAdapter compliance', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  runAdapterComplianceSuite({
+    name: 'WebhookAdapter',
+    createAdapter: () =>
+      new WebhookAdapter('test-webhook', {
+        inbound: { subject: 'relay.webhook.test', secret: SECRET },
+        outbound: { url: 'https://example.com/hook', secret: SECRET },
+      }),
+    deliverSubject: 'relay.webhook.test',
   });
 });

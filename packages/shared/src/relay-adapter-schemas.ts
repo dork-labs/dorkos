@@ -201,6 +201,8 @@ export const AdapterManifestSchema = z
     setupSteps: z.array(AdapterSetupStepSchema).optional(),
     setupInstructions: z.string().optional(),
     multiInstance: z.boolean().default(false),
+    /** Relay adapter API version this adapter targets (e.g., '0.1.0'). */
+    apiVersion: z.string().optional(),
   })
   .openapi('AdapterManifest');
 

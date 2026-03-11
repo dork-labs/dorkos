@@ -701,15 +701,19 @@ Adapters can be loaded at runtime from npm packages or local files. The plugin l
 
 ### Factory-Function Convention
 
-A third-party adapter package must export a **default factory function** that accepts a config object and returns a `RelayAdapter` instance. It may also export a `getManifest()` function for catalog integration:
+A third-party adapter package must export a **default factory function** that accepts the adapter instance ID and a config object, and returns a `RelayAdapter` instance. It may also export a `getManifest()` function for catalog integration:
 
 ```typescript
 // my-relay-adapter/index.ts (or main entry from package.json)
 import type { RelayAdapter } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
+import { RELAY_ADAPTER_API_VERSION } from '@dorkos/relay';
 
-export default function createMyAdapter(config: Record<string, unknown>): RelayAdapter {
-  return new MyAdapter(config);
+export default function createMyAdapter(
+  id: string,
+  config: Record<string, unknown>,
+): RelayAdapter {
+  return new MyAdapter(id, config);
 }
 
 export function getManifest(): AdapterManifest {
@@ -719,6 +723,7 @@ export function getManifest(): AdapterManifest {
     description: 'Bridges My Platform into Relay',
     category: 'messaging',
     builtin: false,
+    apiVersion: RELAY_ADAPTER_API_VERSION,
     multiInstance: true,
     configFields: [
       { key: 'apiKey', label: 'API Key', type: 'password', required: true },
@@ -728,6 +733,8 @@ export function getManifest(): AdapterManifest {
   };
 }
 ```
+
+The `id` parameter is the adapter instance ID from the user's `adapters.json` configuration. The plugin loader passes `entry.id` and `entry.config` to the factory function.
 
 If `getManifest()` is absent or fails validation, a minimal fallback manifest is generated automatically and the adapter still loads.
 
@@ -848,6 +855,226 @@ interface AdapterManagerDeps {
 ```
 
 When `relayCore` is omitted, `initialize()` skips binding subsystem setup and the binding API endpoints return 503. When `meshCore` is omitted, `AdapterContext` passed to `deliver()` contains no agent info.
+
+## Using BaseRelayAdapter (Optional)
+
+`BaseRelayAdapter` is an optional abstract base class that eliminates ~30 lines of boilerplate per adapter. Direct `RelayAdapter` implementation remains fully supported.
+
+The base class handles:
+
+- **Status initialization** -- `state: 'disconnected'`, message counts, error count
+- **Start/stop idempotency** -- skip `start()` if already connected, skip `stop()` if already disconnected
+- **Error recording** -- `recordError(err)` updates state, error count, and timestamps
+- **Relay ref lifecycle** -- stores the `RelayPublisher` on start, clears it on stop
+- **Status snapshots** -- `getStatus()` returns a shallow copy to prevent external mutation
+
+Subclasses implement three methods:
+
+| Method | Purpose |
+|---|---|
+| `protected _start(relay: RelayPublisher): Promise<void>` | Connect to the external service |
+| `protected _stop(): Promise<void>` | Disconnect and drain in-flight messages |
+| `deliver(subject, envelope, context?): Promise<DeliveryResult>` | Deliver a message to the external channel |
+
+### Example
+
+```typescript
+import { BaseRelayAdapter } from '@dorkos/relay';
+import type {
+  RelayPublisher,
+  DeliveryResult,
+  AdapterContext,
+} from '@dorkos/relay';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+
+class SlackAdapter extends BaseRelayAdapter {
+  private client: SlackClient | null = null;
+
+  constructor(id: string, private readonly token: string) {
+    super(id, 'relay.human.slack', 'Slack');
+  }
+
+  protected async _start(relay: RelayPublisher): Promise<void> {
+    this.client = new SlackClient(this.token);
+    await this.client.connect();
+
+    this.client.on('message', async (msg) => {
+      this.trackInbound();
+      await relay.publish(`relay.human.slack.${msg.userId}`, msg.payload, {
+        from: `relay.human.slack.${this.id}`,
+      });
+    });
+  }
+
+  protected async _stop(): Promise<void> {
+    await this.client?.disconnect();
+    this.client = null;
+  }
+
+  async deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    _context?: AdapterContext,
+  ): Promise<DeliveryResult> {
+    if (!this.client) return { success: false, error: 'Not connected' };
+
+    const userId = subject.slice('relay.human.slack.'.length);
+    await this.client.send(userId, envelope.payload);
+    this.trackOutbound();
+    return { success: true };
+  }
+}
+```
+
+### Protected helpers
+
+| Helper | Purpose |
+|---|---|
+| `trackOutbound()` | Increment outbound message count. Call after successful delivery. |
+| `trackInbound()` | Increment inbound message count. Call when receiving from external channel. |
+| `recordError(err)` | Set state to `'error'`, increment `errorCount`, set `lastError` and `lastErrorAt`. Does not catch/swallow -- the host handles isolation. |
+| `this.relay` | Reference to the `RelayPublisher`, set by `start()`, cleared by `stop()`. |
+
+### Design notes
+
+- **Errors re-throw from `start()`.** The base class records the error in status, then re-throws so the host (`AdapterRegistry`) can handle isolation.
+- **`deliver()` is not wrapped.** `AdapterRegistry` already wraps delivery with try/catch, timeout, and circuit breaker. Adding another layer would hide errors.
+- **`_start()` / `_stop()` naming.** Prefixed with `_` to distinguish from the public lifecycle methods. Follows Node.js convention (`Writable._write()`, Winston `TransportStream._write()`).
+
+## Compliance Test Suite
+
+The compliance suite (`@dorkos/relay/testing`) validates that an adapter correctly implements the `RelayAdapter` contract. Run it against any adapter -- whether it extends `BaseRelayAdapter` or implements the interface directly.
+
+### Usage
+
+```typescript
+import { runAdapterComplianceSuite } from '@dorkos/relay/testing';
+import { SlackAdapter } from '../slack-adapter.js';
+
+runAdapterComplianceSuite({
+  name: 'SlackAdapter',
+  createAdapter: () => new SlackAdapter('test-slack', 'xoxb-test-token'),
+  deliverSubject: 'relay.human.slack.test',
+});
+```
+
+### What it validates
+
+| Category | Tests |
+|---|---|
+| **Shape compliance** | `id` is a non-empty string, `subjectPrefix` is string or string[], `displayName` is a non-empty string, required methods exist |
+| **Status lifecycle** | Initial state is `'disconnected'`, `getStatus()` returns a valid `AdapterStatus` shape, `getStatus()` returns a copy (not a reference) |
+| **Start/stop idempotency** | `start()` twice does not throw, `stop()` twice does not throw, `stop()` without `start()` does not throw |
+| **Delivery** | `deliver()` returns a defined `DeliveryResult` |
+| **testConnection** | If present, returns `{ ok: boolean; error?: string }` |
+
+### Mock utilities
+
+The `@dorkos/relay/testing` subpath also exports mock factories for adapter tests:
+
+```typescript
+import {
+  createMockRelayPublisher,
+  createMockRelayEnvelope,
+} from '@dorkos/relay/testing';
+
+const relay = createMockRelayPublisher();  // All methods are vi.fn() stubs
+const envelope = createMockRelayEnvelope({ subject: 'relay.test.foo' });
+```
+
+## API Versioning
+
+Adapters declare which relay API version they target via the `apiVersion` field in their `AdapterManifest`. The plugin loader checks this at load time and emits a warning-level log on mismatch. Version mismatches never block loading.
+
+### Declaring a version
+
+Import `RELAY_ADAPTER_API_VERSION` from `@dorkos/relay` and set it in your manifest:
+
+```typescript
+import { RELAY_ADAPTER_API_VERSION } from '@dorkos/relay';
+
+export function getManifest(): AdapterManifest {
+  return {
+    type: 'my-adapter',
+    displayName: 'My Adapter',
+    description: 'A custom relay adapter.',
+    category: 'custom',
+    builtin: false,
+    apiVersion: RELAY_ADAPTER_API_VERSION,
+    configFields: [/* ... */],
+    multiInstance: false,
+  };
+}
+```
+
+### Version check behavior
+
+The plugin loader performs a simple `major.minor` comparison:
+
+- **Major version mismatch** -- warning logged (e.g., adapter targets v1.x but host is v0.x)
+- **Adapter minor > host minor** -- warning logged (adapter expects features the host doesn't have)
+- **No `apiVersion` declared** -- no check performed, no warning
+
+The comparison uses a manual `major.minor` split (no `semver` dependency).
+
+### Versioning policy
+
+- **Pre-1.0** (`0.x.y`): No stability guarantees. The `RelayAdapter` interface may change between minor versions.
+- **Post-1.0**: Follow SemVer. Major bumps for breaking changes to required interface members, minor bumps for new optional members or behavioral changes.
+
+## Adapter Template
+
+A working starter template lives at `templates/relay-adapter/`. It provides a complete project structure with `BaseRelayAdapter`, the factory export, manifest with API versioning, and a pre-wired compliance test suite.
+
+### Quick start
+
+1. **Copy the template:**
+
+   ```bash
+   cp -r templates/relay-adapter my-org/dorkos-relay-my-adapter
+   cd my-org/dorkos-relay-my-adapter
+   ```
+
+2. **Rename and customize:** Update the class name, `subjectPrefix`, manifest `type` / `displayName`, and `package.json` name.
+
+3. **Implement three methods:** `_start()`, `_stop()`, and `deliver()` in your adapter class.
+
+4. **Run the compliance suite:**
+
+   ```bash
+   pnpm test
+   ```
+
+5. **Configure in DorkOS:** Add an entry to `~/.dork/relay/adapters.json`:
+
+   ```json
+   {
+     "adapters": [
+       {
+         "id": "my-adapter-1",
+         "type": "plugin",
+         "plugin": { "package": "dorkos-relay-my-adapter" },
+         "config": { "apiKey": "your-api-key" }
+       }
+     ]
+   }
+   ```
+
+### Template structure
+
+```
+templates/relay-adapter/
+├── package.json              # ESM package with @dorkos/relay peer dep
+├── tsconfig.json
+├── README.md                 # Detailed setup instructions
+└── src/
+    ├── index.ts              # Factory default export + getManifest()
+    ├── my-adapter.ts         # Working no-op adapter extending BaseRelayAdapter
+    └── __tests__/
+        └── my-adapter.test.ts  # Pre-wired compliance suite
+```
+
+Package naming convention: `dorkos-relay-{channel}` (e.g., `dorkos-relay-slack`, `dorkos-relay-discord`).
 
 ## Creating a Custom Adapter
 
@@ -1006,12 +1233,17 @@ export class SlackAdapter implements RelayAdapter {
 
 ## Related
 
-- `packages/relay/src/adapter-registry.ts` — AdapterRegistry lifecycle management
 - `packages/relay/src/types.ts` — RelayAdapter interface and config types
+- `packages/relay/src/base-adapter.ts` — Optional BaseRelayAdapter abstract class
+- `packages/relay/src/version.ts` — RELAY_ADAPTER_API_VERSION constant
 - `packages/relay/src/adapter-plugin-loader.ts` — Dynamic plugin loading from npm and local paths
+- `packages/relay/src/testing/` — Compliance test suite and mock utilities
+- `packages/relay/src/adapter-registry.ts` — AdapterRegistry lifecycle management
 - `apps/server/src/services/relay/adapter-manager.ts` — Server-side hot-reload, catalog, and updateConfig
 - `apps/server/src/services/relay/adapter-factory.ts` — Adapter instantiation per config type
 - `apps/server/src/services/relay/binding-store.ts` — Binding persistence and resolution scoring
 - `apps/server/src/services/relay/binding-router.ts` — Runtime routing from relay.human.> to relay.agent.*
 - `packages/shared/src/relay-schemas.ts` — AdapterManifest, ConfigField, AdapterBinding, and all Relay Zod schemas
 - `packages/shared/src/transport.ts` — Transport interface including updateConfig()
+- `templates/relay-adapter/` — Starter template for new adapters
+- `decisions/0030-dynamic-import-for-adapter-plugins.md` — ADR for plugin loading and factory export pattern

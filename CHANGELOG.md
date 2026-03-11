@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add BaseRelayAdapter, compliance suite, API versioning, and adapter template
 - Add useUpdateBinding hook and BindingList component for managing adapter-agent bindings
 - Add NavigationLayoutDialogHeader and NavigationLayoutBody for polished dialog navigation
 - Add NavigationLayout sidebar navigation for dialogs

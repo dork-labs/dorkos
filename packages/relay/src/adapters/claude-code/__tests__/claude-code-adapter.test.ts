@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayEnvelope, TraceSpan } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { ClaudeCodeAdapter } from '../claude-code/index.js';
+import { ClaudeCodeAdapter } from '../index.js';
 import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
   TraceStoreLike,
   PulseStoreLike,
   ClaudeCodeAdapterDeps,
-} from '../claude-code/index.js';
-import type { RelayPublisher, AdapterContext } from '../../types.js';
+} from '../index.js';
+import type { RelayPublisher, AdapterContext } from '../../../types.js';
 
 // === Mock factories ===
 
@@ -94,6 +94,14 @@ function createPulseEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope 
     ...overrides,
   };
 }
+
+// === Compliance Suite ===
+// NOTE: Compliance suite not run for ClaudeCodeAdapter because it depends on
+// injected services (AgentRuntimeLike, TraceStoreLike, PulseStoreLike) and
+// deliver() drives an SDK agent session via sendMessage(). The compliance
+// suite's generic createAdapter() factory cannot wire up these dependencies.
+// All compliance behaviors (shape, lifecycle, idempotency, delivery, status)
+// are covered by the dedicated tests below.
 
 // === Test suite ===
 

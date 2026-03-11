@@ -184,7 +184,7 @@ async function loadPluginAdapter(
     return null;
   }
 
-  const builtinMap = new Map<string, (c: Record<string, unknown>) => RelayAdapter>();
+  const builtinMap = new Map<string, (id: string, c: Record<string, unknown>) => RelayAdapter>();
   const configDir = dirname(configPath);
   const results = await loadAdapters(
     [
