@@ -5,7 +5,7 @@ import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';
 import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
-import { SessionSidebar } from '@/layers/features/session-list';
+import { AgentSidebar } from '@/layers/features/session-list';
 import { ChatPanel } from '@/layers/features/chat';
 import { useOnboarding, OnboardingFlow } from '@/layers/features/onboarding';
 import { AgentIdentityChip, CommandPaletteTrigger } from '@/layers/features/top-nav';
@@ -133,7 +133,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                       transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
                       className="bg-background absolute top-0 left-0 z-50 h-full w-80 overflow-y-auto border-r"
                     >
-                      <SessionSidebar />
+                      <AgentSidebar />
                     </motion.div>
                   </>
                 )}
@@ -204,7 +204,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                 <PermissionBanner sessionId={activeSessionId} />
                 <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen} className="flex-1 overflow-hidden" style={{ "--sidebar-width": "20rem" } as React.CSSProperties}>
                   <Sidebar variant="floating">
-                    <SessionSidebar />
+                    <AgentSidebar />
                   </Sidebar>
                   <SidebarInset className="overflow-hidden">
                     <header

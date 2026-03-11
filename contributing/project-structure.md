@@ -69,7 +69,7 @@ src/
 │   │   │   └── index.ts
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
 │   │   ├── commands/    # Inline slash command palette (chat input)
-│   │   ├── session-list/ # SessionSidebar, AgentContextChips
+│   │   ├── session-list/ # AgentSidebar, SidebarTabRow, tabbed views
 │   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Status Bar, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, ConnectionsTab)
 │   │   ├── files/       # FileBrowser

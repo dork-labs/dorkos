@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SessionSidebar } from '../ui/SessionSidebar';
+import { AgentSidebar } from '../ui/AgentSidebar';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
@@ -28,6 +28,10 @@ const mockSetOnboardingStep = vi.fn();
 const mockSetRelayOpen = vi.fn();
 const mockSetMeshOpen = vi.fn();
 const mockSetSettingsOpen = vi.fn();
+let mockSidebarActiveTab: 'sessions' | 'schedules' | 'connections' = 'sessions';
+const mockSetSidebarActiveTab = vi.fn((tab: string) => {
+  mockSidebarActiveTab = tab as 'sessions' | 'schedules' | 'connections';
+});
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
@@ -47,6 +51,9 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       enablePulseNotifications: false,
       pulseOpen: false,
       setPulseBadgeCount: vi.fn(),
+      sidebarActiveTab: mockSidebarActiveTab,
+      setSidebarActiveTab: mockSetSidebarActiveTab,
+      sidebarOpen: true,
     };
     return selector ? selector(state) : state;
   },
@@ -63,18 +70,19 @@ vi.mock('@/layers/features/onboarding', () => ({
   ProgressCard: () => null,
 }));
 
-// Mock agent entity hooks (used by AgentHeader and AgentContextChips)
+// Mock agent entity hooks — mutable tool status for feature flag tests
+let mockToolStatus = {
+  pulse: 'enabled' as string,
+  relay: 'enabled' as string,
+  mesh: 'enabled' as string,
+  adapter: 'enabled' as string,
+};
 vi.mock('@/layers/entities/agent', () => ({
   useCurrentAgent: () => ({ data: null, isLoading: false }),
   useCreateAgent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAgentVisual: () => ({ color: 'hsl(0,70%,55%)', emoji: '🤖' }),
   useResolvedAgents: () => ({ data: undefined }),
-  useAgentToolStatus: () => ({
-    pulse: 'enabled',
-    relay: 'enabled',
-    mesh: 'enabled',
-    adapter: 'enabled',
-  }),
+  useAgentToolStatus: () => mockToolStatus,
 }));
 
 // Mock usePulseEnabled
@@ -82,7 +90,7 @@ vi.mock('@/layers/entities/pulse/model/use-pulse-config', () => ({
   usePulseEnabled: () => true,
 }));
 
-// Mock useActiveRunCount (used by AgentContextChips)
+// Mock useActiveRunCount
 vi.mock('@/layers/entities/pulse/model/use-runs', () => ({
   useActiveRunCount: () => ({ data: 0 }),
 }));
@@ -93,23 +101,20 @@ vi.mock('@/layers/entities/pulse/model/use-completed-run-badge', () => ({
   useCompletedRunBadge: () => ({ unviewedCount: 0, clearBadge: mockClearBadge }),
 }));
 
-// Mock useRelayEnabled (used by AgentContextChips)
+// Mock useConnectionsStatus (derived hook in model/ segment)
+vi.mock('../model/use-connections-status', () => ({
+  useConnectionsStatus: () => 'none' as const,
+}));
+
+// Mock useRelayEnabled and useRelayAdapters (used by ConnectionsView)
 vi.mock('@/layers/entities/relay', () => ({
   useRelayEnabled: () => false,
+  useRelayAdapters: () => ({ data: [] }),
 }));
 
-// Mock useRegisteredAgents (used by AgentContextChips)
+// Mock useRegisteredAgents (used by ConnectionsView)
 vi.mock('@/layers/entities/mesh', () => ({
   useRegisteredAgents: () => ({ data: { agents: [] } }),
-}));
-
-// Mock @dorkos/icons (used by AgentContextChips)
-vi.mock('@dorkos/icons/registry', () => ({
-  icons: {
-    pulse: (props: Record<string, unknown>) => <span data-testid="icon-pulse" {...props} />,
-    relay: (props: Record<string, unknown>) => <span data-testid="icon-relay" {...props} />,
-    mesh: (props: Record<string, unknown>) => <span data-testid="icon-mesh" {...props} />,
-  },
 }));
 
 // Mock useTheme (used by SidebarFooterBar)
@@ -186,23 +191,24 @@ function renderWithQuery(ui: React.ReactElement) {
   );
 }
 
-describe('SessionSidebar', () => {
+describe('AgentSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockTransport = createMockTransport();
     mockSetSidebarOpen.mockClear();
+    mockSidebarActiveTab = 'sessions';
   });
   afterEach(() => {
     cleanup();
   });
 
   it('renders "New session" button', () => {
-    renderWithQuery(<SessionSidebar />);
+    renderWithQuery(<AgentSidebar />);
     expect(screen.getByText('New session')).toBeDefined();
   });
 
   it('shows empty state when no sessions', async () => {
-    renderWithQuery(<SessionSidebar />);
+    renderWithQuery(<AgentSidebar />);
     await waitFor(() => {
       expect(screen.getByText('No conversations yet')).toBeDefined();
     });
@@ -218,7 +224,7 @@ describe('SessionSidebar', () => {
         ]),
     });
 
-    renderWithQuery(<SessionSidebar />);
+    renderWithQuery(<AgentSidebar />);
 
     await waitFor(() => {
       expect(screen.getByText('Today')).toBeDefined();
@@ -230,7 +236,7 @@ describe('SessionSidebar', () => {
   });
 
   it('sets active session to null on "New session" click', () => {
-    renderWithQuery(<SessionSidebar />);
+    renderWithQuery(<AgentSidebar />);
     fireEvent.click(screen.getByText('New session'));
 
     expect(mockSetSessionId).toHaveBeenCalledWith(null);
@@ -245,7 +251,7 @@ describe('SessionSidebar', () => {
         ]),
     });
 
-    renderWithQuery(<SessionSidebar />);
+    renderWithQuery(<AgentSidebar />);
 
     await waitFor(() => {
       expect(screen.getByText('Only today')).toBeDefined();
@@ -254,15 +260,15 @@ describe('SessionSidebar', () => {
     expect(screen.queryByText('Today')).toBeNull();
   });
 
-  it('renders AgentContextChips in sidebar footer', () => {
-    renderWithQuery(<SessionSidebar />);
-    expect(screen.getByLabelText('Pulse scheduler')).toBeDefined();
-    expect(screen.getByLabelText('Relay messaging')).toBeDefined();
-    expect(screen.getByLabelText('Mesh discovery')).toBeDefined();
+  it('does not render AgentContextChips (replaced by tab badges)', () => {
+    renderWithQuery(<AgentSidebar />);
+    expect(screen.queryByLabelText('Pulse scheduler')).toBeNull();
+    expect(screen.queryByLabelText('Relay messaging')).toBeNull();
+    expect(screen.queryByLabelText('Mesh discovery')).toBeNull();
   });
 
   it('renders SidebarFooterBar with branding and settings', () => {
-    renderWithQuery(<SessionSidebar />);
+    renderWithQuery(<AgentSidebar />);
     // Branding is now a DorkLogo SVG inside a link to dorkos.ai
     const brandLink = screen.getByRole('link');
     expect(brandLink.getAttribute('href')).toBe('https://dorkos.ai');
@@ -279,10 +285,130 @@ describe('SessionSidebar', () => {
         ]),
     });
 
-    renderWithQuery(<SessionSidebar />);
+    renderWithQuery(<AgentSidebar />);
 
     await waitFor(() => {
       expect(mockSetSessionId).toHaveBeenCalledWith('s1');
+    });
+  });
+
+  describe('tab switching', () => {
+    it('renders SidebarTabRow with tab buttons', () => {
+      renderWithQuery(<AgentSidebar />);
+      expect(screen.getByRole('tablist')).toBeInTheDocument();
+      // At minimum: sessions + connections (schedules depends on Pulse feature flag)
+      expect(screen.getAllByRole('tab').length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('shows sessions tabpanel by default and hides others', () => {
+      renderWithQuery(<AgentSidebar />);
+      const sessionsPanel = document.getElementById('sidebar-tabpanel-sessions');
+      const schedulesPanel = document.getElementById('sidebar-tabpanel-schedules');
+      const connectionsPanel = document.getElementById('sidebar-tabpanel-connections');
+      expect(sessionsPanel?.classList.contains('hidden')).toBe(false);
+      expect(schedulesPanel?.classList.contains('hidden')).toBe(true);
+      expect(connectionsPanel?.classList.contains('hidden')).toBe(true);
+    });
+
+    it('switching tab calls setSidebarActiveTab', () => {
+      renderWithQuery(<AgentSidebar />);
+
+      const schedulesTab = screen
+        .getAllByRole('tab')
+        .find((t) => t.id === 'sidebar-tab-schedules');
+      expect(schedulesTab).toBeDefined();
+      if (schedulesTab) {
+        fireEvent.click(schedulesTab);
+        expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('schedules');
+      }
+    });
+
+    it('each tabpanel has correct aria-labelledby linking to its tab', () => {
+      renderWithQuery(<AgentSidebar />);
+      const sessionsPanel = document.getElementById('sidebar-tabpanel-sessions');
+      const schedulesPanel = document.getElementById('sidebar-tabpanel-schedules');
+      const connectionsPanel = document.getElementById('sidebar-tabpanel-connections');
+      expect(sessionsPanel?.getAttribute('aria-labelledby')).toBe('sidebar-tab-sessions');
+      expect(schedulesPanel?.getAttribute('aria-labelledby')).toBe('sidebar-tab-schedules');
+      expect(connectionsPanel?.getAttribute('aria-labelledby')).toBe(
+        'sidebar-tab-connections'
+      );
+    });
+  });
+
+  describe('keyboard shortcuts', () => {
+    it('Cmd+1 switches to sessions tab when sidebar is open', () => {
+      renderWithQuery(<AgentSidebar />);
+      fireEvent.keyDown(document, { key: '1', metaKey: true });
+      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('sessions');
+    });
+
+    it('Cmd+2 switches to schedules tab when visible and sidebar open', () => {
+      renderWithQuery(<AgentSidebar />);
+      fireEvent.keyDown(document, { key: '2', metaKey: true });
+      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('schedules');
+    });
+
+    it('Cmd+3 switches to connections tab when visible and sidebar open', () => {
+      renderWithQuery(<AgentSidebar />);
+      fireEvent.keyDown(document, { key: '3', metaKey: true });
+      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('connections');
+    });
+
+    it('Ctrl+number also works (cross-platform)', () => {
+      renderWithQuery(<AgentSidebar />);
+      fireEvent.keyDown(document, { key: '2', ctrlKey: true });
+      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('schedules');
+    });
+
+    it('plain number keys without modifier do not switch tabs', () => {
+      renderWithQuery(<AgentSidebar />);
+      fireEvent.keyDown(document, { key: '2' });
+      expect(mockSetSidebarActiveTab).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('feature flags', () => {
+    afterEach(() => {
+      // Restore default tool status after each feature flag test
+      mockToolStatus = {
+        pulse: 'enabled',
+        relay: 'enabled',
+        mesh: 'enabled',
+        adapter: 'enabled',
+      };
+    });
+
+    it('hides schedules tab when Pulse is disabled-by-server', () => {
+      mockToolStatus = {
+        pulse: 'disabled-by-server',
+        relay: 'enabled',
+        mesh: 'enabled',
+        adapter: 'enabled',
+      };
+
+      renderWithQuery(<AgentSidebar />);
+
+      const schedulesTab = screen
+        .getAllByRole('tab')
+        .find((t) => t.id === 'sidebar-tab-schedules');
+      expect(schedulesTab).toBeUndefined();
+    });
+
+    it('falls back to sessions when active tab becomes hidden', () => {
+      mockSidebarActiveTab = 'schedules';
+
+      mockToolStatus = {
+        pulse: 'disabled-by-server',
+        relay: 'enabled',
+        mesh: 'enabled',
+        adapter: 'enabled',
+      };
+
+      renderWithQuery(<AgentSidebar />);
+
+      // The fallback effect should call setSidebarActiveTab('sessions')
+      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('sessions');
     });
   });
 });

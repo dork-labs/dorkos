@@ -48,6 +48,9 @@ interface AppState {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
 
+  sidebarActiveTab: 'sessions' | 'schedules' | 'connections';
+  setSidebarActiveTab: (tab: 'sessions' | 'schedules' | 'connections') => void;
+
   // Transient dialog state (survives mobile sidebar remount)
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
@@ -198,6 +201,18 @@ export const useAppStore = create<AppState>()(
       setSidebarOpen: (open) => {
         writeBool(BOOL_KEYS.sidebarOpen, open);
         set({ sidebarOpen: open });
+      },
+
+      sidebarActiveTab: (() => {
+        try {
+          const stored = localStorage.getItem('dorkos-sidebar-active-tab');
+          if (stored === 'sessions' || stored === 'schedules' || stored === 'connections') return stored;
+        } catch {}
+        return 'sessions';
+      })() as 'sessions' | 'schedules' | 'connections',
+      setSidebarActiveTab: (tab) => {
+        try { localStorage.setItem('dorkos-sidebar-active-tab', tab); } catch {}
+        set({ sidebarActiveTab: tab });
       },
 
       // Transient dialog state (not persisted — survives mobile sidebar remount)
@@ -393,6 +408,7 @@ export const useAppStore = create<AppState>()(
           }
           localStorage.removeItem(STORAGE_KEYS.FONT_SIZE);
           localStorage.removeItem(STORAGE_KEYS.FONT_FAMILY);
+          localStorage.removeItem('dorkos-sidebar-active-tab');
         } catch {}
         document.documentElement.style.setProperty('--user-font-scale', '1');
         const defaultConfig = getFontConfig(DEFAULT_FONT);
@@ -403,6 +419,7 @@ export const useAppStore = create<AppState>()(
           devtoolsOpen: false,
           fontSize: 'medium',
           fontFamily: DEFAULT_FONT,
+          sidebarActiveTab: 'sessions',
         });
       },
 

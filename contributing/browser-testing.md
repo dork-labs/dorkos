@@ -48,7 +48,7 @@ apps/e2e/
 ├── pages/                     # Page Object Models
 │   ├── BasePage.ts            # Common navigation helpers
 │   ├── ChatPage.ts            # Chat interactions
-│   ├── SessionSidebarPage.ts  # Session sidebar
+│   ├── AgentSidebarPage.ts    # Agent sidebar (tabs, sessions, schedules, connections)
 │   ├── SettingsPage.ts        # Settings dialog
 │   ├── PulsePage.ts           # Pulse scheduler dialog
 │   ├── MeshPage.ts            # Mesh agent discovery dialog
@@ -81,7 +81,7 @@ The fixture file (`fixtures/index.ts`) provides seven pre-instantiated Page Obje
 |---------|-------|-----------------|
 | `basePage` | `BasePage` | No |
 | `chatPage` | `ChatPage` | Yes — calls `goto()` which navigates and ensures a session is active |
-| `sessionSidebar` | `SessionSidebarPage` | No |
+| `agentSidebar` | `AgentSidebarPage` | No |
 | `settingsPage` | `SettingsPage` | No |
 | `pulsePage` | `PulsePage` | No — call `pulsePage.open()` to open the dialog |
 | `meshPage` | `MeshPage` | No — call `meshPage.open()` to open the dialog |

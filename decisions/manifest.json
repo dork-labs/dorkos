@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 107,
+  "nextNumber": 108,
   "decisions": [
+    {
+      "number": 107,
+      "slug": "css-hidden-toggle-for-sidebar-view-persistence",
+      "title": "Use CSS Hidden Toggle for Sidebar View Persistence",
+      "status": "draft",
+      "created": "2026-03-10",
+      "extractedFrom": "sidebar-tabbed-views",
+      "specSlug": "sidebar-tabbed-views"
+    },
     {
       "number": 106,
       "slug": "convergence-effect-for-optimistic-query-state",

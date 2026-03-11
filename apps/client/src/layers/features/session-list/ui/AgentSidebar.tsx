@@ -1,31 +1,30 @@
 import { useState, useMemo, useCallback, useEffect, useRef, useContext } from 'react';
-import { motion } from 'motion/react';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
-import { groupSessionsByTime, TIMING } from '@/layers/shared/lib';
+import { cn, groupSessionsByTime, TIMING } from '@/layers/shared/lib';
 import {
   SidebarContent,
   SidebarContext,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarRail,
 } from '@/layers/shared/ui';
-import { usePulseEnabled, useCompletedRunBadge } from '@/layers/entities/pulse';
+import { usePulseEnabled, useCompletedRunBadge, useActiveRunCount } from '@/layers/entities/pulse';
+import { useAgentToolStatus } from '@/layers/entities/agent';
 import { toast } from 'sonner';
 import { useSessions } from '@/layers/entities/session';
-import { SessionItem } from './SessionItem';
-import { AgentContextChips } from './AgentContextChips';
 import { SidebarFooterBar } from './SidebarFooterBar';
+import { SidebarTabRow } from './SidebarTabRow';
+import { SessionsView } from './SessionsView';
+import { SchedulesView } from './SchedulesView';
+import { ConnectionsView } from './ConnectionsView';
 import { Plus } from 'lucide-react';
-import { ScrollArea } from '@/layers/shared/ui';
 import { ProgressCard, useOnboarding } from '@/layers/features/onboarding';
-import type { Session } from '@dorkos/shared/types';
+import { useConnectionsStatus } from '../model/use-connections-status';
 
-export function SessionSidebar() {
+export function AgentSidebar() {
   const { sessions, activeSessionId, setActiveSession } = useSessions();
   const { setSidebarOpen, setPulseOpen, setOnboardingStep } =
     useAppStore();
@@ -106,6 +105,53 @@ export function SessionSidebar() {
 
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
 
+  const { sidebarActiveTab, setSidebarActiveTab } = useAppStore();
+  const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const toolStatus = useAgentToolStatus(selectedCwd);
+  const pulseToolEnabled = toolStatus.pulse !== 'disabled-by-server';
+  const { data: activeRunCount = 0 } = useActiveRunCount(pulseToolEnabled);
+
+  const connectionsStatus = useConnectionsStatus(selectedCwd);
+
+  const visibleTabs = useMemo(() => {
+    const tabs: ('sessions' | 'schedules' | 'connections')[] = ['sessions'];
+    if (pulseToolEnabled) tabs.push('schedules');
+    // Connections always visible (Mesh has no server feature flag)
+    tabs.push('connections');
+    return tabs;
+  }, [pulseToolEnabled]);
+
+  // Fall back to 'sessions' if active tab becomes hidden due to feature flag changes
+  useEffect(() => {
+    if (!visibleTabs.includes(sidebarActiveTab)) {
+      setSidebarActiveTab('sessions');
+    }
+  }, [visibleTabs, sidebarActiveTab, setSidebarActiveTab]);
+
+  // Keyboard shortcuts for sidebar tab switching (Cmd/Ctrl + 1/2/3)
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const tabMap: Record<string, 'sessions' | 'schedules' | 'connections'> = {
+        '1': 'sessions',
+        '2': 'schedules',
+        '3': 'connections',
+      };
+      const tab = tabMap[e.key];
+      if (tab && visibleTabs.includes(tab)) {
+        e.preventDefault();
+        setSidebarActiveTab(tab);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [sidebarOpen, visibleTabs, setSidebarActiveTab]);
+
   return (
     <>
       <SidebarHeader className="border-b p-3">
@@ -122,43 +168,49 @@ export function SessionSidebar() {
         </SidebarMenu>
       </SidebarHeader>
 
+      <SidebarTabRow
+        activeTab={sidebarActiveTab}
+        onTabChange={setSidebarActiveTab}
+        schedulesBadge={activeRunCount}
+        connectionsStatus={connectionsStatus}
+        visibleTabs={visibleTabs}
+      />
+
       <SidebarContent data-testid="session-list" className="!overflow-hidden">
-        <ScrollArea type="scroll" className="h-full" viewportClassName="[&>div]:!block">
-        <motion.div layout>
-        {groupedSessions.length > 0 ? (
-          <>
-            {groupedSessions.map((group) => {
-              const hideHeader = groupedSessions.length === 1 && group.label === 'Today';
-              return (
-                <SidebarGroup key={group.label}>
-                  {!hideHeader && (
-                    <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
-                      {group.label}
-                    </SidebarGroupLabel>
-                  )}
-                  <SidebarMenu>
-                    {group.sessions.map((session: Session) => (
-                      <SidebarMenuItem key={session.id}>
-                        <SessionItem
-                          session={session}
-                          isActive={session.id === activeSessionId}
-                          isNew={session.id === justCreatedId}
-                          onClick={() => handleSessionClick(session.id)}
-                        />
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroup>
-              );
-            })}
-          </>
-        ) : (
-          <div className="flex h-32 items-center justify-center">
-            <p className="text-muted-foreground/60 text-sm">No conversations yet</p>
-          </div>
-        )}
-        </motion.div>
-        </ScrollArea>
+        {/* Sessions view */}
+        <div
+          role="tabpanel"
+          id="sidebar-tabpanel-sessions"
+          aria-labelledby="sidebar-tab-sessions"
+          className={cn(sidebarActiveTab !== 'sessions' && 'hidden')}
+        >
+          <SessionsView
+            activeSessionId={activeSessionId}
+            groupedSessions={groupedSessions}
+            justCreatedId={justCreatedId}
+            onSessionClick={handleSessionClick}
+          />
+        </div>
+
+        {/* Schedules view */}
+        <div
+          role="tabpanel"
+          id="sidebar-tabpanel-schedules"
+          aria-labelledby="sidebar-tab-schedules"
+          className={cn(sidebarActiveTab !== 'schedules' && 'hidden')}
+        >
+          <SchedulesView toolStatus={toolStatus.pulse} />
+        </div>
+
+        {/* Connections view */}
+        <div
+          role="tabpanel"
+          id="sidebar-tabpanel-connections"
+          aria-labelledby="sidebar-tab-connections"
+          className={cn(sidebarActiveTab !== 'connections' && 'hidden')}
+        >
+          <ConnectionsView toolStatus={toolStatus} projectPath={selectedCwd} />
+        </div>
       </SidebarContent>
 
       <SidebarFooter className="border-t p-3">
@@ -170,7 +222,6 @@ export function SessionSidebar() {
             />
           </div>
         )}
-        <AgentContextChips />
         <SidebarFooterBar />
       </SidebarFooter>
 

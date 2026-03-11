@@ -235,9 +235,9 @@ Both overlays live in a `relative flex-1 min-h-0` wrapper in ChatPanel, position
 - Send button: circular, `accent` color, icon-only
 - Stop button: circular, muted red, square icon
 
-### Sidebar
+### Sidebar (AgentSidebar)
 
-Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode.
+Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. The main sidebar component is `AgentSidebar` (in `features/session-list/`).
 
 - **Width**: 320px (20rem) via `--sidebar-width` CSS custom property on `SidebarProvider`
 - **CSS variables**: `--sidebar-*` in `index.css` (subtly distinct from main background — 96% vs 98% light, 6% vs 4% dark)
@@ -246,13 +246,33 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Toggle**: `Cmd+B` / `Ctrl+B` (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`)
 - **SidebarRail**: Invisible hover-target strip at sidebar edge for mouse-over toggle
 - **SidebarTrigger**: Toggle button in `SidebarInset` header (outside the sidebar itself)
+- **Tabbed views**: `SidebarTabRow` switches between Sessions, Schedules, and Connections views (see [Sidebar Tabs](#sidebar-tabs) below)
 - **Temporal grouping**: Sessions grouped by Today / Yesterday / Previous 7 Days / Previous 30 Days / Older using `SidebarGroup` / `SidebarGroupLabel`
 - **Session items**: `SidebarMenuButton` with relative time + truncated title
 - **Active session**: `isActive` prop on `SidebarMenuButton`
 - **"New chat" button**: In `SidebarHeader`, below `AgentHeader`
-- **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding), `AgentContextChips` (Pulse/Relay/Mesh status), `SidebarFooterBar` (branding, settings, theme toggle)
+- **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding), `SidebarFooterBar` (branding, settings, theme toggle)
 - **Empty state**: Centered "No conversations yet" message
 - **Dialogs**: All 7 dialogs (Settings, DirectoryPicker, Pulse, Relay, Mesh, AgentDialog, OnboardingFlow) rendered in `DialogHost` at the app root level, outside `SidebarProvider`
+
+### Sidebar Tabs
+
+The sidebar uses a custom tab bar (`SidebarTabRow`, not Radix Tabs) for switching between Sessions, Schedules, and Connections views. Keyboard shortcuts `Cmd+1`/`Cmd+2`/`Cmd+3` switch tabs directly.
+
+| Element | Specification |
+|---|---|
+| Tab bar height | Auto (`py-1.5`) |
+| Tab button padding | `p-2` |
+| Tab icon size | `--size-icon-sm` |
+| Sliding indicator | `h-0.5 rounded-full bg-foreground` |
+| Indicator animation | Spring: stiffness 280, damping 32 |
+| Schedules badge | `text-[10px] size-4 bg-green-500` (numeric count) |
+| Connections dot | `size-1.5 rounded-full` (status indicator) |
+| Status colors | green = ok, amber = partial, red = error |
+
+All three views are mounted simultaneously and use CSS `hidden` toggling to preserve state (scroll position, expanded items) across tab switches. See ADR-0107 for the decision rationale.
+
+ARIA semantics follow the WAI tablist pattern: `role="tablist"` on the container, `role="tab"` on each button with `aria-selected` and `aria-controls`, and `role="tabpanel"` on each view. Arrow keys navigate between tabs via roving tabindex.
 
 ### Tooltip
 
@@ -339,19 +359,17 @@ Opacity 0.5. No cursor change beyond `not-allowed`.
 - Tool running: spinning icon (Loader2 from lucide)
 - History loading: three pulsing dots in message area
 
-### 3-State Chip Pattern (AgentContextChips)
+### 3-State Status Pattern
 
-Status chips in the sidebar footer render as colored icon buttons (one per tool domain: Pulse, Relay, Mesh, Adapter) using a 3-state model driven by `useAgentToolStatus()`:
+Status indicators that depend on both per-entity configuration and global feature flags use a 3-state model driven by `useAgentToolStatus()`:
 
-| State | Visual | Tooltip |
+| State | Visual | Meaning |
 |-------|--------|---------|
-| `enabled` | Full color, normal opacity | "Enabled for this agent" |
-| `disabled-by-agent` | Muted/dimmed appearance (`opacity-50`) | "Disabled for this agent" |
-| `disabled-by-server` | Hidden (not rendered) | N/A — feature is disabled server-wide |
+| `enabled` | Full color, normal opacity | Feature is active for this agent |
+| `disabled-by-agent` | Muted/dimmed appearance (`opacity-50`) | Agent manifest has explicitly opted out |
+| `disabled-by-server` | Hidden (not rendered) | Feature is disabled server-wide |
 
-Active run counts (Pulse) and agent counts (Mesh) render as dot indicators on `enabled` chips only. The `disabled-by-agent` state communicates that the agent manifest has explicitly opted out, while `disabled-by-server` hides the chip entirely since the feature is globally unavailable.
-
-This pattern applies to any status indicator that depends on both per-entity configuration and global feature flags.
+In the sidebar, this pattern surfaces as badge indicators on the tab bar (schedule count badge, connections status dot). The `SidebarTabRow` shows badges only when the corresponding feature is enabled.
 
 ### 3-State Toggle Pattern (CapabilitiesTab)
 
@@ -447,7 +465,7 @@ Usage:
 | Class                  | Applied To                   | Purpose                         |
 | ---------------------- | ---------------------------- | ------------------------------- |
 | `chat-input-container` | ChatPanel input wrapper      | Bottom safe area inset          |
-| `sidebar-container`    | SessionSidebar root          | Left + bottom safe area insets  |
+| `sidebar-container`    | AgentSidebar root            | Left + bottom safe area insets  |
 | `chat-scroll-area`     | MessageList scroll container | `touch-action: pan-y` on mobile |
 
 ### Adjusting the Scale
