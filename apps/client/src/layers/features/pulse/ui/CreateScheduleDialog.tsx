@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import cronstrue from 'cronstrue';
-import { AnimatePresence, motion } from 'motion/react';
-import { ChevronRight, ChevronLeft, FolderOpen } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FolderOpen } from 'lucide-react';
 import { useCreateSchedule, useUpdateSchedule } from '@/layers/entities/pulse';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
@@ -18,8 +16,7 @@ import {
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { PulseSchedule } from '@dorkos/shared/types';
-import { CronPresets } from './CronPresets';
-import { CronVisualBuilder } from './CronVisualBuilder';
+import { ScheduleBuilder } from './ScheduleBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { AgentPicker } from './AgentPicker';
 
@@ -35,15 +32,6 @@ type ScheduleTarget = 'agent' | 'directory';
 const DEFAULT_MAX_RUNTIME_MIN = 10;
 const MAX_NAME_LENGTH = 100;
 const MAX_RUNTIME_MIN = 720;
-
-function getCronPreview(cron: string): string {
-  if (!cron.trim()) return '';
-  try {
-    return cronstrue.toString(cron);
-  } catch {
-    return 'Invalid cron expression';
-  }
-}
 
 function buildInitialState(editSchedule?: PulseSchedule) {
   if (editSchedule) {
@@ -91,7 +79,6 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
   const agents = agentsData?.agents ?? [];
 
   const [form, setForm] = useState<FormState>(() => buildInitialState(editSchedule));
-  const [customBuilderOpen, setCustomBuilderOpen] = useState(false);
   const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
 
   // Determine initial schedule target: 'agent' if editing an agent-linked schedule,
@@ -117,7 +104,6 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  const cronPreview = getCronPreview(form.cron);
   const isValid = form.name.trim() && form.prompt.trim() && form.cron.trim();
   const isPending = createSchedule.isPending || updateSchedule.isPending;
 
@@ -239,63 +225,12 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="schedule-cron">Schedule *</Label>
-              <CronPresets value={form.cron} onChange={(cron) => updateField('cron', cron)} />
-
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => setCustomBuilderOpen((o) => !o)}
-                className="mt-1 text-muted-foreground hover:text-foreground"
-              >
-                <ChevronRight className={cn(
-                  'size-3 transition-transform',
-                  customBuilderOpen && 'rotate-90'
-                )} />
-                Custom schedule
-              </Button>
-
-              <AnimatePresence initial={false}>
-                {customBuilderOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                    className="overflow-hidden"
-                  >
-                    <div className="pt-2">
-                      <CronVisualBuilder
-                        value={form.cron}
-                        onChange={(cron) => updateField('cron', cron)}
-                      />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <Input
-                id="schedule-cron"
-                className="font-mono"
+            <div className="space-y-1.5">
+              <Label>Schedule *</Label>
+              <ScheduleBuilder
                 value={form.cron}
-                onChange={(e) => updateField('cron', e.target.value)}
-                placeholder="0 9 * * 1-5"
-                required
+                onChange={(cron) => updateField('cron', cron)}
               />
-              {cronPreview && (
-                <p
-                  className={cn(
-                    'text-xs',
-                    cronPreview === 'Invalid cron expression'
-                      ? 'text-destructive'
-                      : 'text-muted-foreground'
-                  )}
-                >
-                  {cronPreview}
-                </p>
-              )}
             </div>
 
             {/* ── Timezone ── */}
