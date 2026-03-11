@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add ScheduleBuilder component with progressive disclosure
 - Add ScheduleBuilder helper functions
 - Integrate AgentPicker into CreateScheduleDialog
 - Add tabbed navigation with Sessions, Schedules, and Connections views
