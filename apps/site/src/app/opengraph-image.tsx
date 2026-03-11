@@ -25,7 +25,7 @@ export default async function Image() {
           padding: '60px',
         }}
       >
-        {/* Dorkian logo SVG -- geometric DORK lettering in white */}
+        {/* Dorkian logo SVG — matches DorkLogo component (packages/icons) */}
         <svg
           width="400"
           height="138"
@@ -42,20 +42,21 @@ export default async function Image() {
             strokeWidth="100"
           />
           <path
-            d="M200 599V200H492L599.5 296V491.5L492 599H200Z"
+            d="M492.333 199.627L599.833 295.627L600 295.776V491.707L492.207 599.5H199.5V199.5H492.19L492.333 199.627ZM334 347.5V448.5H435V347.5H334Z"
             fill="#FFFFFF"
           />
           <path
-            d="M699.5 599V296.5L802.5 200H1108V497.5L1001 599H699.5Z"
+            d="M1108.5 497.715L1108.34 497.862L1001.34 599.362L1001.2 599.5H699V296.283L699.158 296.135L802.158 199.635L802.303 199.5H1108.5V497.715ZM855 347.5V448.5H956V347.5H855Z"
             fill="#FFFFFF"
           />
           <path
-            d="M1208 599V200H1616.5L1509.5 395L1616.5 599L1409 499.5L1208 599Z"
+            d="M1616.94 200.24L1510.07 395.005L1616.94 598.768L1617.64 600.103L1616.28 599.451L1409 500.056L1208.22 599.448L1207.5 599.806V199.5H1617.34L1616.94 200.24ZM1332 337.5V439.207L1433.71 337.5H1332Z"
             fill="#FFFFFF"
           />
           <path
-            d="M1716.5 599V200L1917.5 291.5L2125 200L2017.5 400L2125 599H1917.5H1716.5Z"
+            d="M1716.5 599V200L1841 291.5L2125 200L2017.5 400L2125 599L1841 501L1716.5 599Z"
             fill="#FFFFFF"
+            stroke="#FFFFFF"
           />
         </svg>
 
