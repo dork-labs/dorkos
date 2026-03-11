@@ -5,10 +5,13 @@ import '@testing-library/jest-dom/vitest';
 import * as React from 'react';
 import {
   NavigationLayout,
+  NavigationLayoutBody,
+  NavigationLayoutDialogHeader,
   NavigationLayoutSidebar,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
+  NavigationLayoutPanelHeader,
   useNavigationLayout,
 } from '../navigation-layout';
 
@@ -30,7 +33,8 @@ vi.mock('motion/react', () => ({
           exit: _e,
           transition: _t,
           whileTap: _w,
-          layoutId: _l,
+          layoutId: _li,
+          layout: _lo,
           ...props
         }: Record<string, unknown> & { children?: React.ReactNode },
         ref: React.Ref<HTMLDivElement>
@@ -44,7 +48,8 @@ vi.mock('motion/react', () => ({
           exit: _e,
           transition: _t,
           whileTap: _w,
-          layoutId: _l,
+          layoutId: _li,
+          layout: _lo,
           autoFocus,
           ...props
         }: Record<string, unknown> & { children?: React.ReactNode; autoFocus?: boolean },
@@ -300,13 +305,212 @@ describe('className merging', () => {
   });
 });
 
+describe('NavigationLayoutPanelHeader', () => {
+  it('renders title and actions on desktop', () => {
+    render(
+      <NavigationLayout value="one" onValueChange={vi.fn()}>
+        <NavigationLayoutSidebar>
+          <NavigationLayoutItem value="one">One</NavigationLayoutItem>
+        </NavigationLayoutSidebar>
+        <NavigationLayoutContent>
+          <NavigationLayoutPanel value="one">
+            <NavigationLayoutPanelHeader actions={<button>Reset</button>}>
+              My Title
+            </NavigationLayoutPanelHeader>
+          </NavigationLayoutPanel>
+        </NavigationLayoutContent>
+      </NavigationLayout>
+    );
+    expect(screen.getByText('My Title')).toBeInTheDocument();
+    expect(screen.getByText('Reset')).toBeInTheDocument();
+  });
+
+  it('hides title on mobile but renders actions', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <MobileNavWrapper initialValue="one">
+        <NavigationLayoutSidebar>
+          <NavigationLayoutItem value="one">One</NavigationLayoutItem>
+        </NavigationLayoutSidebar>
+        <NavigationLayoutContent>
+          <NavigationLayoutPanel value="one">
+            <NavigationLayoutPanelHeader actions={<button>Reset</button>}>
+              My Title
+            </NavigationLayoutPanelHeader>
+          </NavigationLayoutPanel>
+        </NavigationLayoutContent>
+      </MobileNavWrapper>
+    );
+    // Drill in
+    fireEvent.click(screen.getByRole('button', { name: /One/i }));
+    // Title should not render as h3 — only in the back button
+    expect(screen.queryByRole('heading', { name: 'My Title' })).not.toBeInTheDocument();
+    // Actions should still render
+    expect(screen.getByText('Reset')).toBeInTheDocument();
+  });
+
+  it('returns null on mobile with no actions', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <MobileNavWrapper initialValue="one">
+        <NavigationLayoutSidebar>
+          <NavigationLayoutItem value="one">One</NavigationLayoutItem>
+        </NavigationLayoutSidebar>
+        <NavigationLayoutContent>
+          <NavigationLayoutPanel value="one">
+            <NavigationLayoutPanelHeader>My Title</NavigationLayoutPanelHeader>
+            <span data-testid="panel-content">Content</span>
+          </NavigationLayoutPanel>
+        </NavigationLayoutContent>
+      </MobileNavWrapper>
+    );
+    // Drill in
+    fireEvent.click(screen.getByRole('button', { name: /One/i }));
+    // Title should not render as h3
+    expect(screen.queryByRole('heading', { name: 'My Title' })).not.toBeInTheDocument();
+    // Panel content should still be present
+    expect(screen.getByTestId('panel-content')).toBeInTheDocument();
+  });
+});
+
+describe('NavigationLayoutBody', () => {
+  it('renders children with data-slot', () => {
+    const { container } = render(
+      <NavigationLayout value="one" onValueChange={vi.fn()}>
+        <NavigationLayoutBody>
+          <div data-testid="body-child">Content</div>
+        </NavigationLayoutBody>
+      </NavigationLayout>
+    );
+    const body = container.querySelector('[data-slot="navigation-layout-body"]');
+    expect(body).toBeInTheDocument();
+    expect(screen.getByTestId('body-child')).toBeInTheDocument();
+  });
+
+  it('merges custom className', () => {
+    const { container } = render(
+      <NavigationLayout value="one" onValueChange={vi.fn()}>
+        <NavigationLayoutBody className="custom-body">
+          <div>Content</div>
+        </NavigationLayoutBody>
+      </NavigationLayout>
+    );
+    const body = container.querySelector('[data-slot="navigation-layout-body"]');
+    expect(body?.className).toContain('custom-body');
+  });
+});
+
+describe('NavigationLayoutDialogHeader', () => {
+  it('renders children as header on desktop', () => {
+    render(
+      <NavigationLayout value="one" onValueChange={vi.fn()}>
+        <NavigationLayoutDialogHeader>
+          <h2>Settings</h2>
+        </NavigationLayoutDialogHeader>
+        <NavigationLayoutBody>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="one">One</NavigationLayoutItem>
+          </NavigationLayoutSidebar>
+          <NavigationLayoutContent>
+            <NavigationLayoutPanel value="one">Panel</NavigationLayoutPanel>
+          </NavigationLayoutContent>
+        </NavigationLayoutBody>
+      </NavigationLayout>
+    );
+    expect(screen.getByText('Settings')).toBeInTheDocument();
+  });
+
+  it('renders back button on mobile when drilled in', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <MobileNavWrapper initialValue="one">
+        <NavigationLayoutDialogHeader>
+          <h2>Settings</h2>
+        </NavigationLayoutDialogHeader>
+        <NavigationLayoutBody>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="one">First</NavigationLayoutItem>
+          </NavigationLayoutSidebar>
+          <NavigationLayoutContent>
+            <NavigationLayoutPanel value="one">Panel One</NavigationLayoutPanel>
+          </NavigationLayoutContent>
+        </NavigationLayoutBody>
+      </MobileNavWrapper>
+    );
+
+    // Drill in
+    fireEvent.click(screen.getByRole('button', { name: /First/i }));
+    // Dialog header should show back button with label, not the "Settings" title
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+    expect(screen.getByText('First')).toBeInTheDocument();
+  });
+
+  it('hides built-in back button in Content when DialogHeader is present', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <MobileNavWrapper initialValue="one">
+        <NavigationLayoutDialogHeader>
+          <h2>Settings</h2>
+        </NavigationLayoutDialogHeader>
+        <NavigationLayoutBody>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="one">Alpha</NavigationLayoutItem>
+          </NavigationLayoutSidebar>
+          <NavigationLayoutContent>
+            <NavigationLayoutPanel value="one">Panel One</NavigationLayoutPanel>
+          </NavigationLayoutContent>
+        </NavigationLayoutBody>
+      </MobileNavWrapper>
+    );
+
+    // Drill in
+    fireEvent.click(screen.getByRole('button', { name: /Alpha/i }));
+    // Only ONE back button should exist (in DialogHeader), not two
+    const backButtons = screen.getAllByText('Alpha');
+    expect(backButtons).toHaveLength(1);
+  });
+
+  it('navigates back when back button is clicked', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <MobileNavWrapper initialValue="one">
+        <NavigationLayoutDialogHeader>
+          <h2>Settings</h2>
+        </NavigationLayoutDialogHeader>
+        <NavigationLayoutBody>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="one">First</NavigationLayoutItem>
+          </NavigationLayoutSidebar>
+          <NavigationLayoutContent>
+            <NavigationLayoutPanel value="one">Panel One</NavigationLayoutPanel>
+          </NavigationLayoutContent>
+        </NavigationLayoutBody>
+      </MobileNavWrapper>
+    );
+
+    // Drill in
+    fireEvent.click(screen.getByRole('button', { name: /First/i }));
+    expect(screen.getByText('Panel One')).toBeInTheDocument();
+
+    // Click back
+    const backBtn = screen.getByText('First').closest('button')!;
+    fireEvent.click(backBtn);
+
+    // Should return to list
+    expect(screen.getByRole('list')).toBeInTheDocument();
+  });
+});
+
 describe('displayNames', () => {
   it.each([
     ['NavigationLayout', NavigationLayout],
+    ['NavigationLayoutBody', NavigationLayoutBody],
+    ['NavigationLayoutDialogHeader', NavigationLayoutDialogHeader],
     ['NavigationLayoutSidebar', NavigationLayoutSidebar],
     ['NavigationLayoutItem', NavigationLayoutItem],
     ['NavigationLayoutContent', NavigationLayoutContent],
     ['NavigationLayoutPanel', NavigationLayoutPanel],
+    ['NavigationLayoutPanelHeader', NavigationLayoutPanelHeader],
   ])('%s has displayName set', (name, component) => {
     expect(component.displayName).toBe(name);
   });

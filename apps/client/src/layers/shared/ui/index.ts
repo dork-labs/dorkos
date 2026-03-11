@@ -19,6 +19,7 @@ export {
 export { Badge, badgeVariants } from './badge';
 export { Button, buttonVariants } from './button';
 export type { ButtonSize, ButtonProps } from './button';
+export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible';
 export { Input } from './input';
 export type { InputProps } from './input';
 export {
@@ -82,10 +83,13 @@ export {
 } from './popover';
 export {
   NavigationLayout,
+  NavigationLayoutBody,
   NavigationLayoutSidebar,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
+  NavigationLayoutPanelHeader,
+  NavigationLayoutDialogHeader,
   useNavigationLayout,
 } from './navigation-layout';
 export {

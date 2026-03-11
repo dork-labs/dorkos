@@ -13,8 +13,6 @@ interface ServerTabProps {
 export function ServerTab({ config, isLoading, onOpenTunnelDialog }: ServerTabProps) {
   return (
     <div className="space-y-3">
-      <h3 className="text-foreground text-sm font-semibold">Server</h3>
-
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (

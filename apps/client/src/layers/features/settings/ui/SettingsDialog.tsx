@@ -6,13 +6,17 @@ import { FONT_CONFIGS, type FontFamilyKey } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
-  ResponsiveDialogHeader,
   ResponsiveDialogTitle,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFullscreenToggle,
   NavigationLayout,
+  NavigationLayoutDialogHeader,
+  NavigationLayoutBody,
   NavigationLayoutSidebar,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
+  NavigationLayoutPanelHeader,
   Switch,
   Label,
   Select,
@@ -88,11 +92,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent data-testid="settings-dialog" className="max-h-[85vh] max-w-2xl gap-0 p-0">
-        <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
-          <ResponsiveDialogTitle className="text-sm font-medium">Settings</ResponsiveDialogTitle>
-        </ResponsiveDialogHeader>
-
         <NavigationLayout value={activeTab} onValueChange={setActiveTab}>
+          <ResponsiveDialogFullscreenToggle />
+          <NavigationLayoutDialogHeader>
+            <ResponsiveDialogTitle className="text-sm font-medium">Settings</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription className="sr-only">
+              Application settings
+            </ResponsiveDialogDescription>
+          </NavigationLayoutDialogHeader>
+
+          <NavigationLayoutBody>
           <NavigationLayoutSidebar>
             <NavigationLayoutItem value="appearance" icon={Palette}>Appearance</NavigationLayoutItem>
             <NavigationLayoutItem value="preferences" icon={Settings2}>Preferences</NavigationLayoutItem>
@@ -105,18 +114,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <NavigationLayoutContent className="min-h-[280px] p-4">
             <NavigationLayoutPanel value="appearance">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-foreground text-sm font-semibold">Appearance</h3>
-                  <button
-                    onClick={() => {
-                      resetPreferences();
-                      setTheme('system');
-                    }}
-                    className="text-muted-foreground hover:text-foreground text-xs transition-colors duration-150"
-                  >
-                    Reset to defaults
-                  </button>
-                </div>
+                <NavigationLayoutPanelHeader
+                  actions={
+                    <button
+                      onClick={() => {
+                        resetPreferences();
+                        setTheme('system');
+                      }}
+                      className="text-muted-foreground hover:text-foreground text-xs transition-colors duration-150"
+                    >
+                      Reset to defaults
+                    </button>
+                  }
+                >
+                  Appearance
+                </NavigationLayoutPanelHeader>
 
                 <SettingRow label="Theme" description="Choose your preferred color scheme">
                   <Select value={theme} onValueChange={setTheme}>
@@ -177,7 +189,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
             <NavigationLayoutPanel value="preferences">
               <div className="space-y-4">
-                <h3 className="text-foreground text-sm font-semibold">Preferences</h3>
+                <NavigationLayoutPanelHeader>Preferences</NavigationLayoutPanelHeader>
 
                 <SettingRow
                   label="Show timestamps"
@@ -246,6 +258,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
             <NavigationLayoutPanel value="statusBar">
               <div className="space-y-4">
+                <NavigationLayoutPanelHeader>Status Bar</NavigationLayoutPanelHeader>
                 <SettingRow label="Show directory" description="Display current working directory">
                   <Switch checked={showStatusBarCwd} onCheckedChange={setShowStatusBarCwd} />
                 </SettingRow>
@@ -286,20 +299,30 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </NavigationLayoutPanel>
 
             <NavigationLayoutPanel value="server">
-              <ServerTab config={config} isLoading={isLoading} onOpenTunnelDialog={() => setTunnelDialogOpen(true)} />
+              <div className="space-y-3">
+                <NavigationLayoutPanelHeader>Server</NavigationLayoutPanelHeader>
+                <ServerTab config={config} isLoading={isLoading} onOpenTunnelDialog={() => setTunnelDialogOpen(true)} />
+              </div>
             </NavigationLayoutPanel>
 
             <NavigationLayoutPanel value="tools">
-              <ToolsTab />
+              <div className="space-y-4">
+                <NavigationLayoutPanelHeader>Tools</NavigationLayoutPanelHeader>
+                <ToolsTab />
+              </div>
             </NavigationLayoutPanel>
 
             <NavigationLayoutPanel value="advanced">
-              <AdvancedTab
-                onResetComplete={() => setRestartOverlayOpen(true)}
-                onRestartComplete={() => setRestartOverlayOpen(true)}
-              />
+              <div className="space-y-4">
+                <NavigationLayoutPanelHeader>Advanced</NavigationLayoutPanelHeader>
+                <AdvancedTab
+                  onResetComplete={() => setRestartOverlayOpen(true)}
+                  onRestartComplete={() => setRestartOverlayOpen(true)}
+                />
+              </div>
             </NavigationLayoutPanel>
           </NavigationLayoutContent>
+          </NavigationLayoutBody>
         </NavigationLayout>
       </ResponsiveDialogContent>
       <TunnelDialog open={tunnelDialogOpen} onOpenChange={setTunnelDialogOpen} />

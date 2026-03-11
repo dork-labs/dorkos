@@ -10,10 +10,13 @@ import {
   ResponsiveDialogFullscreenToggle,
   PathBreadcrumb,
   NavigationLayout,
+  NavigationLayoutDialogHeader,
+  NavigationLayoutBody,
   NavigationLayoutSidebar,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
+  NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { IdentityTab } from './IdentityTab';
@@ -73,21 +76,22 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
         data-testid="agent-dialog"
         className="max-h-[85vh] max-w-2xl gap-0 p-0"
       >
-        <ResponsiveDialogFullscreenToggle />
-        <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
-          <ResponsiveDialogTitle className="text-sm font-medium">
-            {agent.name}
-          </ResponsiveDialogTitle>
-          <ResponsiveDialogDescription className="text-muted-foreground text-xs">
-            Agent configuration
-          </ResponsiveDialogDescription>
-          <div className="text-muted-foreground/60 flex items-center gap-1.5 pt-1">
-            <FolderOpen className="size-3 flex-shrink-0" />
-            <PathBreadcrumb path={projectPath} maxSegments={3} size="sm" />
-          </div>
-        </ResponsiveDialogHeader>
-
         <NavigationLayout value={activeTab} onValueChange={setActiveTab}>
+          <ResponsiveDialogFullscreenToggle />
+          <NavigationLayoutDialogHeader>
+            <ResponsiveDialogTitle className="text-sm font-medium">
+              {agent.name}
+            </ResponsiveDialogTitle>
+            <ResponsiveDialogDescription className="text-muted-foreground text-xs">
+              Agent configuration
+            </ResponsiveDialogDescription>
+            <div className="text-muted-foreground/60 flex items-center gap-1.5 pt-1">
+              <FolderOpen className="size-3 flex-shrink-0" />
+              <PathBreadcrumb path={projectPath} maxSegments={3} size="sm" />
+            </div>
+          </NavigationLayoutDialogHeader>
+
+          <NavigationLayoutBody>
           <NavigationLayoutSidebar>
             <NavigationLayoutItem value="identity" icon={User}>Identity</NavigationLayoutItem>
             <NavigationLayoutItem value="persona" icon={Sparkles}>Persona</NavigationLayoutItem>
@@ -97,25 +101,38 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
 
           <NavigationLayoutContent className="min-h-[280px] p-4">
             <NavigationLayoutPanel value="identity">
-              <IdentityTab
-                agent={agent}
-                projectPath={projectPath}
-                onUpdate={handleUpdate}
-              />
+              <div className="space-y-4">
+                <NavigationLayoutPanelHeader>Identity</NavigationLayoutPanelHeader>
+                <IdentityTab
+                  agent={agent}
+                  projectPath={projectPath}
+                  onUpdate={handleUpdate}
+                />
+              </div>
             </NavigationLayoutPanel>
 
             <NavigationLayoutPanel value="persona">
-              <PersonaTab agent={agent} onUpdate={handleUpdate} />
+              <div className="space-y-4">
+                <NavigationLayoutPanelHeader>Persona</NavigationLayoutPanelHeader>
+                <PersonaTab agent={agent} onUpdate={handleUpdate} />
+              </div>
             </NavigationLayoutPanel>
 
             <NavigationLayoutPanel value="capabilities">
-              <CapabilitiesTab agent={agent} onUpdate={handleUpdate} />
+              <div className="space-y-4">
+                <NavigationLayoutPanelHeader>Capabilities</NavigationLayoutPanelHeader>
+                <CapabilitiesTab agent={agent} onUpdate={handleUpdate} />
+              </div>
             </NavigationLayoutPanel>
 
             <NavigationLayoutPanel value="connections">
-              <ConnectionsTab agent={agent} />
+              <div className="space-y-4">
+                <NavigationLayoutPanelHeader>Connections</NavigationLayoutPanelHeader>
+                <ConnectionsTab agent={agent} />
+              </div>
             </NavigationLayoutPanel>
           </NavigationLayoutContent>
+          </NavigationLayoutBody>
         </NavigationLayout>
       </ResponsiveDialogContent>
     </ResponsiveDialog>

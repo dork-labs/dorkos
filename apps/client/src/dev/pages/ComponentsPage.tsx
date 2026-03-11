@@ -1,6 +1,7 @@
 import { ButtonShowcases } from '../showcases/ButtonShowcases';
 import { FormShowcases } from '../showcases/FormShowcases';
 import { FeedbackShowcases } from '../showcases/FeedbackShowcases';
+import { NavigationShowcases } from '../showcases/NavigationShowcases';
 import { OverlayShowcases } from '../showcases/OverlayShowcases';
 
 /** UI component gallery page for the dev playground. */
@@ -18,6 +19,7 @@ export function ComponentsPage() {
         <ButtonShowcases />
         <FormShowcases />
         <FeedbackShowcases />
+        <NavigationShowcases />
         <OverlayShowcases />
       </main>
     </>

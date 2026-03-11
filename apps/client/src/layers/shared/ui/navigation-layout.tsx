@@ -23,6 +23,10 @@ interface NavigationLayoutContextValue {
   activeLabel: string;
   registerItem: (reg: ItemRegistration) => void;
   unregisterItem: (value: string) => void;
+  /** True when a NavigationLayoutDialogHeader is mounted. */
+  hasDialogHeader: boolean;
+  /** @internal Called by NavigationLayoutDialogHeader on mount. */
+  registerDialogHeader: () => (() => void);
 }
 
 const NavigationLayoutContext = React.createContext<NavigationLayoutContextValue | undefined>(
@@ -49,11 +53,15 @@ interface NavigationLayoutProps {
   className?: string;
 }
 
-/** Root container for sidebar navigation layout with desktop/mobile adaptivity. */
+/**
+ * Root container for sidebar navigation layout with desktop/mobile adaptivity.
+ * Renders as a flex-column to support an optional dialog header above the sidebar + content row.
+ */
 function NavigationLayout({ children, value, onValueChange, className }: NavigationLayoutProps) {
   const isMobile = useIsMobile();
   const [isDrilledIn, setIsDrilledIn] = React.useState(false);
   const [direction, setDirection] = React.useState<'forward' | 'backward'>('forward');
+  const [hasDialogHeader, setHasDialogHeader] = React.useState(false);
   // Use a ref for the items registry so labels persist even when sidebar
   // unmounts on mobile drill-in. A counter state triggers re-renders when
   // items register so activeLabel stays current.
@@ -71,6 +79,11 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
   const unregisterItem = React.useCallback((_val: string) => {
     // Intentionally a no-op: labels persist for back-button display
     // even after the sidebar unmounts on mobile drill-in.
+  }, []);
+
+  const registerDialogHeader = React.useCallback(() => {
+    setHasDialogHeader(true);
+    return () => setHasDialogHeader(false);
   }, []);
 
   const activeLabel = itemsRef.current.get(value) ?? '';
@@ -105,8 +118,10 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
       activeLabel,
       registerItem,
       unregisterItem,
+      hasDialogHeader,
+      registerDialogHeader,
     }),
-    [value, handleValueChange, isMobile, isDrilledIn, goBack, direction, activeLabel, registerItem, unregisterItem]
+    [value, handleValueChange, isMobile, isDrilledIn, goBack, direction, activeLabel, registerItem, unregisterItem, hasDialogHeader, registerDialogHeader]
   );
 
   return (
@@ -114,7 +129,7 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
       <LayoutGroup>
         <div
           data-slot="navigation-layout"
-          className={cn('flex flex-1 overflow-hidden', className)}
+          className={cn('flex flex-1 flex-col overflow-hidden', className)}
         >
           {children}
         </div>
@@ -161,7 +176,7 @@ function NavigationLayoutSidebar({ children, className }: NavigationLayoutSideba
         aria-orientation="vertical"
         aria-label="Navigation"
         tabIndex={-1}
-        className={cn('w-[180px] shrink-0 overflow-y-auto border-r py-2', className)}
+        className={cn('h-full w-[180px] shrink-0 overflow-y-auto border-r py-2', className)}
       >
         {children}
       </div>
@@ -222,7 +237,7 @@ function NavigationLayoutSidebarKeyboardHandler({
   );
 
   return (
-    <div id={id} onKeyDown={handleKeyDown}>
+    <div id={id} onKeyDown={handleKeyDown} className="shrink-0">
       {children}
     </div>
   );
@@ -275,8 +290,10 @@ function NavigationLayoutItem({ children, value: itemValue, icon: Icon, classNam
   return (
     <button
       role="tab"
+      id={`nav-item-${itemValue}`}
       data-value={itemValue}
       aria-selected={isActive}
+      aria-controls={`nav-panel-${itemValue}`}
       tabIndex={isActive ? 0 : -1}
       onClick={() => onValueChange(itemValue)}
       className={cn(
@@ -314,7 +331,7 @@ interface NavigationLayoutContentProps {
 
 /** Content area that renders the active panel. */
 function NavigationLayoutContent({ children, className }: NavigationLayoutContentProps) {
-  const { isMobile, isDrilledIn, goBack, activeLabel, direction, value } = useNavigationLayout();
+  const { isMobile, isDrilledIn, goBack, activeLabel, direction, value, hasDialogHeader } = useNavigationLayout();
 
   if (isMobile) {
     if (!isDrilledIn) return null;
@@ -322,17 +339,20 @@ function NavigationLayoutContent({ children, className }: NavigationLayoutConten
     const xOffset = direction === 'forward' ? 16 : -16;
     return (
       <div data-slot="navigation-layout-content" className={cn('flex flex-1 flex-col overflow-hidden', className)}>
-        <motion.button
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.15 }}
-          onClick={goBack}
-          className="text-muted-foreground hover:text-foreground flex items-center gap-1 px-3 py-2 text-sm transition-colors"
-          autoFocus
-        >
-          <ChevronLeft className="size-(--size-icon-sm)" />
-          {activeLabel}
-        </motion.button>
+        {/* Show built-in back button only when no dialog header handles navigation */}
+        {!hasDialogHeader && (
+          <motion.button
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15 }}
+            onClick={goBack}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-1 px-3 py-2 text-sm transition-colors"
+            autoFocus
+          >
+            <ChevronLeft className="size-(--size-icon-sm)" />
+            {activeLabel}
+          </motion.button>
+        )}
         <div className="flex-1 overflow-y-auto">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -353,9 +373,9 @@ function NavigationLayoutContent({ children, className }: NavigationLayoutConten
   return (
     <div
       data-slot="navigation-layout-content"
-      className={cn('flex-1 min-w-0 overflow-y-auto', className)}
+      className={cn('relative flex-1 min-w-0 overflow-y-auto', className)}
     >
-      <AnimatePresence mode="wait" initial={false}>
+      <AnimatePresence mode="popLayout" initial={false}>
         <motion.div
           key={value}
           initial={{ opacity: 0 }}
@@ -370,6 +390,120 @@ function NavigationLayoutContent({ children, className }: NavigationLayoutConten
   );
 }
 NavigationLayoutContent.displayName = 'NavigationLayoutContent';
+
+// ---------------------------------------------------------------------------
+// Body
+// ---------------------------------------------------------------------------
+
+interface NavigationLayoutBodyProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+/** Flex-row wrapper for sidebar + content. Required when using NavigationLayoutDialogHeader. */
+function NavigationLayoutBody({ children, className }: NavigationLayoutBodyProps) {
+  return (
+    <div
+      data-slot="navigation-layout-body"
+      className={cn('flex flex-1 overflow-hidden', className)}
+    >
+      {children}
+    </div>
+  );
+}
+NavigationLayoutBody.displayName = 'NavigationLayoutBody';
+
+// ---------------------------------------------------------------------------
+// Dialog Header
+// ---------------------------------------------------------------------------
+
+interface NavigationLayoutDialogHeaderProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+/**
+ * Navigation-aware dialog header. Replaces ResponsiveDialogHeader inside a NavigationLayout.
+ *
+ * - Desktop / mobile list view: renders children (title) as a standard header.
+ * - Mobile drilled in: renders a back button with the active section label.
+ */
+function NavigationLayoutDialogHeader({ children, className }: NavigationLayoutDialogHeaderProps) {
+  const { isMobile, isDrilledIn, goBack, activeLabel, registerDialogHeader } = useNavigationLayout();
+
+  // Register so NavigationLayoutContent knows to hide its built-in back button
+  React.useLayoutEffect(() => {
+    return registerDialogHeader();
+  }, [registerDialogHeader]);
+
+  if (isMobile && isDrilledIn) {
+    return (
+      <div
+        data-slot="navigation-layout-dialog-header"
+        className={cn('flex items-center border-b', className)}
+      >
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.15 }}
+          onClick={goBack}
+          className="text-muted-foreground hover:text-foreground flex flex-1 items-center gap-1 px-3 py-3 text-sm font-medium transition-colors"
+          autoFocus
+        >
+          <ChevronLeft className="size-(--size-icon-sm)" />
+          {activeLabel}
+        </motion.button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-slot="navigation-layout-dialog-header"
+      className={cn('space-y-0 border-b px-4 py-3', className)}
+    >
+      {children}
+    </div>
+  );
+}
+NavigationLayoutDialogHeader.displayName = 'NavigationLayoutDialogHeader';
+
+// ---------------------------------------------------------------------------
+// Panel Header
+// ---------------------------------------------------------------------------
+
+interface NavigationLayoutPanelHeaderProps {
+  children: React.ReactNode;
+  actions?: React.ReactNode;
+  className?: string;
+}
+
+/**
+ * Panel header with desktop/mobile awareness.
+ * Desktop: renders title + optional actions. Mobile: hides title (shown in back button), renders actions only.
+ */
+function NavigationLayoutPanelHeader({ children, actions, className }: NavigationLayoutPanelHeaderProps) {
+  const { isMobile } = useNavigationLayout();
+
+  // Mobile: title already shown in back button — only render actions if present
+  if (isMobile) {
+    if (!actions) return null;
+    return (
+      <div className={cn('flex items-center justify-end', className)}>
+        {actions}
+      </div>
+    );
+  }
+
+  // Desktop: title + optional actions in a flex row
+  return (
+    <div className={cn('flex items-center justify-between', className)}>
+      <h3 className="text-foreground text-sm font-semibold">{children}</h3>
+      {actions}
+    </div>
+  );
+}
+NavigationLayoutPanelHeader.displayName = 'NavigationLayoutPanelHeader';
 
 // ---------------------------------------------------------------------------
 // Panel
@@ -397,6 +531,7 @@ function NavigationLayoutPanel({ children, value: panelValue, className }: Navig
   return (
     <div
       role="tabpanel"
+      id={`nav-panel-${panelValue}`}
       aria-labelledby={`nav-item-${panelValue}`}
       data-slot="navigation-layout-panel"
       className={className}
@@ -413,9 +548,12 @@ NavigationLayoutPanel.displayName = 'NavigationLayoutPanel';
 
 export {
   NavigationLayout,
+  NavigationLayoutBody,
   NavigationLayoutSidebar,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
+  NavigationLayoutPanelHeader,
+  NavigationLayoutDialogHeader,
   useNavigationLayout,
 };

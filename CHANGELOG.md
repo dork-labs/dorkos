@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add NavigationLayoutDialogHeader and NavigationLayoutBody for polished dialog navigation
 - Add NavigationLayout sidebar navigation for dialogs
 
 ### Changed
