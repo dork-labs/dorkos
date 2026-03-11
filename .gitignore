@@ -34,3 +34,4 @@ coverage/
 .temp
 .vercel
 .worktrees/
+.superpowers/
