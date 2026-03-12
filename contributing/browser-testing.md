@@ -285,17 +285,33 @@ Browser tests that don't need real Claude API calls use `TestModeRuntime` — a 
 | `MOCK_PORT` (4243) | Test-mode Express server |
 | `MOCK_VITE_PORT` (4244) | Vite client proxying to mock server |
 
-### Scenario Control API
+### Test Control API
+
+Three endpoints on the mock server wire up test state before each spec:
 
 ```typescript
-// Reset to default scenario before each test
-await request.post(`http://localhost:${MOCK_PORT}/api/test/reset`);
+// Reset to default scenario (simple-text) and clear any state
+await request.post(`${API_URL}/api/test/reset`);
+
+// Dismiss the onboarding wizard (fresh DORK_HOME shows it by default)
+await request.patch(`${API_URL}/api/config`, {
+  data: { onboarding: { dismissedAt: new Date().toISOString() } },
+});
+
+// Seed a test agent so the send button is enabled
+const res = await request.post(`${API_URL}/api/test/seed-agent`);
+const { agentDir } = await res.json();
+
+// Navigate to chat with the seeded agent directory
+await chatPage.goto(undefined, { dir: agentDir });
 
 // Set a specific scenario
-await request.post(`http://localhost:${MOCK_PORT}/api/test/scenario`, {
+await request.post(`${API_URL}/api/test/scenario`, {
   data: { name: 'simple-text' },  // 'tool-call', 'todo-write', 'error'
 });
 ```
+
+The `seed-agent` endpoint creates a temporary `.dork/agent.json` under the mock DORK_HOME and returns the directory path. Without it, the chat input's send button stays disabled because no agent is registered for the working directory.
 
 ### Writing Mock Browser Tests
 

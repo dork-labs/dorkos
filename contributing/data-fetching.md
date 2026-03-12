@@ -18,6 +18,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | Runtime entity hooks   | `apps/client/src/layers/entities/runtime/`                         |
 | Relay entity hooks     | `apps/client/src/layers/entities/relay/`                           |
 | Binding entity hooks   | `apps/client/src/layers/entities/binding/`                         |
+| Pulse entity hooks     | `apps/client/src/layers/entities/pulse/`                           |
 | Chat feature hooks     | `apps/client/src/layers/features/chat/model/use-chat-session.ts`  |
 | Express routes         | `apps/server/src/routes/`                                          |
 | Zod schemas            | `packages/shared/src/schemas.ts`                                   |
@@ -626,6 +627,46 @@ const { data: bindings = [], isLoading } = useBindings();
 const { mutate: deleteBinding } = useDeleteBinding();
 const { mutate: updateBinding } = useUpdateBinding();
 ```
+
+## Pulse Entity Hooks
+
+The pulse entity layer (`entities/pulse/`) provides hooks for schedule presets. These are used to pre-populate `CreateScheduleDialog` from the preset gallery.
+
+### usePulsePresets
+
+Fetches the list of available schedule presets from the server. No `staleTime` override — presets change rarely, relying on TanStack Query defaults.
+
+```typescript
+// apps/client/src/layers/entities/pulse/model/use-pulse-presets.ts
+export function usePulsePresets() {
+  const transport = useTransport();
+  return useQuery<PulsePreset[]>({
+    queryKey: ['pulse', 'presets'],
+    queryFn: () => transport.getPulsePresets(),
+  });
+}
+```
+
+Used by `PresetGallery` in `features/pulse/ui/` to render the preset cards shown on the Pulse empty state.
+
+## Agent Entity: useMcpConfig
+
+Fetches MCP server entries from `.mcp.json` in a given project directory. Returns `{ servers: McpServerEntry[] }`. Disabled when `projectPath` is null (e.g., no active working directory). Uses 30-second stale time.
+
+```typescript
+// apps/client/src/layers/entities/agent/model/use-mcp-config.ts
+export function useMcpConfig(projectPath: string | null) {
+  const transport = useTransport();
+  return useQuery<McpConfigResponse>({
+    queryKey: ['mcp-config', projectPath],
+    queryFn: () => transport.getMcpConfig(projectPath!),
+    enabled: !!projectPath,
+    staleTime: 30_000,
+  });
+}
+```
+
+Used by `ConnectionsView` to show MCP servers in the connections sidebar panel.
 
 ## References
 

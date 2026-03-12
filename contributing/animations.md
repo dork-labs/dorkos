@@ -411,6 +411,44 @@ Key details:
 - Spring: `stiffness: 600`, `damping: 40` for snappy, responsive feel (~50-80ms)
 - Respects `prefers-reduced-motion` via global `<MotionConfig reducedMotion="user">`
 
+### Height Collapse Animation (Overflow Items)
+
+Reveal or hide a section by animating `height: 0 ↔ 'auto'` with `opacity`. Use this for collapsible rows, overflow sections, or expandable list tails — cases where the item count is unknown and `height: 'auto'` is required.
+
+```typescript
+const collapseVariants = {
+  initial: { height: 0, opacity: 0 },
+  animate: { height: 'auto', opacity: 1 },
+  exit: { height: 0, opacity: 0 },
+} as const;
+const collapseTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
+
+<AnimatePresence>
+  {isExpanded && (
+    <motion.div
+      variants={collapseVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={collapseTransition}
+      className="overflow-hidden"
+    >
+      {overflowItems}
+    </motion.div>
+  )}
+</AnimatePresence>
+```
+
+Key details:
+
+- `overflow: hidden` is **required** — clips content while the height collapses to zero
+- Motion handles the `height: 'auto'` special case natively — no JS measurement needed
+- Use ease-out (e.g., cubic-bezier `[0, 0, 0.2, 1]`) rather than spring for height — spring physics on height produce overshooting artifacts
+- Define variants at **module scope** (not inline) to avoid object recreation on every render
+- This is an acceptable exception to the "don't animate height directly" anti-pattern: `height: 0 ↔ 'auto'` collapse is Motion's dedicated mechanism for variable-height reveals
+
+**Used in:** ConnectionsView overflow rows (agents list, MCP servers list)
+
 ### Width Spring Animation (Expanding Panel)
 
 Animate a panel sliding in from the edge by animating `width` and `opacity` together. While animating layout dimensions is generally discouraged (see Anti-Patterns), width spring animations on fixed-width containers are acceptable when used sparingly for reveal panels.

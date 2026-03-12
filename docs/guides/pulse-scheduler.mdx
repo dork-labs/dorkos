@@ -42,11 +42,19 @@ The Pulse tab appears in the sidebar when Pulse is enabled. Open it to see your 
 </Step>
 </Steps>
 
+## Preset Gallery
+
+When you have no schedules yet, the Pulse panel shows a **Preset Gallery** instead of an empty state. Presets are curated schedule templates — common patterns like "Daily standup summary" or "Weekly dependency check" with pre-filled cron expressions and prompts.
+
+Click any preset card to open `CreateScheduleDialog` pre-populated with that preset's cron expression and prompt. You can edit any field before saving. Presets are read-only suggestions; the final schedule is always yours to customize.
+
+Presets are fetched from the server via `GET /api/pulse/presets` and cached client-side.
+
 ## Creating Schedules
 
 ### PulsePanel UI
 
-Open the Pulse tab and click "Create Schedule". Configure:
+Open the Pulse tab and click "Create Schedule" (or select a preset from the gallery). Configure:
 
 - **Name** — A human-readable label (e.g., "Daily code review")
 - **Cron expression** — When the job runs. Choose from preset buttons or build with the visual editor.

@@ -30,13 +30,7 @@ data: {"type":"text_delta","delta":" I help?"}
 data: {"type":"done"}
 ```
 
-When `DORKOS_RELAY_ENABLED=true`, `POST /messages` returns `202` immediately with a receipt instead of opening an SSE stream directly:
-
-```json
-{ "messageId": "msg_abc123", "traceId": "trace_xyz456" }
-```
-
-The response chunks then arrive via the session sync SSE connection as `relay_message` events.
+The endpoint always returns a `text/event-stream` response. The web client uses direct SSE streaming regardless of whether `DORKOS_RELAY_ENABLED` is set.
 
 ## Event Types
 
@@ -69,16 +63,6 @@ The response chunks then arrive via the session sync SSE connection as `relay_me
   "done": { type: "{}", description: "Message stream complete" },
   "session_status": { type: "{ status: string }", description: "Session state changed" },
   "task_update": { type: "{ tasks: TaskItem[] }", description: "Task list updated" },
-}} />
-
-### Relay Events
-
-When `DORKOS_RELAY_ENABLED=true`, the SSE stream includes additional event types:
-
-<TypeTable type={{
-  "relay_message": { type: "{ streamEvent: StreamEvent, messageId: string }", description: "Relay response chunk containing a nested StreamEvent" },
-  "relay_receipt": { type: "{ messageId: string, traceId: string }", description: "Delivery confirmation for a Relay-routed message" },
-  "message_delivered": { type: "{ messageId: string, subject: string }", description: "Message delivery notification" },
 }} />
 
 ## Responding to Interactive Events
@@ -136,7 +120,7 @@ GET /api/sessions/:id/stream
   When a `sync_update` is received, re-fetch message history. `GET /api/sessions/:id/messages` supports ETag caching (`If-None-Match` / `304`) for efficient polling.
 </Callout>
 
-When Relay is enabled, the sync stream also carries `relay_message`, `relay_receipt`, and `message_delivered` events.
+The sync stream carries only `sync_connected` and `sync_update` events. Real-time relay activity is available via the dedicated `GET /api/relay/stream` SSE endpoint.
 
 ## Session Write Coordination
 

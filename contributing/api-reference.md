@@ -59,8 +59,7 @@ Event types are documented in the `StreamEventType` enum in the OpenAPI spec. Th
 
 **Responses:**
 
-- `200` - SSE stream (when `DORKOS_RELAY_ENABLED` is false). Event types: `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`
-- `202` - JSON receipt (when `DORKOS_RELAY_ENABLED` is true). See [POST /sessions/:id/messages (Relay Mode)](#post-apisessionsidmessages-relay-mode) below.
+- `200` - SSE stream. Event types: `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`
 - `409` - Session locked by another client. Response body: `{ error: 'Session locked', code: 'SESSION_LOCKED', lockedBy: string, lockedAt: string }`
 
 ### GET /api/sessions/:id/stream
@@ -81,9 +80,6 @@ Persistent SSE connection for session sync. Broadcasts updates when the session'
 
 - `sync_connected` - Sent on initial connection. Data: `{ sessionId: string }`
 - `sync_update` - Sent when JSONL file changes. Data: `{ sessionId: string, timestamp: string }`
-- `relay_message` - (Relay mode) Response chunk from a Relay-dispatched agent session. Contains a nested `StreamEvent`.
-- `relay_receipt` - (Relay mode) Delivery confirmation for a published Relay message.
-- `message_delivered` - (Relay mode) Notification that a message reached its target agent.
 
 **Usage:** Clients should close the connection when no longer viewing the session.
 
@@ -206,7 +202,7 @@ The Relay route group is guarded by an environment variable feature flag. When d
 | `DORKOS_RELAY_ENABLED`     | `false` | `/api/relay/*` routes               |
 
 This flag also controls the behavior of `POST /api/sessions/:id/messages`:
-- When `DORKOS_RELAY_ENABLED=true`, the endpoint returns 202 + receipt instead of an SSE stream.
+- `DORKOS_RELAY_ENABLED` enables relay infrastructure for external adapters (Telegram, webhooks). The web client always uses direct SSE streaming regardless of this flag.
 
 Other relevant environment variables:
 
@@ -450,27 +446,6 @@ SSE event stream for real-time relay activity. Supports server-side subject filt
 **Keepalive:** `: keepalive\n\n` comment every 15 seconds.
 
 **Usage:** Clients should close the EventSource when the relay panel is not visible.
-
-### POST /api/sessions/:id/messages (Relay Mode)
-
-When `DORKOS_RELAY_ENABLED` is true, this endpoint publishes the message to Relay instead of streaming directly. The response changes from SSE to a JSON receipt.
-
-**Request body (additional fields):**
-
-- `correlationId` (optional, UUID) — Client-generated identifier that tags all response events for this specific message. The adapter echoes this ID in every `relay_message` event, allowing the client to filter out late-arriving events from previous messages. See ADR-0094 for the design rationale.
-
-**Responses:**
-
-- `202` - Message accepted for Relay delivery:
-
-```json
-{
-  "messageId": "01HXYZ...",
-  "traceId": "tr_01HXYZ..."
-}
-```
-
-Response chunks are delivered asynchronously via the SSE stream (`GET /api/sessions/:id/stream`) as `relay_message` events. Each event includes the `correlationId` if one was provided in the request.
 
 ### GET /api/relay/messages/:id/trace
 

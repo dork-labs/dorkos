@@ -29,6 +29,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Dialog-scoped state      | React useState  | Pages stack in CommandPaletteDialog          | Resets when dialog closes, no persistence needed           |
 | Debounced derived state  | useDeferredValue | Preview panel data during rapid navigation  | Defers expensive fetches without state management overhead |
 | Multi-source derived state | TanStack Query + `useMemo` | Feature flags + entity data combined | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
+| Cross-feature signal     | Zustand (entity layer) | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature | Entity-layer store avoids FSD model cross-import violation |
 
 ## Core Patterns
 
@@ -226,6 +227,41 @@ const toolStatus = useMemo(
   [agent, pulseEnabled]
 );
 ```
+
+### Cross-Feature Signal Stores (Entity Layer)
+
+When one feature needs to trigger a dialog or action in a sibling feature, FSD's model cross-import rules forbid `features/A` from importing `features/B`'s model. The solution: put a small Zustand store in the `entities/` layer. Both features can read from it without creating a circular dependency.
+
+```typescript
+// apps/client/src/layers/entities/pulse/model/use-pulse-preset-dialog.ts
+// Lives in entities/ so both features/pulse and features/session-list can use it.
+
+export const usePulsePresetDialog = create<PulsePresetDialogState>((set) => ({
+  pendingPreset: null,
+  externalTrigger: false,
+  openWithPreset: (preset) => set({ pendingPreset: preset, externalTrigger: true }),
+  clear: () => set({ pendingPreset: null, externalTrigger: false }),
+}));
+```
+
+Usage pattern:
+
+```typescript
+// In features/session-list/ui/SchedulesView.tsx — triggers the dialog
+const openWithPreset = usePulsePresetDialog((s) => s.openWithPreset);
+openWithPreset(preset); // Signals PulsePanel to open CreateScheduleDialog
+
+// In features/pulse/ui/PulsePanel.tsx — consumes the signal
+const { pendingPreset, externalTrigger, clear } = usePulsePresetDialog();
+useEffect(() => {
+  if (externalTrigger && pendingPreset) {
+    openDialog({ preset: pendingPreset });
+    clear();
+  }
+}, [externalTrigger, pendingPreset]);
+```
+
+**When to use**: A sibling feature needs to trigger a UI action (open a dialog, navigate to a view) in another feature, and lifting the state higher would add unnecessary coupling. Keep these stores small — just the signal payload and a `clear()` method.
 
 ### Combining Zustand with TanStack Query
 

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reconcile guides against relay removal, pulse presets, and ConnectionsView changes
 - Remove relay chat path from self-test command
 - Remove relay message path from web client, use direct SSE only
 - Use Math.max for overflow values, clarify useAgentAccess guard comment
