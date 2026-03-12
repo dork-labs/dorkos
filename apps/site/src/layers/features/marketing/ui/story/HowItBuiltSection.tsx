@@ -16,6 +16,10 @@ export function HowItBuiltSection({ slideId = 'timeline' }: HowItBuiltSectionPro
   // In presentation mode, reveal steps one at a time. In normal scroll, show all.
   const visibleSteps = isPresent ? evolutionSteps.slice(0, subStep + 1) : evolutionSteps
 
+  // The "active" step gets the orange accent treatment.
+  // In presentation mode: the most recently revealed step. In normal mode: use the data color.
+  const activeStepIndex = isPresent ? visibleSteps.length - 1 : null
+
   return (
     <section
       className="flex min-h-screen flex-col justify-center bg-cream-primary px-8 py-16"
@@ -47,36 +51,40 @@ export function HowItBuiltSection({ slideId = 'timeline' }: HowItBuiltSectionPro
         {/* Timeline steps */}
         <div className="flex flex-col gap-6">
           <AnimatePresence initial={false}>
-            {visibleSteps.map((step) => (
-              <motion.div
-                key={step.step}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
-                className="flex gap-4"
-              >
-                {/* Step number */}
-                <div
-                  className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold text-cream-white ${step.color === 'orange' ? 'bg-brand-orange' : 'bg-charcoal'}`}
+            {visibleSteps.map((step, i) => {
+              const isActive = activeStepIndex !== null ? i === activeStepIndex : step.color === 'orange'
+              return (
+                <motion.div
+                  key={step.step}
+                  layout
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+                  className="flex gap-4"
                 >
-                  {step.step}
-                </div>
-
-                {/* Content */}
-                <div className="min-w-0">
-                  <div className={`mb-0.5 font-mono text-[9px] tracking-[0.1em] uppercase ${step.color === 'orange' ? 'text-brand-orange' : 'text-warm-gray'}`}>
-                    {step.product} &mdash; {step.duration}
+                  {/* Step number */}
+                  <div
+                    className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold text-cream-white transition-colors duration-300 ${isActive ? 'bg-brand-orange' : 'bg-charcoal'}`}
+                  >
+                    {step.step}
                   </div>
-                  <p className="mb-1 text-[14px] font-medium text-charcoal">{step.description}</p>
-                  {step.ceiling && (
-                    <p className="font-mono text-[10px] text-warm-gray-light">
-                      Ceiling hit: {step.ceiling}
-                    </p>
-                  )}
-                </div>
-              </motion.div>
-            ))}
+
+                  {/* Content */}
+                  <div className="min-w-0">
+                    <div className={`mb-0.5 font-mono text-[9px] tracking-[0.1em] uppercase transition-colors duration-300 ${isActive ? 'text-brand-orange' : 'text-warm-gray'}`}>
+                      {step.product} &mdash; {step.duration}
+                    </div>
+                    <p className="mb-1 text-[14px] font-medium text-charcoal">{step.description}</p>
+                    {step.ceiling && (
+                      <p className="font-mono text-[10px] text-warm-gray-light">
+                        Ceiling hit: {step.ceiling}
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
+              )
+            })}
           </AnimatePresence>
         </div>
 
