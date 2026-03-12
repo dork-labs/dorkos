@@ -201,7 +201,7 @@ export function AgentSidebar() {
           role="tabpanel"
           id="sidebar-tabpanel-sessions"
           aria-labelledby="sidebar-tab-sessions"
-          className={cn(sidebarActiveTab !== 'sessions' && 'hidden')}
+          className={cn('h-full', sidebarActiveTab !== 'sessions' && 'hidden')}
         >
           <SessionsView
             activeSessionId={activeSessionId}
@@ -215,7 +215,7 @@ export function AgentSidebar() {
           role="tabpanel"
           id="sidebar-tabpanel-schedules"
           aria-labelledby="sidebar-tab-schedules"
-          className={cn(sidebarActiveTab !== 'schedules' && 'hidden')}
+          className={cn('h-full', sidebarActiveTab !== 'schedules' && 'hidden')}
         >
           <SchedulesView toolStatus={toolStatus.pulse} agentId={currentAgent?.id ?? null} />
         </div>
@@ -225,7 +225,7 @@ export function AgentSidebar() {
           role="tabpanel"
           id="sidebar-tabpanel-connections"
           aria-labelledby="sidebar-tab-connections"
-          className={cn(sidebarActiveTab !== 'connections' && 'hidden')}
+          className={cn('h-full', sidebarActiveTab !== 'connections' && 'hidden')}
         >
           <ConnectionsView toolStatus={toolStatus} />
         </div>

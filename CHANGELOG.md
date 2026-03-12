@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore scroll in tabpanel views by adding h-full
 - Use text-foreground for node name text consistency
 - Filter CCA adapter nodes and always show namespace groups
 - Use correct logo SVG paths in OG share card
