@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { FeatureDisabledState } from '@/layers/shared/ui';
 import { icons } from '@dorkos/icons/registry';
-import { usePulseEnabled, useSchedules } from '@/layers/entities/pulse';
+import { usePulseEnabled, useSchedules, usePulsePresetDialog } from '@/layers/entities/pulse';
+import type { PulsePreset } from '@/layers/entities/pulse';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import type { PulseSchedule } from '@dorkos/shared/types';
 import { CreateScheduleDialog } from './CreateScheduleDialog';
@@ -16,10 +17,37 @@ export function PulsePanel() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editSchedule, setEditSchedule] = useState<PulseSchedule | undefined>();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [appliedPresetForDialog, setAppliedPresetForDialog] = useState<PulsePreset | null>(null);
 
   // Batch-resolve agents for all schedule CWDs
   const uniquePaths = [...new Set(schedules.map((s) => s.cwd).filter(Boolean) as string[])];
   const { data: resolvedAgents } = useResolvedAgents(uniquePaths);
+
+  const { externalTrigger } = usePulsePresetDialog();
+
+  useEffect(() => {
+    if (externalTrigger) {
+      setEditSchedule(undefined);
+      setDialogOpen(true);
+    }
+  }, [externalTrigger]);
+
+  const handleCreateWithPreset = (preset: PulsePreset) => {
+    setAppliedPresetForDialog(preset);
+    setEditSchedule(undefined);
+    setDialogOpen(true);
+  };
+
+  const handleCreateBlank = () => {
+    setAppliedPresetForDialog(null);
+    setEditSchedule(undefined);
+    setDialogOpen(true);
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) setAppliedPresetForDialog(null);
+  };
 
   if (!pulseEnabled) {
     return (
@@ -54,15 +82,14 @@ export function PulsePanel() {
     return (
       <>
         <PulseEmptyState
-          onCreateSchedule={() => {
-            setEditSchedule(undefined);
-            setDialogOpen(true);
-          }}
+          onCreateWithPreset={handleCreateWithPreset}
+          onCreateBlank={handleCreateBlank}
         />
         <CreateScheduleDialog
           open={dialogOpen}
-          onOpenChange={setDialogOpen}
+          onOpenChange={handleDialogOpenChange}
           editSchedule={editSchedule}
+          initialPreset={appliedPresetForDialog}
         />
       </>
     );
@@ -110,6 +137,7 @@ export function PulsePanel() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         editSchedule={editSchedule}
+        initialPreset={appliedPresetForDialog}
       />
     </div>
   );

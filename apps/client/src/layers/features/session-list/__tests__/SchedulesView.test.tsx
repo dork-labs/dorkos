@@ -1,21 +1,34 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import type { PulseSchedule } from '@dorkos/shared/types';
+import type { PulsePreset, PulseSchedule } from '@dorkos/shared/types';
 import { SidebarProvider } from '@/layers/shared/ui';
 import { SchedulesView } from '../ui/SchedulesView';
 
-// Mock useSchedules
+// All entities/pulse hooks mocked via barrel to avoid export conflicts
 const mockSchedules = vi.fn<() => { data: PulseSchedule[] }>(() => ({ data: [] }));
-vi.mock('@/layers/entities/pulse/model/use-schedules', () => ({
-  useSchedules: () => mockSchedules(),
-}));
-
-// Mock useActiveRunCount
 const mockActiveRunCount = vi.fn<() => { data: number }>(() => ({ data: 0 }));
-vi.mock('@/layers/entities/pulse/model/use-runs', () => ({
-  useActiveRunCount: () => mockActiveRunCount(),
-}));
+const mockPresets = vi.fn<() => { data: PulsePreset[] }>(() => ({ data: [] }));
+const mockOpenWithPreset = vi.fn();
+vi.mock('@/layers/entities/pulse', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/pulse')>();
+  return {
+    ...actual,
+    useSchedules: () => mockSchedules(),
+    useActiveRunCount: () => mockActiveRunCount(),
+    usePulsePresets: () => mockPresets(),
+    usePulsePresetDialog: () => ({ openWithPreset: mockOpenWithPreset }),
+  };
+});
+
+// Mock formatCron via features/pulse barrel
+vi.mock('@/layers/features/pulse', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/features/pulse')>();
+  return {
+    ...actual,
+    formatCron: (cron: string) => `cron:${cron}`,
+  };
+});
 
 // Mock app store — capture setPulseOpen calls
 const mockSetPulseOpen = vi.fn();
@@ -81,6 +94,13 @@ describe('SchedulesView', () => {
     vi.clearAllMocks();
     mockSchedules.mockReturnValue({ data: [] });
     mockActiveRunCount.mockReturnValue({ data: 0 });
+    mockPresets.mockReturnValue({
+      data: [
+        { id: 'health-check', name: 'Health Check', description: 'Desc', prompt: 'Prompt', cron: '0 8 * * 1', timezone: 'UTC', category: 'maintenance' },
+        { id: 'dependency-audit', name: 'Dependency Audit', description: 'Desc', prompt: 'Prompt', cron: '0 9 * * 1', timezone: 'UTC', category: 'security' },
+        { id: 'docs-sync', name: 'Docs Sync', description: 'Desc', prompt: 'Prompt', cron: '0 10 * * *', timezone: 'UTC', category: 'documentation' },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -89,7 +109,7 @@ describe('SchedulesView', () => {
 
   it('shows empty state when no schedules exist', () => {
     render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
-    expect(screen.getByText('No schedules configured')).toBeInTheDocument();
+    expect(screen.getByText('No schedules yet.')).toBeInTheDocument();
   });
 
   it('shows disabled state when toolStatus is disabled-by-agent', () => {
@@ -100,7 +120,7 @@ describe('SchedulesView', () => {
   it('does not render schedule list when toolStatus is disabled-by-server', () => {
     // disabled-by-server skips queries — data defaults to empty
     render(<SchedulesView toolStatus="disabled-by-server" agentId={null} />, { wrapper: Wrapper });
-    expect(screen.getByText('No schedules configured')).toBeInTheDocument();
+    expect(screen.getByText('No schedules yet.')).toBeInTheDocument();
   });
 
   it('renders Active section when active schedules exist', () => {
@@ -203,7 +223,42 @@ describe('SchedulesView', () => {
       ],
     });
     render(<SchedulesView toolStatus="enabled" agentId="agent-a" />, { wrapper: Wrapper });
-    expect(screen.getByText('No schedules configured')).toBeInTheDocument();
+    expect(screen.getByText('No schedules yet.')).toBeInTheDocument();
     expect(screen.queryByText('Other Agent Task')).not.toBeInTheDocument();
+  });
+
+  it('shows featured preset cards in empty state', () => {
+    render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    // index 0 = Health Check, index 2 = Docs Sync
+    expect(screen.getByText('Health Check')).toBeInTheDocument();
+    expect(screen.getByText('Docs Sync')).toBeInTheDocument();
+    // index 1 = Dependency Audit should NOT appear
+    expect(screen.queryByText('Dependency Audit')).not.toBeInTheDocument();
+  });
+
+  it('shows formatted cron for featured presets', () => {
+    render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    // formatCron is mocked to return `cron:<cron>`
+    expect(screen.getByText('cron:0 8 * * 1')).toBeInTheDocument();
+    expect(screen.getByText('cron:0 10 * * *')).toBeInTheDocument();
+  });
+
+  it('+ Use preset button calls openWithPreset and setPulseOpen', () => {
+    render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    const usePresetBtns = screen.getAllByText('+ Use preset');
+    fireEvent.click(usePresetBtns[0]);
+    expect(mockOpenWithPreset).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'health-check' })
+    );
+    expect(mockSetPulseOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('does not show preset cards when schedules exist', () => {
+    mockSchedules.mockReturnValue({
+      data: [makeSchedule({ id: 's1', name: 'My Schedule', status: 'active', enabled: true })],
+    });
+    render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    expect(screen.queryByText('Health Check')).not.toBeInTheDocument();
+    expect(screen.queryByText('Docs Sync')).not.toBeInTheDocument();
   });
 });

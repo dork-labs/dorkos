@@ -28,7 +28,7 @@ import type {
   UploadResult,
   UploadProgress,
 } from '@dorkos/shared/types';
-import type { Transport, AdapterListItem, AdapterEvent, UploadFile } from '@dorkos/shared/transport';
+import type { Transport, AdapterListItem, AdapterEvent, UploadFile, McpConfigResponse } from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type {
   TraceSpan,
@@ -451,6 +451,13 @@ export class HttpTransport implements Transport {
   }
 
   // --- File Uploads ---
+
+  getMcpConfig(projectPath: string): Promise<McpConfigResponse> {
+    return fetchJSON<McpConfigResponse>(
+      this.baseUrl,
+      `/mcp-config?path=${encodeURIComponent(projectPath)}`,
+    );
+  }
 
   async uploadFiles(
     files: UploadFile[],

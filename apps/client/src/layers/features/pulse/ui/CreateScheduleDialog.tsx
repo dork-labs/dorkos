@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, FolderOpen } from 'lucide-react';
-import { useCreateSchedule, useUpdateSchedule } from '@/layers/entities/pulse';
+import { useCreateSchedule, useUpdateSchedule, usePulsePresetDialog } from '@/layers/entities/pulse';
+import type { PulsePreset } from '@/layers/entities/pulse';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
   ResponsiveDialog,
@@ -19,11 +20,14 @@ import type { PulseSchedule } from '@dorkos/shared/types';
 import { ScheduleBuilder, DEFAULT_CRON } from './ScheduleBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { AgentPicker } from './AgentPicker';
+import { PresetGallery } from './PresetGallery';
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editSchedule?: PulseSchedule;
+  /** When provided, dialog opens directly at form step with this preset pre-filled. */
+  initialPreset?: PulsePreset | null;
 }
 
 type PermissionMode = 'acceptEdits' | 'bypassPermissions';
@@ -33,7 +37,7 @@ const DEFAULT_MAX_RUNTIME_MIN = 10;
 const MAX_NAME_LENGTH = 100;
 const MAX_RUNTIME_MIN = 720;
 
-function buildInitialState(editSchedule?: PulseSchedule) {
+function buildInitialState(editSchedule?: PulseSchedule, preset?: PulsePreset | null) {
   if (editSchedule) {
     return {
       name: editSchedule.name,
@@ -46,6 +50,18 @@ function buildInitialState(editSchedule?: PulseSchedule) {
         ? 'bypassPermissions'
         : 'acceptEdits') as PermissionMode,
       maxRuntimeMin: editSchedule.maxRuntime ? editSchedule.maxRuntime / 60_000 : DEFAULT_MAX_RUNTIME_MIN,
+    };
+  }
+  if (preset) {
+    return {
+      name: preset.name,
+      prompt: preset.prompt,
+      cron: preset.cron,
+      cwd: '',
+      agentId: undefined as string | undefined,
+      timezone: preset.timezone ?? '',
+      permissionMode: 'acceptEdits' as PermissionMode,
+      maxRuntimeMin: DEFAULT_MAX_RUNTIME_MIN,
     };
   }
   return {
@@ -71,8 +87,10 @@ interface FormState {
   maxRuntimeMin: number;
 }
 
+type DialogStep = 'preset-picker' | 'form';
+
 /** Create or edit a Pulse schedule using ResponsiveDialog with progressive disclosure. */
-export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props) {
+export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initialPreset }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
   const { data: agentsData } = useMeshAgentPaths();
@@ -80,6 +98,8 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
 
   const [form, setForm] = useState<FormState>(() => buildInitialState(editSchedule));
   const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
+  const [step, setStep] = useState<DialogStep>(() => (editSchedule ? 'form' : 'preset-picker'));
+  const [appliedPreset, setAppliedPreset] = useState<PulsePreset | null>(null);
 
   // Determine initial schedule target: 'agent' if editing an agent-linked schedule,
   // or if no edit and agents exist; otherwise 'directory'.
@@ -91,14 +111,40 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
 
   // Reset form when dialog opens or switches between create/edit
   useEffect(() => {
-    setForm(buildInitialState(editSchedule));
-    if (!editSchedule) {
-      setScheduleTarget('agent');
-    } else {
+    if (!open) {
+      // Reset on close
+      setForm(buildInitialState(editSchedule));
+      setAppliedPreset(null);
+      setStep(editSchedule ? 'form' : 'preset-picker');
+      return;
+    }
+    if (editSchedule) {
+      setForm(buildInitialState(editSchedule));
       setScheduleTarget(editSchedule.agentId ? 'agent' : (editSchedule.cwd ? 'directory' : 'agent'));
+      setStep('form');
+    } else if (initialPreset) {
+      setForm(buildInitialState(undefined, initialPreset));
+      setAppliedPreset(initialPreset);
+      setStep('form');
+    } else {
+      setForm(buildInitialState());
+      setScheduleTarget('agent');
+      setStep('preset-picker');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- agents.length intentionally excluded to avoid resetting on re-fetch
-  }, [editSchedule, open]);
+  }, [editSchedule, open, initialPreset]);
+
+  // Wire external trigger from usePulsePresetDialog (e.g. from SchedulesView sidebar)
+  const { pendingPreset, externalTrigger, clear } = usePulsePresetDialog();
+
+  useEffect(() => {
+    if (externalTrigger && pendingPreset) {
+      setAppliedPreset(pendingPreset);
+      setForm(buildInitialState(undefined, pendingPreset));
+      setStep('form');
+      clear();
+    }
+  }, [externalTrigger, pendingPreset, clear]);
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -132,181 +178,222 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule }: Props
     }
   }
 
+  function handleSelectPreset(preset: PulsePreset) {
+    setAppliedPreset(preset);
+    setForm(buildInitialState(undefined, preset));
+    setStep('form');
+  }
+
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 p-0">
         <ResponsiveDialogHeader className="shrink-0 border-b px-4 py-3">
-          <ResponsiveDialogTitle>
-            {editSchedule ? 'Edit Schedule' : 'New Schedule'}
-          </ResponsiveDialogTitle>
+          <div className="flex items-center gap-2">
+            {step === 'form' && !editSchedule && (
+              <button
+                type="button"
+                onClick={() => setStep('preset-picker')}
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-sm"
+                aria-label="Back to preset picker"
+              >
+                <ChevronLeft className="size-4" />
+                Back
+              </button>
+            )}
+            <ResponsiveDialogTitle>
+              {editSchedule ? 'Edit Schedule' : 'New Schedule'}
+            </ResponsiveDialogTitle>
+          </div>
           <ResponsiveDialogDescription className="sr-only">
             {editSchedule ? 'Edit an existing Pulse schedule' : 'Create a new Pulse schedule'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
-        <form onSubmit={handleSubmit} id="schedule-form" className="min-h-0 flex-1 overflow-y-auto">
-          <div className="space-y-5 px-4 py-5">
-            {/* ── Agent ── */}
-            {scheduleTarget === 'agent' ? (
-              <div className="space-y-2">
-                <Label>Agent</Label>
-                <AgentPicker
-                  agents={agents}
-                  value={form.agentId}
-                  onValueChange={(id) => updateField('agentId', id)}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScheduleTarget('directory');
-                    updateField('agentId', undefined);
-                  }}
-                  className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
-                >
-                  Run in a specific directory instead...
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setScheduleTarget('agent')}
-                  className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs underline-offset-4 hover:underline"
-                >
-                  <ChevronLeft className="size-3" />
-                  Back to agent selection
-                </button>
-                <Label htmlFor="schedule-cwd">Working Directory</Label>
-                <div className="flex gap-2">
-                  <div
-                    className={cn(
-                      'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
-                      form.cwd ? 'text-foreground' : 'text-muted-foreground'
-                    )}
-                  >
-                    {form.cwd || 'Default (server working directory)'}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-sm"
-                    onClick={() => setCwdPickerOpen(true)}
-                    aria-label="Browse directories"
-                  >
-                    <FolderOpen className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Essential fields ── */}
-            <div className="space-y-1.5">
-              <Label htmlFor="schedule-name">Name *</Label>
-              <Input
-                id="schedule-name"
-                value={form.name}
-                onChange={(e) => updateField('name', e.target.value)}
-                maxLength={MAX_NAME_LENGTH}
-                placeholder="Daily code review"
-                required
-              />
+        {/* Step 1: Preset picker */}
+        {step === 'preset-picker' && (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="space-y-4 px-4 py-5">
+              <p className="text-sm text-muted-foreground">Start from a template</p>
+              <PresetGallery onSelect={handleSelectPreset} selectedId={appliedPreset?.id} />
+              <button
+                type="button"
+                onClick={() => { setAppliedPreset(null); setStep('form'); }}
+                className="text-muted-foreground hover:text-foreground w-full text-center text-sm transition-colors"
+              >
+                Start from scratch
+              </button>
             </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="schedule-prompt">Prompt *</Label>
-              <textarea
-                id="schedule-prompt"
-                className="border-input focus-visible:ring-ring w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-                value={form.prompt}
-                onChange={(e) => updateField('prompt', e.target.value)}
-                rows={4}
-                placeholder="Review all pending PRs and summarize findings..."
-                required
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Schedule *</Label>
-              <ScheduleBuilder
-                value={form.cron}
-                onChange={(cron) => updateField('cron', cron)}
-              />
-            </div>
-
-            {/* ── Timezone ── */}
-            <div className="space-y-1.5">
-              <Label>Timezone</Label>
-              <TimezoneCombobox
-                value={form.timezone}
-                onChange={(tz) => updateField('timezone', tz)}
-              />
-            </div>
-
-            {/* ── Advanced settings (collapsed by default) ── */}
-            <details className="group">
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-                <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
-                Advanced settings
-              </summary>
-
-              <div className="mt-3 space-y-4 pl-6">
-                <fieldset className="space-y-2">
-                  <legend className="mb-1.5 text-sm font-medium">Permission Mode</legend>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="permissionMode"
-                      checked={form.permissionMode === 'acceptEdits'}
-                      onChange={() => updateField('permissionMode', 'acceptEdits')}
-                    />
-                    Allow file edits
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="permissionMode"
-                      checked={form.permissionMode === 'bypassPermissions'}
-                      onChange={() => updateField('permissionMode', 'bypassPermissions')}
-                    />
-                    Full autonomy
-                  </label>
-                  {form.permissionMode === 'bypassPermissions' && (
-                    <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                      Warning: This allows the agent to execute any tool without approval.
-                    </p>
-                  )}
-                </fieldset>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="schedule-max-runtime">Max Runtime (minutes)</Label>
-                  <Input
-                    id="schedule-max-runtime"
-                    type="number"
-                    className="w-24"
-                    value={form.maxRuntimeMin}
-                    onChange={(e) => updateField('maxRuntimeMin', Number(e.target.value))}
-                    min={1}
-                    max={MAX_RUNTIME_MIN}
-                  />
-                </div>
-              </div>
-            </details>
           </div>
-        </form>
+        )}
 
-        <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            size="sm"
-            form="schedule-form"
-            disabled={!isValid || isPending}
-          >
-            {isPending ? 'Saving...' : editSchedule ? 'Save' : 'Create'}
-          </Button>
-        </ResponsiveDialogFooter>
+        {/* Step 2: Form (existing) */}
+        {step === 'form' && (
+          <form onSubmit={handleSubmit} id="schedule-form" className="min-h-0 flex-1 overflow-y-auto">
+            <div className="space-y-5 px-4 py-5">
+              {/* ── Agent ── */}
+              {scheduleTarget === 'agent' ? (
+                <div className="space-y-2">
+                  <Label>Agent</Label>
+                  <AgentPicker
+                    agents={agents}
+                    value={form.agentId}
+                    onValueChange={(id) => updateField('agentId', id)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScheduleTarget('directory');
+                      updateField('agentId', undefined);
+                    }}
+                    className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+                  >
+                    Run in a specific directory instead...
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setScheduleTarget('agent')}
+                    className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+                  >
+                    <ChevronLeft className="size-3" />
+                    Back to agent selection
+                  </button>
+                  <Label htmlFor="schedule-cwd">Working Directory</Label>
+                  <div className="flex gap-2">
+                    <div
+                      className={cn(
+                        'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
+                        form.cwd ? 'text-foreground' : 'text-muted-foreground'
+                      )}
+                    >
+                      {form.cwd || 'Default (server working directory)'}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      onClick={() => setCwdPickerOpen(true)}
+                      aria-label="Browse directories"
+                    >
+                      <FolderOpen className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Essential fields ── */}
+              <div className="space-y-1.5">
+                <Label htmlFor="schedule-name">Name *</Label>
+                <Input
+                  id="schedule-name"
+                  value={form.name}
+                  onChange={(e) => updateField('name', e.target.value)}
+                  maxLength={MAX_NAME_LENGTH}
+                  placeholder="Daily code review"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="schedule-prompt">Prompt *</Label>
+                <textarea
+                  id="schedule-prompt"
+                  className="border-input focus-visible:ring-ring w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+                  value={form.prompt}
+                  onChange={(e) => updateField('prompt', e.target.value)}
+                  rows={4}
+                  placeholder="Review all pending PRs and summarize findings..."
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Schedule *</Label>
+                <ScheduleBuilder
+                  value={form.cron}
+                  onChange={(cron) => updateField('cron', cron)}
+                />
+              </div>
+
+              {/* ── Timezone ── */}
+              <div className="space-y-1.5">
+                <Label>Timezone</Label>
+                <TimezoneCombobox
+                  value={form.timezone}
+                  onChange={(tz) => updateField('timezone', tz)}
+                />
+              </div>
+
+              {/* ── Advanced settings (collapsed by default) ── */}
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                  <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
+                  Advanced settings
+                </summary>
+
+                <div className="mt-3 space-y-4 pl-6">
+                  <fieldset className="space-y-2">
+                    <legend className="mb-1.5 text-sm font-medium">Permission Mode</legend>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="permissionMode"
+                        checked={form.permissionMode === 'acceptEdits'}
+                        onChange={() => updateField('permissionMode', 'acceptEdits')}
+                      />
+                      Allow file edits
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="permissionMode"
+                        checked={form.permissionMode === 'bypassPermissions'}
+                        onChange={() => updateField('permissionMode', 'bypassPermissions')}
+                      />
+                      Full autonomy
+                    </label>
+                    {form.permissionMode === 'bypassPermissions' && (
+                      <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                        Warning: This allows the agent to execute any tool without approval.
+                      </p>
+                    )}
+                  </fieldset>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="schedule-max-runtime">Max Runtime (minutes)</Label>
+                    <Input
+                      id="schedule-max-runtime"
+                      type="number"
+                      className="w-24"
+                      value={form.maxRuntimeMin}
+                      onChange={(e) => updateField('maxRuntimeMin', Number(e.target.value))}
+                      min={1}
+                      max={MAX_RUNTIME_MIN}
+                    />
+                  </div>
+                </div>
+              </details>
+            </div>
+          </form>
+        )}
+
+        {step === 'form' && (
+          <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">
+            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              form="schedule-form"
+              disabled={!isValid || isPending}
+            >
+              {isPending ? 'Saving...' : editSchedule ? 'Save' : 'Create'}
+            </Button>
+          </ResponsiveDialogFooter>
+        )}
       </ResponsiveDialogContent>
       <DirectoryPicker
         open={cwdPickerOpen}

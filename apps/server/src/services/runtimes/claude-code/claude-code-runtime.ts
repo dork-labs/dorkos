@@ -8,6 +8,7 @@
  * @module services/runtimes/claude-code/claude-code-runtime
  */
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   StreamEvent,
   PermissionMode,
@@ -96,6 +97,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly claudeCliPath: string | undefined;
   private mcpServerFactory: (() => Record<string, McpServerConfig>) | null = null;
   private cachedModels: ModelOption[] | null = null;
+  private cachedMcpStatus = new Map<string, McpServerEntry[]>();
   private meshCore: AgentRegistryPort | null = null;
 
   constructor(cwd?: string) {
@@ -271,6 +273,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
             });
           }
         : undefined,
+      onMcpStatusReceived: (servers) => {
+        // Mirror effectiveCwd resolution in executeSdkQuery so the key matches the queried dir
+        const key = opts?.cwd || session.cwd || this.cwd;
+        this.cachedMcpStatus.set(key, servers);
+        logger.debug('[sendMessage] cached MCP server status', { cwd: key, count: servers.length });
+      },
       sdkSessionIndex: this.sdkSessionIndex,
       sessionMapKey: sessionId,
     }, opts);
@@ -454,6 +462,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   getSdkSessionId(sessionId: string): string | undefined {
     return this.getInternalSessionId(sessionId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // MCP status cache
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Return last-known MCP server status for a project path, or null if no session has run.
+   *
+   * @param cwd - Absolute project directory path
+   */
+  getMcpStatus(cwd: string): McpServerEntry[] | null {
+    return this.cachedMcpStatus.get(cwd) ?? null;
   }
 
   // ---------------------------------------------------------------------------

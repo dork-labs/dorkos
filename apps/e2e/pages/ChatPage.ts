@@ -24,22 +24,17 @@ export class ChatPage {
   }
 
   /** Navigate to the app and ensure a chat session is active. */
-  async goto(sessionId?: string) {
-    const url = sessionId ? `/?session=${sessionId}` : '/';
+  async goto(sessionId?: string, options?: { dir?: string }) {
+    let url = sessionId ? `/?session=${sessionId}` : '/';
+    if (options?.dir) {
+      const sep = url.includes('?') ? '&' : '?';
+      url += `${sep}dir=${encodeURIComponent(options.dir)}`;
+    }
     await this.page.goto(url);
     await this.basePage.waitForAppReady();
-
-    // If no session specified, create one via the sidebar
-    if (!sessionId) {
-      const hasChatPanel = await this.panel.isVisible().catch(() => false);
-      if (!hasChatPanel) {
-        await this.basePage.ensureSidebarOpen();
-        await this.page.getByRole('button', { name: /new chat/i }).click();
-        await this.panel.waitFor({ state: 'visible', timeout: 10_000 });
-      }
-    } else {
-      await this.panel.waitFor({ state: 'visible', timeout: 10_000 });
-    }
+    // The chat panel is always rendered (even without an active session it shows
+    // the welcome screen with a ready input box). Just wait for it to be visible.
+    await this.panel.waitFor({ state: 'visible', timeout: 10_000 });
   }
 
   async sendMessage(text: string) {

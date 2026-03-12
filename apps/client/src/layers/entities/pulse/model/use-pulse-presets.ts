@@ -4,7 +4,7 @@ import type { PulsePreset } from '@dorkos/shared/types';
 
 export type { PulsePreset } from '@dorkos/shared/types';
 
-/** Fetch available Pulse schedule presets for onboarding. */
+/** Fetch available Pulse schedule presets from the server. */
 export function usePulsePresets() {
   const transport = useTransport();
   return useQuery<PulsePreset[]>({

@@ -28,12 +28,26 @@ vi.mock('@/layers/entities/binding/model/use-bindings', () => ({
   useBindings: () => mockBindings(),
 }));
 
-// Mock app store — capture setRelayOpen / setMeshOpen calls
+// Mock useMcpConfig
+const mockMcpConfig = vi.fn<() => { data: { servers: { name: string; type: string }[] } | undefined }>(() => ({
+  data: { servers: [] },
+}));
+vi.mock('@/layers/entities/agent/model/use-mcp-config', () => ({
+  useMcpConfig: () => mockMcpConfig(),
+}));
+
+// Mock app store — capture setRelayOpen / setMeshOpen / setAgentDialogOpen calls
 const mockSetRelayOpen = vi.fn();
 const mockSetMeshOpen = vi.fn();
+const mockSetAgentDialogOpen = vi.fn();
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { setRelayOpen: mockSetRelayOpen, setMeshOpen: mockSetMeshOpen };
+    const state = {
+      setRelayOpen: mockSetRelayOpen,
+      setMeshOpen: mockSetMeshOpen,
+      setAgentDialogOpen: mockSetAgentDialogOpen,
+      selectedCwd: null,
+    };
     return selector ? selector(state) : state;
   },
 }));
@@ -122,6 +136,7 @@ describe('ConnectionsView', () => {
     mockRelayAdapters.mockReturnValue({ data: [] });
     mockRegisteredAgents.mockReturnValue({ data: { agents: [] } });
     mockBindings.mockReturnValue({ data: [] });
+    mockMcpConfig.mockReturnValue({ data: { servers: [] } });
   });
 
   afterEach(() => {
@@ -185,14 +200,16 @@ describe('ConnectionsView', () => {
     expect(screen.getByText('Mesh disabled for this agent')).toBeInTheDocument();
   });
 
-  it('shows empty state when both sections hidden', () => {
+  it('hides Adapters and Agents sections when both disabled-by-server, but still shows Tools', () => {
     const toolStatus: AgentToolStatus = {
       ...enabledToolStatus,
       relay: 'disabled-by-server',
       mesh: 'disabled-by-server',
     };
     render(<ConnectionsView toolStatus={toolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
-    expect(screen.getByText('No connections configured')).toBeInTheDocument();
+    expect(screen.queryByText('Adapters')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agents')).not.toBeInTheDocument();
+    expect(screen.getByText('Tools')).toBeInTheDocument();
   });
 
   it('Open Relay button calls setRelayOpen(true)', () => {

@@ -14,6 +14,7 @@ import type {
   CommandRegistry,
   PermissionMode,
 } from '@dorkos/shared/types';
+import type { RelayCore } from '@dorkos/relay';
 import { scenarioStore } from './scenario-store.js';
 
 /**
@@ -28,6 +29,7 @@ export class TestModeRuntime implements AgentRuntime {
   readonly type = 'test-mode' as const;
 
   private _sessions = new Map<string, SessionOpts>();
+  private _relay: RelayCore | null = null;
 
   ensureSession(sessionId: string, opts: SessionOpts): void {
     this._sessions.set(sessionId, opts);
@@ -56,13 +58,30 @@ export class TestModeRuntime implements AgentRuntime {
     yield* scenario(content);
   }
 
+  setRelay(relay: RelayCore): void {
+    this._relay = relay;
+  }
+
   watchSession(
     _sessionId: string,
     _projectDir: string,
-    _callback: (event: StreamEvent) => void,
-    _clientId?: string,
+    callback: (event: StreamEvent) => void,
+    clientId?: string,
   ): () => void {
-    return () => {};
+    if (!this._relay || !clientId) return () => {};
+    // Subscribe to relay.human.console.{clientId} and forward events to the callback.
+    // Mirrors the behavior of SessionBroadcaster.registerCallback() used by ClaudeCodeRuntime.
+    const subject = `relay.human.console.${clientId}`;
+    return this._relay.subscribe(subject, (envelope) => {
+      callback({
+        type: 'relay_message',
+        data: {
+          messageId: (envelope as Record<string, unknown>).id,
+          payload: (envelope as Record<string, unknown>).payload,
+          subject: (envelope as Record<string, unknown>).subject,
+        },
+      } as StreamEvent);
+    });
   }
 
   async listSessions(_projectDir: string): Promise<Session[]> {
@@ -124,6 +143,11 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   getInternalSessionId(_id: string): string | undefined {
+    return undefined;
+  }
+
+  /** Required by AgentRuntimeLike (relay package) for SDK session ID lookup. */
+  getSdkSessionId(_id: string): string | undefined {
     return undefined;
   }
 

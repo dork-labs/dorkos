@@ -52,6 +52,23 @@ export interface AdapterListItem {
   status: AdapterStatus;
 }
 
+/** A single MCP server entry — from `.mcp.json` (config only) or SDK (with live status). */
+export interface McpServerEntry {
+  name: string;
+  type: 'stdio' | 'sse' | 'http';
+  /** Live connection status reported by the Claude Agent SDK after a session runs. */
+  status?: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
+  /** Error message populated when status === 'failed'. */
+  error?: string;
+  /** Config scope: 'project' | 'user' | 'local' | 'claudeai' | 'managed'. */
+  scope?: string;
+}
+
+/** Response shape for the `GET /api/mcp-config` endpoint. */
+export interface McpConfigResponse {
+  servers: McpServerEntry[];
+}
+
 /** A lifecycle event recorded for an adapter instance. */
 export interface AdapterEvent {
   id: string;
@@ -340,6 +357,9 @@ export interface Transport {
   ): Promise<UploadResult[]>;
 
   // --- Admin Operations ---
+
+  /** Read MCP server entries from `.mcp.json` in the given project directory. */
+  getMcpConfig(projectPath: string): Promise<McpConfigResponse>;
 
   /** Initiate a factory reset: delete all DorkOS data and restart the server. */
   resetAllData(confirm: string): Promise<{ message: string }>;

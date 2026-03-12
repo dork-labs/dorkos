@@ -6,6 +6,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
+import type { PulsePreset } from '@dorkos/shared/types';
 import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { CreateScheduleDialog } from '../ui/CreateScheduleDialog';
@@ -14,6 +15,38 @@ const MOCK_AGENTS = [
   { id: 'agent-1', name: 'api-bot', projectPath: '/projects/api', icon: '🤖', color: '#6366f1' },
   { id: 'agent-2', name: 'test-bot', projectPath: '/projects/test', icon: '🧪', color: '#22c55e' },
 ];
+
+const MOCK_PRESETS: PulsePreset[] = [
+  { id: 'health-check', name: 'Health Check', description: 'Desc', prompt: 'Prompt health', cron: '0 8 * * 1', timezone: 'UTC', category: 'maintenance' },
+  { id: 'docs-sync', name: 'Docs Sync', description: 'Desc', prompt: 'Prompt docs', cron: '0 10 * * *', timezone: 'UTC', category: 'documentation' },
+];
+
+const mockPulsePresetDialog = vi.fn().mockReturnValue({
+  pendingPreset: null,
+  externalTrigger: false,
+  clear: vi.fn(),
+});
+
+vi.mock('@/layers/entities/pulse', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/pulse')>();
+  return {
+    ...actual,
+    usePulsePresetDialog: () => mockPulsePresetDialog(),
+    usePulsePresets: () => ({ data: MOCK_PRESETS, isLoading: false, isError: false }),
+  };
+});
+
+// Mock PresetGallery to render a simple selectable list — avoids needing full TanStack Query setup
+// and lets tests click preset names directly or use "Start from scratch"
+vi.mock('../ui/PresetGallery', () => ({
+  PresetGallery: ({ onSelect }: { onSelect?: (preset: PulsePreset) => void }) => (
+    <div data-testid="preset-gallery">
+      {MOCK_PRESETS.map((p) => (
+        <button key={p.id} onClick={() => onSelect?.(p)}>{p.name}</button>
+      ))}
+    </div>
+  ),
+}));
 
 vi.mock('cronstrue', () => ({
   default: {
@@ -67,6 +100,11 @@ describe('CreateScheduleDialog', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPulsePresetDialog.mockReturnValue({
+      pendingPreset: null,
+      externalTrigger: false,
+      clear: vi.fn(),
+    });
   });
 
   afterEach(() => {
@@ -144,6 +182,9 @@ describe('CreateScheduleDialog', () => {
         <CreateScheduleDialog open={true} onOpenChange={onOpenChange} />
       </Wrapper>
     );
+
+    // Advance past preset-picker step to the form
+    fireEvent.click(screen.getByText('Start from scratch'));
 
     fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
       target: { value: 'Nightly build' },
@@ -246,6 +287,9 @@ describe('CreateScheduleDialog', () => {
       </Wrapper>
     );
 
+    // Advance past preset-picker step to the form
+    fireEvent.click(screen.getByText('Start from scratch'));
+
     fireEvent.click(screen.getByLabelText('Full autonomy'));
 
     expect(
@@ -268,6 +312,8 @@ describe('CreateScheduleDialog', () => {
         </Wrapper>
       );
 
+      fireEvent.click(screen.getByText('Start from scratch'));
+
       await waitFor(() => {
         expect(screen.getByText('Select an agent...')).toBeTruthy();
       });
@@ -288,6 +334,8 @@ describe('CreateScheduleDialog', () => {
         </Wrapper>
       );
 
+      fireEvent.click(screen.getByText('Start from scratch'));
+
       await waitFor(() => {
         expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
       });
@@ -304,6 +352,8 @@ describe('CreateScheduleDialog', () => {
           <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
         </Wrapper>
       );
+
+      fireEvent.click(screen.getByText('Start from scratch'));
 
       await waitFor(() => {
         expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
@@ -327,6 +377,8 @@ describe('CreateScheduleDialog', () => {
           <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
         </Wrapper>
       );
+
+      fireEvent.click(screen.getByText('Start from scratch'));
 
       await waitFor(() => {
         expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
@@ -352,6 +404,8 @@ describe('CreateScheduleDialog', () => {
         </Wrapper>
       );
 
+      fireEvent.click(screen.getByText('Start from scratch'));
+
       await waitFor(() => {
         expect(screen.getByText(/No agents registered yet/)).toBeTruthy();
       });
@@ -371,6 +425,8 @@ describe('CreateScheduleDialog', () => {
           <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
         </Wrapper>
       );
+
+      fireEvent.click(screen.getByText('Start from scratch'));
 
       // Open combobox dropdown and select agent
       await waitFor(() => {
@@ -415,6 +471,8 @@ describe('CreateScheduleDialog', () => {
           <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
         </Wrapper>
       );
+
+      fireEvent.click(screen.getByText('Start from scratch'));
 
       await waitFor(() => {
         expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
@@ -466,6 +524,83 @@ describe('CreateScheduleDialog', () => {
       await waitFor(() => {
         expect(screen.getByText('api-bot')).toBeTruthy();
       });
+    });
+  });
+
+  describe('two-step flow', () => {
+    it('opens at preset-picker step by default (create mode)', () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      expect(screen.getByText('Start from scratch')).toBeTruthy();
+    });
+
+    it('opens directly at form step in edit mode', () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      const schedule = createMockSchedule({ id: 's1', name: 'My Schedule' });
+      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} editSchedule={schedule} /></Wrapper>);
+      expect(screen.queryByText('Start from scratch')).toBeNull();
+      expect(screen.getByText('Edit Schedule')).toBeTruthy();
+    });
+
+    it('advances to form step when a preset card is clicked', async () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      // PresetGallery mock renders buttons with preset names
+      fireEvent.click(screen.getByText('Health Check'));
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Health Check')).toBeTruthy();
+      });
+      expect(screen.getByDisplayValue('Prompt health')).toBeTruthy();
+    });
+
+    it('advances to empty form when "Start from scratch" is clicked', () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      fireEvent.click(screen.getByText('Start from scratch'));
+      expect(screen.getByPlaceholderText('Daily code review')).toBeTruthy();
+      expect((screen.getByPlaceholderText('Daily code review') as HTMLInputElement).value).toBe('');
+    });
+
+    it('returns to picker step when Back is clicked', () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      fireEvent.click(screen.getByText('Start from scratch'));
+      fireEvent.click(screen.getByLabelText('Back to preset picker'));
+      expect(screen.getByText('Start from scratch')).toBeTruthy();
+    });
+
+    it('opens at form step when externalTrigger fires with pendingPreset', async () => {
+      const clearMock = vi.fn();
+      mockPulsePresetDialog.mockReturnValue({
+        pendingPreset: MOCK_PRESETS[0],
+        externalTrigger: true,
+        clear: clearMock,
+      });
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Health Check')).toBeTruthy();
+      });
+      expect(clearMock).toHaveBeenCalled();
+    });
+
+    it('resets to preset-picker step when dialog closes and reopens', () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      const { rerender } = render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      // Advance to form
+      fireEvent.click(screen.getByText('Start from scratch'));
+      // Close dialog
+      rerender(<Wrapper><CreateScheduleDialog open={false} onOpenChange={vi.fn()} /></Wrapper>);
+      // Reopen dialog
+      rerender(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      expect(screen.getByText('Start from scratch')).toBeTruthy();
     });
   });
 });

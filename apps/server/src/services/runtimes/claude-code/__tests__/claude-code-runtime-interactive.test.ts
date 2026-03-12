@@ -79,6 +79,7 @@ function withQueryMethods<T extends object>(obj: T): T {
   return Object.assign(obj, {
     supportedModels: vi.fn().mockResolvedValue([]),
     setPermissionMode: vi.fn().mockResolvedValue(undefined),
+    mcpServerStatus: vi.fn().mockResolvedValue([]),
   });
 }
 

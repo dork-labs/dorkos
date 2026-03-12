@@ -12,3 +12,4 @@ export { useAgentVisual } from './model/use-agent-visual';
 export type { AgentVisual } from './model/use-agent-visual';
 export { useAgentToolStatus } from './model/use-agent-tool-status';
 export type { ChipState, AgentToolStatus } from './model/use-agent-tool-status';
+export { useMcpConfig } from './model/use-mcp-config';

@@ -7,10 +7,9 @@ import {
   SelectContent,
   SelectItem,
 } from '@/layers/shared/ui';
-import { useCreateSchedule } from '@/layers/entities/pulse';
+import { useCreateSchedule, usePulsePresets } from '@/layers/entities/pulse';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
-import { usePulsePresets } from '../model/use-pulse-presets';
-import { PresetCard } from './PresetCard';
+import { PresetCard } from '@/layers/features/pulse';
 
 interface PulsePresetsStepProps {
   onStepComplete: () => void;
@@ -147,8 +146,9 @@ export function PulsePresetsStep({ onStepComplete, agents }: PulsePresetsStepPro
             <PresetCard
               key={preset.id}
               preset={preset}
-              enabled={resolvedEnabled.has(preset.id)}
-              onToggle={() => handleToggle(preset.id)}
+              variant="toggle"
+              checked={resolvedEnabled.has(preset.id)}
+              onCheckedChange={() => handleToggle(preset.id)}
             />
           ))}
         </div>

@@ -256,6 +256,7 @@ export async function* executeSdkQuery(
       while (session.eventQueue.length > 0) {
         const queuedEvent = session.eventQueue.shift()!;
         if (queuedEvent.type === 'done') emittedDone = true;
+        eventCount++;
         yield queuedEvent;
       }
 

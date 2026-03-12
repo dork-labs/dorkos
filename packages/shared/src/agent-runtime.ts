@@ -265,6 +265,16 @@ export interface AgentRuntime {
   /** Register a factory that produces a fresh MCP tool server per query. */
   setMcpServerFactory?(factory: () => Record<string, unknown>): void;
 
+  /**
+   * Return last-known MCP server status for a project path, or null if not yet available.
+   *
+   * Implement this to surface live connectivity status (connected/failed/pending) in the UI.
+   * The default fallback is `.mcp.json` config-only parsing (no connectivity data).
+   *
+   * @param cwd - Absolute project directory path
+   */
+  getMcpStatus?(cwd: string): import('./transport.js').McpServerEntry[] | null;
+
   // --- Dependency injection (optional) ---
 
   /** Inject an agent registry for peer-agent context and agent manifest resolution. */

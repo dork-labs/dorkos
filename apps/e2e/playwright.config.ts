@@ -8,7 +8,8 @@ const VITE_PORT = process.env.VITE_PORT || '4241';
 // with the real server when both are running locally.
 const MOCK_PORT = process.env.DORKOS_MOCK_PORT || '4243';
 // Vite client for mock tests — proxies /api to MOCK_PORT instead of PORT.
-const MOCK_VITE_PORT = process.env.DORKOS_MOCK_VITE_PORT || '4244';
+// NOTE: port 4244 is taken by @dorkos/site (Next.js marketing site).
+const MOCK_VITE_PORT = process.env.DORKOS_MOCK_VITE_PORT || '4248';
 
 export default defineConfig({
   testDir: './tests',
@@ -54,7 +55,7 @@ export default defineConfig({
     // Only started when the mock-browser project runs — separated by port so it
     // does not interfere with the real server used by integration tests.
     {
-      command: `DORKOS_TEST_RUNTIME=true DORKOS_PORT=${MOCK_PORT} dotenv -- turbo dev --filter=@dorkos/server`,
+      command: `DORKOS_TEST_RUNTIME=true DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} DORK_HOME=/tmp/dorkos-test-mode DORKOS_RELAY_ENABLED=true dotenv -- turbo dev --filter=@dorkos/server`,
       url: `http://localhost:${MOCK_PORT}/api/health`,
       name: 'Express API (test-mode)',
       timeout: 120_000,

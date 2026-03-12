@@ -137,7 +137,14 @@ router.patch('/:id', async (req, res) => {
 });
 
 /**
- * Publish a user message to the Relay bus and return a 202 receipt.
+ * Publish a user message to the Relay bus and await full pipeline delivery.
+ *
+ * Despite the name suggesting a fire-and-forget enqueue, this function is
+ * **synchronous end-to-end** — `relayCore.publish()` blocks until the full
+ * agent response stream has been processed by the pipeline. The caller
+ * receives the receipt only after delivery completes, not at enqueue time.
+ * This is intentional: it guarantees ordering, enforces call budgets, and
+ * ensures trace completeness before returning.
  *
  * Registers a console endpoint for the client, publishes the message
  * to `relay.agent.{sessionId}`, and returns the publish receipt.
@@ -222,13 +229,21 @@ router.post('/:id/messages', async (req, res) => {
     });
   }
 
-  // Relay path: publish to message bus and return 202 receipt
+  // Relay path: publish to message bus and return 202 receipt.
+  // Note: publishViaRelay() is synchronous end-to-end — the relay pipeline processes
+  // the full agent stream before returning. The 202 is sent after delivery completes,
+  // not at enqueue time. durationMs in the log reflects the full pipeline round-trip.
   const relayCore = req.app.locals.relayCore as RelayCore | undefined;
   if (isRelayEnabled() && relayCore) {
-    logger.info('[POST /messages] relay path', { sessionId, contentLength: content.length });
+    logger.info('[POST /messages] relay dispatch', { sessionId, contentLength: content.length });
+    const relayStart = Date.now();
     try {
       const receipt = await publishViaRelay(relayCore, sessionId, clientId, content, cwd, correlationId);
-      logger.debug('[POST /messages] relay published', { sessionId, messageId: receipt.messageId });
+      logger.debug('[POST /messages] relay pipeline done', {
+        sessionId,
+        messageId: receipt.messageId,
+        durationMs: Date.now() - relayStart,
+      });
       return res.status(202).json(receipt);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Relay publish failed';
@@ -364,6 +379,13 @@ router.get('/:id/stream', async (req, res) => {
     (event) => sendSSEEvent(res, event),
     clientId,
   );
+
+  // Signal to client that relay subscription is active and ready to receive.
+  // Mirrors registerClient() in SessionBroadcaster. Only sent when relay is
+  // configured (app.locals.relayCore) and a clientId is present (relay path).
+  if (req.app.locals.relayCore && clientId) {
+    res.write(`event: stream_ready\ndata: ${JSON.stringify({ clientId })}\n\n`);
+  }
 
   res.on('close', () => unsubscribe());
 });

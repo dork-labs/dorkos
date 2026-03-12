@@ -83,6 +83,7 @@ vi.mock('@/layers/entities/agent', () => ({
   useAgentVisual: () => ({ color: 'hsl(0,70%,55%)', emoji: '🤖' }),
   useResolvedAgents: () => ({ data: undefined }),
   useAgentToolStatus: () => mockToolStatus,
+  useMcpConfig: () => ({ data: undefined }),
 }));
 
 // Mock usePulseEnabled

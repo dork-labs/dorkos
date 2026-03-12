@@ -412,7 +412,10 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         // Without this, streamReadyRef stays true after the first message and all subsequent sends skip the handshake.
         streamReadyRef.current = false;
         await waitForStreamReady(streamReadyRef, 5000);
-        // Relay path: POST returns 202 receipt, response chunks arrive via EventSource
+        // Relay path: POST blocks for the full agent turn — relayCore.publish() is
+        // synchronous end-to-end (awaits the complete pipeline before returning).
+        // The 202 receipt arrives only after delivery completes, not at enqueue time.
+        // Response chunks stream independently via EventSource (relay_message events).
         await transport.sendMessageRelay(targetSessionId, finalContent, {
           clientId: clientIdRef.current,
           correlationId,

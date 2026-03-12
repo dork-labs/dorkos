@@ -1,53 +1,40 @@
 import { Button } from '@/layers/shared/ui';
+import type { PulsePreset } from '@/layers/entities/pulse';
+import { PresetGallery } from './PresetGallery';
 
 interface PulseEmptyStateProps {
-  onCreateSchedule?: () => void;
+  /** Called when the user clicks a preset card's CTA to create with that preset. */
+  onCreateWithPreset: (preset: PulsePreset) => void;
+  /** Called when the user clicks "New custom schedule" to open a blank form. */
+  onCreateBlank: () => void;
 }
 
-/** Rich empty state for Pulse — faded schedule preview with a "Create Schedule" CTA. */
-export function PulseEmptyState({ onCreateSchedule }: PulseEmptyStateProps) {
+/**
+ * Empty state for the Pulse panel — shows all available presets as actionable cards
+ * plus a fallback to open a blank schedule form.
+ *
+ * @param onCreateWithPreset - Called with a preset when user selects one
+ * @param onCreateBlank - Called when user wants a blank schedule form
+ */
+export function PulseEmptyState({ onCreateWithPreset, onCreateBlank }: PulseEmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-8 md:py-16">
-      {/* Faded schedule preview — hidden on mobile to keep CTA above the fold */}
-      <div className="mb-6 hidden w-full max-w-md select-none pointer-events-none opacity-40 md:block">
-        <div className="space-y-2">
-          <div className="rounded-lg border p-3">
-            <div className="flex items-center gap-3">
-              <div className="size-2 rounded-full bg-emerald-500" />
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Daily Health Check</span>
-                  <span className="text-xs text-muted-foreground">Every day at 9:00 AM</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Run test suite and report failures
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-lg border p-3">
-            <div className="flex items-center gap-3">
-              <div className="size-2 rounded-full bg-blue-500" />
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Weekly Code Review</span>
-                  <span className="text-xs text-muted-foreground">Every Monday at 8:00 AM</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Review open PRs and summarize changes
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <h3 className="mb-2 text-lg font-medium">Automate recurring tasks</h3>
+    <div className="flex flex-col items-center justify-center px-6 py-8 md:py-12">
+      <h3 className="mb-2 text-lg font-medium">No schedules yet.</h3>
       <p className="mb-6 max-w-sm text-center text-sm text-muted-foreground">
-        Schedules run Claude Code on a cron — health checks, audits, code reviews, and more.
+        Automate your workflows with Pulse.
       </p>
 
-      <Button onClick={onCreateSchedule}>Create Schedule</Button>
+      <div className="w-full max-w-lg">
+        <PresetGallery onSelect={onCreateWithPreset} />
+      </div>
+
+      <Button
+        variant="ghost"
+        className="mt-4"
+        onClick={onCreateBlank}
+      >
+        New custom schedule
+      </Button>
     </div>
   );
 }

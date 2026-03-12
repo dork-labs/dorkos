@@ -11,7 +11,7 @@ import { PulseStore } from './services/pulse/pulse-store.js';
 import { SchedulerService } from './services/pulse/scheduler-service.js';
 import { createPulseRouter } from './routes/pulse.js';
 import { setPulseEnabled, setPulseInitError } from './services/pulse/pulse-state.js';
-import { RelayCore, AdapterRegistry, SignalEmitter } from '@dorkos/relay';
+import { RelayCore, AdapterRegistry, SignalEmitter, type ClaudeCodeAgentRuntimeLike } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
@@ -84,6 +84,7 @@ async function start() {
   if (env.DORKOS_TEST_RUNTIME) {
     const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
     runtimeRegistry.register(new TestModeRuntime());
+    runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
   } else {
     claudeRuntime = new ClaudeCodeRuntime(env.DORKOS_DEFAULT_CWD);
@@ -110,7 +111,11 @@ async function start() {
 
   // Initialize Relay if enabled
   const relayConfig = configManager.get('relay');
-  const relayEnabled = env.DORKOS_RELAY_ENABLED || relayConfig?.enabled;
+  // Env var wins when explicitly set; fall back to config when not set.
+  // boolFlag defaults to false even when unset, so check process.env directly.
+  const relayEnabled = 'DORKOS_RELAY_ENABLED' in process.env
+    ? env.DORKOS_RELAY_ENABLED
+    : (relayConfig?.enabled ?? false);
 
   // Phase A: core relay infrastructure (RelayCore + TraceStore)
   // AdapterManager construction is deferred to Phase C (after meshCore init)
@@ -178,12 +183,13 @@ async function start() {
 
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
-  // AdapterManager requires ClaudeCodeRuntime (agentManager) — skipped in test mode.
-  if (relayEnabled && relayCore && adapterRegistry && traceStore && claudeRuntime) {
+  // Uses runtimeRegistry.getDefault() so this works in both production (ClaudeCodeRuntime)
+  // and test mode (TestModeRuntime). Both satisfy AgentRuntimeLike structurally.
+  if (relayEnabled && relayCore && adapterRegistry && traceStore) {
     try {
       const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
-        agentManager: claudeRuntime,
+        agentManager: runtimeRegistry.getDefault() as unknown as ClaudeCodeAgentRuntimeLike,
         traceStore,
         pulseStore,
         relayCore,
@@ -294,9 +300,11 @@ async function start() {
   // Finalize app: API 404 catch-all, error handler, and SPA serving
   finalizeApp(app);
 
-  // SessionBroadcaster is owned by ClaudeCodeRuntime — configure relay injection when available.
-  if (relayCore && claudeRuntime) {
-    claudeRuntime.getSessionBroadcaster().setRelay(relayCore);
+  // Inject relay into the active runtime for session watch relay fan-in.
+  // ClaudeCodeRuntime: setRelay() wires SessionBroadcaster (enables registerCallback relay sub).
+  // TestModeRuntime: setRelay() enables relay subscription in watchSession().
+  if (relayCore) {
+    runtimeRegistry.getDefault().setRelay?.(relayCore);
   }
 
   const host = env.DORKOS_HOST;

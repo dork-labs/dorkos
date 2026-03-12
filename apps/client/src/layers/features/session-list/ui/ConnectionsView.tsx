@@ -3,7 +3,8 @@ import { useRelayAdapters } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useBindings } from '@/layers/entities/binding';
 import { useAppStore } from '@/layers/shared/model';
-import type { AgentToolStatus } from '@/layers/entities/agent';
+import type { AgentToolStatus, ChipState } from '@/layers/entities/agent';
+import { useMcpConfig } from '@/layers/entities/agent';
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -25,15 +26,37 @@ const ADAPTER_STATE_COLORS: Record<string, string> = {
   error: 'bg-red-500',
 };
 
+const TOOL_STATUS_COLORS: Record<ChipState, string> = {
+  enabled: 'bg-green-500',
+  'disabled-by-agent': 'bg-muted-foreground/20',
+  'disabled-by-server': 'bg-muted-foreground/20',
+};
+
+const MCP_STATUS_COLORS: Partial<Record<string, string>> = {
+  connected: 'bg-green-500',
+  failed: 'bg-red-500',
+  'needs-auth': 'bg-amber-500',
+  pending: 'bg-amber-500',
+  disabled: 'bg-muted-foreground/20',
+};
+
+const DORKOS_TOOLS = [
+  { key: 'pulse' as const, label: 'Pulse' },
+  { key: 'relay' as const, label: 'Relay' },
+  { key: 'mesh' as const, label: 'Mesh' },
+] as const;
+
 /** Read-only adapter and agent summary for the sidebar Connections tab. */
 export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
-  const { setRelayOpen, setMeshOpen } = useAppStore();
+  const { setRelayOpen, setMeshOpen, setAgentDialogOpen, selectedCwd } = useAppStore();
   const relayEnabled = toolStatus.relay !== 'disabled-by-server';
   const meshEnabled = toolStatus.mesh !== 'disabled-by-server';
   const { data: adapters = [] } = useRelayAdapters(relayEnabled);
   const { data: bindings = [] } = useBindings();
   const { data: agentsData } = useRegisteredAgents(undefined, meshEnabled);
   const agents = agentsData?.agents ?? [];
+  const { data: mcpConfig } = useMcpConfig(selectedCwd);
+  const mcpServers = mcpConfig?.servers ?? [];
 
   // Show only adapters that are either the built-in CCA (serves all agents) or
   // have a binding to the currently viewed agent.
@@ -50,15 +73,6 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
 
   const showRelaySection = relayEnabled;
   const showMeshSection = meshEnabled;
-
-  // Both sections hidden — nothing to show
-  if (!showRelaySection && !showMeshSection) {
-    return (
-      <div className="flex h-32 items-center justify-center">
-        <p className="text-muted-foreground/60 text-sm">No connections configured</p>
-      </div>
-    );
-  }
 
   return (
     <ScrollArea type="scroll" className="h-full">
@@ -155,6 +169,59 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
             </div>
           </SidebarGroup>
         )}
+
+        {/* Tools section */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
+            Tools
+          </SidebarGroupLabel>
+
+          <SidebarMenu>
+            {DORKOS_TOOLS.map(({ key, label }) => {
+              const state = toolStatus[key];
+              return (
+                <SidebarMenuItem key={key}>
+                  <SidebarMenuButton className="text-sm" onClick={() => setAgentDialogOpen(true)}>
+                    <span
+                      className={cn(
+                        'size-2 shrink-0 rounded-full',
+                        TOOL_STATUS_COLORS[state],
+                      )}
+                    />
+                    <span className="truncate">{label}</span>
+                    <span className="text-muted-foreground/50 ml-auto text-xs">
+                      {state === 'enabled' ? 'enabled' : 'off'}
+                    </span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
+
+            {mcpServers.map((server) => (
+              <SidebarMenuItem key={server.name}>
+                <SidebarMenuButton className="text-sm">
+                  <span
+                    className={cn(
+                      'size-2 shrink-0 rounded-full',
+                      MCP_STATUS_COLORS[server.status ?? ''] ?? 'bg-muted-foreground/40',
+                    )}
+                  />
+                  <span className="truncate">{server.name}</span>
+                  <span className="text-muted-foreground/50 ml-auto text-xs">mcp</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+
+          <div className="px-3 py-2">
+            <button
+              onClick={() => setAgentDialogOpen(true)}
+              className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+            >
+              Edit capabilities →
+            </button>
+          </div>
+        </SidebarGroup>
       </div>
     </ScrollArea>
   );

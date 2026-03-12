@@ -34,6 +34,24 @@ vi.mock('../ui/RunHistoryPanel', () => ({
   ),
 }));
 
+// Mock PulseEmptyState to expose callbacks as buttons for testing
+vi.mock('../ui/PulseEmptyState', () => ({
+  PulseEmptyState: ({
+    onCreateWithPreset,
+    onCreateBlank,
+  }: {
+    onCreateWithPreset: (preset: { id: string; name: string; description: string; prompt: string; cron: string; timezone: string; category: string }) => void;
+    onCreateBlank: () => void;
+  }) => (
+    <div data-testid="pulse-empty-state">
+      <button onClick={onCreateBlank}>Create Schedule</button>
+      <button onClick={() => onCreateWithPreset({ id: 'p1', name: 'Preset', description: '', prompt: '', cron: '0 * * * *', timezone: 'UTC', category: 'maintenance' })}>
+        Use Preset
+      </button>
+    </div>
+  ),
+}));
+
 // Mock ScheduleRow so PulsePanel tests focus on state orchestration.
 // Exposes onEdit and onToggleExpand as buttons so tests can invoke them directly.
 vi.mock('../ui/ScheduleRow', () => ({

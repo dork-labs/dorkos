@@ -101,11 +101,11 @@
       "specFile": "tests/chat-mock.spec.ts",
       "feature": "chat-mock.spec.ts",
       "description": "scenario endpoint rejects unknown scenario names, renders tool call card for tool-call scenario, renders streamed text response from simple-text scenario",
-      "lastRun": "2026-03-12T03:36:04.055Z",
+      "lastRun": "2026-03-12T11:23:56.946Z",
       "lastStatus": "failed",
-      "runCount": 2,
+      "runCount": 5,
       "passCount": 0,
-      "failCount": 2,
+      "failCount": 5,
       "relatedCode": [],
       "lastModified": ""
     }
@@ -281,6 +281,33 @@
       "failed": 2,
       "skipped": 0,
       "duration": 20969
+    },
+    {
+      "id": "2026-03-12T10-22-51",
+      "timestamp": "2026-03-12T10:22:51.660Z",
+      "total": 3,
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 21113
+    },
+    {
+      "id": "2026-03-12T10-49-18",
+      "timestamp": "2026-03-12T10:49:18.105Z",
+      "total": 3,
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 17754
+    },
+    {
+      "id": "2026-03-12T11-23-56",
+      "timestamp": "2026-03-12T11:23:56.946Z",
+      "total": 3,
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 21976
     }
   ]
 }
