@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useRelayAdapters } from '@/layers/entities/relay';
 import { useRegisteredAgents, useAgentAccess } from '@/layers/entities/mesh';
 import { useBindings } from '@/layers/entities/binding';
@@ -49,6 +50,36 @@ const DORKOS_TOOLS = [
 const AGENT_CAP = 3;
 const MCP_CAP = 4;
 
+const EASE_OUT = [0, 0, 0.2, 1] as const;
+
+const overflowCollapseVariants = {
+  initial: { height: 0, opacity: 0 },
+  animate: { height: 'auto', opacity: 1 },
+  exit: { height: 0, opacity: 0 },
+} as const;
+const overflowCollapseTransition = { duration: 0.2, ease: EASE_OUT } as const;
+
+const sectionVisibilityVariants = {
+  initial: { height: 0, opacity: 0 },
+  animate: { height: 'auto', opacity: 1 },
+  exit: { height: 0, opacity: 0 },
+} as const;
+const sectionVisibilityTransition = { duration: 0.25, ease: EASE_OUT } as const;
+
+const overflowTextVariants = {
+  initial: { opacity: 0, y: 3 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -3 },
+} as const;
+const overflowTextTransition = { duration: 0.12, ease: EASE_OUT } as const;
+
+const emptyStateVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+} as const;
+const emptyStateTransition = { duration: 0.15, ease: EASE_OUT } as const;
+
 /** Read-only adapter and agent summary for the sidebar Connections tab. */
 export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   const { setRelayOpen, setMeshOpen, setAgentDialogOpen, selectedCwd } = useAppStore();
@@ -97,6 +128,9 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   const cappedAgents = visibleAgents.slice(0, AGENT_CAP);
   const agentOverflow = Math.max(0, visibleAgents.length - AGENT_CAP);
 
+  const [agentsExpanded, setAgentsExpanded] = useState(false);
+  const [mcpExpanded, setMcpExpanded] = useState(false);
+
   const showRelaySection = relayEnabled;
   const showMeshSection = meshEnabled;
 
@@ -104,108 +138,233 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
     <ScrollArea type="scroll" className="h-full">
       <div className="pr-1">
         {/* Adapters section */}
-        {showRelaySection && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
-              Adapters
-            </SidebarGroupLabel>
+        <AnimatePresence initial={false}>
+          {showRelaySection && (
+            <motion.div
+              variants={sectionVisibilityVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={sectionVisibilityTransition}
+              className="overflow-hidden"
+            >
+              <SidebarGroup>
+                <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
+                  Adapters
+                </SidebarGroupLabel>
 
-            {toolStatus.relay === 'disabled-by-agent' ? (
-              <div className="px-3 py-2">
-                <p className="text-muted-foreground/60 text-sm">Relay disabled for this agent</p>
-              </div>
-            ) : visibleAdapters.length === 0 ? (
-              <div className="px-3 py-2">
-                <p className="text-muted-foreground/60 text-sm">No adapters configured</p>
-              </div>
-            ) : (
-              <SidebarMenu>
-                {visibleAdapters.map((adapter) => (
-                  <SidebarMenuItem key={adapter.config.id}>
-                    <SidebarMenuButton
-                      onClick={() => setRelayOpen(true)}
-                      className="text-sm"
+                <AnimatePresence mode="wait" initial={false}>
+                  {toolStatus.relay === 'disabled-by-agent' ? (
+                    <motion.div
+                      key="relay-disabled"
+                      variants={emptyStateVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      transition={emptyStateTransition}
+                      className="px-3 py-2"
                     >
-                      <span
-                        className={cn(
-                          'size-2 shrink-0 rounded-full',
-                          ADAPTER_STATE_COLORS[adapter.status.state] ?? 'bg-muted-foreground/20'
-                        )}
-                      />
-                      <span className="truncate">{adapter.status.displayName}</span>
-                      <span className="text-muted-foreground/50 ml-auto text-xs capitalize">
-                        {adapter.status.state}
-                      </span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            )}
+                      <p className="text-muted-foreground/60 text-sm">
+                        Relay disabled for this agent
+                      </p>
+                    </motion.div>
+                  ) : visibleAdapters.length === 0 ? (
+                    <motion.div
+                      key="relay-empty"
+                      variants={emptyStateVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      transition={emptyStateTransition}
+                      className="px-3 py-2"
+                    >
+                      <p className="text-muted-foreground/60 text-sm">No adapters configured</p>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="relay-list"
+                      variants={emptyStateVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      transition={emptyStateTransition}
+                    >
+                      <SidebarMenu>
+                        {visibleAdapters.map((adapter) => (
+                          <SidebarMenuItem key={adapter.config.id}>
+                            <SidebarMenuButton
+                              onClick={() => setRelayOpen(true)}
+                              className="text-sm"
+                            >
+                              <span
+                                className={cn(
+                                  'size-2 shrink-0 rounded-full',
+                                  ADAPTER_STATE_COLORS[adapter.status.state] ??
+                                    'bg-muted-foreground/20',
+                                  adapter.status.state === 'connected' && 'animate-pulse',
+                                )}
+                              />
+                              <span className="truncate">{adapter.status.displayName}</span>
+                              <span className="text-muted-foreground/50 ml-auto text-xs capitalize">
+                                {adapter.status.state}
+                              </span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        ))}
+                      </SidebarMenu>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-            <div className="px-3 py-2">
-              <button
-                onClick={() => setRelayOpen(true)}
-                className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-              >
-                Open Relay →
-              </button>
-            </div>
-          </SidebarGroup>
-        )}
+                <div className="px-3 py-2">
+                  <button
+                    onClick={() => setRelayOpen(true)}
+                    className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+                  >
+                    Open Relay →
+                  </button>
+                </div>
+              </SidebarGroup>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Agents section */}
-        {showMeshSection && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
-              Agents
-            </SidebarGroupLabel>
+        <AnimatePresence initial={false}>
+          {showMeshSection && (
+            <motion.div
+              variants={sectionVisibilityVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={sectionVisibilityTransition}
+              className="overflow-hidden"
+            >
+              <SidebarGroup>
+                <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
+                  Agents
+                </SidebarGroupLabel>
 
-            {toolStatus.mesh === 'disabled-by-agent' ? (
-              <div className="px-3 py-2">
-                <p className="text-muted-foreground/60 text-sm">Mesh disabled for this agent</p>
-              </div>
-            ) : visibleAgents.length === 0 ? (
-              <div className="px-3 py-2">
-                <p className="text-muted-foreground/60 text-sm">No agents registered</p>
-              </div>
-            ) : (
-              <SidebarMenu>
-                {cappedAgents.map((agent) => (
-                  <SidebarMenuItem key={agent.id}>
-                    <SidebarMenuButton
-                      onClick={() => setMeshOpen(true)}
-                      className="text-sm"
+                <AnimatePresence mode="wait" initial={false}>
+                  {toolStatus.mesh === 'disabled-by-agent' ? (
+                    <motion.div
+                      key="mesh-disabled"
+                      variants={emptyStateVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      transition={emptyStateTransition}
+                      className="px-3 py-2"
                     >
-                      {/* Registered agents show a neutral dot — health status requires a separate topology query */}
-                      <span className="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
-                      <span className="truncate">{agent.name}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            )}
+                      <p className="text-muted-foreground/60 text-sm">
+                        Mesh disabled for this agent
+                      </p>
+                    </motion.div>
+                  ) : visibleAgents.length === 0 ? (
+                    <motion.div
+                      key="mesh-empty"
+                      variants={emptyStateVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      transition={emptyStateTransition}
+                      className="px-3 py-2"
+                    >
+                      <p className="text-muted-foreground/60 text-sm">No agents registered</p>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="mesh-list"
+                      variants={emptyStateVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      transition={emptyStateTransition}
+                    >
+                      {/* Always-visible capped agents */}
+                      <SidebarMenu>
+                        {cappedAgents.map((agent) => (
+                          <SidebarMenuItem key={agent.id}>
+                            <SidebarMenuButton
+                              onClick={() => setMeshOpen(true)}
+                              className="text-sm"
+                            >
+                              {/* Registered agents show a neutral dot — health status requires a separate topology query */}
+                              <span className="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+                              <span className="truncate">{agent.name}</span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        ))}
+                      </SidebarMenu>
 
-            {agentOverflow > 0 && (
-              <div className="px-3 py-1">
-                <button
-                  onClick={() => setMeshOpen(true)}
-                  className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-                >
-                  + {agentOverflow} more {agentOverflow === 1 ? 'agent' : 'agents'} reachable →
-                </button>
-              </div>
-            )}
+                      {/* Overflow agents — height-collapse on expand/collapse */}
+                      <AnimatePresence initial={false}>
+                        {agentsExpanded && (
+                          <motion.div
+                            variants={overflowCollapseVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            transition={overflowCollapseTransition}
+                            className="overflow-hidden"
+                          >
+                            <SidebarMenu>
+                              {visibleAgents.slice(AGENT_CAP).map((agent) => (
+                                <SidebarMenuItem key={agent.id}>
+                                  <SidebarMenuButton
+                                    onClick={() => setMeshOpen(true)}
+                                    className="text-sm"
+                                  >
+                                    <span className="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+                                    <span className="truncate">{agent.name}</span>
+                                  </SidebarMenuButton>
+                                </SidebarMenuItem>
+                              ))}
+                            </SidebarMenu>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-            <div className="px-3 py-2">
-              <button
-                onClick={() => setMeshOpen(true)}
-                className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-              >
-                Open Mesh →
-              </button>
-            </div>
-          </SidebarGroup>
-        )}
+                {agentOverflow > 0 && (
+                  <div className="px-3 py-1">
+                    <button
+                      onClick={() => setAgentsExpanded((prev) => !prev)}
+                      className="text-muted-foreground hover:text-foreground relative text-xs transition-colors"
+                    >
+                      <AnimatePresence mode="wait" initial={false}>
+                        <motion.span
+                          key={agentsExpanded ? 'less' : 'more'}
+                          variants={overflowTextVariants}
+                          initial="initial"
+                          animate="animate"
+                          exit="exit"
+                          transition={overflowTextTransition}
+                          className="block"
+                        >
+                          {agentsExpanded
+                            ? 'Show less'
+                            : `+ ${agentOverflow} more ${agentOverflow === 1 ? 'agent' : 'agents'} reachable →`}
+                        </motion.span>
+                      </AnimatePresence>
+                    </button>
+                  </div>
+                )}
+
+                <div className="px-3 py-2">
+                  <button
+                    onClick={() => setMeshOpen(true)}
+                    className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+                  >
+                    Open Mesh →
+                  </button>
+                </div>
+              </SidebarGroup>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Tools section */}
         <SidebarGroup>
@@ -213,6 +372,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
             Tools
           </SidebarGroupLabel>
 
+          {/* Block 1: DorkOS built-in tools */}
           <SidebarMenu>
             {DORKOS_TOOLS.map(({ key, label }) => {
               const state = toolStatus[key];
@@ -233,7 +393,10 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                 </SidebarMenuItem>
               );
             })}
+          </SidebarMenu>
 
+          {/* Block 2: Always-visible capped MCP servers */}
+          <SidebarMenu>
             {cappedMcpServers.map((server) => (
               <SidebarMenuItem key={server.name}>
                 <SidebarMenuButton className="text-sm">
@@ -241,6 +404,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                     className={cn(
                       'size-2 shrink-0 rounded-full',
                       MCP_STATUS_COLORS[server.status ?? ''] ?? 'bg-muted-foreground/40',
+                      server.status === 'connected' && 'animate-pulse',
                     )}
                   />
                   <span className="truncate">{server.name}</span>
@@ -250,13 +414,59 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
             ))}
           </SidebarMenu>
 
+          {/* Block 3: Overflow MCP servers — height-collapse on expand/collapse */}
+          <AnimatePresence initial={false}>
+            {mcpExpanded && (
+              <motion.div
+                variants={overflowCollapseVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={overflowCollapseTransition}
+                className="overflow-hidden"
+              >
+                <SidebarMenu>
+                  {mcpServers.slice(MCP_CAP).map((server) => (
+                    <SidebarMenuItem key={server.name}>
+                      <SidebarMenuButton className="text-sm">
+                        <span
+                          className={cn(
+                            'size-2 shrink-0 rounded-full',
+                            MCP_STATUS_COLORS[server.status ?? ''] ?? 'bg-muted-foreground/40',
+                            server.status === 'connected' && 'animate-pulse',
+                          )}
+                        />
+                        <span className="truncate">{server.name}</span>
+                        <span className="text-muted-foreground/50 ml-auto text-xs">mcp</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {mcpOverflow > 0 && (
             <div className="px-3 py-1">
               <button
-                onClick={() => setAgentDialogOpen(true)}
-                className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+                onClick={() => setMcpExpanded((prev) => !prev)}
+                className="text-muted-foreground hover:text-foreground relative text-xs transition-colors"
               >
-                + {mcpOverflow} more {mcpOverflow === 1 ? 'server' : 'servers'} →
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={mcpExpanded ? 'less' : 'more'}
+                    variants={overflowTextVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={overflowTextTransition}
+                    className="block"
+                  >
+                    {mcpExpanded
+                      ? 'Show less'
+                      : `+ ${mcpOverflow} more ${mcpOverflow === 1 ? 'server' : 'servers'} →`}
+                  </motion.span>
+                </AnimatePresence>
               </button>
             </div>
           )}

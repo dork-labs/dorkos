@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add motion animations to ConnectionsView
 - Cap MCP servers list at 4 with overflow link to agent settings
 - Cap agents list at 3 with overflow link to Mesh
 - Filter agent connections to reachable-only, so the connections panel only shows agents you can actually reach
