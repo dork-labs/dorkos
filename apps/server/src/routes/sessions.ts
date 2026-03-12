@@ -10,9 +10,7 @@ import {
 } from '@dorkos/shared/schemas';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
-import { isRelayEnabled } from '../services/relay/relay-state.js';
 import { logger } from '../lib/logger.js';
-import type { RelayCore } from '@dorkos/relay';
 
 const vaultRoot = DEFAULT_CWD;
 
@@ -136,68 +134,7 @@ router.patch('/:id', async (req, res) => {
   res.json(session ?? { id: sessionId, permissionMode, model });
 });
 
-/**
- * Publish a user message to the Relay bus and await full pipeline delivery.
- *
- * Despite the name suggesting a fire-and-forget enqueue, this function is
- * **synchronous end-to-end** — `relayCore.publish()` blocks until the full
- * agent response stream has been processed by the pipeline. The caller
- * receives the receipt only after delivery completes, not at enqueue time.
- * This is intentional: it guarantees ordering, enforces call budgets, and
- * ensures trace completeness before returning.
- *
- * Registers a console endpoint for the client, publishes the message
- * to `relay.agent.{sessionId}`, and returns the publish receipt.
- *
- * @param relayCore - The RelayCore instance
- * @param sessionId - Target session UUID
- * @param clientId - Client identifier (from X-Client-Id header)
- * @param content - User message text
- * @param cwd - Optional working directory
- * @param correlationId - Optional per-message correlation ID for relay event filtering
- */
-async function publishViaRelay(
-  relayCore: RelayCore,
-  sessionId: string,
-  clientId: string,
-  content: string,
-  cwd?: string,
-  correlationId?: string,
-): Promise<{ messageId: string; traceId: string }> {
-  const consoleEndpoint = `relay.human.console.${clientId}`;
-
-  // Register the console endpoint (idempotent — catch duplicate registration)
-  try {
-    await relayCore.registerEndpoint(consoleEndpoint);
-  } catch (err) {
-    // Only ignore "already registered" — log real failures
-    const message = err instanceof Error ? err.message : String(err);
-    if (!message.includes('already registered')) {
-      logger.error('publishViaRelay: failed to register console endpoint:', message);
-    }
-  }
-
-  const publishResult = await relayCore.publish(
-    `relay.agent.${sessionId}`,
-    { content, cwd, correlationId },
-    {
-      from: consoleEndpoint,
-      replyTo: consoleEndpoint,
-      budget: {
-        maxHops: 5,
-        ttl: Date.now() + 300_000,
-        callBudgetRemaining: 10,
-      },
-    },
-  );
-
-  return {
-    messageId: publishResult.messageId,
-    traceId: publishResult.messageId,
-  };
-}
-
-// POST /api/sessions/:id/messages - Send message (SSE stream or Relay 202 receipt)
+// POST /api/sessions/:id/messages - Send message (SSE stream)
 router.post('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -206,7 +143,7 @@ router.post('/:id/messages', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { content, cwd, correlationId } = parsed.data;
+  const { content, cwd } = parsed.data;
 
   // Read X-Client-Id header, or generate UUID if missing
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
@@ -229,32 +166,7 @@ router.post('/:id/messages', async (req, res) => {
     });
   }
 
-  // Relay path: publish to message bus and return 202 receipt.
-  // Note: publishViaRelay() is synchronous end-to-end — the relay pipeline processes
-  // the full agent stream before returning. The 202 is sent after delivery completes,
-  // not at enqueue time. durationMs in the log reflects the full pipeline round-trip.
-  const relayCore = req.app.locals.relayCore as RelayCore | undefined;
-  if (isRelayEnabled() && relayCore) {
-    logger.info('[POST /messages] relay dispatch', { sessionId, contentLength: content.length });
-    const relayStart = Date.now();
-    try {
-      const receipt = await publishViaRelay(relayCore, sessionId, clientId, content, cwd, correlationId);
-      logger.debug('[POST /messages] relay pipeline done', {
-        sessionId,
-        messageId: receipt.messageId,
-        durationMs: Date.now() - relayStart,
-      });
-      return res.status(202).json(receipt);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Relay publish failed';
-      logger.warn('[POST /messages] relay publish failed', { sessionId, error: message });
-      return res.status(500).json({ error: message });
-    } finally {
-      runtime.releaseLock(sessionId, clientId);
-    }
-  }
-
-  // Legacy path: stream SSE response on the POST connection
+  // Stream SSE response on the POST connection
   // Idempotent lock release — ensures exactly one release regardless of close/finally ordering
   let lockReleased = false;
   const releaseLockOnce = () => {
@@ -379,13 +291,6 @@ router.get('/:id/stream', async (req, res) => {
     (event) => sendSSEEvent(res, event),
     clientId,
   );
-
-  // Signal to client that relay subscription is active and ready to receive.
-  // Mirrors registerClient() in SessionBroadcaster. Only sent when relay is
-  // configured (app.locals.relayCore) and a clientId is present (relay path).
-  if (req.app.locals.relayCore && clientId) {
-    res.write(`event: stream_ready\ndata: ${JSON.stringify({ clientId })}\n\n`);
-  }
 
   res.on('close', () => unsubscribe());
 });

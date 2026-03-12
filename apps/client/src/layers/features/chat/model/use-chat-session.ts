@@ -2,37 +2,10 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SessionStatusEvent, MessagePart, HistoryMessage, TaskUpdateEvent } from '@dorkos/shared/types';
 import { useTransport, useAppStore } from '@/layers/shared/model';
-import { useRelayEnabled } from '@/layers/entities/relay';
 import { QUERY_TIMING, TIMING } from '@/layers/shared/lib';
 import { insertOptimisticSession } from '@/layers/entities/session';
 import type { ChatMessage, ChatSessionOptions } from './chat-types';
 import { createStreamEventHandler, deriveFromParts } from './stream-event-handler';
-
-/**
- * Poll a ref until it becomes true, with a best-effort timeout.
- * Resolves (never rejects) — caller should proceed after timeout.
- *
- * @param ref - Boolean ref to poll
- * @param timeoutMs - Max wait time in milliseconds
- */
-function waitForStreamReady(
-  ref: React.MutableRefObject<boolean>,
-  timeoutMs: number
-): Promise<void> {
-  return new Promise((resolve) => {
-    if (ref.current) return resolve();
-    const start = Date.now();
-    const interval = setInterval(() => {
-      if (ref.current) {
-        clearInterval(interval);
-        resolve();
-      } else if (Date.now() - start > timeoutMs) {
-        clearInterval(interval);
-        resolve(); // Proceed anyway — pending buffer catches early events
-      }
-    }, 50);
-  });
-}
 
 // Re-export types for backward compat
 export type { ChatMessage, ToolCallState, GroupPosition, MessageGrouping, ChatStatus, ChatSessionOptions } from './chat-types';
@@ -83,8 +56,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const transport = useTransport();
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const relayEnabled = useRelayEnabled();
-  const clientIdRef = useRef(crypto.randomUUID());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingUserContent, setPendingUserContent] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -96,7 +67,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const abortRef = useRef<AbortController | null>(null);
   const currentPartsRef = useRef<MessagePart[]>([]);
   const assistantIdRef = useRef<string>('');
-  const correlationIdRef = useRef<string>('');
   const assistantCreatedRef = useRef(false);
   const historySeededRef = useRef(false);
   const streamStartTimeRef = useRef<number | null>(null);
@@ -107,7 +77,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const isTextStreamingRef = useRef(false);
   const [isTextStreaming, setIsTextStreaming] = useState(false);
   const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stalenessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedCwdRef = useRef(selectedCwd);
   const [isTabVisible, setIsTabVisible] = useState(!document.hidden);
   const messagesRef = useRef<ChatMessage[]>(messages);
@@ -132,8 +101,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   }, []);
 
   const isStreaming = status === 'streaming';
-  const streamReadyRef = useRef<boolean>(false);
-  // Keep status in a ref so the staleness timer async callback sees the current value
+  // Keep status in a ref so the sync_update handler sees current status without a stale closure
   const statusRef = useRef(status);
   useEffect(() => {
     statusRef.current = status;
@@ -150,8 +118,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   onStreamingDoneRef.current = options.onStreamingDone;
   transformContentRef.current = options.transformContent;
 
-  // Create stream event handler at hook level so it can be shared between
-  // handleSubmit (legacy SSE path) and EventSource relay_message listener
+  // Create stream event handler at hook level for the SSE streaming path
   const streamEventHandler = useMemo(
     () =>
       createStreamEventHandler({
@@ -187,7 +154,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     refetchOnWindowFocus: false,
     enabled: sessionId !== null,
     refetchInterval: () => {
-      if (isStreaming || relayEnabled) return false;
+      if (isStreaming) return false;
       return isTabVisible
         ? QUERY_TIMING.ACTIVE_TAB_REFETCH_MS
         : QUERY_TIMING.BACKGROUND_TAB_REFETCH_MS;
@@ -230,103 +197,10 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     }
   }, [historyQuery.data, isStreaming]);
 
-  // Client-side staleness detector (relay path only).
-  // Resets on every relay SSE event; fires if stream goes silent for DONE_STALENESS_MS.
-  // On expiry, polls transport.getSession() — a successful response means the backend
-  // completed but the `done` event was lost. Transitions to idle and refreshes messages.
-  // Uses statusRef to read current status without adding it as a dep (avoids timer churn).
-  const resetStalenessTimer = useCallback(() => {
-    if (!relayEnabled || !sessionId) return;
-    if (stalenessTimerRef.current) clearTimeout(stalenessTimerRef.current);
-    const capturedSessionId = sessionId;
-    stalenessTimerRef.current = setTimeout(async () => {
-      stalenessTimerRef.current = null;
-      // Only act if still streaming — a `done` event may have arrived in the meantime
-      if (statusRef.current !== 'streaming') return;
-      try {
-        await transport.getSession(capturedSessionId, selectedCwdRef.current ?? undefined);
-        // Successful response: backend session exists and is no longer actively streaming.
-        // Transition to idle and refresh message history.
-        console.warn('[chat] staleness timer fired — done event was lost, recovering', { sessionId: capturedSessionId });
-        setStatus('idle');
-        queryClient.invalidateQueries({ queryKey: ['messages', capturedSessionId, selectedCwdRef.current] });
-      } catch {
-        // Session not found or network error — leave streaming state unchanged
-      }
-    }, TIMING.DONE_STALENESS_MS);
-  }, [relayEnabled, sessionId, transport, queryClient]);
-
-  // Relay-path EventSource: stable, never torn down by isStreaming changes.
-  // Only recreated when sessionId or relayEnabled changes.
-  // Response chunks arrive as relay_message events on this SSE connection.
+  // Persistent SSE connection for session sync updates.
+  // Closes during streaming since SSE events arrive inline on the POST response.
   useEffect(() => {
-    if (!sessionId || !relayEnabled) return;
-
-    const params = new URLSearchParams();
-    params.set('clientId', clientIdRef.current);
-    const url = `/api/sessions/${sessionId}/stream?${params}`;
-    const eventSource = new EventSource(url);
-
-    eventSource.addEventListener('stream_ready', () => {
-      streamReadyRef.current = true;
-    });
-
-    eventSource.addEventListener('relay_message', (event: MessageEvent) => {
-      try {
-        const envelope = JSON.parse(event.data) as {
-          payload: { type: string; data: unknown };
-          correlationId?: string;
-        };
-        // Discard late-arriving events from previous messages
-        if (
-          correlationIdRef.current &&
-          envelope.correlationId &&
-          envelope.correlationId !== correlationIdRef.current
-        ) {
-          console.debug('[chat] discarding late relay event', {
-            type: envelope.payload.type,
-            expected: correlationIdRef.current,
-            received: envelope.correlationId,
-          });
-          return;
-        }
-        // Reset staleness timer on every relay event — stream is still active
-        resetStalenessTimer();
-        streamEventHandler(envelope.payload.type, envelope.payload.data, assistantIdRef.current);
-      } catch (err) {
-        console.warn('[chat] failed to parse relay_message event', err);
-      }
-    });
-
-    eventSource.addEventListener('sync_update', () => {
-      // Don't invalidate during streaming — a mid-stream refetch can overwrite
-      // the optimistic assistant message with a stale history snapshot, causing
-      // tool call status updates to become no-ops (spinner stuck on 'running').
-      if (statusRef.current === 'streaming') return;
-      queryClient.invalidateQueries({ queryKey: ['messages', sessionId, selectedCwdRef.current] });
-      queryClient.invalidateQueries({ queryKey: ['tasks', sessionId, selectedCwdRef.current] });
-    });
-
-    eventSource.onerror = () => {
-      // EventSource auto-reconnects; reset ready state so we re-handshake
-      console.warn('[chat] relay SSE connection error — will reconnect', { sessionId });
-      streamReadyRef.current = false;
-    };
-
-    return () => {
-      eventSource.close();
-      streamReadyRef.current = false;
-      if (stalenessTimerRef.current) {
-        clearTimeout(stalenessTimerRef.current);
-        stalenessTimerRef.current = null;
-      }
-    };
-  }, [sessionId, relayEnabled, streamEventHandler, queryClient, resetStalenessTimer]);
-
-  // Legacy-path EventSource: closes during streaming since SSE is embedded in POST.
-  // No-op when relay is enabled — the relay effect above handles sync updates.
-  useEffect(() => {
-    if (!sessionId || relayEnabled) return;
+    if (!sessionId) return;
     if (isStreaming) return;
 
     const url = `/api/sessions/${sessionId}/stream`;
@@ -340,13 +214,12 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     return () => {
       eventSource.close();
     };
-  }, [sessionId, isStreaming, queryClient, relayEnabled]);
+  }, [sessionId, isStreaming, queryClient]);
 
-  // Cleanup sessionBusy and staleness timers on unmount
+  // Cleanup sessionBusy timer on unmount
   useEffect(() => {
     return () => {
       if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
-      if (stalenessTimerRef.current) clearTimeout(stalenessTimerRef.current);
     };
   }, []);
 
@@ -403,41 +276,16 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         ? await transformContentRef.current(content)
         : content;
 
-      if (relayEnabled) {
-        // Generate a per-message correlation ID so the relay_message listener can
-        // discard late-arriving events from previous messages.
-        const correlationId = crypto.randomUUID();
-        correlationIdRef.current = correlationId;
-        // Force per-message handshake — reset so waitForStreamReady polls for a fresh stream_ready event.
-        // Without this, streamReadyRef stays true after the first message and all subsequent sends skip the handshake.
-        streamReadyRef.current = false;
-        await waitForStreamReady(streamReadyRef, 5000);
-        // Relay path: POST blocks for the full agent turn — relayCore.publish() is
-        // synchronous end-to-end (awaits the complete pipeline before returning).
-        // The 202 receipt arrives only after delivery completes, not at enqueue time.
-        // Response chunks stream independently via EventSource (relay_message events).
-        await transport.sendMessageRelay(targetSessionId, finalContent, {
-          clientId: clientIdRef.current,
-          correlationId,
-          cwd: selectedCwdRef.current ?? undefined,
-        });
-        // Start the staleness detector — if the `done` event is lost, this fires after
-        // DONE_STALENESS_MS of silence and polls the backend to recover gracefully.
-        resetStalenessTimer();
-        // Status stays 'streaming' — done event will arrive via EventSource relay_message
-      } else {
-        // Legacy path: POST streams SSE inline
-        await transport.sendMessage(
-          targetSessionId,
-          finalContent,
-          (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
-          abortController.signal,
-          selectedCwd ?? undefined
-        );
-        // Clear pending bubble after stream completes (text_delta clears it earlier if content arrived)
-        setPendingUserContent(null);
-        setStatus('idle');
-      }
+      await transport.sendMessage(
+        targetSessionId,
+        finalContent,
+        (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
+        abortController.signal,
+        selectedCwd ?? undefined,
+      );
+      // Clear pending bubble after stream completes (text_delta clears it earlier if content arrived)
+      setPendingUserContent(null);
+      setStatus('idle');
     } catch (err) {
       // Clear pending bubble on any error — must not linger if delivery fails
       setPendingUserContent(null);
@@ -460,7 +308,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       setIsTextStreaming(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: stable refs for transport/options/cwd
-  }, [sessionId, relayEnabled, streamEventHandler, queryClient, resetStalenessTimer]);
+  }, [sessionId, streamEventHandler, queryClient]);
 
   const handleSubmit = useCallback(async () => {
     if (!input.trim() || status === 'streaming') return;

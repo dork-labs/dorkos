@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Remove relay message path from web client, use direct SSE only
 - Use Math.max for overflow values, clarify useAgentAccess guard comment
 - Move AGENT_CAP to module scope, remove unused MCP_CAP
 - Document test simulation infrastructure and fix mock proxy routing

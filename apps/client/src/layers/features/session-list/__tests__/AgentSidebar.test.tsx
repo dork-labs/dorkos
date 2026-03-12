@@ -113,9 +113,10 @@ vi.mock('@/layers/entities/relay', () => ({
   useRelayAdapters: () => ({ data: [] }),
 }));
 
-// Mock useRegisteredAgents (used by ConnectionsView)
+// Mock useRegisteredAgents and useAgentAccess (used by ConnectionsView)
 vi.mock('@/layers/entities/mesh', () => ({
   useRegisteredAgents: () => ({ data: { agents: [] } }),
+  useAgentAccess: () => ({ data: undefined, isLoading: false }),
 }));
 
 // Mock useTheme (used by SidebarFooterBar)

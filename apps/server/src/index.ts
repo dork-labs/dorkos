@@ -300,8 +300,8 @@ async function start() {
   // Finalize app: API 404 catch-all, error handler, and SPA serving
   finalizeApp(app);
 
-  // Inject relay into the active runtime for session watch relay fan-in.
-  // ClaudeCodeRuntime: setRelay() wires SessionBroadcaster (enables registerCallback relay sub).
+  // Inject relay into the active runtime.
+  // ClaudeCodeRuntime: no-op (broadcaster no longer needs relay).
   // TestModeRuntime: setRelay() enables relay subscription in watchSession().
   if (relayCore) {
     runtimeRegistry.getDefault().setRelay?.(relayCore);

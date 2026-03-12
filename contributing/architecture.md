@@ -48,6 +48,8 @@ Transport
   listRelayEndpoints / registerRelayEndpoint / unregisterRelayEndpoint
   readRelayInbox / getRelayMetrics / listRelayDeadLetters / listRelayConversations
   sendMessageRelay / getRelayTrace / getRelayDeliveryMetrics
+  -- Note: sendMessageRelay is available for external adapter integration only.
+  -- The web client always uses sendMessage (direct SSE streaming).
 
   -- Relay Adapters --
   listRelayAdapters / toggleRelayAdapter / getAdapterCatalog
@@ -168,11 +170,17 @@ Calls service instances directly in the same process:
 
 ### Standalone Web (HttpTransport)
 
+The web client always uses direct SSE — `transport.sendMessage()` is the sole message path regardless of whether `DORKOS_RELAY_ENABLED` is set. When not streaming, a persistent SSE connection (`GET /api/sessions/:id/stream`) receives `sync_update` events for cross-client synchronization.
+
 ```
 User input -> ChatPanel -> useChatSession.handleSubmit()
   -> transport.sendMessage(sessionId, content, onEvent, signal, cwd)
     -> fetch(POST /api/sessions/:id/messages) + ReadableStream SSE parsing
       -> onEvent(event) -> React state updates -> UI re-render
+
+Cross-client sync (when idle):
+  -> GET /api/sessions/:id/stream (persistent EventSource)
+    -> sync_update event -> queryClient.invalidateQueries()
 ```
 
 ### Obsidian Plugin (DirectTransport)
@@ -809,37 +817,9 @@ The `BindingRouter` (`apps/server/src/services/relay/binding-router.ts`) routes 
 
 See `contributing/relay-adapters.md` for the full developer guide on creating custom adapters.
 
-### Subscribe-First SSE Handshake
+## Relay Message Routing (when DORKOS_RELAY_ENABLED=true)
 
-When Relay is enabled, the SSE delivery pipeline uses a subscribe-first handshake to prevent message loss during the EventSource establishment window:
-
-1. Client opens `EventSource` to `GET /api/sessions/:id/stream?clientId={clientId}`
-2. Server registers SSE client and subscribes to `relay.human.console.{clientId}` via `subscribeToRelay()`
-3. Server sends `stream_ready` SSE event to confirm the subscription is active and delivery path is established
-4. Client receives `stream_ready`, sets `streamReadyRef.current = true`, then sends `POST /api/sessions/:id/messages`
-5. SDK processes the user message and produces response chunks
-6. ClaudeCodeAdapter publishes chunks to `relay.human.console.{clientId}`
-7. SessionBroadcaster receives chunks via the relay subscription and writes to SSE stream
-8. Client receives `relay_message` events via EventSource
-
-**Defense-in-depth:** A pending buffer in `SubscriptionRegistry` captures messages published to subjects with registered endpoints but no active subscriber (5-second TTL). When the subscriber later registers (on EventSource connection), buffered messages are drained immediately in order. This handles edge cases like reconnects and slow subscribers where messages might arrive during the TCP handshake window before the subscription is fully established.
-
-The EventSource lifecycle on the client is decoupled from `isStreaming` state to prevent the EventSource from being torn down and recreated during each message exchange, which would cause loss of messages published during the reconnection window.
-
-## Relay Convergence (when DORKOS_RELAY_ENABLED=true)
-
-When the Relay feature flag is enabled, both Console (chat) and Pulse (scheduled) message flows are routed through the Relay message bus instead of calling the runtime directly. This provides unified message tracing, delivery tracking, and subject-based routing.
-
-### Console Message Flow
-
-```
-Client transport.sendMessageRelay() → POST /api/sessions/:id/messages
-  → relay.publish('relay.agent.{sessionId}') returns { messageId, traceId }
-    → ClaudeCodeAdapter.deliver() → runtime.sendMessage() → Claude SDK
-      → response chunks → relay.publish(replyTo) → SSE fan-in → client EventSource
-```
-
-Client-side `useChatSession` branches on `useRelayEnabled()`: the Relay path calls `transport.sendMessageRelay()` which returns a receipt `{ messageId, traceId }`, then listens for response chunks on the existing SSE stream as `relay_message` events. The legacy path calls `transport.sendMessage()` and streams directly.
+When the Relay feature flag is enabled, Pulse (scheduled) message flows are routed through the Relay message bus instead of calling the runtime directly. The web client always uses direct SSE regardless of this flag.
 
 ### Pulse Dispatch Flow
 
@@ -851,39 +831,6 @@ SchedulerService → relay.publish('relay.system.pulse.{scheduleId}')
 ### Message Tracing
 
 Every `relay.publish()` records a `TraceSpan` in SQLite via `TraceStore` (in `apps/server/src/services/relay/trace-store.ts`). Spans are updated on delivery completion with status and timing. API: `GET /api/relay/messages/:id/trace`, `GET /api/relay/trace/metrics`.
-
-### Relay Correlation IDs
-
-When relay mode is enabled, each client message includes a `correlationId` (UUID) that threads through the full relay pipeline to prevent late-arriving response events from contaminating subsequent messages:
-
-1. **Client generation**: `useChatSession.handleSubmit()` generates `crypto.randomUUID()` and stores it in `correlationIdRef.current`
-2. **Request sending**: Client passes `correlationId` in POST body to `/api/sessions/:id/messages`
-3. **Server relay publish**: Route extracts `correlationId` and includes it in the relay envelope payload to `relay.agent.{sessionId}`
-4. **Adapter echo**: `ClaudeCodeAdapter.handleAgentMessage()` extracts the correlation ID and echoes it in every response chunk published to the reply subject
-5. **SessionBroadcaster**: Includes `correlationId` in SSE `relay_message` event data (top-level field)
-6. **Client filtering**: `relay_message` listener compares incoming `correlationId` against `correlationIdRef.current` and discards events with mismatched IDs
-
-**Backward compatibility:** The `correlationId` field is optional everywhere. Events without a `correlationId` pass through unfiltered (safe for non-relay clients or older servers).
-
-**Implementation flow:**
-```
-Client: correlationId = crypto.randomUUID()
-  → POST /api/sessions/:id/messages { content, correlationId }
-    → relay.publish(relayEnvelope { payload: { content, correlationId } })
-      → ClaudeCodeAdapter receives envelope
-        → For each response chunk: relay.publish(replyTo { ...chunk, correlationId })
-          → SessionBroadcaster includes correlationId in SSE relay_message event
-            → Client: if (envelope.correlationId !== correlationIdRef.current) discard
-```
-
-**Files involved:**
-- `packages/shared/src/schemas.ts` — `SendMessageRequestSchema` includes optional `correlationId: z.string().uuid()`
-- `packages/shared/src/transport.ts` — `Transport.sendMessageRelay()` accepts optional `correlationId` in options
-- `apps/client/src/layers/shared/lib/http-transport.ts` — Includes `correlationId` in POST body when provided
-- `apps/server/src/routes/sessions.ts` — `publishViaRelay()` forwards `correlationId` to relay envelope payload
-- `packages/relay/src/adapters/claude-code/claude-code-adapter.ts` — Extracts and echoes `correlationId` in all `publishResponse()` calls
-- `apps/server/src/services/runtimes/claude-code/session-broadcaster.ts` — Includes `correlationId` in SSE `relay_message` events
-- `apps/client/src/layers/features/chat/model/use-chat-session.ts` — Generates UUID, passes to transport, filters incoming events by ID
 
 ## Mesh
 

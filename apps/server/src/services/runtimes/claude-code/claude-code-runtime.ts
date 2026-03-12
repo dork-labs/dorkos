@@ -130,11 +130,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** Inject a Relay core instance for Relay-aware context building. */
-  setRelay(relay: RelayPort): void {
-    // SessionBroadcaster uses RelayCore for relay subscription fan-in
-    if (relay && typeof relay === 'object') {
-      this.broadcaster.setRelay(relay as Parameters<SessionBroadcaster['setRelay']>[0]);
-    }
+  setRelay(_relay: RelayPort): void {
+    // No-op: broadcaster no longer needs relay.
+    // Method retained to satisfy AgentRuntime interface.
   }
 
   /**
