@@ -4,9 +4,11 @@ const CI = !!process.env.CI;
 const PORT = process.env.DORKOS_PORT || '4242';
 const VITE_PORT = process.env.VITE_PORT || '4241';
 
-// Port for the test-mode server (TestModeRuntime). Uses a different port to
-// avoid conflicting with the real server when both are running locally.
+// Test-mode server port (TestModeRuntime). Separate port avoids conflicting
+// with the real server when both are running locally.
 const MOCK_PORT = process.env.DORKOS_MOCK_PORT || '4243';
+// Vite client for mock tests — proxies /api to MOCK_PORT instead of PORT.
+const MOCK_VITE_PORT = process.env.DORKOS_MOCK_VITE_PORT || '4244';
 
 export default defineConfig({
   testDir: './tests',
@@ -60,6 +62,17 @@ export default defineConfig({
       stdout: 'pipe',
       stderr: 'pipe',
     },
+    // Vite client for mock tests — proxies /api to the test-mode server on MOCK_PORT.
+    // Without this, the main Vite client (port 4241) would proxy to the real server,
+    // and mock scenarios set on MOCK_PORT would never be used by the UI.
+    {
+      command: `DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} dotenv -- turbo dev --filter=@dorkos/client`,
+      url: `http://localhost:${MOCK_VITE_PORT}`,
+      name: 'Vite Client (test-mode)',
+      timeout: 120_000,
+      reuseExistingServer: !CI,
+      stdout: 'pipe',
+    },
   ],
 
   projects: [
@@ -75,7 +88,7 @@ export default defineConfig({
       name: 'chromium-mock',
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: `http://localhost:${VITE_PORT}`,
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/chat-mock.spec.ts'],
     },

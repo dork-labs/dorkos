@@ -189,6 +189,54 @@ vi.spyOn(console, 'error'); // Add mockRestore in afterEach
 await new Promise((r) => setTimeout(r, 1000)); // Wrong - use waitFor
 ```
 
+## Mock AgentRuntime (Server Tests)
+
+Server route tests that touch session endpoints need a mock `AgentRuntime`. Use `FakeAgentRuntime` from `@dorkos/test-utils` instead of hand-rolling a mock object:
+
+```typescript
+import { FakeAgentRuntime, TestScenario } from '@dorkos/test-utils';
+
+let fakeRuntime: FakeAgentRuntime;
+
+beforeEach(() => {
+  fakeRuntime = new FakeAgentRuntime();
+  vi.mocked(runtimeRegistry.getDefault).mockReturnValue(fakeRuntime);
+});
+```
+
+Load scenarios to control what `sendMessage()` yields:
+
+```typescript
+import { testScenarios } from '@dorkos/test-utils';
+
+fakeRuntime.withScenarios([testScenarios[TestScenario.SimpleText]('Hello')]);
+```
+
+`FakeAgentRuntime` implements every method on the `AgentRuntime` interface with `vi.fn()` spies. If the interface adds a method, tests using `FakeAgentRuntime` will fail to compile — this is intentional.
+
+### SDK-Level Scenarios (Tier 1)
+
+For tests that operate at the `SDKMessage` level (e.g., `claude-code-runtime.test.ts`), use the shared scenario builders in `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts`:
+
+```typescript
+import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
+
+const queryResult = wrapSdkQuery(sdkSimpleText('Echo: Hello'));
+```
+
+These builders live inside the ESLint boundary for `@anthropic-ai/claude-agent-sdk` imports. Do not import them from outside `services/runtimes/claude-code/`.
+
+### SSE Integration Tests
+
+Use `collectSseEvents` from `@dorkos/test-utils` to test SSE streaming end-to-end with supertest:
+
+```typescript
+import { collectSseEvents } from '@dorkos/test-utils';
+
+const events = await collectSseEvents(app, sessionId, 'Hello');
+expect(events.some(e => e.type === 'text_delta')).toBe(true);
+```
+
 ## Running Tests
 
 ```bash

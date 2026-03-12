@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Document test simulation infrastructure and fix mock proxy routing
 - Reconcile contributing guides with relay/mesh refactoring
 - Humanize raw IDs and technical jargon across Relay/Mesh UI
 

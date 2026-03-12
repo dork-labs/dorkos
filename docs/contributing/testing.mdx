@@ -188,7 +188,28 @@ beforeAll(() => {
 The `@dorkos/test-utils` package provides:
 
 - `createMockTransport()` — fully mocked Transport with all required methods
+- `FakeAgentRuntime` — full `AgentRuntime` implementation with `vi.fn()` spies and scenario queue
+- `collectSseEvents(app, sessionId, content)` — supertest helper for SSE integration tests
+- `TestScenario` — named scenario keys (`SimpleText`, `ToolCall`, `TodoWrite`, `Error`)
+- `testScenarios` — scenario builders that produce `StreamEvent` sequences
 - Mock factories for sessions, messages, and other domain objects
+
+### FakeAgentRuntime (Server Route Tests)
+
+Server tests that need an `AgentRuntime` should use `FakeAgentRuntime` instead of hand-rolling mock objects:
+
+```typescript
+import { FakeAgentRuntime, TestScenario, testScenarios } from '@dorkos/test-utils';
+
+let fakeRuntime: FakeAgentRuntime;
+
+beforeEach(() => {
+  fakeRuntime = new FakeAgentRuntime();
+  fakeRuntime.withScenarios([testScenarios[TestScenario.SimpleText]('Hello')]);
+});
+```
+
+`FakeAgentRuntime` implements every method on the `AgentRuntime` interface. If the interface changes, tests will fail to compile.
 
 ## Anti-Patterns
 

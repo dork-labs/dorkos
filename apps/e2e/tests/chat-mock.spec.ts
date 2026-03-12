@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ChatPage } from '../../pages/ChatPage.js';
+import { ChatPage } from '../pages/ChatPage.js';
 
 /**
  * Browser simulation tests using TestModeRuntime.

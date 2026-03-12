@@ -193,3 +193,22 @@ Before writing a new test:
 1. **Read `GOTCHAS.md`** — avoid repeating known mistakes.
 2. **Check `explorationNotes`** in `manifest.json` for related tests — reuse timing strategies and selector patterns.
 3. **Review existing POMs** — extend them rather than creating parallel locator definitions for the same elements.
+
+## 10. Mock Browser Tests (TestModeRuntime)
+
+For browser tests that don't need real Claude API responses, use the `chromium-mock` Playwright project. This runs against a server started with `DORKOS_TEST_RUNTIME=true`, which registers `TestModeRuntime` instead of `ClaudeCodeRuntime`.
+
+**Before each test**, configure the scenario via the control API:
+
+```typescript
+const MOCK_PORT = process.env.DORKOS_MOCK_PORT || '4243';
+await request.post(`http://localhost:${MOCK_PORT}/api/test/scenario`, {
+  data: { name: 'simple-text' },  // or 'tool-call', 'todo-write', 'error'
+});
+```
+
+**Reset between tests** with `POST /api/test/reset` to return to the default scenario.
+
+Mock tests import from `@playwright/test` directly (not fixtures) and use `ChatPage` from `pages/ChatPage.ts`. They live in `tests/chat-mock.spec.ts` and are matched by `testMatch: ['**/chat-mock.spec.ts']` in the `chromium-mock` project config.
+
+The mock Vite client runs on port 4244 (proxying to the mock server on port 4243), keeping it isolated from the real Vite client on port 4241.

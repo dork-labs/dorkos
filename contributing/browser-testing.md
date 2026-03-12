@@ -264,3 +264,41 @@ When a stale test is detected:
 ### Orphan Detection
 
 Tests whose `relatedCode` files no longer exist are flagged as orphaned. The maintenance command asks for confirmation before removing them.
+
+## Test-Mode Server (Mock Browser Tests)
+
+Browser tests that don't need real Claude API calls use `TestModeRuntime` — a server-side `AgentRuntime` that yields pre-defined `StreamEvent` sequences. No `vi.fn()` or Vitest imports — it runs in a live server process.
+
+### How It Works
+
+1. Playwright starts a second Express server with `DORKOS_TEST_RUNTIME=true` on `MOCK_PORT` (default 4243)
+2. A second Vite client on `MOCK_VITE_PORT` (default 4244) proxies `/api` to the mock server
+3. Tests configure scenarios via `POST /api/test/scenario` before each interaction
+4. The `chromium-mock` Playwright project targets the mock Vite client
+
+### Port Layout
+
+| Port | Service |
+|------|---------|
+| `DORKOS_PORT` (4242/6942) | Real Express server |
+| `VITE_PORT` (4241) | Vite client proxying to real server |
+| `MOCK_PORT` (4243) | Test-mode Express server |
+| `MOCK_VITE_PORT` (4244) | Vite client proxying to mock server |
+
+### Scenario Control API
+
+```typescript
+// Reset to default scenario before each test
+await request.post(`http://localhost:${MOCK_PORT}/api/test/reset`);
+
+// Set a specific scenario
+await request.post(`http://localhost:${MOCK_PORT}/api/test/scenario`, {
+  data: { name: 'simple-text' },  // 'tool-call', 'todo-write', 'error'
+});
+```
+
+### Writing Mock Browser Tests
+
+Mock tests live in `tests/chat-mock.spec.ts` and are matched by the `chromium-mock` project via `testMatch: ['**/chat-mock.spec.ts']`. They import from `@playwright/test` directly (not fixtures) and use `ChatPage` from `pages/ChatPage.ts`.
+
+The `chromium` project ignores mock test files via `testIgnore: ['**/chat-mock.spec.ts']`, and vice versa — the two projects are fully isolated.

@@ -96,6 +96,18 @@
       "failCount": 2,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "chat-mock": {
+      "specFile": "tests/chat-mock.spec.ts",
+      "feature": "chat-mock.spec.ts",
+      "description": "scenario endpoint rejects unknown scenario names, renders tool call card for tool-call scenario, renders streamed text response from simple-text scenario",
+      "lastRun": "2026-03-12T03:36:04.055Z",
+      "lastStatus": "failed",
+      "runCount": 2,
+      "passCount": 0,
+      "failCount": 2,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
@@ -242,6 +254,33 @@
       "failed": 0,
       "skipped": 0,
       "duration": 9983
+    },
+    {
+      "id": "2026-03-12T03-34-06",
+      "timestamp": "2026-03-12T03:34:06.436Z",
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 4699
+    },
+    {
+      "id": "2026-03-12T03-35-29",
+      "timestamp": "2026-03-12T03:35:29.200Z",
+      "total": 3,
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 26666
+    },
+    {
+      "id": "2026-03-12T03-36-04",
+      "timestamp": "2026-03-12T03:36:04.055Z",
+      "total": 3,
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 20969
     }
   ]
 }
