@@ -103,7 +103,7 @@ describe('buildTopologyElements', () => {
   });
 
   describe('single namespace', () => {
-    it('creates agent nodes without group wrappers', () => {
+    it('creates namespace-group container even with a single namespace', () => {
       const result = buildTopologyElements(
         singleNamespace,
         noRules,
@@ -117,11 +117,12 @@ describe('buildTopologyElements', () => {
       const agentNodes = result.rawNodes.filter((n) => n.type === 'agent');
       const groupNodes = result.rawNodes.filter((n) => n.type === 'namespace-group');
       expect(agentNodes).toHaveLength(2);
-      expect(groupNodes).toHaveLength(0);
-      expect(result.useGroups).toBe(false);
+      expect(groupNodes).toHaveLength(1);
+      expect(groupNodes[0].id).toBe('group:default');
+      expect(result.useGroups).toBe(true);
     });
 
-    it('does not set parentId on agent nodes in single-namespace topology', () => {
+    it('sets parentId on agent nodes in single-namespace topology', () => {
       const result = buildTopologyElements(
         singleNamespace,
         noRules,
@@ -132,8 +133,9 @@ describe('buildTopologyElements', () => {
         vi.fn(),
         emptyCallbacks(),
       );
-      for (const node of result.rawNodes) {
-        expect(node.parentId).toBeUndefined();
+      for (const node of result.rawNodes.filter((n) => n.type === 'agent')) {
+        expect(node.parentId).toBe('group:default');
+        expect(node.extent).toBe('parent');
       }
     });
 
@@ -310,6 +312,94 @@ describe('buildTopologyElements', () => {
       );
       const node = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
       expect((node?.data as Record<string, unknown>).adapterStatus).toBe('stopped');
+    });
+  });
+
+  describe('CCA filtering', () => {
+    const ccaAdapter: AdapterListItem = {
+      config: { id: 'cca-1', type: 'claude-code', enabled: true, config: {} },
+      status: {
+        id: 'cca-1',
+        type: 'claude-code',
+        displayName: 'Claude Code',
+        state: 'connected',
+        messageCount: { inbound: 0, outbound: 0 },
+        errorCount: 0,
+      },
+    };
+
+    const telegramAdapter: AdapterListItem = {
+      config: {
+        id: 'tg-1',
+        type: 'telegram',
+        enabled: true,
+        config: { token: 'test', mode: 'polling' },
+      },
+      status: {
+        id: 'tg-1',
+        type: 'telegram',
+        displayName: 'Telegram Bot',
+        state: 'connected',
+        messageCount: { inbound: 0, outbound: 0 },
+        errorCount: 0,
+      },
+    };
+
+    it('filters out claude-code adapter from node list', () => {
+      const result = buildTopologyElements(
+        singleNamespace,
+        noRules,
+        true,
+        [ccaAdapter, telegramAdapter],
+        undefined,
+        emptyBindingCountByAdapter(),
+        vi.fn(),
+        emptyCallbacks(),
+      );
+      const adapterNodes = result.rawNodes.filter((n) => n.type === 'adapter');
+      expect(adapterNodes).toHaveLength(1);
+      expect(adapterNodes[0].id).toBe('adapter:tg-1');
+    });
+
+    it('excludes CCA binding edges because source node does not exist', () => {
+      const ccaBinding = {
+        id: 'bind-cca',
+        adapterId: 'cca-1',
+        agentId: 'agent-1',
+        projectPath: '/projects/builder',
+        sessionStrategy: 'per-chat' as const,
+        label: '',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      };
+      const result = buildTopologyElements(
+        singleNamespace,
+        noRules,
+        true,
+        [ccaAdapter],
+        [ccaBinding],
+        emptyBindingCountByAdapter(),
+        vi.fn(),
+        emptyCallbacks(),
+      );
+      const bindingEdges = result.rawEdges.filter((e) => e.type === 'binding');
+      expect(bindingEdges).toHaveLength(0);
+    });
+
+    it('still creates nodes for non-CCA adapters', () => {
+      const result = buildTopologyElements(
+        singleNamespace,
+        noRules,
+        true,
+        [telegramAdapter],
+        undefined,
+        emptyBindingCountByAdapter(),
+        vi.fn(),
+        emptyCallbacks(),
+      );
+      const adapterNodes = result.rawNodes.filter((n) => n.type === 'adapter');
+      expect(adapterNodes).toHaveLength(1);
+      expect(adapterNodes[0].id).toBe('adapter:tg-1');
     });
   });
 

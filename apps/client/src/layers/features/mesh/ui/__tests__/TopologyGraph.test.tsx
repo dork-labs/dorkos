@@ -565,7 +565,7 @@ describe('TopologyGraph', () => {
       expect(stgAgent?.extent).toBe('parent');
     });
 
-    it('does not create namespace-group nodes for single-namespace topologies', async () => {
+    it('creates namespace-group node for single-namespace topologies', async () => {
       setupDefaults({ relayEnabled: false, adapters: [], bindings: [] });
       render(<TopologyGraph />);
 
@@ -575,10 +575,11 @@ describe('TopologyGraph', () => {
 
       const nodes = capturedReactFlowProps.nodes as Array<{ id: string; type: string }>;
       const groupNodes = nodes.filter((n) => n.type === 'namespace-group');
-      expect(groupNodes).toHaveLength(0);
+      expect(groupNodes).toHaveLength(1);
+      expect(groupNodes[0].id).toBe('group:default');
     });
 
-    it('does not set parentId on agent nodes in single-namespace topologies', async () => {
+    it('sets parentId on agent nodes in single-namespace topologies', async () => {
       setupDefaults({ relayEnabled: false, adapters: [], bindings: [] });
       render(<TopologyGraph />);
 
@@ -589,7 +590,7 @@ describe('TopologyGraph', () => {
       const nodes = capturedReactFlowProps.nodes as Array<{ id: string; parentId?: string }>;
       const agentNodes = nodes.filter((n) => !n.id.startsWith('group:') && !n.id.startsWith('adapter:'));
       for (const agent of agentNodes) {
-        expect(agent.parentId).toBeUndefined();
+        expect(agent.parentId).toBe('group:default');
       }
     });
 

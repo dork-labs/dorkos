@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Filter CCA adapter nodes and always show namespace groups
 - Use correct logo SVG paths in OG share card
 - Resolve createRequire duplicate declaration in server bundle
 ---

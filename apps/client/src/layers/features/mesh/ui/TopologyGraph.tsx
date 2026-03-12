@@ -268,18 +268,19 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
         onlyRenderVisibleElements
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--color-border)" />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--muted-foreground) / 0.15)" />
         <MiniMap
-          nodeColor={(n) => {
-            if (n.type === 'adapter') return '#6366f1';
-            const health = n.data?.healthStatus as string | undefined;
-            if (health === 'active') return '#22c55e';
-            if (health === 'inactive') return '#f59e0b';
-            return '#94a3b8';
+          nodeColor={(node) => {
+            if (node.type === 'adapter') return 'hsl(var(--muted-foreground) / 0.4)';
+            if (node.type === 'namespace-group') return 'transparent';
+            // Agent nodes: use namespace color if available
+            const data = node.data as Record<string, unknown>;
+            return (data.namespaceColor as string) ?? 'hsl(var(--primary))';
           }}
+          maskColor="hsl(var(--background) / 0.8)"
           pannable
           zoomable
-          className="!bg-card/80 !backdrop-blur-sm"
+          className="!bottom-2 !right-2"
           style={{ height: 80 }}
         />
         <Controls showInteractive={false} />

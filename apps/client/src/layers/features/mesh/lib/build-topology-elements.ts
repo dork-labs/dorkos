@@ -73,8 +73,12 @@ export function buildTopologyElements(
   const legend: { namespace: string; color: string }[] = [];
 
   // --- Adapter nodes (left side) ---
-  if (relayEnabled && adapters?.length) {
-    for (const adapter of adapters) {
+  // Filter out CCA — it's an internal runtime, not a relay topology node.
+  const externalAdapters =
+    adapters?.filter((a) => a.config.type !== 'claude-code') ?? [];
+
+  if (relayEnabled && externalAdapters.length > 0) {
+    for (const adapter of externalAdapters) {
       nodes.push({
         id: `adapter:${adapter.config.id}`,
         type: 'adapter',
@@ -94,8 +98,8 @@ export function buildTopologyElements(
     }
   }
 
-  // Skip group wrappers for single-namespace topologies.
-  const multiNamespace = namespaces.length > 1;
+  // Always show namespace containers — teaches the concept before users scale up.
+  const useGroups = namespaces.length >= 1;
 
   for (let nsIdx = 0; nsIdx < namespaces.length; nsIdx++) {
     const ns = namespaces[nsIdx];
@@ -108,7 +112,7 @@ export function buildTopologyElements(
       return typedAgent.healthStatus === 'active';
     }).length;
 
-    if (multiNamespace) {
+    if (useGroups) {
       nodes.push({
         id: groupId,
         type: 'namespace-group',
@@ -161,7 +165,7 @@ export function buildTopologyElements(
         } satisfies AgentNodeData,
       };
 
-      if (multiNamespace) {
+      if (useGroups) {
         agentNode.parentId = groupId;
         agentNode.extent = 'parent';
       }
@@ -197,10 +201,10 @@ export function buildTopologyElements(
 
   // Cross-namespace edges connect between group nodes.
   for (const rule of accessRules) {
-    const sourceId = multiNamespace
+    const sourceId = useGroups
       ? `group:${rule.sourceNamespace}`
       : (namespaces[0]?.agents[0]?.id ?? '');
-    const targetId = multiNamespace
+    const targetId = useGroups
       ? `group:${rule.targetNamespace}`
       : (namespaces[0]?.agents[0]?.id ?? '');
     if (!sourceId || !targetId) continue;
@@ -217,5 +221,5 @@ export function buildTopologyElements(
     });
   }
 
-  return { rawNodes: nodes, rawEdges: edges, legendEntries: legend, useGroups: multiNamespace };
+  return { rawNodes: nodes, rawEdges: edges, legendEntries: legend, useGroups };
 }
