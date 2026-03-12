@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add /story page with dual-mode presentation support
 - Export story components and data from marketing barrel
 - Add FutureVisionSection (page-only)
 - Add CloseSection
