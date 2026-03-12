@@ -45,7 +45,7 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
             variants={REVEAL}
             className="mb-3 font-mono text-[9px] tracking-[0.2em] text-brand-orange uppercase"
           >
-            A Monday Morning
+            A Thursday Morning
           </motion.div>
           <motion.h2
             variants={REVEAL}

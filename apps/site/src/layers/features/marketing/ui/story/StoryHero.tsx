@@ -33,7 +33,7 @@ export function StoryHero({ slideId = 'hero' }: StoryHeroProps) {
           variants={REVEAL}
           className="mb-6 text-[clamp(22px,3.5vw,40px)] font-light leading-[1.4] text-cream-white"
         >
-          What if the most powerful thing you could do with AI was get Thursday afternoon back?
+          What if AI gave you Thursday afternoon back?
         </motion.p>
 
         <motion.div
@@ -46,7 +46,7 @@ export function StoryHero({ slideId = 'hero' }: StoryHeroProps) {
           variants={REVEAL}
           className="font-mono text-[10px] tracking-[0.1em] text-warm-gray-light uppercase"
         >
-          Dorian Collier &mdash; 144 Studio &mdash; Austin TX
+          Dorian Collier &mdash; No Edges &mdash; Austin TX
         </motion.p>
       </motion.div>
     </section>

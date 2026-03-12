@@ -40,11 +40,11 @@ export interface FutureCard {
 export const bootCards: BootCard[] = [
   { id: 'health', label: 'Health', value: 'Synced', detail: 'HRV · sleep · steps', color: 'orange' },
   { id: 'companies', label: 'Companies', value: '4 loaded', detail: 'tasks · projects', color: 'blue' },
-  { id: 'overdue', label: '⚑ Overdue', value: '15 days', detail: 'flagged for you', color: 'orange', urgent: true },
+  { id: 'overdue', label: '⚑ Overdue', value: '2 days', detail: 'flagged for you', color: 'orange', urgent: true },
   { id: 'calendar', label: 'Calendar', value: '3 preps', detail: 'meetings identified', color: 'purple' },
-  { id: 'family', label: 'Family', value: 'Liam · Thu', detail: 'therapy · brief outdated', color: 'blue' },
-  { id: 'energy', label: 'Energy', value: '4 dims', detail: 'phys · mental · emo · spirit', color: 'green' },
+  { id: 'vacation', label: 'Vacation', value: 'Planned', detail: 'dates · itinerary set', color: 'blue' },
   { id: 'coaching', label: 'Coaching', value: 'Fear check', detail: 'priorities → 3', color: 'orange' },
+  { id: 'comms', label: 'Comms', value: '7 drafted', detail: 'replies · emails · staged', color: 'purple' },
   { id: 'output', label: 'Output', value: 'Ready', detail: 'calendar · habits · audio', color: 'gray' },
 ]
 
