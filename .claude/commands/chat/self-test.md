@@ -27,7 +27,6 @@ Parse `$ARGUMENTS` for two optional inputs:
    - `focus:sidebar` — Focus on session list, new session, session switching
    - `focus:status` — Focus on status bar, model selector, permission mode
    - `focus:code` — Focus on code block rendering, syntax highlighting, copy button
-   - `focus:relay` — Focus on Relay-specific behavior (when enabled)
    - `focus:commands` — Focus on slash command palette, command discovery
    - `focus:markdown` — Focus on markdown rendering, links, lists, headings
 
@@ -100,18 +99,15 @@ done
 [ -z "$API_PORT" ] && { echo "ERROR: DorkOS server not responding. Run 'pnpm dev' first."; exit 1; }
 ```
 
-Check server config for Relay and Pulse status (affects session ID resolution and API comparison):
+Check server config for Pulse status:
 
 ```bash
 curl -s "http://localhost:$API_PORT/api/config" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-print('RELAY_ENABLED:', d.get('relay',{}).get('enabled', False))
 print('PULSE_ENABLED:', d.get('pulse',{}).get('enabled', False))
 "
 ```
-
-Store `RELAY_ENABLED` — this affects session ID resolution in Phase 2 and API comparison in Phase 4.
 
 Fetch the current model list to know what's available:
 
@@ -139,7 +135,7 @@ Store `RUNTIME_CAPS` — if `supportsPermissionModes` or `supportsToolApproval` 
 
 Navigate the browser to `TEST_URL`. Use `mcp__claude-in-chrome__tabs_context_mcp` first to get tab context, then `mcp__claude-in-chrome__navigate`. Take a screenshot and read the page. Capture any pre-existing console errors as a baseline via `mcp__claude-in-chrome__read_console_messages` (filter: `error`).
 
-**Update the results file** — fill in the remaining Test Config fields (API port, Relay/Pulse status, available models, runtime capabilities, baseline console errors).
+**Update the results file** — fill in the remaining Test Config fields (API port, Pulse status, available models, runtime capabilities, baseline console errors).
 
 ---
 
@@ -149,22 +145,7 @@ Navigate the browser to `TEST_URL`. Use `mcp__claude-in-chrome__tabs_context_mcp
 2. Click it and wait for the URL to update with a `?session=` query parameter.
 3. Extract the session UUID from the URL. Store it as `URL_SESSION_ID`.
 
-**Relay-aware JSONL resolution:**
-
-When Relay is enabled, the URL `?session=` param contains the **Agent-ID**, NOT the SDK session ID. The JSONL filename uses the real SDK session ID. The sidebar displays the SDK session ID.
-
-4. Locate the JSONL file on disk. **If Relay is enabled**, find by most-recent modification time (since the URL session ID won't match the JSONL filename):
-
-```bash
-# When Relay is enabled — find by recent modification
-JSONL_FILE=$(find ~/.claude/projects -name "*.jsonl" -mmin -2 -type f 2>/dev/null | head -1)
-SDK_SESSION_ID=$(basename "$JSONL_FILE" .jsonl)
-echo "URL Session ID (Agent-ID): $URL_SESSION_ID"
-echo "SDK Session ID: $SDK_SESSION_ID"
-echo "JSONL: $JSONL_FILE"
-```
-
-When Relay is NOT enabled, find by URL session ID directly:
+4. Locate the JSONL file on disk by session ID:
 
 ```bash
 JSONL_FILE=$(find ~/.claude/projects -name "${URL_SESSION_ID}.jsonl" -type f 2>/dev/null)
@@ -230,7 +211,7 @@ Wait up to 120 seconds for the stop button to disappear. Use this staleness dete
 3. If visible text is identical between screenshots but stop button persists, record an **"SSE stream freeze"** observation and click the stop button to unblock the test.
 4. If stop button disappears naturally, note the actual streaming duration.
 
-This prevents the test from hanging indefinitely per message. SSE freezes were fixed in the `fix-relay-sse-delivery-pipeline` spec — any freeze is now a **regression** and should be investigated with high priority.
+This prevents the test from hanging indefinitely per message. An SSE stream freeze is a **regression** and should be investigated with high priority.
 
 **c. Take a screenshot** of the full rendered exchange.
 
@@ -246,11 +227,7 @@ This prevents the test from hanging indefinitely per message. SSE freezes were f
 ```
 First inspect the actual DOM via `mcp__claude-in-chrome__read_page` to confirm the correct selectors are used.
 
-**g. Compare against the API (skip when Relay is enabled):**
-
-When Relay is enabled, `GET /api/sessions/:id/messages` may return 0 messages even for valid sessions. This is a known limitation — skip the API comparison and rely on JSONL as the source of truth.
-
-When Relay is NOT enabled:
+**g. Compare against the API:**
 ```bash
 curl -s "http://localhost:$API_PORT/api/sessions/$SDK_SESSION_ID/messages" \
   | jq '[.messages[] | {role, preview: (.content | if type=="string" then .[0:100] else (.[0].text // "[block]")[0:100] end)}]'
@@ -282,7 +259,7 @@ After sending, check whether task list UI elements are visible in the DOM. Compa
 - **Network status:** [POST status code]
 - **DOM message count:** [count] (expected: [count])
 - **JSONL message count:** [count]
-- **API match:** [yes/no/skipped]
+- **API match:** [yes/no]
 - **Observations:** [any issues or "Clean"]
 ```
 
@@ -478,23 +455,13 @@ All checks passed. No bugs or significant issues found.
 
 ## Technical Notes
 
-- **JSONL location:** `~/.claude/projects/{slug}/{sessionId}.jsonl` — use `find` by session ID or by recent modification time.
+- **JSONL location:** `~/.claude/projects/{slug}/{sessionId}.jsonl` — use `find` by session ID.
 - **Session ID:** `?session=` URL param, managed by `useSessionId()` hook via nuqs.
 - **Model selector:** `ModelItem` in `StatusLine` — opens a `ResponsiveDropdownMenu`.
 - **Permission mode selector:** `PermissionModeItem` in `StatusLine` — 4 options available.
 - **New session button:** Plus icon in `SessionSidebar`.
 - **API port:** `DORKOS_PORT` env var — default is 4242; user config may override (e.g., 6942 via `.env`). The Vite dev server on 4241 proxies `/api` to the backend.
+- **Streaming:** The web client always uses direct SSE — the POST response body IS the SSE stream (no Relay mediation). A separate persistent EventSource handles cross-client `sync_update` events only (see ADR-0117).
 - **Streaming complete signal:** Stop button present during streaming, gone when done.
-- **SSE event types to watch:** `text_delta`, `tool_call_start`, `tool_call_end`, `tool_result`, `task_update`, `done`, `stream_ready` (Relay only — confirms SSE subscription is active before POST).
-- **SSE freeze detection:** Use content staleness detection (two screenshots 10s apart with identical text) to detect and unblock via stop button click. SSE freezes were fixed in `fix-relay-sse-delivery-pipeline` — any occurrence is a regression.
-
-### Relay Mode
-
-When `DORKOS_RELAY_ENABLED` is true, session messaging uses Relay transport. This changes several behaviors:
-
-- **URL session ID is the Agent-ID**, not the SDK session ID. The JSONL filename uses the real SDK session ID (different from the URL).
-- **The sidebar shows the SDK session ID** (e.g., "Session 21b09157"), which matches the JSONL filename.
-- **User messages in JSONL are wrapped in `<relay_context>` XML** containing Agent-ID, Session-ID, From, Message-ID, Subject, Sent, Budget, and Reply-to fields.
-- **Subscribe-first handshake:** The SSE `/stream` endpoint sends a `stream_ready` event after the relay subscription is active. The client waits for this event (up to 5s) before POSTing the message. If the POST fires before `stream_ready` arrives, early response chunks are buffered server-side (pending buffer in SubscriptionRegistry) and drained when the subscription registers.
-- **`GET /api/sessions/:id/messages` may return 0 messages** for Relay sessions — this is a known limitation (session ID duality between Agent-ID and SDK-Session-ID). Use JSONL on disk as the source of truth for comparison.
-- **To find the JSONL**, use `find ~/.claude/projects -name "*.jsonl" -mmin -2 -type f` (by recent modification time) rather than searching by URL session ID.
+- **SSE event types to watch:** `text_delta`, `tool_call_start`, `tool_call_end`, `tool_result`, `task_update`, `done`.
+- **SSE freeze detection:** Use content staleness detection (two screenshots 10s apart with identical text) to detect and unblock via stop button click. Any SSE freeze is a regression.

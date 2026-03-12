@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Cap MCP servers list at 4 with overflow link to agent settings
 - Cap agents list at 3 with overflow link to Mesh
+- Filter agent connections to reachable-only, so the connections panel only shows agents you can actually reach
 - Introduce Pulse presets management and UI components
 - Add structured debug logging across chat flow layers
 - Add smooth LOD transitions, adapter labels, and ghost node tests
@@ -24,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Remove relay chat path from self-test command
 - Remove relay message path from web client, use direct SSE only
 - Use Math.max for overflow values, clarify useAgentAccess guard comment
 - Move AGENT_CAP to module scope, remove unused MCP_CAP
