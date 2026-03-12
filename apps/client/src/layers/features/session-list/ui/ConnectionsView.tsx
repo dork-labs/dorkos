@@ -47,6 +47,7 @@ const DORKOS_TOOLS = [
 ] as const;
 
 const AGENT_CAP = 3;
+const MCP_CAP = 4;
 
 /** Read-only adapter and agent summary for the sidebar Connections tab. */
 export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
@@ -59,6 +60,8 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   const agents = agentsData?.agents ?? [];
   const { data: mcpConfig } = useMcpConfig(selectedCwd);
   const mcpServers = mcpConfig?.servers ?? [];
+  const cappedMcpServers = mcpServers.slice(0, MCP_CAP);
+  const mcpOverflow = mcpServers.length - MCP_CAP;
 
   // Fetch agents reachable by the current agent. Only enabled when an agentId
   // is present and mesh is not disabled-by-server.
@@ -229,7 +232,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
               );
             })}
 
-            {mcpServers.map((server) => (
+            {cappedMcpServers.map((server) => (
               <SidebarMenuItem key={server.name}>
                 <SidebarMenuButton className="text-sm">
                   <span
@@ -244,6 +247,17 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
+
+          {mcpOverflow > 0 && (
+            <div className="px-3 py-1">
+              <button
+                onClick={() => setAgentDialogOpen(true)}
+                className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+              >
+                + {mcpOverflow} more {mcpOverflow === 1 ? 'server' : 'servers'} →
+              </button>
+            </div>
+          )}
 
           <div className="px-3 py-2">
             <button

@@ -39,7 +39,7 @@ vi.mock('@/layers/entities/binding/model/use-bindings', () => ({
 }));
 
 // Mock useMcpConfig
-const mockMcpConfig = vi.fn<() => { data: { servers: { name: string; type: string }[] } | undefined }>(() => ({
+const mockMcpConfig = vi.fn<() => { data: { servers: { name: string; type: string; status?: string }[] } | undefined }>(() => ({
   data: { servers: [] },
 }));
 vi.mock('@/layers/entities/agent/model/use-mcp-config', () => ({
@@ -136,6 +136,11 @@ function makeBinding(adapterId: string, agentId: string): AdapterBinding {
 /** Build a minimal AgentManifest for testing. */
 function makeAgent(id: string, name: string): AgentManifest {
   return { id, name } as AgentManifest;
+}
+
+/** Build a minimal MCP server entry for testing. */
+function makeMcpServer(name: string, status?: string): { name: string; type: string; status?: string } {
+  return { name, type: 'stdio', ...(status !== undefined && { status }) };
 }
 
 const AGENT_ID = 'agent-1';
@@ -352,6 +357,67 @@ describe('ConnectionsView', () => {
       render(<ConnectionsView toolStatus={enabledToolStatus} agentId={null} />, { wrapper: Wrapper });
       fireEvent.click(screen.getByText('+ 1 more agent reachable →'));
       expect(mockSetMeshOpen).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('MCP servers cap (MCP_CAP = 4)', () => {
+    it('shows all MCP servers when count is at or below cap', () => {
+      mockMcpConfig.mockReturnValue({
+        data: {
+          servers: [
+            makeMcpServer('alpha'),
+            makeMcpServer('beta'),
+            makeMcpServer('gamma'),
+            makeMcpServer('delta'),
+          ],
+        },
+      });
+      render(<ConnectionsView toolStatus={enabledToolStatus} agentId={null} />, { wrapper: Wrapper });
+      expect(screen.getByText('alpha')).toBeInTheDocument();
+      expect(screen.getByText('beta')).toBeInTheDocument();
+      expect(screen.getByText('gamma')).toBeInTheDocument();
+      expect(screen.getByText('delta')).toBeInTheDocument();
+      expect(screen.queryByText(/more server/)).not.toBeInTheDocument();
+    });
+
+    it('shows only the first 4 MCP servers and an overflow button when count exceeds cap', () => {
+      mockMcpConfig.mockReturnValue({
+        data: {
+          servers: [
+            makeMcpServer('alpha'),
+            makeMcpServer('beta'),
+            makeMcpServer('gamma'),
+            makeMcpServer('delta'),
+            makeMcpServer('epsilon'),
+            makeMcpServer('zeta'),
+          ],
+        },
+      });
+      render(<ConnectionsView toolStatus={enabledToolStatus} agentId={null} />, { wrapper: Wrapper });
+      expect(screen.getByText('alpha')).toBeInTheDocument();
+      expect(screen.getByText('beta')).toBeInTheDocument();
+      expect(screen.getByText('gamma')).toBeInTheDocument();
+      expect(screen.getByText('delta')).toBeInTheDocument();
+      expect(screen.queryByText('epsilon')).not.toBeInTheDocument();
+      expect(screen.queryByText('zeta')).not.toBeInTheDocument();
+      expect(screen.getByText('+ 2 more servers →')).toBeInTheDocument();
+    });
+
+    it('overflow button opens agent settings dialog', () => {
+      mockMcpConfig.mockReturnValue({
+        data: {
+          servers: [
+            makeMcpServer('alpha'),
+            makeMcpServer('beta'),
+            makeMcpServer('gamma'),
+            makeMcpServer('delta'),
+            makeMcpServer('epsilon'),
+          ],
+        },
+      });
+      render(<ConnectionsView toolStatus={enabledToolStatus} agentId={null} />, { wrapper: Wrapper });
+      fireEvent.click(screen.getByText('+ 1 more server →'));
+      expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(true);
     });
   });
 });
