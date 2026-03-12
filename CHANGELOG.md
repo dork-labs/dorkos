@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add usePresentationMode hook with tests
 - Add story-data types and content
 - Implement agent filtering and caps in ConnectionsView
 - Add motion animations to ConnectionsView
