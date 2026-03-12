@@ -31,7 +31,6 @@ interface StreamEventDeps {
   setEstimatedTokens: (tokens: number) => void;
   setStreamStartTime: (time: number | null) => void;
   setIsTextStreaming: (streaming: boolean) => void;
-  setPendingUserContent: (content: string | null) => void;
   sessionId: string;
   onTaskEventRef: React.MutableRefObject<((event: TaskUpdateEvent) => void) | undefined>;
   onSessionIdChangeRef: React.MutableRefObject<((newSessionId: string) => void) | undefined>;
@@ -78,7 +77,6 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
     setEstimatedTokens,
     setStreamStartTime,
     setIsTextStreaming,
-    setPendingUserContent,
     sessionId,
     onTaskEventRef,
     onSessionIdChangeRef,
@@ -133,9 +131,6 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
   return function handleStreamEvent(type: string, data: unknown, assistantId: string) {
     switch (type) {
       case 'text_delta': {
-        // Clear the pending user bubble — first token confirms server receipt.
-        // React no-ops if the state is already null.
-        setPendingUserContent(null);
         const { text } = data as TextDelta;
         const parts = currentPartsRef.current;
         const lastPart = parts[parts.length - 1];

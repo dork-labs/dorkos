@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replace pendingUserContent with optimistic messages in virtualizer
 - Fix presentation mode keyboard nav, progress bar, header hiding, animation replay
 - Disable model/permission selectors before first message, fix post-remap PATCH
 - Filter adapter list to agent-bound adapters only

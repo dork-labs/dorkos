@@ -14,7 +14,6 @@ vi.mock('@/layers/shared/model/use-is-mobile', () => ({
 vi.mock('../model/use-chat-session', () => ({
   useChatSession: () => ({
     messages: [],
-    pendingUserContent: null,
     input: '',
     setInput: vi.fn(),
     handleSubmit: vi.fn(),

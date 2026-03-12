@@ -163,10 +163,7 @@ describe('useChatSession', () => {
     expect(transport.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('sets pendingUserContent on submit and clears input', async () => {
-    // After the Bug 3 fix, user messages are no longer added optimistically to messages[].
-    // The JSONL transcript is the source of truth (ADR-0003). Immediate feedback comes via
-    // pendingUserContent, which is cleared once the stream completes or an error occurs.
+  it('adds optimistic user message to messages on submit and clears input', async () => {
     const sendMessage = createSendMessageMock([
       { type: 'done', data: { sessionId: 's1' } } as StreamEvent,
     ]);
@@ -187,11 +184,10 @@ describe('useChatSession', () => {
     });
 
     expect(result.current.input).toBe('');
-    // No optimistic user message in messages — user content comes from JSONL after stream
+    // Optimistic user message is in messages array (may be replaced by history on refetch)
     const userMessages = result.current.messages.filter((m) => m.role === 'user');
-    expect(userMessages).toHaveLength(0);
-    // pendingUserContent cleared after done event (stream completed without text_delta)
-    expect(result.current.pendingUserContent).toBeNull();
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0].content).toBe('Hello');
   });
 
   it('parses text_delta events into assistant message content', async () => {
@@ -395,6 +391,8 @@ describe('useChatSession', () => {
 
     expect(result.current.status).toBe('error');
     expect(result.current.error).toBe('HTTP 404');
+    // Optimistic user message removed on error
+    expect(result.current.messages.filter((m) => m.role === 'user')).toHaveLength(0);
   });
 
   it('handles SESSION_LOCKED errors by setting sessionBusy and preserving input', async () => {
@@ -480,13 +478,12 @@ describe('useChatSession', () => {
       await result.current.handleSubmit();
     });
 
-    // 2 history + 1 new assistant = 3 (no optimistic user message in messages)
-    // The user message comes from JSONL after stream — not re-fetched in this test mock.
-    expect(result.current.messages).toHaveLength(3);
-    expect(result.current.messages[2].role).toBe('assistant');
-    expect(result.current.messages[2].content).toBe('New reply');
-    // pendingUserContent cleared by text_delta
-    expect(result.current.pendingUserContent).toBeNull();
+    // 2 history + 1 optimistic user + 1 new assistant = 4
+    expect(result.current.messages).toHaveLength(4);
+    expect(result.current.messages[2].role).toBe('user');
+    expect(result.current.messages[2].content).toBe('New question');
+    expect(result.current.messages[3].role).toBe('assistant');
+    expect(result.current.messages[3].content).toBe('New reply');
   });
 
   describe('deferred assistant message creation', () => {
@@ -527,9 +524,10 @@ describe('useChatSession', () => {
       // Wait for streaming status
       await waitFor(() => expect(result.current.status).toBe('streaming'));
 
-      // No optimistic user message in messages — pending state is in pendingUserContent
-      expect(result.current.messages).toHaveLength(0);
-      expect(result.current.pendingUserContent).toBe('test');
+      // Optimistic user message is in messages, but no assistant yet
+      expect(result.current.messages).toHaveLength(1);
+      expect(result.current.messages[0].role).toBe('user');
+      expect(result.current.messages[0].content).toBe('test');
       expect(result.current.status).toBe('streaming');
 
       // Clean up by stopping
@@ -558,12 +556,72 @@ describe('useChatSession', () => {
         await result.current.handleSubmit();
       });
 
-      // 1 assistant message (user comes from JSONL, not in messages during streaming)
-      expect(result.current.messages).toHaveLength(1);
-      expect(result.current.messages[0].role).toBe('assistant');
-      expect(result.current.messages[0].content).toBe('Hello from Claude');
-      // pendingUserContent cleared on first text_delta
-      expect(result.current.pendingUserContent).toBeNull();
+      // 1 optimistic user + 1 assistant
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0].role).toBe('user');
+      expect(result.current.messages[1].role).toBe('assistant');
+      expect(result.current.messages[1].content).toBe('Hello from Claude');
+    });
+
+    it('optimistic user message appears before assistant during streaming', async () => {
+      // Regression: the old pendingUserContent rendered outside the virtualizer,
+      // causing the assistant to appear above the user message. Optimistic messages
+      // in the array must precede the streaming assistant.
+      let fireEvents!: (events: StreamEvent[]) => void;
+      const sendMessage = vi.fn(
+        (
+          _sessionId: string,
+          _content: string,
+          onEvent: (event: StreamEvent) => void,
+          signal?: AbortSignal,
+        ) => {
+          fireEvents = (events: StreamEvent[]) => {
+            for (const event of events) onEvent(event);
+          };
+          return new Promise<void>((resolve, reject) => {
+            signal?.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'));
+            });
+            // Store resolve so we can complete later
+            (sendMessage as unknown as { _resolve: () => void })._resolve = resolve;
+          });
+        }
+      );
+      const transport = createMockTransport({ sendMessage });
+
+      const { result } = renderHook(() => useChatSession('s1'), {
+        wrapper: createWrapper(transport),
+      });
+
+      await waitFor(() => expect(result.current.status).toBe('idle'));
+
+      await act(async () => {
+        result.current.setInput('Hello');
+      });
+
+      // Start streaming (don't await — stays pending until resolve)
+      act(() => {
+        result.current.handleSubmit();
+      });
+
+      await waitFor(() => expect(result.current.status).toBe('streaming'));
+
+      // Fire a text_delta to create the assistant message mid-stream
+      act(() => {
+        fireEvents([{ type: 'text_delta', data: { text: 'Response' } } as StreamEvent]);
+      });
+
+      // Both messages should exist with user BEFORE assistant
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0].role).toBe('user');
+      expect(result.current.messages[0].content).toBe('Hello');
+      expect(result.current.messages[1].role).toBe('assistant');
+      expect(result.current.messages[1].content).toBe('Response');
+
+      // Clean up
+      await act(async () => {
+        result.current.stop();
+      });
     });
 
     it('creates assistant message on first tool_call_start', async () => {
@@ -589,11 +647,12 @@ describe('useChatSession', () => {
         await result.current.handleSubmit();
       });
 
-      // 1 assistant message (user comes from JSONL, not in messages during streaming)
-      expect(result.current.messages).toHaveLength(1);
-      expect(result.current.messages[0].role).toBe('assistant');
-      expect(result.current.messages[0].toolCalls).toHaveLength(1);
-      expect(result.current.messages[0].toolCalls![0].toolName).toBe('Read');
+      // 1 optimistic user + 1 assistant
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0].role).toBe('user');
+      expect(result.current.messages[1].role).toBe('assistant');
+      expect(result.current.messages[1].toolCalls).toHaveLength(1);
+      expect(result.current.messages[1].toolCalls![0].toolName).toBe('Read');
     });
 
     it('does not create duplicate assistant messages on subsequent events', async () => {
@@ -642,10 +701,10 @@ describe('useChatSession', () => {
         await result.current.handleSubmit();
       });
 
-      // No optimistic user message — user content comes from JSONL after stream
-      // No assistant message — done with no content creates nothing
-      expect(result.current.messages).toHaveLength(0);
-      expect(result.current.pendingUserContent).toBeNull();
+      // Optimistic user message present, no assistant (done without content)
+      const userMessages = result.current.messages.filter((m) => m.role === 'user');
+      expect(userMessages).toHaveLength(1);
+      expect(userMessages[0].content).toBe('test');
       expect(result.current.status).toBe('idle');
     });
   });

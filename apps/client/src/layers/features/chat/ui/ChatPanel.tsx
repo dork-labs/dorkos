@@ -93,7 +93,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
 
   const {
     messages,
-    pendingUserContent,
     input,
     setInput,
     handleSubmit,
@@ -255,7 +254,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
               Loading conversation...
             </div>
           </div>
-        ) : messages.length === 0 && !pendingUserContent ? (
+        ) : messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
               <p className="text-muted-foreground text-base">Start a conversation</p>
@@ -279,7 +278,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
             onToolRef={handleToolRef}
             focusedOptionIndex={focusedOptionIndex}
             onToolDecided={markToolCallResponded}
-            pendingUserContent={pendingUserContent}
           />
         )}
 
@@ -301,7 +299,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         </AnimatePresence>
 
         <AnimatePresence>
-          {!isAtBottom && (messages.length > 0 || !!pendingUserContent) && !isLoadingHistory && (
+          {!isAtBottom && messages.length > 0 && !isLoadingHistory && (
             <motion.button
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}

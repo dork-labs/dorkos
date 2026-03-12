@@ -429,38 +429,3 @@ describe('MessageList', () => {
     vi.useRealTimers();
   });
 });
-
-describe('MessageList — pendingUserContent bubble', () => {
-  it('renders pending bubble when pendingUserContent is set', () => {
-    render(
-      <MessageList
-        sessionId="test-session"
-        messages={[]}
-        pendingUserContent="Hello, world!"
-      />
-    );
-    expect(screen.getByLabelText('Sending…')).toBeDefined();
-    expect(screen.getByText('Hello, world!')).toBeDefined();
-  });
-
-  it('does not render pending bubble when pendingUserContent is null', () => {
-    render(
-      <MessageList
-        sessionId="test-session"
-        messages={[]}
-        pendingUserContent={null}
-      />
-    );
-    expect(screen.queryByLabelText('Sending…')).toBeNull();
-  });
-
-  it('does not render pending bubble when pendingUserContent is undefined', () => {
-    render(
-      <MessageList
-        sessionId="test-session"
-        messages={[]}
-      />
-    );
-    expect(screen.queryByLabelText('Sending…')).toBeNull();
-  });
-});

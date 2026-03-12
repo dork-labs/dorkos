@@ -17,7 +17,6 @@ function createMinimalDeps() {
   const setEstimatedTokens = vi.fn();
   const setStreamStartTime = vi.fn();
   const setIsTextStreaming = vi.fn();
-  const setPendingUserContent = vi.fn();
   const onTaskEventRef = { current: undefined };
   const onSessionIdChangeRef = { current: undefined };
   const onStreamingDoneRef = { current: undefined };
@@ -37,14 +36,13 @@ function createMinimalDeps() {
     setEstimatedTokens,
     setStreamStartTime,
     setIsTextStreaming,
-    setPendingUserContent,
     sessionId: 'test-session',
     onTaskEventRef,
     onSessionIdChangeRef,
     onStreamingDoneRef,
   });
 
-  return { handler, currentPartsRef, setMessages, setPendingUserContent };
+  return { handler, currentPartsRef, setMessages };
 }
 
 describe('stream-event-handler — _partId assignment', () => {

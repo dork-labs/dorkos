@@ -57,7 +57,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [pendingUserContent, setPendingUserContent] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'streaming' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +79,8 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const selectedCwdRef = useRef(selectedCwd);
   const [isTabVisible, setIsTabVisible] = useState(!document.hidden);
   const messagesRef = useRef<ChatMessage[]>(messages);
+  // Tracks the optimistic user message ID so it can be removed on error
+  const pendingUserIdRef = useRef<string | null>(null);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -136,7 +137,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         setEstimatedTokens,
         setStreamStartTime,
         setIsTextStreaming,
-        setPendingUserContent,
         sessionId: sessionId ?? '',
         onTaskEventRef,
         onSessionIdChangeRef,
@@ -171,7 +171,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     }
   }, [sessionId, selectedCwd]);
 
-  // Seed local messages state from history (initial load + polling updates)
+  // Seed local messages state from history (initial load + post-stream replace)
   useEffect(() => {
     if (!historyQuery.data) return;
 
@@ -250,10 +250,22 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       onSessionIdChangeRef.current?.(targetSessionId);
     }
 
-    // Show a pending bubble immediately — provides visual feedback without adding to the
-    // JSONL-sourced messages array. Cleared on first text_delta or on stream completion/error.
-    // This avoids the optimistic dedup race (ADR-0003: JSONL is the source of truth).
-    setPendingUserContent(content);
+    // Add optimistic user message directly to the messages array so it appears
+    // in the virtualizer BEFORE the streaming assistant message. This fixes the
+    // ordering bug where the assistant appeared above the user message (the old
+    // pendingUserContent bubble was rendered outside the virtualizer).
+    const pendingUserId = `pending-user-${crypto.randomUUID()}`;
+    pendingUserIdRef.current = pendingUserId;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: pendingUserId,
+        role: 'user' as const,
+        content,
+        parts: [{ type: 'text', text: content }],
+        timestamp: new Date().toISOString(),
+      },
+    ]);
     if (clearInput) setInput('');
     setStatus('streaming');
     statusRef.current = 'streaming'; // Sync ref immediately — closes the timing window where sync_update could invalidate stale history
@@ -283,12 +295,23 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         abortController.signal,
         selectedCwd ?? undefined,
       );
-      // Clear pending bubble after stream completes (text_delta clears it earlier if content arrived)
-      setPendingUserContent(null);
+      // Reset seed flag so the next history fetch does a full replace instead of
+      // an incremental append. This prevents ID-mismatch duplicates: the streaming
+      // assistant has a client-generated UUID while history has an SDK-assigned UUID.
+      historySeededRef.current = false;
+      pendingUserIdRef.current = null;
+      // Invalidate broadly to cover session ID remaps (client UUID → SDK UUID).
+      // The old targetSessionId may differ from the SDK-assigned ID returned in
+      // the done event, so a narrow key would miss the active query.
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
       setStatus('idle');
     } catch (err) {
-      // Clear pending bubble on any error — must not linger if delivery fails
-      setPendingUserContent(null);
+      // Remove optimistic user message on error — must not linger if delivery fails
+      if (pendingUserIdRef.current) {
+        const failedId = pendingUserIdRef.current;
+        setMessages((prev) => prev.filter((m) => m.id !== failedId));
+        pendingUserIdRef.current = null;
+      }
       if ((err as Error).name !== 'AbortError') {
         if ((err as { code?: string }).code === 'SESSION_LOCKED') {
           setSessionBusy(true);
@@ -377,7 +400,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
 
   return {
     messages,
-    pendingUserContent,
     input,
     setInput,
     handleSubmit,
