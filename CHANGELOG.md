@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add StoryHero section
 - Add PresentationShell with keyboard nav and progress dots
 - Add presentation mode CSS
 - Add usePresentationMode hook with tests
