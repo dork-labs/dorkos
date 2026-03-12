@@ -61,10 +61,12 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   const { data: mcpConfig } = useMcpConfig(selectedCwd);
   const mcpServers = mcpConfig?.servers ?? [];
   const cappedMcpServers = mcpServers.slice(0, MCP_CAP);
-  const mcpOverflow = mcpServers.length - MCP_CAP;
+  const mcpOverflow = Math.max(0, mcpServers.length - MCP_CAP);
 
   // Fetch agents reachable by the current agent. Only enabled when an agentId
   // is present and mesh is not disabled-by-server.
+  // agentId ?? '' satisfies the string parameter; the enabled flag prevents
+  // the query from firing when agentId is absent.
   const { data: accessData, isLoading: accessLoading } = useAgentAccess(
     agentId ?? '',
     meshEnabled && !!agentId,
@@ -93,7 +95,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   }, [agents, agentId, accessData, accessLoading]);
 
   const cappedAgents = visibleAgents.slice(0, AGENT_CAP);
-  const agentOverflow = visibleAgents.length - AGENT_CAP;
+  const agentOverflow = Math.max(0, visibleAgents.length - AGENT_CAP);
 
   const showRelaySection = relayEnabled;
   const showMeshSection = meshEnabled;
