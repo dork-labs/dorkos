@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Filter adapter list to agent-bound adapters only
 - Prevent form revert and fix AnimatePresence key warnings
 - Restore scroll in tabpanel views by adding h-full
 - Use text-foreground for node name text consistency

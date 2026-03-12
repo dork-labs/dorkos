@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { useRelayAdapters } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
+import { useBindings } from '@/layers/entities/binding';
 import { useAppStore } from '@/layers/shared/model';
 import type { AgentToolStatus } from '@/layers/entities/agent';
 import {
@@ -14,6 +16,7 @@ import { cn } from '@/layers/shared/lib';
 
 interface ConnectionsViewProps {
   toolStatus: AgentToolStatus;
+  agentId: string | null | undefined;
 }
 
 const ADAPTER_STATE_COLORS: Record<string, string> = {
@@ -23,13 +26,27 @@ const ADAPTER_STATE_COLORS: Record<string, string> = {
 };
 
 /** Read-only adapter and agent summary for the sidebar Connections tab. */
-export function ConnectionsView({ toolStatus }: ConnectionsViewProps) {
+export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   const { setRelayOpen, setMeshOpen } = useAppStore();
   const relayEnabled = toolStatus.relay !== 'disabled-by-server';
   const meshEnabled = toolStatus.mesh !== 'disabled-by-server';
   const { data: adapters = [] } = useRelayAdapters(relayEnabled);
+  const { data: bindings = [] } = useBindings();
   const { data: agentsData } = useRegisteredAgents(undefined, meshEnabled);
   const agents = agentsData?.agents ?? [];
+
+  // Show only adapters that are either the built-in CCA (serves all agents) or
+  // have a binding to the currently viewed agent.
+  // Note: `builtin` means loaded from @dorkos/relay; only claude-code type serves all agents.
+  const visibleAdapters = useMemo(() => {
+    const isCca = (a: (typeof adapters)[number]) =>
+      a.config.type === 'claude-code' && a.config.builtin === true;
+    if (!agentId) return adapters.filter(isCca);
+    const boundAdapterIds = new Set(
+      bindings.filter((b) => b.agentId === agentId).map((b) => b.adapterId),
+    );
+    return adapters.filter((a) => isCca(a) || boundAdapterIds.has(a.config.id));
+  }, [adapters, bindings, agentId]);
 
   const showRelaySection = relayEnabled;
   const showMeshSection = meshEnabled;
@@ -57,13 +74,13 @@ export function ConnectionsView({ toolStatus }: ConnectionsViewProps) {
               <div className="px-3 py-2">
                 <p className="text-muted-foreground/60 text-sm">Relay disabled for this agent</p>
               </div>
-            ) : adapters.length === 0 ? (
+            ) : visibleAdapters.length === 0 ? (
               <div className="px-3 py-2">
                 <p className="text-muted-foreground/60 text-sm">No adapters configured</p>
               </div>
             ) : (
               <SidebarMenu>
-                {adapters.map((adapter) => (
+                {visibleAdapters.map((adapter) => (
                   <SidebarMenuItem key={adapter.config.id}>
                     <SidebarMenuButton
                       onClick={() => setRelayOpen(true)}

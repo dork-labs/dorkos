@@ -227,7 +227,7 @@ export function AgentSidebar() {
           aria-labelledby="sidebar-tab-connections"
           className={cn('h-full', sidebarActiveTab !== 'connections' && 'hidden')}
         >
-          <ConnectionsView toolStatus={toolStatus} />
+          <ConnectionsView toolStatus={toolStatus} agentId={currentAgent?.id} />
         </div>
       </SidebarContent>
 

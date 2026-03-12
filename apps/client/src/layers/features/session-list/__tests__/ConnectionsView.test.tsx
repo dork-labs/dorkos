@@ -4,6 +4,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import type { AgentToolStatus } from '@/layers/entities/agent';
 import type { AdapterListItem } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { SidebarProvider } from '@/layers/shared/ui';
 import { ConnectionsView } from '../ui/ConnectionsView';
 
@@ -19,6 +20,12 @@ const mockRegisteredAgents = vi.fn<() => { data: { agents: AgentManifest[] } | u
 }));
 vi.mock('@/layers/entities/mesh/model/use-mesh-agents', () => ({
   useRegisteredAgents: () => mockRegisteredAgents(),
+}));
+
+// Mock useBindings
+const mockBindings = vi.fn<() => { data: AdapterBinding[] }>(() => ({ data: [] }));
+vi.mock('@/layers/entities/binding/model/use-bindings', () => ({
+  useBindings: () => mockBindings(),
 }));
 
 // Mock app store — capture setRelayOpen / setMeshOpen calls
@@ -88,59 +95,93 @@ function makeAdapter(
   };
 }
 
+/** Build a minimal binding for testing. */
+function makeBinding(adapterId: string, agentId: string): AdapterBinding {
+  return {
+    id: `${adapterId}-${agentId}`,
+    adapterId,
+    agentId,
+    projectPath: '/test',
+    sessionStrategy: 'per-chat',
+    label: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 /** Build a minimal AgentManifest for testing. */
 function makeAgent(id: string, name: string): AgentManifest {
   return { id, name } as AgentManifest;
 }
+
+const AGENT_ID = 'agent-1';
 
 describe('ConnectionsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRelayAdapters.mockReturnValue({ data: [] });
     mockRegisteredAgents.mockReturnValue({ data: { agents: [] } });
+    mockBindings.mockReturnValue({ data: [] });
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('renders Adapters section with adapter names and status', () => {
+  it('renders Adapters section with adapter names and status for bound adapters', () => {
     mockRelayAdapters.mockReturnValue({
       data: [
         makeAdapter('a1', 'Telegram', 'connected'),
         makeAdapter('a2', 'Slack', 'disconnected'),
       ],
     });
-    render(<ConnectionsView toolStatus={enabledToolStatus} />, { wrapper: Wrapper });
+    mockBindings.mockReturnValue({
+      data: [makeBinding('a1', AGENT_ID), makeBinding('a2', AGENT_ID)],
+    });
+    render(<ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.getByText('Adapters')).toBeInTheDocument();
     expect(screen.getByText('Telegram')).toBeInTheDocument();
     expect(screen.getByText('Slack')).toBeInTheDocument();
+  });
+
+  it('filters out adapters not bound to the current agent', () => {
+    mockRelayAdapters.mockReturnValue({
+      data: [
+        makeAdapter('a1', 'Telegram', 'connected'),
+        makeAdapter('a2', 'Slack', 'disconnected'),
+      ],
+    });
+    // Only a1 is bound to AGENT_ID
+    mockBindings.mockReturnValue({ data: [makeBinding('a1', AGENT_ID)] });
+    render(<ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
+    expect(screen.getByText('Telegram')).toBeInTheDocument();
+    expect(screen.queryByText('Slack')).not.toBeInTheDocument();
   });
 
   it('renders Agents section with agent names', () => {
     mockRegisteredAgents.mockReturnValue({
       data: { agents: [makeAgent('ag1', 'Deployer')] },
     });
-    render(<ConnectionsView toolStatus={enabledToolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.getByText('Agents')).toBeInTheDocument();
     expect(screen.getByText('Deployer')).toBeInTheDocument();
   });
 
   it('hides Adapters section when Relay is disabled-by-server', () => {
     const toolStatus: AgentToolStatus = { ...enabledToolStatus, relay: 'disabled-by-server' };
-    render(<ConnectionsView toolStatus={toolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={toolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.queryByText('Adapters')).not.toBeInTheDocument();
   });
 
   it('shows disabled state when Relay is disabled-by-agent', () => {
     const toolStatus: AgentToolStatus = { ...enabledToolStatus, relay: 'disabled-by-agent' };
-    render(<ConnectionsView toolStatus={toolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={toolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.getByText('Relay disabled for this agent')).toBeInTheDocument();
   });
 
   it('shows disabled state when Mesh is disabled-by-agent', () => {
     const toolStatus: AgentToolStatus = { ...enabledToolStatus, mesh: 'disabled-by-agent' };
-    render(<ConnectionsView toolStatus={toolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={toolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.getByText('Mesh disabled for this agent')).toBeInTheDocument();
   });
 
@@ -150,31 +191,31 @@ describe('ConnectionsView', () => {
       relay: 'disabled-by-server',
       mesh: 'disabled-by-server',
     };
-    render(<ConnectionsView toolStatus={toolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={toolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.getByText('No connections configured')).toBeInTheDocument();
   });
 
   it('Open Relay button calls setRelayOpen(true)', () => {
-    render(<ConnectionsView toolStatus={enabledToolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     const btn = screen.getByText(/Open Relay/);
     fireEvent.click(btn);
     expect(mockSetRelayOpen).toHaveBeenCalledWith(true);
   });
 
   it('Open Mesh button calls setMeshOpen(true)', () => {
-    render(<ConnectionsView toolStatus={enabledToolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     const btn = screen.getByText(/Open Mesh/);
     fireEvent.click(btn);
     expect(mockSetMeshOpen).toHaveBeenCalledWith(true);
   });
 
   it('renders empty adapter state when no adapters configured', () => {
-    render(<ConnectionsView toolStatus={enabledToolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.getByText('No adapters configured')).toBeInTheDocument();
   });
 
   it('renders empty agents state when no agents registered', () => {
-    render(<ConnectionsView toolStatus={enabledToolStatus} />, { wrapper: Wrapper });
+    render(<ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.getByText('No agents registered')).toBeInTheDocument();
   });
 
@@ -182,7 +223,8 @@ describe('ConnectionsView', () => {
     mockRelayAdapters.mockReturnValue({
       data: [makeAdapter('a1', 'Telegram', 'connected')],
     });
-    render(<ConnectionsView toolStatus={enabledToolStatus} />, { wrapper: Wrapper });
+    mockBindings.mockReturnValue({ data: [makeBinding('a1', AGENT_ID)] });
+    render(<ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} />, { wrapper: Wrapper });
     expect(screen.getByText('connected')).toBeInTheDocument();
   });
 });
