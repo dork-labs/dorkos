@@ -324,8 +324,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       )}
       <div
         className={cn(
-          'border-input flex items-end gap-1.5 rounded-md border bg-transparent p-1.5 shadow-xs transition-[color,box-shadow]',
-          isFocused && 'border-ring ring-ring/50 ring-[3px]',
+          'border-input flex items-end gap-1.5 rounded-md border bg-background p-1.5 shadow-xs transition-[color,box-shadow]',
+          isFocused && 'border-ring ring-ring/75 ring-[1px]',
           editingQueueItem && 'border-primary/40',
           !onAttach && 'pl-3'
         )}

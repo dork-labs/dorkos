@@ -146,6 +146,8 @@ export const ConfigFieldOptionSchema = z
   .object({
     label: z.string(),
     value: z.string(),
+    /** Body text shown beneath the label when rendered as radio-cards. */
+    description: z.string().optional(),
   })
   .openapi('ConfigFieldOption');
 
@@ -168,6 +170,14 @@ export const ConfigFieldSchema = z
         equals: z.union([z.string(), z.boolean(), z.number()]),
       })
       .optional(),
+    /** Regex pattern string for client-side blur validation (e.g. `'^\\d+:[\\w-]{35}$'`). */
+    pattern: z.string().optional(),
+    /** Error message shown when `pattern` does not match. */
+    patternMessage: z.string().optional(),
+    /** For `password` fields: show the value in plaintext by default (useful for pasted tokens). */
+    visibleByDefault: z.boolean().optional(),
+    /** When 'radio-cards', renders select options as selectable card buttons instead of a dropdown. */
+    displayAs: z.literal('radio-cards').optional(),
   })
   .openapi('ConfigField');
 
@@ -205,6 +215,8 @@ export const AdapterManifestSchema = z
     multiInstance: z.boolean().default(false),
     /** Relay adapter API version this adapter targets (e.g., '0.1.0'). */
     apiVersion: z.string().optional(),
+    /** Deep-link button shown in the Configure step banner (e.g. to open @BotFather). */
+    actionButton: z.object({ label: z.string(), url: z.string() }).optional(),
   })
   .openapi('AdapterManifest');
 

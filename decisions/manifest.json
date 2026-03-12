@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 117,
+  "nextNumber": 118,
   "decisions": [
+    {
+      "number": 117,
+      "slug": "direct-sse-as-sole-web-client-transport",
+      "title": "Use Direct SSE as Sole Web Client Transport",
+      "status": "draft",
+      "created": "2026-03-12",
+      "extractedFrom": "client-direct-sse",
+      "specSlug": "client-direct-sse"
+    },
     {
       "number": 116,
       "slug": "entity-layer-zustand-store-for-cross-feature-coordination",

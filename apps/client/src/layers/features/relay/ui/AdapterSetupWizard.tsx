@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Dialog,
@@ -44,6 +44,8 @@ interface AdapterSetupWizardProps {
   onOpenChange: (open: boolean) => void;
   manifest: AdapterManifest;
   existingInstance?: CatalogInstance & { config?: Record<string, unknown> };
+  /** All adapter IDs currently in use — used to generate a non-colliding default ID for new instances. */
+  existingAdapterIds?: string[];
 }
 
 /**
@@ -90,6 +92,10 @@ function initializeValues(
     const existing = existingConfig ? getNestedValue(existingConfig, field.key) : undefined;
     if (existing !== undefined && field.type !== 'password') {
       values[field.key] = existing;
+    } else if (field.type === 'password' && existingConfig &&
+               getNestedValue(existingConfig, field.key) !== undefined) {
+      // Use sentinel so edit mode shows "Saved" placeholder instead of blank.
+      values[field.key] = '***';
     } else if (field.default !== undefined) {
       values[field.key] = field.default;
     } else {
@@ -99,9 +105,17 @@ function initializeValues(
   return values;
 }
 
-/** Generates a default adapter ID from the manifest type. */
-function generateDefaultId(manifest: AdapterManifest): string {
-  return manifest.type;
+/**
+ * Generates a non-colliding default adapter ID.
+ *
+ * Returns `{type}` if unused, otherwise `{type}-2`, `{type}-3`, etc.
+ */
+function generateDefaultId(manifest: AdapterManifest, existingIds: string[] = []): string {
+  const base = manifest.type;
+  if (!existingIds.includes(base)) return base;
+  let n = 2;
+  while (existingIds.includes(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
 }
 
 /** AdapterSetupWizard provides a four-step dialog for adding or editing adapter instances. */
@@ -110,11 +124,12 @@ export function AdapterSetupWizard({
   onOpenChange,
   manifest,
   existingInstance,
+  existingAdapterIds = [],
 }: AdapterSetupWizardProps) {
   const isEditMode = Boolean(existingInstance);
   const [step, setStep] = useState<WizardStep>('configure');
   const [adapterId, setAdapterId] = useState(() =>
-    existingInstance?.id ?? generateDefaultId(manifest),
+    existingInstance?.id ?? generateDefaultId(manifest, existingAdapterIds),
   );
   const [label, setLabel] = useState(() =>
     (existingInstance?.config?.label as string | undefined) ?? '',
@@ -125,6 +140,7 @@ export function AdapterSetupWizard({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [setupStepIndex, setSetupStepIndex] = useState(0);
   const [idError, setIdError] = useState('');
+  const [botUsername, setBotUsername] = useState('');
 
   // Bind step state — tracks the newly created adapter ID and binding config.
   const [createdAdapterId, setCreatedAdapterId] = useState('');
@@ -210,9 +226,10 @@ export function AdapterSetupWizard({
         },
         {
           onSuccess: (result) => {
-            // Auto-populate label from Telegram bot username when user hasn't set one.
-            if (result.botUsername && !label) {
-              setLabel(`@${result.botUsername}`);
+            if (result.botUsername) {
+              setBotUsername(result.botUsername);
+              // Auto-populate label from bot username when user hasn't set one.
+              if (!label) setLabel(`@${result.botUsername}`);
             }
           },
         },
@@ -302,6 +319,8 @@ export function AdapterSetupWizard({
         setErrors({});
         setIdError('');
         setLabel('');
+        setBotUsername('');
+        setAdapterId(existingInstance?.id ?? generateDefaultId(manifest, existingAdapterIds));
         setCreatedAdapterId('');
         setBindAgentId('');
         setBindStrategy('per-chat');
@@ -309,7 +328,7 @@ export function AdapterSetupWizard({
       }
       onOpenChange(nextOpen);
     },
-    [onOpenChange, testConnection],
+    [onOpenChange, testConnection, existingInstance, manifest, existingAdapterIds],
   );
 
   const isSaving = addAdapter.isPending || updateConfig.isPending;
@@ -370,6 +389,7 @@ export function AdapterSetupWizard({
                   isSuccess={testConnection.isSuccess}
                   isError={testConnection.isError}
                   errorMessage={testConnection.error?.message}
+                  botUsername={botUsername}
                   onRetry={() =>
                     testConnection.mutate({
                       type: manifest.type,
@@ -397,6 +417,8 @@ export function AdapterSetupWizard({
                   onAgentIdChange={setBindAgentId}
                   strategy={bindStrategy}
                   onStrategyChange={setBindStrategy}
+                  botUsername={botUsername}
+                  adapterType={manifest.type}
                 />
               )}
             </motion.div>
@@ -520,6 +542,16 @@ function ConfigureStep({
         </div>
       )}
 
+      {manifest.actionButton && (
+        <div className="flex justify-end">
+          <a href={manifest.actionButton.url} target="_blank" rel="noopener noreferrer">
+            <Button type="button" variant="outline" size="sm">
+              {manifest.actionButton.label}
+            </Button>
+          </a>
+        </div>
+      )}
+
       {currentSetupStep && (
         <h4 className="text-sm font-medium">{currentSetupStep.title}</h4>
       )}
@@ -567,10 +599,11 @@ interface TestStepProps {
   isSuccess: boolean;
   isError: boolean;
   errorMessage?: string;
+  botUsername?: string;
   onRetry: () => void;
 }
 
-function TestStep({ isPending, isSuccess, isError, errorMessage, onRetry }: TestStepProps) {
+function TestStep({ isPending, isSuccess, isError, errorMessage, botUsername, onRetry }: TestStepProps) {
   return (
     <div className="flex flex-col items-center gap-3 py-6">
       {isPending && (
@@ -580,10 +613,16 @@ function TestStep({ isPending, isSuccess, isError, errorMessage, onRetry }: Test
         </>
       )}
       {isSuccess && (
-        <>
+        <div className="flex flex-col items-center gap-2">
           <CheckCircle2 className="size-8 text-green-500" />
           <p className="text-sm text-green-700 dark:text-green-400">Connection successful</p>
-        </>
+          {botUsername && (
+            <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+              <span>🤖</span>
+              <span className="font-mono">@{botUsername}</span>
+            </div>
+          )}
+        </div>
       )}
       {isError && (
         <>
@@ -611,6 +650,12 @@ interface ConfirmStepProps {
   values: Record<string, unknown>;
 }
 
+/** Masks a secret value, revealing the last 4 characters to aid verification. */
+function maskSecret(value: string): string {
+  if (value.length > 8) return '•••• ' + value.slice(-4);
+  return '•••';
+}
+
 function ConfirmStep({ manifest, adapterId, isEditMode, values }: ConfirmStepProps) {
   return (
     <div className="space-y-3">
@@ -626,7 +671,8 @@ function ConfirmStep({ manifest, adapterId, isEditMode, values }: ConfirmStepPro
           const depValue = values[field.showWhen.field];
           if (depValue !== field.showWhen.equals) return null;
         }
-        const displayValue = field.type === 'password' ? '***' : String(values[field.key] ?? '');
+        const rawValue = String(values[field.key] ?? '');
+        const displayValue = field.type === 'password' ? maskSecret(rawValue) : rawValue;
         return (
           <div key={field.key} className="flex justify-between text-sm">
             <span className="text-muted-foreground">{field.label}</span>
@@ -644,6 +690,8 @@ interface BindStepProps {
   onAgentIdChange: (id: string) => void;
   strategy: SessionStrategy;
   onStrategyChange: (strategy: SessionStrategy) => void;
+  botUsername?: string;
+  adapterType?: string;
 }
 
 function BindStep({
@@ -652,7 +700,16 @@ function BindStep({
   onAgentIdChange,
   strategy,
   onStrategyChange,
+  botUsername,
+  adapterType,
 }: BindStepProps) {
+  // Auto-select when there's exactly one agent and none is selected yet.
+  useEffect(() => {
+    if (agentOptions.length === 1 && !agentId) {
+      onAgentIdChange(agentOptions[0]!.id);
+    }
+  }, [agentOptions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -660,37 +717,60 @@ function BindStep({
         this and bind later from the Bindings tab.
       </p>
 
-      <div className="space-y-2">
-        <Label htmlFor="bind-agent">Agent</Label>
-        <Select value={agentId} onValueChange={onAgentIdChange}>
-          <SelectTrigger id="bind-agent" className="w-full">
-            <SelectValue placeholder="Select an agent" />
-          </SelectTrigger>
-          <SelectContent>
-            {agentOptions.map((agent) => (
-              <SelectItem key={agent.id} value={agent.id}>
-                {agent.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {agentOptions.length === 0 ? (
+        <div className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+          No agents registered yet. You can bind this adapter later from the Adapters tab.
+        </div>
+      ) : agentOptions.length === 1 ? (
+        <div className="rounded-md border bg-accent/30 px-4 py-3 text-sm">
+          Will bind to <span className="font-medium">{agentOptions[0]!.name}</span>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Label htmlFor="bind-agent">Agent</Label>
+          <Select value={agentId} onValueChange={onAgentIdChange}>
+            <SelectTrigger id="bind-agent" className="w-full">
+              <SelectValue placeholder="Select an agent" />
+            </SelectTrigger>
+            <SelectContent>
+              {agentOptions.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>
+                  {agent.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
-      <div className="space-y-2">
-        <Label htmlFor="bind-strategy">Session Strategy</Label>
-        <Select value={strategy} onValueChange={(v) => onStrategyChange(v as SessionStrategy)}>
-          <SelectTrigger id="bind-strategy" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SESSION_STRATEGIES.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {agentOptions.length > 0 && (
+        <div className="space-y-2">
+          <Label htmlFor="bind-strategy">Session Strategy</Label>
+          <Select value={strategy} onValueChange={(v) => onStrategyChange(v as SessionStrategy)}>
+            <SelectTrigger id="bind-strategy" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SESSION_STRATEGIES.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {botUsername && adapterType === 'telegram' && (
+        <a
+          href={`https://t.me/${botUsername}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
+        >
+          Message @{botUsername} in Telegram →
+        </a>
+      )}
     </div>
   );
 }

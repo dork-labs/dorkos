@@ -165,6 +165,7 @@ function AdaptersTab({ enabled, onBindClick }: AdaptersTabProps) {
           }}
           manifest={wizardState.manifest}
           existingInstance={existingInstance}
+          existingAdapterIds={catalog.flatMap((e) => e.instances.map((i) => i.id))}
         />
       )}
     </div>

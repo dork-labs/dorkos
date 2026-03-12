@@ -343,7 +343,25 @@ describe('ConnectionsView', () => {
       expect(screen.getByText('+ 2 more agents reachable →')).toBeInTheDocument();
     });
 
-    it('overflow button opens Mesh panel', () => {
+    it('overflow button expands the agent list in-place', () => {
+      mockRegisteredAgents.mockReturnValue({
+        data: {
+          agents: [
+            makeAgent('ag1', 'Alpha'),
+            makeAgent('ag2', 'Beta'),
+            makeAgent('ag3', 'Gamma'),
+            makeAgent('ag4', 'Delta'),
+          ],
+        },
+      });
+      render(<ConnectionsView toolStatus={enabledToolStatus} agentId={null} />, { wrapper: Wrapper });
+      expect(screen.queryByText('Delta')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText('+ 1 more agent reachable →'));
+      expect(screen.getByText('Delta')).toBeInTheDocument();
+      expect(screen.getByText('Show less')).toBeInTheDocument();
+    });
+
+    it('show less collapses the agent list', () => {
       mockRegisteredAgents.mockReturnValue({
         data: {
           agents: [
@@ -356,7 +374,10 @@ describe('ConnectionsView', () => {
       });
       render(<ConnectionsView toolStatus={enabledToolStatus} agentId={null} />, { wrapper: Wrapper });
       fireEvent.click(screen.getByText('+ 1 more agent reachable →'));
-      expect(mockSetMeshOpen).toHaveBeenCalledWith(true);
+      expect(screen.getByText('Delta')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Show less'));
+      expect(screen.queryByText('Delta')).not.toBeInTheDocument();
+      expect(screen.getByText('+ 1 more agent reachable →')).toBeInTheDocument();
     });
   });
 
@@ -403,7 +424,26 @@ describe('ConnectionsView', () => {
       expect(screen.getByText('+ 2 more servers →')).toBeInTheDocument();
     });
 
-    it('overflow button opens agent settings dialog', () => {
+    it('overflow button expands the MCP list in-place', () => {
+      mockMcpConfig.mockReturnValue({
+        data: {
+          servers: [
+            makeMcpServer('alpha'),
+            makeMcpServer('beta'),
+            makeMcpServer('gamma'),
+            makeMcpServer('delta'),
+            makeMcpServer('epsilon'),
+          ],
+        },
+      });
+      render(<ConnectionsView toolStatus={enabledToolStatus} agentId={null} />, { wrapper: Wrapper });
+      expect(screen.queryByText('epsilon')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText('+ 1 more server →'));
+      expect(screen.getByText('epsilon')).toBeInTheDocument();
+      expect(screen.getByText('Show less')).toBeInTheDocument();
+    });
+
+    it('show less collapses the MCP list', () => {
       mockMcpConfig.mockReturnValue({
         data: {
           servers: [
@@ -417,7 +457,10 @@ describe('ConnectionsView', () => {
       });
       render(<ConnectionsView toolStatus={enabledToolStatus} agentId={null} />, { wrapper: Wrapper });
       fireEvent.click(screen.getByText('+ 1 more server →'));
-      expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(true);
+      expect(screen.getByText('epsilon')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Show less'));
+      expect(screen.queryByText('epsilon')).not.toBeInTheDocument();
+      expect(screen.getByText('+ 1 more server →')).toBeInTheDocument();
     });
   });
 });

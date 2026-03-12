@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Implement agent filtering and caps in ConnectionsView
 - Add motion animations to ConnectionsView
 - Cap MCP servers list at 4 with overflow link to agent settings
 - Cap agents list at 3 with overflow link to Mesh

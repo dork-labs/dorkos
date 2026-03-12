@@ -36,7 +36,8 @@ export function ConfigFieldInput({
   error,
   allValues,
 }: ConfigFieldInputProps) {
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(() => field.visibleByDefault ?? false);
+  const [patternError, setPatternError] = useState('');
 
   // Conditional visibility: hide this field when its dependency doesn't match.
   if (field.showWhen) {
@@ -48,6 +49,25 @@ export function ConfigFieldInput({
 
   const fieldId = `config-field-${field.key}`;
   const stringValue = value !== undefined && value !== null ? String(value) : '';
+
+  // Sentinel: edit mode placeholder for a saved password the user hasn't changed.
+  const isSentinel = stringValue === '***';
+
+  const handleBlur = () => {
+    // Sentinel is not real content — skip pattern validation.
+    if (isSentinel) {
+      setPatternError('');
+      return;
+    }
+    if (field.pattern && stringValue) {
+      const regex = new RegExp(field.pattern);
+      if (!regex.test(stringValue)) {
+        setPatternError(field.patternMessage ?? 'Invalid format');
+        return;
+      }
+    }
+    setPatternError('');
+  };
 
   const renderControl = () => {
     switch (field.type) {
@@ -63,14 +83,37 @@ export function ConfigFieldInput({
           />
         );
 
-      case 'password':
+      case 'password': {
+        if (isSentinel) {
+          // Sentinel mode: show a locked placeholder until the user focuses to replace.
+          return (
+            <Input
+              id={fieldId}
+              type="password"
+              value={stringValue}
+              onChange={(e) => {
+                onChange(field.key, e.target.value.trim());
+                if (patternError) setPatternError('');
+              }}
+              onFocus={() => onChange(field.key, '')}
+              onBlur={handleBlur}
+              placeholder="Saved — enter a new one to replace"
+            />
+          );
+        }
         return (
           <div className="relative">
             <Input
               id={fieldId}
               type={showPassword ? 'text' : 'password'}
               value={stringValue}
-              onChange={(e) => onChange(field.key, e.target.value)}
+              onChange={(e) => {
+                // Trim leading/trailing whitespace — tokens are always pasted and often include newlines.
+                onChange(field.key, e.target.value.trim());
+                if (patternError) setPatternError('');
+              }}
+              onBlur={handleBlur}
+              onPaste={() => setTimeout(handleBlur, 0)}
               placeholder={field.placeholder}
             />
             <Button
@@ -89,6 +132,7 @@ export function ConfigFieldInput({
             </Button>
           </div>
         );
+      }
 
       case 'number':
         return (
@@ -113,6 +157,30 @@ export function ConfigFieldInput({
         );
 
       case 'select':
+        if (field.displayAs === 'radio-cards') {
+          return (
+            <div className="grid grid-cols-2 gap-3" role="radiogroup">
+              {field.options?.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={stringValue === opt.value}
+                  onClick={() => onChange(field.key, opt.value)}
+                  className={cn(
+                    'flex flex-col items-start rounded-md border p-3 text-left transition hover:bg-accent/50',
+                    stringValue === opt.value && 'border-primary ring-1 ring-primary bg-accent/30',
+                  )}
+                >
+                  <span className="text-sm font-medium">{opt.label}</span>
+                  {opt.description && (
+                    <span className="mt-1 text-xs text-muted-foreground">{opt.description}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          );
+        }
         return (
           <Select value={stringValue} onValueChange={(v) => onChange(field.key, v)}>
             <SelectTrigger id={fieldId}>
@@ -149,7 +217,7 @@ export function ConfigFieldInput({
       <Label
         htmlFor={fieldId}
         className={cn(
-          field.required && 'after:ml-0.5 after:text-red-500 after:content-["*"]',
+          field.required && !isSentinel && 'after:ml-0.5 after:text-red-500 after:content-["*"]',
         )}
       >
         {field.label}
@@ -158,7 +226,9 @@ export function ConfigFieldInput({
       {field.description && (
         <p className="text-xs text-muted-foreground">{field.description}</p>
       )}
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {(error ?? patternError) && (
+        <p className="text-xs text-red-500">{error ?? patternError}</p>
+      )}
     </div>
   );
 }

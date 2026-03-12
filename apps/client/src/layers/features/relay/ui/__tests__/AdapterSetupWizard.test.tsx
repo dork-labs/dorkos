@@ -49,6 +49,20 @@ const manifestWithSteps: AdapterManifest = {
   ],
 };
 
+const telegramManifest: AdapterManifest = {
+  type: 'telegram',
+  displayName: 'Telegram',
+  description: 'Telegram bot adapter',
+  category: 'messaging',
+  builtin: true,
+  multiInstance: true,
+  configFields: [
+    { key: 'token', label: 'Bot Token', type: 'password', required: true },
+    { key: 'mode', label: 'Mode', type: 'select', required: true, default: 'polling',
+      options: [{ label: 'Long Polling', value: 'polling' }, { label: 'Webhook', value: 'webhook' }] },
+  ],
+};
+
 const existingInstance: CatalogInstance & { config?: Record<string, unknown> } = {
   id: 'slack-1',
   enabled: true,
@@ -67,11 +81,14 @@ const existingInstance: CatalogInstance & { config?: Record<string, unknown> } =
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createWrapper() {
+function createWrapper(agentsData?: { agents: { id: string; name: string }[] }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const mockTransport = createMockTransport();
+
+  // Default: no agents registered.
+  mockTransport.listMeshAgents = vi.fn().mockResolvedValue(agentsData ?? { agents: [] });
 
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
@@ -128,8 +145,32 @@ describe('AdapterSetupWizard', () => {
 
     expect(screen.getByText('Edit Slack')).toBeInTheDocument();
     expect(screen.queryByLabelText(/adapter id/i)).not.toBeInTheDocument();
-    // Password should be empty (not pre-filled), channel should be pre-filled
+    // Password should be pre-filled with sentinel (edit mode: shows saved indicator)
+    const tokenInput = screen.getByLabelText(/api token/i);
+    expect(tokenInput).toHaveValue('***');
+    expect(tokenInput).toHaveAttribute('placeholder', 'Saved — enter a new one to replace');
     expect(screen.getByLabelText(/channel/i)).toHaveValue('#dev');
+  });
+
+  it('sentinel clears on focus so user can type a new value', async () => {
+    const { Wrapper } = createWrapper();
+    render(
+      <AdapterSetupWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        manifest={baseManifest}
+        existingInstance={existingInstance}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    const tokenInput = screen.getByLabelText(/api token/i);
+    expect(tokenInput).toHaveValue('***');
+    fireEvent.focus(tokenInput);
+    // Re-query after re-render (isSentinel → false changes the rendered branch).
+    await waitFor(() => {
+      expect(screen.getByLabelText(/api token/i)).toHaveValue('');
+    });
   });
 
   it('displays setup instructions when provided', () => {
@@ -193,6 +234,32 @@ describe('AdapterSetupWizard', () => {
     await waitFor(() => {
       expect(screen.getByText('Connection successful')).toBeInTheDocument();
     });
+  });
+
+  it('shows bot identity card when botUsername is returned', async () => {
+    const { Wrapper, mockTransport } = createWrapper();
+    mockTransport.testRelayAdapterConnection = vi
+      .fn()
+      .mockResolvedValue({ ok: true, botUsername: 'mybot' });
+
+    render(
+      <AdapterSetupWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        manifest={baseManifest}
+        existingInstance={existingInstance}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    const tokenInput = screen.getByLabelText(/api token/i);
+    fireEvent.change(tokenInput, { target: { value: 'test-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Connection successful')).toBeInTheDocument();
+    });
+    expect(screen.getByText('@mybot')).toBeInTheDocument();
   });
 
   it('shows red X on test failure', async () => {
@@ -273,9 +340,10 @@ describe('AdapterSetupWizard', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /skip/i }));
 
-    // On confirm step: password should be masked
+    // On confirm step: password should be masked with partial reveal (last 4 chars).
+    // 'my-secret-token' → '•••• oken'
     await waitFor(() => {
-      expect(screen.getByText('***')).toBeInTheDocument();
+      expect(screen.getByText('•••• oken')).toBeInTheDocument();
     });
     expect(screen.getByText('#dev')).toBeInTheDocument();
   });
@@ -515,6 +583,109 @@ describe('AdapterSetupWizard', () => {
         'slack-1',
         expect.objectContaining({ token: 'updated-token', channel: '#dev' }),
       );
+    });
+  });
+
+  it('BindStep shows empty state when no agents are registered', async () => {
+    const { Wrapper, mockTransport } = createWrapper({ agents: [] });
+    mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <AdapterSetupWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        manifest={baseManifest}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/no agents registered yet/i)).toBeInTheDocument();
+    });
+  });
+
+  it('BindStep auto-selects single agent and shows confirmation', async () => {
+    const { Wrapper, mockTransport } = createWrapper({
+      agents: [{ id: 'agent-1', name: 'My Agent' }],
+    });
+    mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <AdapterSetupWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        manifest={baseManifest}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/will bind to/i)).toBeInTheDocument();
+      expect(screen.getByText('My Agent')).toBeInTheDocument();
+    });
+  });
+
+  it('"Message bot" link appears in BindStep for Telegram adapter with botUsername', async () => {
+    const { Wrapper, mockTransport } = createWrapper({ agents: [] });
+    mockTransport.testRelayAdapterConnection = vi
+      .fn()
+      .mockResolvedValue({ ok: true, botUsername: 'mybot' });
+    mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <AdapterSetupWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        manifest={telegramManifest}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    fireEvent.change(screen.getByLabelText(/bot token/i), { target: { value: 'my-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+
+    await waitFor(() => {
+      const link = screen.getByRole('link', { name: /message @mybot/i });
+      expect(link).toBeInTheDocument();
+      expect(link).toHaveAttribute('href', 'https://t.me/mybot');
     });
   });
 });

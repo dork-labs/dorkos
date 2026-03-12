@@ -29,13 +29,37 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
   docsUrl: 'https://core.telegram.org/bots',
   builtin: true,
   multiInstance: true,
+  actionButton: {
+    label: 'Open @BotFather in Telegram',
+    url: 'tg://resolve?domain=botfather',
+  },
+  setupSteps: [
+    {
+      stepId: 'get-token',
+      title: 'Get your Bot Token',
+      description: 'Create a bot with @BotFather on Telegram.',
+      fields: ['token'],
+    },
+    {
+      stepId: 'configure-mode',
+      title: 'Choose connection mode',
+      fields: ['mode', 'webhookUrl', 'webhookPort', 'webhookSecret'],
+    },
+  ],
   configFields: [
     { key: 'token', label: 'Bot Token', type: 'password', required: true,
       placeholder: '123456789:ABCDefGHijklMNOpqrSTUvwxYZ',
-      description: 'Token from @BotFather on Telegram.' },
-    { key: 'mode', label: 'Receiving Mode', type: 'select', required: true, default: 'polling',
-      options: [{ label: 'Long Polling', value: 'polling' }, { label: 'Webhook', value: 'webhook' }],
-      description: 'Polling requires no public URL. Webhook is recommended for production.' },
+      description: 'Paste the token from @BotFather. Message @BotFather on Telegram → /newbot → copy the token.',
+      pattern: '^\\d+:[\\w-]{35,}$',
+      patternMessage: 'Expected format: 123456789:ABCDefGHijklMNOpqrSTUvwxYZ',
+      visibleByDefault: true },
+    { key: 'mode', label: 'Receiving Mode', type: 'select', displayAs: 'radio-cards', required: true, default: 'polling',
+      options: [
+        { label: 'Long Polling', value: 'polling',
+          description: 'Works everywhere. Recommended for getting started.' },
+        { label: 'Webhook', value: 'webhook',
+          description: 'Requires a public HTTPS URL. Best for production.' },
+      ] },
     { key: 'webhookUrl', label: 'Webhook URL', type: 'url', required: true,
       placeholder: 'https://your-domain.com/relay/webhooks/telegram',
       description: 'Public HTTPS URL where Telegram sends updates.',
@@ -49,7 +73,7 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
       showWhen: { field: 'mode', equals: 'webhook' } },
   ],
   setupInstructions:
-    'Open Telegram and search for **@BotFather**. Send `/newbot`, choose a name and username. Copy the token provided.',
+    'Open Telegram and search for @BotFather. Send /newbot, choose a name and username. Copy the token provided.',
 };
 
 /**

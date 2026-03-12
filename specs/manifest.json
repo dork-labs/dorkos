@@ -869,7 +869,14 @@
       "title": "Pulse Schedule Preset Gallery",
       "created": "2026-03-11",
       "status": "specified"
+    },
+    {
+      "number": 125,
+      "slug": "client-direct-sse",
+      "title": "Client Direct SSE — Remove Relay Message Path from Web Client",
+      "created": "2026-03-12",
+      "status": "ideation"
     }
   ],
-  "nextNumber": 125
+  "nextNumber": 126
 }
