@@ -26,7 +26,7 @@ export function AgentCard({ agent, onEdit, onUnregister }: AgentCardProps) {
           >
             <Chevron className="size-4 text-muted-foreground" />
           </button>
-          <span className="truncate text-sm font-medium">{agent.name}</span>
+          <span className="truncate text-sm font-medium text-foreground">{agent.name}</span>
           <Badge variant="secondary" className="text-xs">
             {agent.runtime}
           </Badge>

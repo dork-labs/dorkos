@@ -83,7 +83,7 @@ function AdapterCompactPill({
       <Handle type="source" position={Position.Right} isConnectable />
       <span className={cn('size-2 shrink-0 rounded-full', statusColor)} />
       <PlatformIcon adapterType={d.adapterType} />
-      <span className="truncate text-xs font-medium">{d.label || d.adapterName}</span>
+      <span className="truncate text-xs font-medium text-foreground">{d.label || d.adapterName}</span>
     </div>
   );
 }
@@ -114,7 +114,7 @@ function AdapterDefaultCard({
         <span className={cn('size-2.5 shrink-0 rounded-full', statusColor)} />
         <PlatformIcon adapterType={d.adapterType} />
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium">
+          <span className="truncate text-sm font-medium text-foreground">
             {d.label || d.adapterName}
           </span>
           {d.label && (
