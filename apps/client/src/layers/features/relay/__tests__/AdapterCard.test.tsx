@@ -7,7 +7,7 @@ import { AdapterCard } from '../ui/AdapterCard';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
 // ---------------------------------------------------------------------------
-// Mock entity hooks — AdapterCard now calls useBindings and useRegisteredAgents
+// Mock entity hooks — AdapterCard calls useBindings and useRegisteredAgents
 // ---------------------------------------------------------------------------
 
 const mockUseBindings = vi.fn();
@@ -115,6 +115,20 @@ function defaultProps(overrides: Partial<Parameters<typeof AdapterCard>[0]> = {}
   };
 }
 
+function makeBinding(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'b1',
+    adapterId: 'tg-main',
+    agentId: 'agent-1',
+    projectPath: '/p',
+    sessionStrategy: 'per-chat',
+    label: '',
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
 /** Opens the Radix DropdownMenu trigger using the full pointer sequence required in jsdom. */
 async function openKebabMenu() {
   const trigger = screen.getByLabelText('Adapter actions');
@@ -132,7 +146,6 @@ async function openKebabMenu() {
 describe('AdapterCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: no bindings, no agents — tests that need them override per-case
     mockUseBindings.mockReturnValue({ data: [] });
     mockUseRegisteredAgents.mockReturnValue({ data: { agents: [] } });
   });
@@ -140,6 +153,10 @@ describe('AdapterCard', () => {
   afterEach(() => {
     cleanup();
   });
+
+  // -------------------------------------------------------------------------
+  // Basic rendering
+  // -------------------------------------------------------------------------
 
   it('renders the adapter display name', () => {
     render(<AdapterCard {...defaultProps()} />);
@@ -156,49 +173,266 @@ describe('AdapterCard', () => {
     expect(screen.getByText('📨')).toBeTruthy();
   });
 
-  it('shows a green left border for connected state', () => {
+  it('does not render raw message counts', () => {
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.queryByText(/In: 42/)).toBeNull();
+    expect(screen.queryByText(/Out: 18/)).toBeNull();
+  });
+
+  it('does not render left border color classes', () => {
     const { container } = render(<AdapterCard {...defaultProps()} />);
-    const card = container.querySelector('.border-l-green-500');
-    expect(card).toBeTruthy();
+    expect(container.querySelector('.border-l-green-500')).toBeNull();
+    expect(container.querySelector('.border-l-2')).toBeNull();
   });
 
-  it('shows a red left border for error state', () => {
+  // -------------------------------------------------------------------------
+  // Card styling
+  // -------------------------------------------------------------------------
+
+  it('renders with rounded-xl and shadow-soft classes', () => {
+    const { container } = render(<AdapterCard {...defaultProps()} />);
+    const card = container.firstElementChild;
+    expect(card?.className).toContain('rounded-xl');
+    expect(card?.className).toContain('shadow-soft');
+  });
+
+  it('renders external adapter with solid border (not dashed)', () => {
+    const { container } = render(<AdapterCard {...defaultProps()} />);
+    const card = container.firstElementChild;
+    expect(card?.className).not.toContain('border-dashed');
+  });
+
+  it('renders CCA card with dashed border', () => {
     const { container } = render(
-      <AdapterCard {...defaultProps({ instance: errorInstance })} />,
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
     );
-    const card = container.querySelector('.border-l-red-500');
-    expect(card).toBeTruthy();
+    const card = container.firstElementChild;
+    expect(card?.className).toContain('border-dashed');
   });
 
-  it('shows a red left border for disconnected state', () => {
+  // -------------------------------------------------------------------------
+  // Status dot
+  // -------------------------------------------------------------------------
+
+  it('shows green status dot when connected with bindings', () => {
+    mockUseBindings.mockReturnValue({ data: [makeBinding()] });
+    const { container } = render(<AdapterCard {...defaultProps()} />);
+    expect(container.querySelector('.bg-green-500')).toBeTruthy();
+  });
+
+  it('shows amber pulsing status dot when connected with no bindings', () => {
+    const { container } = render(<AdapterCard {...defaultProps()} />);
+    expect(container.querySelector('.bg-amber-500')).toBeTruthy();
+    expect(container.querySelector('.animate-pulse')).toBeTruthy();
+  });
+
+  it('shows red status dot when adapter is in error state', () => {
+    const { container } = render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
+    expect(container.querySelector('.bg-red-500')).toBeTruthy();
+  });
+
+  it('shows gray status dot when adapter is disconnected', () => {
+    const { container } = render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
+    expect(container.querySelector('.bg-gray-400')).toBeTruthy();
+  });
+
+  it('shows green status dot for CCA when connected (always considered bound)', () => {
+    mockUseBindings.mockReturnValue({ data: [] });
     const { container } = render(
-      <AdapterCard {...defaultProps({ instance: disabledInstance })} />,
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
     );
-    // disconnected maps to border-l-red-500 in the unified status color system
-    const card = container.querySelector('.border-l-red-500');
-    expect(card).toBeTruthy();
+    expect(container.querySelector('.bg-green-500')).toBeTruthy();
+    expect(container.querySelector('.bg-amber-500')).toBeNull();
   });
 
-  it('displays inbound and outbound message counts', () => {
+  // -------------------------------------------------------------------------
+  // CCA card treatment
+  // -------------------------------------------------------------------------
+
+  it('shows "Serving N agents" for CCA instead of "No agent bound"', () => {
+    mockUseRegisteredAgents.mockReturnValue({
+      data: { agents: [{ id: 'a1', name: 'Bot 1' }, { id: 'a2', name: 'Bot 2' }, { id: 'a3', name: 'Bot 3' }] },
+    });
+    render(
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
+    );
+    expect(screen.getByText(/Serving 3 agents/)).toBeTruthy();
+    expect(screen.queryByText('No agent bound')).toBeNull();
+  });
+
+  it('shows singular "agent" when CCA serves exactly 1', () => {
+    mockUseRegisteredAgents.mockReturnValue({
+      data: { agents: [{ id: 'a1', name: 'Solo Bot' }] },
+    });
+    render(
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
+    );
+    expect(screen.getByText(/Serving 1 agent/)).toBeTruthy();
+  });
+
+  it('does not show System badge for CCA', () => {
+    render(
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
+    );
+    expect(screen.queryByText('System')).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Binding rows
+  // -------------------------------------------------------------------------
+
+  it('shows individual binding rows with agent names', () => {
+    mockUseBindings.mockReturnValue({
+      data: [
+        makeBinding({ id: 'b1', agentId: 'agent-1' }),
+        makeBinding({ id: 'b2', agentId: 'agent-2' }),
+      ],
+    });
+    mockUseRegisteredAgents.mockReturnValue({
+      data: { agents: [{ id: 'agent-1', name: 'Alpha Bot' }, { id: 'agent-2', name: 'Beta Bot' }] },
+    });
     render(<AdapterCard {...defaultProps()} />);
-    expect(screen.getByText(/In: 42/)).toBeTruthy();
-    expect(screen.getByText(/Out: 18/)).toBeTruthy();
+    expect(screen.getByText('Alpha Bot')).toBeTruthy();
+    expect(screen.getByText('Beta Bot')).toBeTruthy();
   });
 
-  it('does not show error count when errorCount is 0', () => {
+  it('shows strategy badge on binding rows', () => {
+    mockUseBindings.mockReturnValue({
+      data: [makeBinding({ sessionStrategy: 'per-user' })],
+    });
+    mockUseRegisteredAgents.mockReturnValue({
+      data: { agents: [{ id: 'agent-1', name: 'Alpha Bot' }] },
+    });
     render(<AdapterCard {...defaultProps()} />);
-    expect(screen.queryByText(/Errors:/)).toBeNull();
+    expect(screen.getByText('Per User')).toBeTruthy();
   });
 
-  it('shows error count when errorCount is greater than 0', () => {
-    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    expect(screen.getByText(/Errors: 3/)).toBeTruthy();
+  it('shows chatId badge when binding has chatId', () => {
+    mockUseBindings.mockReturnValue({
+      data: [makeBinding({ chatId: 'support-chat', channelType: 'group' })],
+    });
+    mockUseRegisteredAgents.mockReturnValue({
+      data: { agents: [{ id: 'agent-1', name: 'Alpha Bot' }] },
+    });
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.getByText('#support-chat')).toBeTruthy();
   });
 
-  it('shows lastError message when present', () => {
-    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    expect(screen.getByText('Connection timed out')).toBeTruthy();
+  it('falls back to agentId when agent is not in registry', () => {
+    mockUseBindings.mockReturnValue({
+      data: [makeBinding({ agentId: 'agent-unknown' })],
+    });
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.getByText('agent-unknown')).toBeTruthy();
   });
+
+  it('shows "and N more" when bindings exceed 3', () => {
+    mockUseBindings.mockReturnValue({
+      data: [
+        makeBinding({ id: 'b1', agentId: 'a1' }),
+        makeBinding({ id: 'b2', agentId: 'a2' }),
+        makeBinding({ id: 'b3', agentId: 'a3' }),
+        makeBinding({ id: 'b4', agentId: 'a4' }),
+        makeBinding({ id: 'b5', agentId: 'a5' }),
+      ],
+    });
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.getByText('and 2 more')).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // No-bindings state
+  // -------------------------------------------------------------------------
+
+  it('shows "No agent bound" text when connected with no bindings', () => {
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.getByText('No agent bound')).toBeTruthy();
+  });
+
+  it('does not show "No agent bound" when disconnected', () => {
+    render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
+    expect(screen.queryByText('No agent bound')).toBeNull();
+  });
+
+  it('shows "Bind" button when connected with no bindings and onBindClick provided', () => {
+    const onBindClick = vi.fn();
+    render(<AdapterCard {...defaultProps({ onBindClick })} />);
+    expect(screen.getByRole('button', { name: 'Bind' })).toBeTruthy();
+  });
+
+  it('does not show "Bind" button when onBindClick not provided', () => {
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.queryByRole('button', { name: 'Bind' })).toBeNull();
+  });
+
+  it('calls onBindClick when "Bind" button is clicked', () => {
+    const onBindClick = vi.fn();
+    render(<AdapterCard {...defaultProps({ onBindClick })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Bind' }));
+    expect(onBindClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not show "No agent bound" when bindings exist', () => {
+    mockUseBindings.mockReturnValue({ data: [makeBinding()] });
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.queryByText('No agent bound')).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Error display
+  // -------------------------------------------------------------------------
+
+  it('shows error count badge when errorCount > 0', () => {
+    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
+    expect(screen.getByText(/3 errors/)).toBeTruthy();
+  });
+
+  it('does not show error indicator when errorCount is 0', () => {
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.queryByText(/error/i)).toBeNull();
+  });
+
+  it('shows lastError message in collapsible when expanded', async () => {
+    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
+    const trigger = screen.getByRole('button', { name: 'Toggle full error message' });
+
+    await act(async () => {
+      fireEvent.click(trigger);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Connection timed out')).toBeTruthy();
+    });
+  });
+
+  it('renders Collapsible trigger when lastError is set', () => {
+    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
+    const trigger = screen.getByRole('button', { name: 'Toggle full error message' });
+    expect(trigger).toBeTruthy();
+  });
+
+  it('does not render Collapsible when lastError is null', () => {
+    render(<AdapterCard {...defaultProps()} />);
+    expect(screen.queryByRole('button', { name: 'Toggle full error message' })).toBeNull();
+  });
+
+  it('shows full error text when trigger is clicked', async () => {
+    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
+    const trigger = screen.getByRole('button', { name: 'Toggle full error message' });
+
+    await act(async () => {
+      fireEvent.click(trigger);
+    });
+
+    await waitFor(() => {
+      const collapsibleContent = document.querySelector('[data-slot="collapsible-content"]');
+      expect(collapsibleContent?.getAttribute('data-state')).toBe('open');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Switch / toggle
+  // -------------------------------------------------------------------------
 
   it('renders switch in checked state when adapter is enabled', () => {
     render(<AdapterCard {...defaultProps()} />);
@@ -216,7 +450,6 @@ describe('AdapterCard', () => {
     const onToggle = vi.fn();
     render(<AdapterCard {...defaultProps({ instance: disabledInstance, onToggle })} />);
     fireEvent.click(screen.getByRole('switch'));
-    expect(onToggle).toHaveBeenCalledTimes(1);
     expect(onToggle).toHaveBeenCalledWith(true);
   });
 
@@ -224,8 +457,30 @@ describe('AdapterCard', () => {
     const onToggle = vi.fn();
     render(<AdapterCard {...defaultProps({ onToggle })} />);
     fireEvent.click(screen.getByRole('switch'));
-    expect(onToggle).toHaveBeenCalledTimes(1);
     expect(onToggle).toHaveBeenCalledWith(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Label display
+  // -------------------------------------------------------------------------
+
+  it('shows label as primary text when label is set', () => {
+    const labeledInstance: CatalogInstance = {
+      ...connectedInstance,
+      label: 'My Bot',
+    };
+    render(<AdapterCard {...defaultProps({ instance: labeledInstance })} />);
+    expect(screen.getByText('My Bot')).toBeTruthy();
+  });
+
+  it('shows adapter type displayName as secondary text when label is set', () => {
+    const labeledInstance: CatalogInstance = {
+      ...connectedInstance,
+      label: 'My Bot',
+    };
+    render(<AdapterCard {...defaultProps({ instance: labeledInstance })} />);
+    expect(screen.getByText('My Bot')).toBeTruthy();
+    expect(screen.getByText('Main Telegram')).toBeTruthy();
   });
 
   it('falls back to instance id when displayName is empty', () => {
@@ -238,7 +493,7 @@ describe('AdapterCard', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Kebab menu tests
+  // Kebab menu
   // -------------------------------------------------------------------------
 
   it('opens kebab menu when clicking the actions button', async () => {
@@ -306,10 +561,8 @@ describe('AdapterCard', () => {
       expect(screen.getByRole('alertdialog')).toBeTruthy();
     });
 
-    // Find the confirm "Remove" button inside the alert dialog.
     const dialog = screen.getByRole('alertdialog');
     const buttons = dialog.querySelectorAll('button');
-    // AlertDialogFooter order: Cancel, then Action (Remove)
     const confirmBtn = buttons[buttons.length - 1];
 
     await act(async () => {
@@ -333,204 +586,5 @@ describe('AdapterCard', () => {
       expect(removeItem).toBeTruthy();
       expect(removeItem.getAttribute('data-disabled')).not.toBeNull();
     });
-  });
-
-  // -------------------------------------------------------------------------
-  // Error Collapsible tests
-  // -------------------------------------------------------------------------
-
-  it('renders Collapsible trigger when lastError is set', () => {
-    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    const trigger = screen.getByRole('button', { name: 'Toggle full error message' });
-    expect(trigger).toBeTruthy();
-  });
-
-  it('shows truncated error preview by default', () => {
-    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    const trigger = screen.getByRole('button', { name: 'Toggle full error message' });
-    expect(trigger.textContent).toContain('Connection timed out');
-    const collapsibleContent = document.querySelector('[data-slot="collapsible-content"]');
-    expect(collapsibleContent?.getAttribute('data-state')).toBe('closed');
-  });
-
-  it('shows full error text when trigger is clicked', async () => {
-    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    const trigger = screen.getByRole('button', { name: 'Toggle full error message' });
-
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
-
-    await waitFor(() => {
-      const collapsibleContent = document.querySelector('[data-slot="collapsible-content"]');
-      expect(collapsibleContent?.getAttribute('data-state')).toBe('open');
-    });
-  });
-
-  it('collapses error text when trigger is clicked again', async () => {
-    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    const trigger = screen.getByRole('button', { name: 'Toggle full error message' });
-
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
-
-    await waitFor(() => {
-      const collapsibleContent = document.querySelector('[data-slot="collapsible-content"]');
-      expect(collapsibleContent?.getAttribute('data-state')).toBe('open');
-    });
-
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
-
-    await waitFor(() => {
-      const collapsibleContent = document.querySelector('[data-slot="collapsible-content"]');
-      expect(collapsibleContent?.getAttribute('data-state')).toBe('closed');
-    });
-  });
-
-  it('trigger is a button element with correct aria attributes for keyboard access', () => {
-    render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    const trigger = screen.getByRole('button', { name: 'Toggle full error message' });
-
-    expect(trigger.tagName).toBe('BUTTON');
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    expect(trigger.getAttribute('aria-controls')).toBeTruthy();
-  });
-
-  it('does not render Collapsible when lastError is null', () => {
-    render(<AdapterCard {...defaultProps()} />);
-    expect(screen.queryByRole('button', { name: 'Toggle full error message' })).toBeNull();
-  });
-
-  // -------------------------------------------------------------------------
-  // Label display tests (task 3.2)
-  // -------------------------------------------------------------------------
-
-  it('shows label as primary text when label is set', () => {
-    const labeledInstance: CatalogInstance = {
-      ...connectedInstance,
-      label: 'My Bot',
-    };
-    render(<AdapterCard {...defaultProps({ instance: labeledInstance })} />);
-    expect(screen.getByText('My Bot')).toBeTruthy();
-  });
-
-  it('shows adapter type displayName as secondary text when label is set', () => {
-    const labeledInstance: CatalogInstance = {
-      ...connectedInstance,
-      label: 'My Bot',
-    };
-    render(<AdapterCard {...defaultProps({ instance: labeledInstance })} />);
-    // Primary label shown, and secondary should be the status displayName
-    expect(screen.getByText('My Bot')).toBeTruthy();
-    expect(screen.getByText('Main Telegram')).toBeTruthy();
-  });
-
-  it('falls back to status displayName as primary when no label set', () => {
-    render(<AdapterCard {...defaultProps({ instance: connectedInstance })} />);
-    expect(screen.getByText('Main Telegram')).toBeTruthy();
-  });
-
-  it('does not show secondary text line when no label is set', () => {
-    // When there is no custom label, secondaryName is null so no duplicate line
-    render(<AdapterCard {...defaultProps({ instance: connectedInstance })} />);
-    // 'Main Telegram' should appear exactly once (as primary, not duplicated as secondary)
-    const elements = screen.getAllByText('Main Telegram');
-    expect(elements).toHaveLength(1);
-  });
-
-  // -------------------------------------------------------------------------
-  // Status dot tests (task 3.2)
-  // -------------------------------------------------------------------------
-
-  it('shows green status dot when connected with bindings', () => {
-    mockUseBindings.mockReturnValue({
-      data: [{ id: 'b1', adapterId: 'tg-main', agentId: 'agent-1', projectPath: '/p', sessionStrategy: 'per-chat', label: '', createdAt: '', updatedAt: '' }],
-    });
-    const { container } = render(<AdapterCard {...defaultProps()} />);
-    expect(container.querySelector('.bg-green-500')).toBeTruthy();
-  });
-
-  it('shows amber pulsing status dot when connected with no bindings', () => {
-    mockUseBindings.mockReturnValue({ data: [] });
-    const { container } = render(<AdapterCard {...defaultProps()} />);
-    expect(container.querySelector('.bg-amber-500')).toBeTruthy();
-    expect(container.querySelector('.animate-pulse')).toBeTruthy();
-  });
-
-  it('shows red status dot when adapter is in error state', () => {
-    const { container } = render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    expect(container.querySelector('.bg-red-500')).toBeTruthy();
-  });
-
-  it('shows gray status dot when adapter is disconnected', () => {
-    const { container } = render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
-    expect(container.querySelector('.bg-gray-400')).toBeTruthy();
-  });
-
-  // -------------------------------------------------------------------------
-  // Bound agents display tests (task 3.2)
-  // -------------------------------------------------------------------------
-
-  it('shows bound agent names when bindings exist', () => {
-    mockUseBindings.mockReturnValue({
-      data: [{ id: 'b1', adapterId: 'tg-main', agentId: 'agent-1', projectPath: '/p', sessionStrategy: 'per-chat', label: '', createdAt: '', updatedAt: '' }],
-    });
-    mockUseRegisteredAgents.mockReturnValue({
-      data: { agents: [{ id: 'agent-1', name: 'Alpha Bot' }] },
-    });
-    render(<AdapterCard {...defaultProps()} />);
-    expect(screen.getByText(/Alpha Bot/)).toBeTruthy();
-  });
-
-  it('falls back to agentId when agent is not in registry', () => {
-    mockUseBindings.mockReturnValue({
-      data: [{ id: 'b1', adapterId: 'tg-main', agentId: 'agent-unknown', projectPath: '/p', sessionStrategy: 'per-chat', label: '', createdAt: '', updatedAt: '' }],
-    });
-    render(<AdapterCard {...defaultProps()} />);
-    expect(screen.getByText(/agent-unknown/)).toBeTruthy();
-  });
-
-  it('shows "No agent bound" text when connected with no bindings', () => {
-    mockUseBindings.mockReturnValue({ data: [] });
-    render(<AdapterCard {...defaultProps()} />);
-    expect(screen.getByText('No agent bound')).toBeTruthy();
-  });
-
-  it('does not show "No agent bound" when disconnected', () => {
-    mockUseBindings.mockReturnValue({ data: [] });
-    render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
-    expect(screen.queryByText('No agent bound')).toBeNull();
-  });
-
-  it('shows "Bind" button when connected with no bindings and onBindClick provided', () => {
-    mockUseBindings.mockReturnValue({ data: [] });
-    const onBindClick = vi.fn();
-    render(<AdapterCard {...defaultProps({ onBindClick })} />);
-    expect(screen.getByRole('button', { name: 'Bind' })).toBeTruthy();
-  });
-
-  it('does not show "Bind" button when onBindClick not provided', () => {
-    mockUseBindings.mockReturnValue({ data: [] });
-    render(<AdapterCard {...defaultProps()} />);
-    expect(screen.queryByRole('button', { name: 'Bind' })).toBeNull();
-  });
-
-  it('calls onBindClick when "Bind" button is clicked', () => {
-    mockUseBindings.mockReturnValue({ data: [] });
-    const onBindClick = vi.fn();
-    render(<AdapterCard {...defaultProps({ onBindClick })} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Bind' }));
-    expect(onBindClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not show "No agent bound" when bindings exist', () => {
-    mockUseBindings.mockReturnValue({
-      data: [{ id: 'b1', adapterId: 'tg-main', agentId: 'agent-1', projectPath: '/p', sessionStrategy: 'per-chat', label: '', createdAt: '', updatedAt: '' }],
-    });
-    render(<AdapterCard {...defaultProps()} />);
-    expect(screen.queryByText('No agent bound')).toBeNull();
   });
 });

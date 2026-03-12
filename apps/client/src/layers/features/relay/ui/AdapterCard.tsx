@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Activity, ChevronRight, MoreVertical, Settings, Trash2 } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronRight, MoreVertical, Settings, Trash2 } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui/collapsible';
@@ -31,8 +31,11 @@ import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-sche
 import { useBindings } from '@/layers/entities/binding';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { getCategoryColorClasses } from '../lib/category-colors';
-import { getStatusBorderColor } from '../lib/status-colors';
 import { AdapterEventLog } from './AdapterEventLog';
+import { AdapterBindingRow } from './AdapterBindingRow';
+
+/** Maximum binding rows to display before showing overflow link. */
+const MAX_VISIBLE_BINDINGS = 3;
 
 interface AdapterCardProps {
   instance: CatalogInstance;
@@ -48,7 +51,6 @@ interface AdapterCardProps {
 export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemove, onBindClick }: AdapterCardProps) {
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [eventsSheetOpen, setEventsSheetOpen] = useState(false);
-  const borderColor = getStatusBorderColor(instance.status.state);
   const isBuiltinClaude = manifest.type === 'claude-code' && manifest.builtin;
 
   // Prefer custom label as primary display name, fall back to status displayName or id.
@@ -59,113 +61,178 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
   const { data: allBindings = [] } = useBindings();
   const { data: agentsData } = useRegisteredAgents();
 
+  const agents = agentsData?.agents ?? [];
+  const totalAgentCount = agents.length;
+
   const adapterBindings = useMemo(
     () => allBindings.filter((b) => b.adapterId === instance.id),
     [allBindings, instance.id],
   );
 
-  const boundAgents = useMemo(() => {
-    const agents = agentsData?.agents ?? [];
+  const boundAgentRows = useMemo(() => {
     return adapterBindings.map((b) => {
       const agent = agents.find((a) => a.id === b.agentId);
-      return { agentId: b.agentId, agentName: agent?.name ?? b.agentId };
+      return {
+        bindingId: b.id,
+        agentName: agent?.name ?? b.agentId,
+        sessionStrategy: b.sessionStrategy,
+        chatId: b.chatId,
+        channelType: b.channelType,
+      };
     });
-  }, [adapterBindings, agentsData]);
+  }, [adapterBindings, agents]);
 
   const hasBindings = adapterBindings.length > 0;
   const isConnected = instance.status.state === 'connected';
+  // CCA is always considered "bound" — it serves all agents
+  const effectiveHasBindings = isBuiltinClaude || hasBindings;
 
-  // Status dot color: green when connected + bindings, amber when connected + no bindings,
+  // Status dot color: green when connected + bound, amber when connected + unbound,
   // red for errors, pulsing blue for transitional states, gray otherwise.
   const statusDotClass = cn(
     'size-2 shrink-0 rounded-full',
     instance.status.state === 'error' && 'bg-red-500',
-    instance.status.state === 'connected' && hasBindings && 'bg-green-500',
-    instance.status.state === 'connected' && !hasBindings && 'animate-pulse bg-amber-500',
+    instance.status.state === 'connected' && effectiveHasBindings && 'bg-green-500',
+    instance.status.state === 'connected' && !effectiveHasBindings && 'animate-pulse bg-amber-500',
     instance.status.state === 'disconnected' && 'bg-gray-400',
     instance.status.state === 'starting' && 'animate-pulse bg-blue-400',
     instance.status.state === 'stopping' && 'animate-pulse bg-gray-400',
     !['error', 'connected', 'disconnected', 'starting', 'stopping'].includes(instance.status.state) && 'bg-gray-400',
   );
 
+  const visibleBindings = boundAgentRows.slice(0, MAX_VISIBLE_BINDINGS);
+  const overflowCount = boundAgentRows.length - MAX_VISIBLE_BINDINGS;
+
   return (
     <>
       <div
         className={cn(
-          'flex items-center justify-between rounded-lg border border-l-2 p-3',
-          'transition-shadow hover:shadow-sm',
-          borderColor,
+          'rounded-xl border p-5 shadow-soft transition-shadow hover:shadow-elevated',
+          isBuiltinClaude && 'border-dashed',
         )}
       >
-        <div className="flex min-w-0 items-center gap-3">
-          {/* Status dot */}
-          <div className={statusDotClass} aria-hidden />
+        {/* Header: status dot, emoji, name, toggle, kebab */}
+        <div className="flex items-start justify-between">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className={statusDotClass} aria-hidden />
+            {manifest.iconEmoji && (
+              <span className="text-sm" role="img" aria-hidden>
+                {manifest.iconEmoji}
+              </span>
+            )}
+            <span className="text-sm font-medium">{primaryName}</span>
+          </div>
 
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              {manifest.iconEmoji && (
-                <span className="text-sm" role="img" aria-hidden>
-                  {manifest.iconEmoji}
-                </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <Switch checked={instance.enabled} onCheckedChange={onToggle} />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="size-7 p-0" aria-label="Adapter actions">
+                  <MoreVertical className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setEventsSheetOpen(true)}>
+                  <Activity className="mr-2 size-3.5" />
+                  Events
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onConfigure}>
+                  <Settings className="mr-2 size-3.5" />
+                  Configure
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setRemoveDialogOpen(true)}
+                  disabled={isBuiltinClaude}
+                  className="text-red-600 focus:text-red-600"
+                >
+                  <Trash2 className="mr-2 size-3.5" />
+                  Remove
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Subtitle: adapter type + category */}
+        <div className="mt-1 flex items-center gap-2 pl-[18px]">
+          {secondaryName && (
+            <span className="text-xs text-muted-foreground">{secondaryName}</span>
+          )}
+          {secondaryName && <span className="text-xs text-muted-foreground/50">&middot;</span>}
+          <Badge variant="secondary" className={cn('text-xs', getCategoryColorClasses(manifest.category))}>
+            {manifest.category}
+          </Badge>
+        </div>
+
+        {/* Body: bindings or CCA summary */}
+        <div className="mt-3 space-y-1.5 pl-[18px]">
+          {isBuiltinClaude ? (
+            <p className="text-sm text-muted-foreground">
+              Serving {totalAgentCount} {totalAgentCount === 1 ? 'agent' : 'agents'} &middot; Chat + Pulse
+            </p>
+          ) : hasBindings ? (
+            <>
+              {visibleBindings.map((row) => (
+                <AdapterBindingRow
+                  key={row.bindingId}
+                  agentName={row.agentName}
+                  sessionStrategy={row.sessionStrategy}
+                  chatId={row.chatId}
+                  channelType={row.channelType}
+                />
+              ))}
+              {overflowCount > 0 && (
+                <button
+                  onClick={onBindClick}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  and {overflowCount} more
+                </button>
               )}
-              <span className="text-sm font-medium">{primaryName}</span>
-              <Badge
-                variant="secondary"
-                className={getCategoryColorClasses(manifest.category)}
-              >
-                {manifest.category}
-              </Badge>
-              {isBuiltinClaude && (
-                <Badge variant="outline" className="text-xs">
-                  System
-                </Badge>
+            </>
+          ) : isConnected ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-amber-600">No agent bound</span>
+              {onBindClick && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 px-1.5 text-xs"
+                  onClick={onBindClick}
+                >
+                  Bind
+                </Button>
               )}
             </div>
-            {secondaryName && (
-              <p className="text-xs text-muted-foreground">{secondaryName}</p>
-            )}
-            {isBuiltinClaude && !secondaryName && (
-              <p className="text-xs text-muted-foreground">
-                Handles: Chat messages, Pulse jobs
-              </p>
-            )}
+          ) : null}
+        </div>
 
-            {/* Bound agents display */}
-            {hasBindings ? (
-              <p className="truncate text-xs text-muted-foreground">
-                {'\u2192 '}{boundAgents.map((a) => a.agentName).join(', ')}
-              </p>
-            ) : isConnected ? (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-amber-600">No agent bound</span>
-                {onBindClick && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 px-1.5 text-xs"
-                    onClick={onBindClick}
-                  >
-                    Bind
-                  </Button>
-                )}
+        {/* Footer: error indicator only */}
+        {(instance.status.errorCount > 0 || instance.status.lastError) && (
+          <div className="mt-3 pl-[18px]">
+            {instance.status.errorCount > 0 && !instance.status.lastError && (
+              <div className="flex items-center gap-1 text-xs text-red-500">
+                <AlertTriangle className="size-3" />
+                <span>{instance.status.errorCount} {instance.status.errorCount === 1 ? 'error' : 'errors'}</span>
               </div>
-            ) : null}
-
-            <div className="text-xs text-muted-foreground/70">
-              In: {instance.status.messageCount.inbound} | Out: {instance.status.messageCount.outbound}
-              {instance.status.errorCount > 0 && ` | Errors: ${instance.status.errorCount}`}
-            </div>
+            )}
             {instance.status.lastError && (
               <Collapsible>
-                <div className="mt-1 flex items-center gap-1">
+                <div className="flex items-center gap-1">
                   <CollapsibleTrigger asChild>
                     <button
                       className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
                       aria-label="Toggle full error message"
                     >
                       <ChevronRight className="size-3 transition-transform data-[state=open]:rotate-90" />
+                      {instance.status.errorCount > 0 && (
+                        <AlertTriangle className="size-3" />
+                      )}
                       <span className="max-w-[200px] truncate">
-                        {instance.status.lastError}
+                        {instance.status.errorCount > 0
+                          ? `${instance.status.errorCount} ${instance.status.errorCount === 1 ? 'error' : 'errors'}`
+                          : instance.status.lastError}
                       </span>
                     </button>
                   </CollapsibleTrigger>
@@ -178,37 +245,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
               </Collapsible>
             )}
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Switch checked={instance.enabled} onCheckedChange={onToggle} />
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="size-7 p-0" aria-label="Adapter actions">
-                <MoreVertical className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setEventsSheetOpen(true)}>
-                <Activity className="mr-2 size-3.5" />
-                Events
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onConfigure}>
-                <Settings className="mr-2 size-3.5" />
-                Configure
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setRemoveDialogOpen(true)}
-                disabled={isBuiltinClaude}
-                className="text-red-600 focus:text-red-600"
-              >
-                <Trash2 className="mr-2 size-3.5" />
-                Remove
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        )}
       </div>
 
       <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>

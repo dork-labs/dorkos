@@ -118,7 +118,7 @@ function AdaptersTab({ enabled, onBindClick }: AdaptersTabProps) {
         {configuredCards.length === 0 ? (
           <p className="text-sm text-muted-foreground">No adapters configured yet.</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {configuredCards.map(({ instance, manifest }) => (
               <AdapterCard
                 key={instance.id}

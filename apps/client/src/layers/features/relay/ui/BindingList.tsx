@@ -22,13 +22,7 @@ import { useAdapterCatalog } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
-
-/** Badge styling by session strategy value. */
-const STRATEGY_BADGE_LABELS: Record<string, string> = {
-  'per-chat': 'Per Chat',
-  'per-user': 'Per User',
-  stateless: 'Stateless',
-};
+import { STRATEGY_BADGE_LABELS } from '../lib/binding-labels';
 
 /** Resolve adapter display name and icon from the catalog by adapter ID. */
 function useAdapterLookup() {

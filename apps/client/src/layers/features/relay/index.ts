@@ -7,6 +7,7 @@ export { RelayPanel } from './ui/RelayPanel';
 export { RelayEmptyState } from './ui/RelayEmptyState';
 export { ConnectionStatusBanner } from './ui/ConnectionStatusBanner';
 export { AdapterCard } from './ui/AdapterCard';
+export { AdapterBindingRow } from './ui/AdapterBindingRow';
 export { CatalogCard } from './ui/CatalogCard';
 export { MessageTrace } from './ui/MessageTrace';
 export { DeliveryMetricsDashboard } from './ui/DeliveryMetrics';
