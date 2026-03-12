@@ -3,9 +3,11 @@ import { siteConfig } from '@/config/site'
 import {
   PresentationShell,
   StoryHero,
+  FounderSection,
   MondayMorningSection,
   HowItBuiltSection,
   JustPromptsSection,
+  DemoSection,
   CloseSection,
   FutureVisionSection,
   MarketingHeader,
@@ -40,9 +42,11 @@ export default function StoryPage() {
         </div>
 
         <StoryHero />
+        <FounderSection />
         <MondayMorningSection />
         <HowItBuiltSection />
         <JustPromptsSection />
+        <DemoSection />
         <CloseSection />
         <FutureVisionSection />
 

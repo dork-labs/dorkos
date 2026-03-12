@@ -19,9 +19,11 @@ export { PulseAnimation } from './ui/PulseAnimation'
 // UI components — story page
 export { PresentationShell } from './ui/PresentationShell'
 export { StoryHero } from './ui/story/StoryHero'
+export { FounderSection } from './ui/story/FounderSection'
 export { MondayMorningSection } from './ui/story/MondayMorningSection'
 export { HowItBuiltSection } from './ui/story/HowItBuiltSection'
 export { JustPromptsSection } from './ui/story/JustPromptsSection'
+export { DemoSection } from './ui/story/DemoSection'
 export { CloseSection } from './ui/story/CloseSection'
 export { FutureVisionSection } from './ui/story/FutureVisionSection'
 

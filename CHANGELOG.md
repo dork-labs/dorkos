@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add founder + demo slides, tighten copy, incremental boot card reveal
 - Incremental step reveal on timeline slide in presentation mode
 - Add /story page with dual-mode presentation support
 - Export story components and data from marketing barrel

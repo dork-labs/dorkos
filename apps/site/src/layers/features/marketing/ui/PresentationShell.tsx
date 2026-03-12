@@ -5,13 +5,18 @@ import { usePresentationMode } from '../lib/use-presentation-mode'
 import { PresentationProvider } from '../lib/presentation-context'
 
 /** Section IDs navigated by keyboard in presentation mode. FutureVisionSection is excluded. */
-const PRESENTATION_SECTION_IDS = ['hero', 'morning', 'timeline', 'prompts', 'close'] as const
+const PRESENTATION_SECTION_IDS = ['hero', 'founder', 'morning', 'timeline', 'prompts', 'demo', 'close'] as const
 
-/** Index of the timeline slide — supports incremental step reveal. */
-const TIMELINE_SLIDE_IDX = PRESENTATION_SECTION_IDS.indexOf('timeline')
+type SectionId = (typeof PRESENTATION_SECTION_IDS)[number]
 
-/** Number of sub-steps on the timeline slide (one per evolution step). */
-const TIMELINE_SUB_STEPS = 4
+/**
+ * Slides that support incremental sub-step reveal (ArrowRight steps through items).
+ * Value is the total number of sub-steps on that slide.
+ */
+const SLIDE_SUB_STEPS: Partial<Record<SectionId, number>> = {
+  morning: 4,
+  timeline: 4,
+}
 
 interface PresentationShellProps {
   children: React.ReactNode
@@ -21,7 +26,7 @@ interface PresentationShellProps {
  * Wraps the story page. When ?present=true is in the URL:
  * - Switches to fixed full-screen scroll-snap layout
  * - Enables ArrowRight/Space (next) and ArrowLeft (prev) keyboard nav
- * - On the timeline slide, ArrowRight reveals one evolution step at a time
+ * - On slides with sub-steps, ArrowRight reveals one item at a time
  * - Renders a progress line at the bottom of the screen
  * - Hides the marketing header and footer
  */
@@ -53,9 +58,7 @@ export function PresentationShell({ children }: PresentationShellProps) {
         for (const entry of entries) {
           if (entry.isIntersecting) {
             const slideId = entry.target.getAttribute('data-slide')
-            const idx = PRESENTATION_SECTION_IDS.indexOf(
-              slideId as (typeof PRESENTATION_SECTION_IDS)[number],
-            )
+            const idx = PRESENTATION_SECTION_IDS.indexOf(slideId as SectionId)
             if (idx !== -1) setCurrentIndex(idx)
           }
         }
@@ -81,30 +84,26 @@ export function PresentationShell({ children }: PresentationShellProps) {
       )
       if (!target) return
 
-      // When entering the timeline slide going forward, start from the first step.
-      // When entering it going backward, show all steps already revealed.
-      if (PRESENTATION_SECTION_IDS[clamped] === 'timeline') {
-        setSubStep(direction === 'forward' ? 0 : TIMELINE_SUB_STEPS - 1)
-      } else {
-        setSubStep(0)
-      }
+      // Sub-step slides: enter from forward at step 0, enter from back fully revealed.
+      const steps = SLIDE_SUB_STEPS[PRESENTATION_SECTION_IDS[clamped]]
+      setSubStep(steps !== undefined ? (direction === 'forward' ? 0 : steps - 1) : 0)
 
       container.scrollTo({ top: target.offsetTop, behavior: 'smooth' })
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const currentSlideSteps = SLIDE_SUB_STEPS[PRESENTATION_SECTION_IDS[currentIndex]]
+
       if (e.key === 'ArrowRight' || e.key === ' ') {
         e.preventDefault()
-        if (currentIndex === TIMELINE_SLIDE_IDX && subStep < TIMELINE_SUB_STEPS - 1) {
-          // Reveal next step on the timeline slide
+        if (currentSlideSteps !== undefined && subStep < currentSlideSteps - 1) {
           setSubStep((s) => s + 1)
         } else {
           scrollToIndex(currentIndex + 1, 'forward')
         }
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        if (currentIndex === TIMELINE_SLIDE_IDX && subStep > 0) {
-          // Hide last step on the timeline slide
+        if (currentSlideSteps !== undefined && subStep > 0) {
           setSubStep((s) => s - 1)
         } else {
           scrollToIndex(currentIndex - 1, 'back')

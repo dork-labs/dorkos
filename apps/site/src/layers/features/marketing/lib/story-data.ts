@@ -38,14 +38,10 @@ export interface FutureCard {
 }
 
 export const bootCards: BootCard[] = [
-  { id: 'health', label: 'Health', value: 'Synced', detail: 'HRV · sleep · steps', color: 'orange' },
-  { id: 'companies', label: 'Companies', value: '4 loaded', detail: 'tasks · projects', color: 'blue' },
-  { id: 'overdue', label: '⚑ Overdue', value: '2 days', detail: 'flagged for you', color: 'orange', urgent: true },
-  { id: 'calendar', label: 'Calendar', value: '3 preps', detail: 'meetings identified', color: 'purple' },
-  { id: 'vacation', label: 'Vacation', value: 'Planned', detail: 'dates · itinerary set', color: 'blue' },
-  { id: 'coaching', label: 'Coaching', value: 'Fear check', detail: 'priorities → 3', color: 'orange' },
-  { id: 'comms', label: 'Comms', value: '7 drafted', detail: 'replies · emails · staged', color: 'purple' },
-  { id: 'output', label: 'Output', value: 'Ready', detail: 'calendar · habits · audio', color: 'gray' },
+  { id: 'talk', label: 'This Talk', value: 'Outlined', detail: 'No Edges · draft outline', color: 'orange' },
+  { id: 'comms', label: 'Comms', value: 'Drafted', detail: 'slack · email · iMessage', color: 'purple' },
+  { id: 'calendar', label: 'Calendar', value: 'Timeboxed', detail: 'meetings briefed', color: 'blue' },
+  { id: 'todos', label: 'Tasks', value: 'Planned', detail: 'ready to start', color: 'orange', urgent: true },
 ]
 
 export const evolutionSteps: EvolutionStep[] = [
@@ -53,15 +49,15 @@ export const evolutionSteps: EvolutionStep[] = [
     step: 1,
     product: 'LifeOS',
     duration: 'A weekend',
-    description: 'Calendar, todos, journaling, coaching. Built for my life -- not for any company.',
-    ceiling: 'Needed to manage multiple AI projects at once.',
+    description: 'Calendar, coaching, journaling. Built for my life, not work.',
+    ceiling: 'Projects multiplied. Needed one command layer.',
     color: 'orange',
   },
   {
     step: 2,
     product: 'DorkOS',
     duration: 'A few weeks',
-    description: 'A command layer across all my agents. One place to run everything.',
+    description: 'One command layer across all my agents.',
     ceiling: 'Still had to be awake for any of it to run.',
     color: 'charcoal',
   },
@@ -69,7 +65,7 @@ export const evolutionSteps: EvolutionStep[] = [
     step: 3,
     product: 'Pulse',
     duration: 'A few weeks',
-    description: 'Scheduled tasks. The system fires overnight. Texts briefings before I wake up.',
+    description: 'Scheduled agents. Runs overnight. Morning brief before I wake up.',
     ceiling: "Agents couldn't talk to each other.",
     color: 'charcoal',
   },
@@ -77,7 +73,7 @@ export const evolutionSteps: EvolutionStep[] = [
     step: 4,
     product: 'Mesh',
     duration: 'A few weeks',
-    description: 'Four companies, each with its own agent. They find each other and coordinate.',
+    description: 'Agents that find each other. Three companies, one network.',
     ceiling: null,
     color: 'charcoal',
   },

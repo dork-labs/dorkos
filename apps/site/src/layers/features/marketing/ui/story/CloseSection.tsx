@@ -25,8 +25,7 @@ export function CloseSection({ slideId = 'close' }: CloseSectionProps) {
           variants={REVEAL}
           className="mb-8 text-[clamp(14px,1.8vw,18px)] leading-[1.7] text-warm-gray"
         >
-          Anyone has access to the same AI. Not everyone has thought hard about what they actually
-          want.
+          This isn&rsquo;t about what I built.
         </motion.p>
 
         <motion.div
@@ -39,16 +38,16 @@ export function CloseSection({ slideId = 'close' }: CloseSectionProps) {
           variants={REVEAL}
           className="mb-10 text-[clamp(18px,2.5vw,28px)] font-light leading-[1.5] text-cream-white"
         >
-          I built this so the machine could handle the obligations.
+          You can build this.
           <br />
-          So I could focus on the parts that are irreplaceable.
+          Go get your time back.
         </motion.p>
 
         <motion.p
           variants={REVEAL}
           className="font-mono text-[10px] tracking-[0.1em] text-warm-gray-light uppercase"
         >
-          Fundamentals First &mdash; 2026
+          No Edges &mdash; Austin TX &mdash; 2026
         </motion.p>
       </motion.div>
     </section>
