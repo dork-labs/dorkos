@@ -46,6 +46,8 @@ const DORKOS_TOOLS = [
   { key: 'mesh' as const, label: 'Mesh' },
 ] as const;
 
+const AGENT_CAP = 3;
+
 /** Read-only adapter and agent summary for the sidebar Connections tab. */
 export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   const { setRelayOpen, setMeshOpen, setAgentDialogOpen, selectedCwd } = useAppStore();
@@ -86,8 +88,6 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
     const reachableIds = new Set(accessData.agents.map((a) => a.id));
     return agents.filter((a) => reachableIds.has(a.id));
   }, [agents, agentId, accessData, accessLoading]);
-
-  const AGENT_CAP = 3;
 
   const cappedAgents = visibleAgents.slice(0, AGENT_CAP);
   const agentOverflow = visibleAgents.length - AGENT_CAP;
