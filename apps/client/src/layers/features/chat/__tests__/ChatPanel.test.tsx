@@ -100,6 +100,7 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state = {
       showShortcutChips: mockShowShortcutChips(),
       setIsStreaming: vi.fn(),
+      setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
       setActiveForm: vi.fn(),
       showStatusBarCwd: false,

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, FolderOpen } from 'lucide-react';
-import { useCreateSchedule, useUpdateSchedule, usePulsePresetDialog } from '@/layers/entities/pulse';
+import { ChevronLeft, ChevronRight, FolderOpen, Trash2 } from 'lucide-react';
+import { useCreateSchedule, useUpdateSchedule, useDeleteSchedule, usePulsePresetDialog } from '@/layers/entities/pulse';
 import type { PulsePreset } from '@/layers/entities/pulse';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
@@ -11,6 +11,13 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogFooter,
   DirectoryPicker,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  Switch,
   Label,
   Input,
   Button,
@@ -28,6 +35,8 @@ interface Props {
   editSchedule?: PulseSchedule;
   /** When provided, dialog opens directly at form step with this preset pre-filled. */
   initialPreset?: PulsePreset | null;
+  /** Pre-select this agent when creating a new schedule. */
+  initialAgentId?: string;
 }
 
 type PermissionMode = 'acceptEdits' | 'bypassPermissions';
@@ -37,7 +46,7 @@ const DEFAULT_MAX_RUNTIME_MIN = 10;
 const MAX_NAME_LENGTH = 100;
 const MAX_RUNTIME_MIN = 720;
 
-function buildInitialState(editSchedule?: PulseSchedule, preset?: PulsePreset | null) {
+function buildInitialState(editSchedule?: PulseSchedule, preset?: PulsePreset | null, initialAgentId?: string) {
   if (editSchedule) {
     return {
       name: editSchedule.name,
@@ -58,7 +67,7 @@ function buildInitialState(editSchedule?: PulseSchedule, preset?: PulsePreset | 
       prompt: preset.prompt,
       cron: preset.cron,
       cwd: '',
-      agentId: undefined as string | undefined,
+      agentId: initialAgentId ?? (undefined as string | undefined),
       timezone: preset.timezone ?? '',
       permissionMode: 'acceptEdits' as PermissionMode,
       maxRuntimeMin: DEFAULT_MAX_RUNTIME_MIN,
@@ -69,7 +78,7 @@ function buildInitialState(editSchedule?: PulseSchedule, preset?: PulsePreset | 
     prompt: '',
     cron: DEFAULT_CRON,
     cwd: '',
-    agentId: undefined as string | undefined,
+    agentId: initialAgentId ?? (undefined as string | undefined),
     timezone: '',
     permissionMode: 'acceptEdits' as PermissionMode,
     maxRuntimeMin: DEFAULT_MAX_RUNTIME_MIN,
@@ -90,16 +99,21 @@ interface FormState {
 type DialogStep = 'preset-picker' | 'form';
 
 /** Create or edit a Pulse schedule using ResponsiveDialog with progressive disclosure. */
-export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initialPreset }: Props) {
+export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initialPreset, initialAgentId }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
+  const deleteSchedule = useDeleteSchedule();
   const { data: agentsData } = useMeshAgentPaths();
   const agents = agentsData?.agents ?? [];
 
-  const [form, setForm] = useState<FormState>(() => buildInitialState(editSchedule));
+  const [form, setForm] = useState<FormState>(() => buildInitialState(editSchedule, undefined, initialAgentId));
   const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
   const [step, setStep] = useState<DialogStep>(() => (editSchedule ? 'form' : 'preset-picker'));
   const [appliedPreset, setAppliedPreset] = useState<PulsePreset | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  // Local shadow of enabled state — allows the Switch to respond immediately
+  // while the mutation + refetch catches up.
+  const [localEnabled, setLocalEnabled] = useState(editSchedule?.enabled ?? true);
 
   // Determine initial schedule target: 'agent' if editing an agent-linked schedule,
   // or if no edit and agents exist; otherwise 'directory'.
@@ -113,26 +127,28 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
   useEffect(() => {
     if (!open) {
       // Reset on close
-      setForm(buildInitialState(editSchedule));
+      setForm(buildInitialState(editSchedule, undefined, initialAgentId));
       setAppliedPreset(null);
+      setDeleteConfirmOpen(false);
       setStep(editSchedule ? 'form' : 'preset-picker');
       return;
     }
     if (editSchedule) {
       setForm(buildInitialState(editSchedule));
       setScheduleTarget(editSchedule.agentId ? 'agent' : (editSchedule.cwd ? 'directory' : 'agent'));
+      setLocalEnabled(editSchedule.enabled);
       setStep('form');
     } else if (initialPreset) {
-      setForm(buildInitialState(undefined, initialPreset));
+      setForm(buildInitialState(undefined, initialPreset, initialAgentId));
       setAppliedPreset(initialPreset);
       setStep('form');
     } else {
-      setForm(buildInitialState());
+      setForm(buildInitialState(undefined, undefined, initialAgentId));
       setScheduleTarget('agent');
       setStep('preset-picker');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- agents.length intentionally excluded to avoid resetting on re-fetch
-  }, [editSchedule, open, initialPreset]);
+  }, [editSchedule, open, initialPreset, initialAgentId]);
 
   // Wire external trigger from usePulsePresetDialog (e.g. from SchedulesView sidebar)
   const { pendingPreset, externalTrigger, clear } = usePulsePresetDialog();
@@ -140,11 +156,11 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
   useEffect(() => {
     if (externalTrigger && pendingPreset) {
       setAppliedPreset(pendingPreset);
-      setForm(buildInitialState(undefined, pendingPreset));
+      setForm(buildInitialState(undefined, pendingPreset, initialAgentId));
       setStep('form');
       clear();
     }
-  }, [externalTrigger, pendingPreset, clear]);
+  }, [externalTrigger, pendingPreset, clear, initialAgentId]);
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -180,8 +196,24 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
 
   function handleSelectPreset(preset: PulsePreset) {
     setAppliedPreset(preset);
-    setForm(buildInitialState(undefined, preset));
+    setForm(buildInitialState(undefined, preset, initialAgentId));
     setStep('form');
+  }
+
+  function handleDelete() {
+    if (!editSchedule) return;
+    deleteSchedule.mutate(editSchedule.id, {
+      onSuccess: () => {
+        setDeleteConfirmOpen(false);
+        onOpenChange(false);
+      },
+    });
+  }
+
+  function handleToggleEnabled(checked: boolean) {
+    if (!editSchedule) return;
+    setLocalEnabled(checked);
+    updateSchedule.mutate({ id: editSchedule.id, enabled: checked });
   }
 
   return (
@@ -203,6 +235,14 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
             <ResponsiveDialogTitle>
               {editSchedule ? 'Edit Schedule' : 'New Schedule'}
             </ResponsiveDialogTitle>
+            {editSchedule && (
+              <Switch
+                className="ml-auto"
+                checked={localEnabled}
+                onCheckedChange={handleToggleEnabled}
+                aria-label={localEnabled ? 'Disable schedule' : 'Enable schedule'}
+              />
+            )}
           </div>
           <ResponsiveDialogDescription className="sr-only">
             {editSchedule ? 'Edit an existing Pulse schedule' : 'Create a new Pulse schedule'}
@@ -381,6 +421,18 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
 
         {step === 'form' && (
           <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">
+            {editSchedule && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mr-auto text-destructive hover:text-destructive"
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                <Trash2 className="mr-1.5 size-4" />
+                Delete
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
@@ -400,6 +452,34 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
         onOpenChange={setCwdPickerOpen}
         onSelect={(path) => updateField('cwd', path)}
       />
+      {editSchedule && (
+        <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete schedule</DialogTitle>
+              <DialogDescription>
+                Delete &ldquo;{editSchedule.name}&rdquo;? This will also remove all run history. This
+                action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <button
+                onClick={() => setDeleteConfirmOpen(false)}
+                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleteSchedule.isPending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
+              >
+                {deleteSchedule.isPending ? 'Deleting...' : 'Delete'}
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </ResponsiveDialog>
   );
 }

@@ -126,7 +126,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   const { isAtBottom, hasNewMessages, scrollToBottom, handleScrollStateChange } =
     useScrollOverlay(messages, messageListRef);
 
-  useChatStatusSync(status, isWaitingForUser, taskState.activeForm);
+  useChatStatusSync(status, isWaitingForUser, taskState.activeForm, isTextStreaming);
 
   const { data: registry } = useCommands(cwd);
   const allCommands = useMemo(() => registry?.commands ?? [], [registry]);

@@ -22,6 +22,8 @@ interface SchedulesViewProps {
 /** Read-only schedule summary for the sidebar Schedules tab. */
 export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
   const setPulseOpen = useAppStore((s) => s.setPulseOpen);
+  const openPulseForAgent = useAppStore((s) => s.openPulseForAgent);
+  const openPulseToEdit = useAppStore((s) => s.openPulseToEdit);
   const enabled = toolStatus !== 'disabled-by-server';
   const { data: allSchedules = [] } = useSchedules(enabled);
   const { data: activeRunCount = 0 } = useActiveRunCount(enabled);
@@ -41,7 +43,7 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
       <div className="flex flex-col items-center justify-center gap-3 px-4 py-8">
         <p className="text-muted-foreground/60 text-sm">Pulse disabled for this agent</p>
         <button
-          onClick={() => setPulseOpen(true)}
+          onClick={() => agentId ? openPulseForAgent(agentId) : setPulseOpen(true)}
           className="text-muted-foreground hover:text-foreground text-xs transition-colors"
         >
           Open Pulse →
@@ -67,7 +69,7 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
                   type="button"
                   onClick={() => {
                     openWithPreset(preset);
-                    setPulseOpen(true);
+                    if (agentId) openPulseForAgent(agentId); else setPulseOpen(true);
                   }}
                   className="mt-2 text-xs text-primary hover:underline"
                 >
@@ -78,7 +80,7 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
           </div>
         )}
         <button
-          onClick={() => setPulseOpen(true)}
+          onClick={() => agentId ? openPulseForAgent(agentId) : setPulseOpen(true)}
           className="text-muted-foreground hover:text-foreground text-xs transition-colors"
         >
           Open Pulse →
@@ -109,7 +111,7 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
               {activeSchedules.map((schedule) => (
                 <SidebarMenuItem key={schedule.id}>
                   <SidebarMenuButton
-                    onClick={() => setPulseOpen(true)}
+                    onClick={() => openPulseToEdit(schedule.id)}
                     className="text-sm"
                   >
                     <span className="size-2 shrink-0 animate-pulse rounded-full bg-green-500" />
@@ -130,7 +132,7 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
               {otherSchedules.map((schedule) => (
                 <SidebarMenuItem key={schedule.id}>
                   <SidebarMenuButton
-                    onClick={() => setPulseOpen(true)}
+                    onClick={() => openPulseToEdit(schedule.id)}
                     className="text-sm"
                   >
                     <span
@@ -154,7 +156,7 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
 
         <div className="px-3 py-2">
           <button
-            onClick={() => setPulseOpen(true)}
+            onClick={() => agentId ? openPulseForAgent(agentId) : setPulseOpen(true)}
             className="text-muted-foreground hover:text-foreground text-xs transition-colors"
           >
             Open Pulse →

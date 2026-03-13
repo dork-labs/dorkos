@@ -56,6 +56,12 @@ interface AppState {
   setSettingsOpen: (open: boolean) => void;
   pulseOpen: boolean;
   setPulseOpen: (open: boolean) => void;
+  pulseAgentFilter: string | null;
+  setPulseAgentFilter: (id: string | null) => void;
+  pulseEditScheduleId: string | null;
+  setPulseEditScheduleId: (id: string | null) => void;
+  openPulseForAgent: (agentId: string) => void;
+  openPulseToEdit: (scheduleId: string) => void;
   relayOpen: boolean;
   setRelayOpen: (open: boolean) => void;
   meshOpen: boolean;
@@ -130,6 +136,8 @@ interface AppState {
 
   isStreaming: boolean;
   setIsStreaming: (v: boolean) => void;
+  isTextStreaming: boolean;
+  setIsTextStreaming: (v: boolean) => void;
   isWaitingForUser: boolean;
   setIsWaitingForUser: (v: boolean) => void;
   activeForm: string | null;
@@ -222,7 +230,14 @@ export const useAppStore = create<AppState>()(
       settingsOpen: false,
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       pulseOpen: false,
-      setPulseOpen: (open) => set({ pulseOpen: open }),
+      setPulseOpen: (open) =>
+        set(open ? { pulseOpen: true } : { pulseOpen: false, pulseAgentFilter: null, pulseEditScheduleId: null }),
+      pulseAgentFilter: null,
+      setPulseAgentFilter: (id) => set({ pulseAgentFilter: id }),
+      pulseEditScheduleId: null,
+      setPulseEditScheduleId: (id) => set({ pulseEditScheduleId: id }),
+      openPulseForAgent: (agentId) => set({ pulseOpen: true, pulseAgentFilter: agentId, pulseEditScheduleId: null }),
+      openPulseToEdit: (scheduleId) => set({ pulseOpen: true, pulseEditScheduleId: scheduleId, pulseAgentFilter: null }),
       relayOpen: false,
       setRelayOpen: (open) => set({ relayOpen: open }),
       meshOpen: false,
@@ -434,6 +449,8 @@ export const useAppStore = create<AppState>()(
 
       isStreaming: false,
       setIsStreaming: (v) => set({ isStreaming: v }),
+      isTextStreaming: false,
+      setIsTextStreaming: (v) => set({ isTextStreaming: v }),
       isWaitingForUser: false,
       setIsWaitingForUser: (v) => set({ isWaitingForUser: v }),
       activeForm: null,

@@ -105,6 +105,7 @@ export {
   ResponsiveDialogFullscreenToggle,
   useResponsiveDialog,
 } from './responsive-dialog';
+export { ScanLine } from './ScanLine';
 export { ScrollArea, ScrollBar } from './scroll-area';
 export {
   ResponsiveDropdownMenu,

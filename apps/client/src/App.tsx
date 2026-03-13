@@ -16,6 +16,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
+  ScanLine,
   Separator,
   Sidebar,
   SidebarProvider,
@@ -41,6 +42,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
 
   const [selectedCwd] = useDirectoryState();
   const isStreaming = useAppStore((s) => s.isStreaming);
+  const isTextStreaming = useAppStore((s) => s.isTextStreaming);
   const activeForm = useAppStore((s) => s.activeForm);
   const isWaitingForUser = useAppStore((s) => s.isWaitingForUser);
   const pulseBadgeCount = useAppStore((s) => s.pulseBadgeCount);
@@ -229,15 +231,7 @@ export function App({ transformContent, embedded }: AppProps = {}) {
                       {/* Streaming scan line — sweeps across header bottom when agent is active */}
                       <AnimatePresence>
                         {isStreaming && (
-                          <motion.div
-                            aria-hidden
-                            className="pointer-events-none absolute right-0 bottom-0 left-0 h-px origin-left"
-                            initial={{ scaleX: 0, opacity: 0.8 }}
-                            animate={{ scaleX: [0, 1], opacity: [0.8, 0] }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                            style={{ backgroundColor: agentVisual.color }}
-                          />
+                          <ScanLine color={agentVisual.color} isTextStreaming={isTextStreaming} />
                         )}
                       </AnimatePresence>
                     </header>
