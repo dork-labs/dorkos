@@ -9,57 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add ScanLine component and enhance Pulse schedule management
-- Add founder + demo slides, tighten copy, incremental boot card reveal
-- Incremental step reveal on timeline slide in presentation mode
-- Add /story page with dual-mode presentation support
-- Export story components and data from marketing barrel
-- Add FutureVisionSection (page-only)
-- Add CloseSection
-- Add JustPromptsSection equation reveal
-- Add HowItBuiltSection timeline
-- Add MondayMorningSection boot dashboard
-- Add StoryHero section
-- Add PresentationShell with keyboard nav and progress dots
-- Add presentation mode CSS
-- Add usePresentationMode hook with tests
-- Add story-data types and content
-- Implement agent filtering and caps in ConnectionsView
-- Add motion animations to ConnectionsView
-- Cap MCP servers list at 4 with overflow link to agent settings
-- Cap agents list at 3 with overflow link to Mesh
-- Filter agent connections to reachable-only, so the connections panel only shows agents you can actually reach
-- Introduce Pulse presets management and UI components
-- Add structured debug logging across chat flow layers
-- Add smooth LOD transitions, adapter labels, and ghost node tests
-- Redesign AdapterCard with bindings display and CCA treatment
-- Add ghost adapter placeholder and binding edge metadata
-- Implement adapter-binding UX overhaul
-- Add BaseRelayAdapter, compliance suite, API versioning, and adapter template
-- Add useUpdateBinding hook and BindingList component for managing adapter-agent bindings
-- Add NavigationLayoutDialogHeader and NavigationLayoutBody for polished dialog navigation
-- Add NavigationLayout sidebar navigation for dialogs
-
 ### Changed
-
-- Add /story page implementation plan
-- Add /story page design spec
-- Reconcile guides against relay removal, pulse presets, and ConnectionsView changes
-- Remove relay chat path from self-test command
-- Remove relay message path from web client, use direct SSE only
-- Use Math.max for overflow values, clarify useAgentAccess guard comment
-- Move AGENT_CAP to module scope, remove unused MCP_CAP
-- Document test simulation infrastructure and fix mock proxy routing
-- Reconcile contributing guides with relay/mesh refactoring
-- Humanize raw IDs and technical jargon across Relay/Mesh UI
 
 ### Fixed
 
-- Add missing Fumadocs frontmatter title to spec and plan docs
+---
+
+## [0.12.0] - 2026-03-13
+
+> Marketing storytelling, topology intelligence, and Pulse schedule management
+
+### Added
+
+- Add /story page with dual-mode presentation support for brand storytelling
+- Add ScanLine component with three-layer composited animation responding to text streaming
+- Enhance Pulse with agent filtering, inline enable/disable toggle, delete with confirmation, and edit-from-sidebar
+- Add presentation mode with keyboard navigation, progress indicators, and incremental step reveal
+- Add story sections: Hero, Monday Morning Dashboard, How It Was Built, Just Prompts equation, Future Vision, and Close
+- Implement agent filtering and caps in ConnectionsView with motion animations
+- Filter agent connections to reachable-only so the connections panel only shows agents you can actually reach
+- Cap MCP servers list at 4 and agents at 3 with overflow links
+- Introduce Pulse presets management and UI components
+- Add structured debug logging across chat flow layers
+- Add smooth LOD transitions, adapter labels, and ghost node tests to topology
+- Redesign AdapterCard with bindings display and CCA treatment
+- Implement adapter-binding UX overhaul with ghost adapter placeholders
+- Add BaseRelayAdapter, compliance suite, API versioning, and adapter template
+- Add useUpdateBinding hook and BindingList component for managing adapter-agent bindings
+- Add NavigationLayout sidebar navigation for polished dialog navigation
+
+### Changed
+
+- Remove relay message path from web client, use direct SSE only for more reliable streaming
+- Humanize raw IDs and technical jargon across Relay/Mesh UI
+- Reconcile contributing guides against relay removal, pulse presets, and ConnectionsView changes
+- Document test simulation infrastructure and fix mock proxy routing
+
+### Fixed
+
 - Fix LayoutGroup layout animation to eliminate timeline item jumps
-- Smooth layout animation and active step orange treatment on timeline slide
+- Fix presentation mode keyboard nav, progress bar, header hiding, and animation replay
 - Replace pendingUserContent with optimistic messages in virtualizer
-- Fix presentation mode keyboard nav, progress bar, header hiding, animation replay
 - Disable model/permission selectors before first message, fix post-remap PATCH
 - Filter adapter list to agent-bound adapters only
 - Prevent form revert and fix AnimatePresence key warnings
@@ -68,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Filter CCA adapter nodes and always show namespace groups
 - Use correct logo SVG paths in OG share card
 - Resolve createRequire duplicate declaration in server bundle
+- Add missing Fumadocs frontmatter title to spec and plan docs
+
 ---
 
 ## [0.11.0] - 2026-03-11
@@ -467,7 +459,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/dork-labs/dorkos/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/dork-labs/dorkos/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/dork-labs/dorkos/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/dork-labs/dorkos/compare/v0.9.0...v0.9.1

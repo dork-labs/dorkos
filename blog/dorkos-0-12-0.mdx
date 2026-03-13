@@ -1,0 +1,65 @@
+---
+title: DorkOS 0.12.0
+description: Marketing storytelling, topology intelligence, and Pulse schedule management
+date: 2026-03-13
+author: DorkOS Team
+category: release
+tags: [release, story, pulse, topology, connections]
+---
+
+Tell the DorkOS story with a new presentation page, manage Pulse schedules with more control, and see your agent topology with clearer adapter bindings and smarter filtering.
+
+## Highlights
+
+- **Story Page** - A new /story page with dual-mode presentation support lets you showcase DorkOS with keyboard-navigated slides, incremental reveals, and rich narrative sections
+- **Pulse Schedule Management** - Filter schedules by agent, toggle enable/disable inline, delete with confirmation, and jump straight to editing from the sidebar
+- **Topology Intelligence** - Redesigned adapter cards, smooth LOD transitions, ghost node placeholders, and a complete adapter-binding UX overhaul make your agent topology clearer and more actionable
+
+## All Changes
+
+### Added
+
+- Add /story page with dual-mode presentation support for brand storytelling
+- Add ScanLine component with three-layer composited animation responding to text streaming
+- Enhance Pulse with agent filtering, inline enable/disable toggle, delete with confirmation, and edit-from-sidebar
+- Add presentation mode with keyboard navigation, progress indicators, and incremental step reveal
+- Add story sections: Hero, Monday Morning Dashboard, How It Was Built, Just Prompts equation, Future Vision, and Close
+- Implement agent filtering and caps in ConnectionsView with motion animations
+- Filter agent connections to reachable-only so the connections panel only shows agents you can actually reach
+- Cap MCP servers list at 4 and agents at 3 with overflow links
+- Introduce Pulse presets management and UI components
+- Add structured debug logging across chat flow layers
+- Add smooth LOD transitions, adapter labels, and ghost node tests to topology
+- Redesign AdapterCard with bindings display and CCA treatment
+- Implement adapter-binding UX overhaul with ghost adapter placeholders
+- Add BaseRelayAdapter, compliance suite, API versioning, and adapter template
+- Add useUpdateBinding hook and BindingList component for managing adapter-agent bindings
+- Add NavigationLayout sidebar navigation for polished dialog navigation
+
+### Changed
+
+- Remove relay message path from web client, use direct SSE only for more reliable streaming
+- Humanize raw IDs and technical jargon across Relay/Mesh UI
+- Reconcile contributing guides against relay removal, pulse presets, and ConnectionsView changes
+- Document test simulation infrastructure and fix mock proxy routing
+
+### Fixed
+
+- Fix LayoutGroup layout animation to eliminate timeline item jumps
+- Fix presentation mode keyboard nav, progress bar, header hiding, and animation replay
+- Replace pendingUserContent with optimistic messages in virtualizer
+- Disable model/permission selectors before first message, fix post-remap PATCH
+- Filter adapter list to agent-bound adapters only
+- Prevent form revert and fix AnimatePresence key warnings
+- Restore scroll in tabpanel views by adding h-full
+- Use text-foreground for node name text consistency
+- Filter CCA adapter nodes and always show namespace groups
+- Use correct logo SVG paths in OG share card
+- Resolve createRequire duplicate declaration in server bundle
+- Add missing Fumadocs frontmatter title to spec and plan docs
+
+## Install / Update
+
+```
+npm install -g dorkos@0.12.0
+```
