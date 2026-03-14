@@ -10,6 +10,7 @@ const mockPostMessage = vi.fn().mockResolvedValue({ ts: 'msg-ts-1' });
 const mockChatUpdate = vi.fn().mockResolvedValue({ ts: 'msg-ts-1' });
 let capturedMessageHandler: ((args: Record<string, unknown>) => Promise<void>) | null = null;
 let capturedMentionHandler: ((args: Record<string, unknown>) => Promise<void>) | null = null;
+let capturedErrorHandler: ((error: Error) => Promise<void>) | null = null;
 
 vi.mock('@slack/bolt', () => {
   class MockApp {
@@ -26,6 +27,10 @@ vi.mock('@slack/bolt', () => {
       if (eventName === 'app_mention') capturedMentionHandler = handler;
     }
 
+    error(handler: (error: Error) => Promise<void>) {
+      capturedErrorHandler = handler;
+    }
+
     async start() {
       return mockAppStart();
     }
@@ -33,7 +38,7 @@ vi.mock('@slack/bolt', () => {
       return mockAppStop();
     }
   }
-  return { App: MockApp };
+  return { App: MockApp, LogLevel: { WARN: 'warn' } };
 });
 
 vi.mock('@slack/web-api', () => {
@@ -58,6 +63,7 @@ describe('SlackAdapter', () => {
     vi.clearAllMocks();
     capturedMessageHandler = null;
     capturedMentionHandler = null;
+    capturedErrorHandler = null;
     adapter = new SlackAdapter('slack-1', {
       botToken: 'xoxb-test-token',
       appToken: 'xapp-test-token',
@@ -109,10 +115,22 @@ describe('SlackAdapter', () => {
     expect(mockAppStart).toHaveBeenCalledTimes(1);
   });
 
-  it('start() registers message and app_mention handlers', async () => {
+  it('start() registers message, app_mention, and global error handlers', async () => {
     await adapter.start(mockRelay);
     expect(capturedMessageHandler).toBeDefined();
     expect(capturedMentionHandler).toBeDefined();
+    expect(capturedErrorHandler).toBeDefined();
+  });
+
+  it('global error handler records error in adapter status', async () => {
+    await adapter.start(mockRelay);
+    expect(capturedErrorHandler).toBeDefined();
+
+    await capturedErrorHandler!(new Error('socket_disconnect'));
+    const status = adapter.getStatus();
+    expect(status.state).toBe('error');
+    expect(status.lastError).toBe('socket_disconnect');
+    expect(status.errorCount).toBe(1);
   });
 
   // Stop

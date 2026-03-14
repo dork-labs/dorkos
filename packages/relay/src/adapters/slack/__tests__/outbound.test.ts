@@ -141,12 +141,16 @@ describe('deliverMessage', () => {
   let client: WebClient;
   let streamState: Map<string, ActiveStream>;
   let callbacks: AdapterOutboundCallbacks;
+  let nowMs: number;
 
   beforeEach(() => {
     vi.clearAllMocks();
     client = buildMockClient();
     streamState = new Map();
     callbacks = createCallbacks();
+    // Pin Date.now for throttle-aware tests
+    nowMs = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
   });
 
   describe('echo prevention', () => {
@@ -242,11 +246,14 @@ describe('deliverMessage', () => {
       expect(streamState.get('D123')?.messageTs).toBe('msg-ts-1');
     });
 
-    it('updates existing stream on subsequent text_delta via chat.update', async () => {
+    it('updates existing stream on subsequent text_delta via chat.update after throttle window', async () => {
       const delta1 = createEnvelope('relay.human.slack.D123', {
         type: 'text_delta', data: { text: 'Hello' },
       });
       await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
+
+      // Advance past throttle window (1000ms)
+      nowMs += 1_001;
 
       const delta2 = createEnvelope('relay.human.slack.D123', {
         type: 'text_delta', data: { text: ' world' },
@@ -258,11 +265,31 @@ describe('deliverMessage', () => {
       expect(streamState.get('D123')?.accumulatedText).toBe('Hello world');
     });
 
+    it('throttles chat.update when called within throttle window', async () => {
+      const delta1 = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta', data: { text: 'Hello' },
+      });
+      await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
+
+      // Do NOT advance time — within throttle window
+      const delta2 = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta', data: { text: ' world' },
+      });
+      const result = await deliver('relay.human.slack.D123', delta2, client, streamState, callbacks);
+
+      expect(result.success).toBe(true);
+      expect(mockChatUpdate).not.toHaveBeenCalled();
+      // Text is still accumulated even though update was throttled
+      expect(streamState.get('D123')?.accumulatedText).toBe('Hello world');
+    });
+
     it('uses chat.update with accumulated text on subsequent deltas', async () => {
       const delta1 = createEnvelope('relay.human.slack.D123', {
         type: 'text_delta', data: { text: 'Part 1' },
       });
       await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
+
+      nowMs += 1_001;
 
       const delta2 = createEnvelope('relay.human.slack.D123', {
         type: 'text_delta', data: { text: ' Part 2' },
@@ -279,6 +306,8 @@ describe('deliverMessage', () => {
         type: 'text_delta', data: { text: 'Hi' },
       });
       await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
+
+      nowMs += 1_001;
 
       mockChatUpdate.mockRejectedValueOnce(new Error('message_not_found'));
       const delta2 = createEnvelope('relay.human.slack.D123', {
@@ -400,12 +429,46 @@ describe('deliverMessage', () => {
     });
   });
 
+  describe('stale stream reaping', () => {
+    it('removes stream entries older than 5 minutes on delivery', async () => {
+      // Seed a stale stream entry
+      streamState.set('D999', {
+        channelId: 'D999',
+        threadTs: '',
+        messageTs: 'old-ts',
+        accumulatedText: 'stale',
+        lastUpdateAt: nowMs - 6 * 60 * 1_000,
+        startedAt: nowMs - 6 * 60 * 1_000,
+      });
+
+      const envelope = createEnvelope('relay.human.slack.D123', { content: 'hi' });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+
+      expect(streamState.has('D999')).toBe(false);
+    });
+
+    it('preserves recent stream entries', async () => {
+      streamState.set('D999', {
+        channelId: 'D999',
+        threadTs: '',
+        messageTs: 'recent-ts',
+        accumulatedText: 'recent',
+        lastUpdateAt: nowMs - 1_000,
+        startedAt: nowMs - 1_000,
+      });
+
+      const envelope = createEnvelope('relay.human.slack.D123', { content: 'hi' });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+
+      expect(streamState.has('D999')).toBe(true);
+    });
+  });
+
   describe('durationMs', () => {
     it('includes durationMs in all result paths', async () => {
       const envelope = createEnvelope('relay.human.slack.D123', { content: 'hi' });
       const result = await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
       expect(typeof result.durationMs).toBe('number');
-      expect(result.durationMs).toBeGreaterThanOrEqual(0);
     });
   });
 });

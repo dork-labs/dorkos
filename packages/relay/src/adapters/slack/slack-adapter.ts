@@ -7,7 +7,7 @@
  *
  * @module relay/adapters/slack-adapter
  */
-import { App } from '@slack/bolt';
+import { App, LogLevel } from '@slack/bolt';
 import type { AdapterManifest, RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
@@ -23,6 +23,48 @@ import {
 import { deliverMessage } from './outbound.js';
 import type { ActiveStream } from './outbound.js';
 
+/**
+ * Slack App Manifest YAML for one-click app creation.
+ *
+ * Pre-fills Socket Mode, bot events, and OAuth scopes so users
+ * don't need to manually configure each setting.
+ *
+ * CRITICAL: Do NOT include `user` scopes. The "Agents & AI Apps" feature
+ * in Slack silently adds user-level scopes that cause `invalid_scope`
+ * errors on most workspace plans.
+ */
+const SLACK_APP_MANIFEST_YAML = `display_information:
+  name: DorkOS Relay
+settings:
+  socket_mode_enabled: true
+  event_subscriptions:
+    bot_events:
+      - message.channels
+      - message.groups
+      - message.im
+      - app_mention
+features:
+  bot_user:
+    display_name: DorkOS Relay
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - channels:read
+      - chat:write
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - im:write
+      - mpim:history
+      - app_mentions:read
+      - users:read`;
+
+/** Slack's app creation URL with pre-filled manifest for one-click setup. */
+const SLACK_CREATE_APP_URL = `https://api.slack.com/apps?new_app=1&manifest_yaml=${encodeURIComponent(SLACK_APP_MANIFEST_YAML)}`;
+
 /** Static adapter manifest for the Slack built-in adapter. */
 export const SLACK_MANIFEST: AdapterManifest = {
   type: 'slack',
@@ -35,14 +77,19 @@ export const SLACK_MANIFEST: AdapterManifest = {
   multiInstance: true,
   actionButton: {
     label: 'Create Slack App',
-    url: 'https://api.slack.com/apps',
+    url: SLACK_CREATE_APP_URL,
   },
   setupSteps: [
     {
       stepId: 'create-app',
-      title: 'Create a Slack App',
+      title: 'Create & Configure a Slack App',
       description:
-        'Go to api.slack.com/apps \u2192 Create New App \u2192 From Scratch. Enable Socket Mode in the app settings.',
+        'Go to api.slack.com/apps \u2192 Create New App \u2192 From Scratch.\n\n' +
+        '1. **Socket Mode** \u2014 Enable it (Settings \u2192 Socket Mode).\n' +
+        '2. **Event Subscriptions** \u2014 Turn on Enable Events, then subscribe to bot events: message.channels, message.groups, message.im, app_mention.\n' +
+        '3. **OAuth & Permissions** \u2014 Add bot token scopes: channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, app_mentions:read, users:read. Then install the app to your workspace.\n' +
+        '4. **App-Level Token** \u2014 In Basic Information \u2192 App-Level Tokens, generate a token with the connections:write scope.\n\n' +
+        '\u26a0\ufe0f Do NOT enable "Agents & AI Apps" \u2014 it adds user scopes that cause install failures on most workspaces.',
       fields: ['botToken', 'appToken', 'signingSecret'],
     },
   ],
@@ -57,6 +104,10 @@ export const SLACK_MANIFEST: AdapterManifest = {
       pattern: '^xoxb-',
       patternMessage: 'Bot tokens start with xoxb-',
       visibleByDefault: true,
+      helpMarkdown: `1. Go to your [Slack App Settings](https://api.slack.com/apps)
+2. Select your app
+3. Navigate to **OAuth & Permissions** in the sidebar
+4. Copy the **Bot User OAuth Token** (starts with \`xoxb-\`)`,
     },
     {
       key: 'appToken',
@@ -69,6 +120,13 @@ export const SLACK_MANIFEST: AdapterManifest = {
       pattern: '^xapp-',
       patternMessage: 'App tokens start with xapp-',
       visibleByDefault: true,
+      helpMarkdown: `1. Go to your [Slack App Settings](https://api.slack.com/apps)
+2. Select your app
+3. Navigate to **Basic Information** in the sidebar
+4. Scroll to **App-Level Tokens**
+5. Click **Generate Token and Scopes**
+6. Add the \`connections:write\` scope
+7. Click **Generate** and copy the token (starts with \`xapp-\`)`,
     },
     {
       key: 'signingSecret',
@@ -77,10 +135,23 @@ export const SLACK_MANIFEST: AdapterManifest = {
       required: true,
       placeholder: 'abc123...',
       description: 'Signing Secret from Basic Information page. Used to verify requests.',
+      helpMarkdown: `1. Go to your [Slack App Settings](https://api.slack.com/apps)
+2. Select your app
+3. Navigate to **Basic Information** in the sidebar
+4. Scroll to **App Credentials**
+5. Click **Show** next to **Signing Secret** and copy it`,
     },
   ],
   setupInstructions:
-    'Create a Slack app at api.slack.com/apps. Enable Socket Mode. Add bot token scopes: channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, app_mentions:read, users:read. Subscribe to events: message.channels, message.groups, message.im, app_mention. Generate an App-Level Token with connections:write scope.',
+    '1. Create a Slack app at api.slack.com/apps (From Scratch, not From Manifest).\n' +
+    '2. Enable Socket Mode (Settings \u2192 Socket Mode).\n' +
+    '3. Enable Event Subscriptions and subscribe to bot events: message.channels, message.groups, message.im, app_mention.\n' +
+    '4. Add bot token scopes under OAuth & Permissions: channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, app_mentions:read, users:read.\n' +
+    '5. Install the app to your workspace (OAuth & Permissions \u2192 Install).\n' +
+    '6. Copy the Bot User OAuth Token (starts with xoxb-).\n' +
+    '7. Generate an App-Level Token with connections:write scope (Basic Information \u2192 App-Level Tokens).\n' +
+    '8. Copy the Signing Secret from Basic Information.\n\n' +
+    '\u26a0\ufe0f Do NOT enable "Agents & AI Apps" \u2014 it adds user-level scopes that cause invalid_scope errors on most workspace plans.',
 };
 
 /**
@@ -127,6 +198,7 @@ export class SlackAdapter extends BaseRelayAdapter {
       appToken: this.config.appToken,
       signingSecret: this.config.signingSecret,
       socketMode: true,
+      logLevel: LogLevel.WARN,
     });
 
     // Cache bot's own user ID for echo prevention
@@ -152,6 +224,11 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.botUserId,
         this.makeInboundCallbacks(),
       );
+    });
+
+    // Surface unhandled listener errors through adapter status
+    app.error(async (error) => {
+      this.recordError(error);
     });
 
     // Start the Bolt app (Socket Mode connects automatically)

@@ -37,6 +37,8 @@ const SKIP_SUBTYPES = new Set([
   'channel_unarchive',
   'bot_message',
   'me_message',
+  'message_changed',
+  'message_deleted',
   'file_share',
   'file_comment',
   'file_mention',
@@ -59,13 +61,45 @@ export interface SlackMessageEvent {
   bot_id?: string;
 }
 
-// === Caches ===
+// === Bounded TTL cache ===
+
+/** Maximum entries per cache before oldest-first eviction. */
+const CACHE_MAX_SIZE = 500;
+
+/** Cache entry TTL — 1 hour. */
+const CACHE_TTL_MS = 60 * 60 * 1_000;
+
+interface CacheEntry {
+  value: string;
+  expiresAt: number;
+}
+
+/** Get a cached value, returning undefined if missing or expired. */
+function getCached(cache: Map<string, CacheEntry>, key: string): string | undefined {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    cache.delete(key);
+    return undefined;
+  }
+  return entry.value;
+}
+
+/** Set a cached value, evicting the oldest entry if at capacity. */
+function setCached(cache: Map<string, CacheEntry>, key: string, value: string): void {
+  if (cache.size >= CACHE_MAX_SIZE) {
+    // Map iterates in insertion order — first key is oldest
+    const firstKey = cache.keys().next().value;
+    if (firstKey !== undefined) cache.delete(firstKey);
+  }
+  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+}
 
 /** In-memory cache for user display names (user ID to display name). */
-const userNameCache = new Map<string, string>();
+const userNameCache = new Map<string, CacheEntry>();
 
 /** In-memory cache for channel names (channel ID to channel name). */
-const channelNameCache = new Map<string, string>();
+const channelNameCache = new Map<string, CacheEntry>();
 
 // === Helpers ===
 
@@ -129,7 +163,7 @@ function isGroupChannel(channelId: string): boolean {
  * @param userId - The Slack user ID to resolve
  */
 async function resolveUserName(client: WebClient, userId: string): Promise<string> {
-  const cached = userNameCache.get(userId);
+  const cached = getCached(userNameCache, userId);
   if (cached) return cached;
 
   try {
@@ -141,7 +175,7 @@ async function resolveUserName(client: WebClient, userId: string): Promise<strin
       user?.real_name ||
       user?.name ||
       userId;
-    userNameCache.set(userId, name);
+    setCached(userNameCache, userId, name);
     return name;
   } catch {
     return userId;
@@ -158,13 +192,13 @@ async function resolveUserName(client: WebClient, userId: string): Promise<strin
  * @param channelId - The Slack channel ID to resolve
  */
 async function resolveChannelName(client: WebClient, channelId: string): Promise<string> {
-  const cached = channelNameCache.get(channelId);
+  const cached = getCached(channelNameCache, channelId);
   if (cached) return cached;
 
   try {
     const result = await client.conversations.info({ channel: channelId });
     const name = (result.channel as Record<string, string> | undefined)?.name ?? channelId;
-    channelNameCache.set(channelId, name);
+    setCached(channelNameCache, channelId, name);
     return name;
   } catch {
     return channelId;

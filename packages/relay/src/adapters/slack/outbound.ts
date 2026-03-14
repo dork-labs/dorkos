@@ -23,6 +23,12 @@ import { extractChannelId, SUBJECT_PREFIX, MAX_MESSAGE_LENGTH } from './inbound.
 
 // === Types ===
 
+/** Minimum interval (ms) between chat.update calls for a single stream. */
+const STREAM_UPDATE_INTERVAL_MS = 1_000;
+
+/** Maximum age (ms) before an orphaned stream entry is reaped. */
+const STREAM_TTL_MS = 5 * 60 * 1_000;
+
 /** Active stream state for a channel (keyed by channelId:threadTs). */
 export interface ActiveStream {
   /** The channel ID being streamed to. */
@@ -31,8 +37,12 @@ export interface ActiveStream {
   threadTs: string;
   /** The message ts returned by chat.postMessage (updated by streaming). */
   messageTs: string;
-  /** Accumulated text content for the stream. */
+  /** Accumulated raw Markdown text content for the stream. */
   accumulatedText: string;
+  /** Timestamp (ms) of the last chat.update call — used for throttling. */
+  lastUpdateAt: number;
+  /** Timestamp (ms) when the stream was created — used for TTL reaping. */
+  startedAt: number;
 }
 
 /** Options for delivering a Relay message to Slack. */
@@ -144,18 +154,26 @@ async function handleTextDelta(
   callbacks: AdapterOutboundCallbacks,
   startTime: number,
 ): Promise<DeliveryResult> {
-  const mrkdwnChunk = formatForPlatform(textChunk, 'slack');
   const key = streamKey(channelId, threadTs);
   const existing = streamState.get(key);
 
   if (existing) {
-    // Append to existing stream — update the message in place
-    existing.accumulatedText += mrkdwnChunk;
+    // Accumulate raw Markdown — converted to mrkdwn at send time
+    existing.accumulatedText += textChunk;
+
+    // Throttle: skip chat.update if called less than STREAM_UPDATE_INTERVAL_MS ago.
+    // The done handler always sends a final update, so no text is lost.
+    const now = Date.now();
+    if (now - existing.lastUpdateAt < STREAM_UPDATE_INTERVAL_MS) {
+      return { success: true, durationMs: now - startTime };
+    }
+    existing.lastUpdateAt = now;
+
     return wrapSlackCall(
       () => client.chat.update({
         channel: channelId,
         ts: existing.messageTs,
-        text: truncateText(existing.accumulatedText, MAX_MESSAGE_LENGTH),
+        text: truncateText(formatForPlatform(existing.accumulatedText, 'slack'), MAX_MESSAGE_LENGTH),
       }),
       callbacks,
       startTime,
@@ -164,9 +182,11 @@ async function handleTextDelta(
 
   // Start new stream — post initial message
   try {
+    const mrkdwn = formatForPlatform(textChunk, 'slack');
+    const now = Date.now();
     const result = await client.chat.postMessage({
       channel: channelId,
-      text: truncateText(mrkdwnChunk, MAX_MESSAGE_LENGTH),
+      text: truncateText(mrkdwn, MAX_MESSAGE_LENGTH),
       ...(threadTs ? { thread_ts: threadTs } : {}),
     });
 
@@ -174,10 +194,12 @@ async function handleTextDelta(
       channelId,
       threadTs: threadTs ?? '',
       messageTs: (result as { ts?: string }).ts ?? '',
-      accumulatedText: mrkdwnChunk,
+      accumulatedText: textChunk,
+      lastUpdateAt: now,
+      startedAt: now,
     });
 
-    return { success: true, durationMs: Date.now() - startTime };
+    return { success: true, durationMs: now - startTime };
   } catch (err) {
     callbacks.recordError(err);
     return {
@@ -222,7 +244,7 @@ async function handleDone(
     () => client.chat.update({
       channel: channelId,
       ts: existing.messageTs,
-      text: truncateText(existing.accumulatedText, MAX_MESSAGE_LENGTH),
+      text: truncateText(formatForPlatform(existing.accumulatedText, 'slack'), MAX_MESSAGE_LENGTH),
     }),
     callbacks,
     startTime,
@@ -260,7 +282,7 @@ async function handleError(
   if (existing) {
     // Append error to accumulated text and update the message
     const finalText = truncateText(
-      `${existing.accumulatedText}\n\n[Error: ${errorMsg}]`,
+      `${formatForPlatform(existing.accumulatedText, 'slack')}\n\n[Error: ${errorMsg}]`,
       MAX_MESSAGE_LENGTH,
     );
     return wrapSlackCall(
@@ -313,6 +335,13 @@ async function handleError(
 export async function deliverMessage(opts: SlackDeliverOptions): Promise<DeliveryResult> {
   const { adapterId, subject, envelope, client, streamState, callbacks } = opts;
   const startTime = Date.now();
+
+  // Reap orphaned streams that never received a done/error event
+  for (const [key, stream] of streamState) {
+    if (startTime - stream.startedAt > STREAM_TTL_MS) {
+      streamState.delete(key);
+    }
+  }
 
   // Echo prevention: skip messages originating from this adapter.
   if (envelope.from.startsWith(SUBJECT_PREFIX)) {
