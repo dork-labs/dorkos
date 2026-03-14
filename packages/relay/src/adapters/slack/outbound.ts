@@ -9,12 +9,13 @@
  */
 import type { WebClient } from '@slack/web-api';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { AdapterContext, DeliveryResult } from '../../types.js';
+import type { AdapterOutboundCallbacks, DeliveryResult } from '../../types.js';
 import {
   extractPayloadContent,
   detectStreamEventType,
   extractTextDelta,
   extractErrorMessage,
+  truncateText,
   SILENT_EVENT_TYPES,
   formatForPlatform,
 } from '../../lib/payload-utils.js';
@@ -22,7 +23,7 @@ import { extractChannelId, SUBJECT_PREFIX, MAX_MESSAGE_LENGTH } from './inbound.
 
 // === Types ===
 
-/** Active stream state for a channel. */
+/** Active stream state for a channel (keyed by channelId:threadTs). */
 export interface ActiveStream {
   /** The channel ID being streamed to. */
   channelId: string;
@@ -34,30 +35,30 @@ export interface ActiveStream {
   accumulatedText: string;
 }
 
-/**
- * Callback interface for reporting status changes from outbound delivery.
- *
- * The facade passes a thin callback so outbound logic can update adapter state
- * without owning the full class instance.
- */
-export interface OutboundCallbacks {
-  /** Track a successful outbound delivery. */
-  trackOutbound: () => void;
-  /** Record an error without throwing. */
-  recordError: (err: unknown) => void;
+/** Options for delivering a Relay message to Slack. */
+export interface SlackDeliverOptions {
+  adapterId: string;
+  subject: string;
+  envelope: RelayEnvelope;
+  client: WebClient | null;
+  streamState: Map<string, ActiveStream>;
+  botUserId: string;
+  callbacks: AdapterOutboundCallbacks;
 }
 
 // === Helpers ===
 
 /**
- * Truncate a string to a maximum length, appending an ellipsis if cut.
+ * Build a composite key for stream state that is thread-safe.
  *
- * @param text - The text to truncate
- * @param maxLen - Maximum character length
+ * When replying in a thread, different threads in the same channel
+ * get independent stream state.
+ *
+ * @param channelId - The Slack channel ID
+ * @param threadTs - Optional thread timestamp
  */
-function truncateText(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return `${text.slice(0, maxLen - 3)}...`;
+function streamKey(channelId: string, threadTs?: string): string {
+  return threadTs ? `${channelId}:${threadTs}` : channelId;
 }
 
 /**
@@ -85,12 +86,43 @@ function resolveThreadTs(envelope: RelayEnvelope): string | undefined {
   return undefined;
 }
 
+/**
+ * Execute a Slack API call and return a DeliveryResult.
+ *
+ * Wraps common try/catch + duration + error recording logic shared
+ * across all stream handlers.
+ *
+ * @param fn - The async Slack API operation to execute
+ * @param callbacks - Callbacks for error recording
+ * @param startTime - Timestamp (ms) for delivery duration calculation
+ * @param trackDelivery - Whether to call trackOutbound on success
+ */
+async function wrapSlackCall(
+  fn: () => Promise<unknown>,
+  callbacks: AdapterOutboundCallbacks,
+  startTime: number,
+  trackDelivery = false,
+): Promise<DeliveryResult> {
+  try {
+    await fn();
+    if (trackDelivery) callbacks.trackOutbound();
+    return { success: true, durationMs: Date.now() - startTime };
+  } catch (err) {
+    callbacks.recordError(err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - startTime,
+    };
+  }
+}
+
 // === Stream handlers ===
 
 /**
  * Handle a text_delta StreamEvent — start or append to a streaming message.
  *
- * On the first delta for a channel, posts a new message via chat.postMessage
+ * On the first delta for a channel+thread, posts a new message via chat.postMessage
  * and stores the returned ts in streamState. On subsequent deltas, appends
  * the mrkdwn chunk to the accumulated text and updates the message via
  * chat.update (live editing effect).
@@ -109,30 +141,25 @@ async function handleTextDelta(
   threadTs: string | undefined,
   client: WebClient,
   streamState: Map<string, ActiveStream>,
-  callbacks: OutboundCallbacks,
+  callbacks: AdapterOutboundCallbacks,
   startTime: number,
 ): Promise<DeliveryResult> {
   const mrkdwnChunk = formatForPlatform(textChunk, 'slack');
-  const existing = streamState.get(channelId);
+  const key = streamKey(channelId, threadTs);
+  const existing = streamState.get(key);
 
   if (existing) {
     // Append to existing stream — update the message in place
     existing.accumulatedText += mrkdwnChunk;
-    try {
-      await client.chat.update({
+    return wrapSlackCall(
+      () => client.chat.update({
         channel: channelId,
         ts: existing.messageTs,
         text: truncateText(existing.accumulatedText, MAX_MESSAGE_LENGTH),
-      });
-      return { success: true, durationMs: Date.now() - startTime };
-    } catch (err) {
-      callbacks.recordError(err);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-        durationMs: Date.now() - startTime,
-      };
-    }
+      }),
+      callbacks,
+      startTime,
+    );
   }
 
   // Start new stream — post initial message
@@ -143,7 +170,7 @@ async function handleTextDelta(
       ...(threadTs ? { thread_ts: threadTs } : {}),
     });
 
-    streamState.set(channelId, {
+    streamState.set(key, {
       channelId,
       threadTs: threadTs ?? '',
       messageTs: (result as { ts?: string }).ts ?? '',
@@ -168,6 +195,7 @@ async function handleTextDelta(
  * accumulated text, then removes the channel from streamState.
  *
  * @param channelId - The Slack channel ID
+ * @param threadTs - Optional thread_ts for stream key lookup
  * @param client - Slack WebClient instance
  * @param streamState - Per-channel active stream state map
  * @param callbacks - Callbacks to track delivery metrics
@@ -175,35 +203,31 @@ async function handleTextDelta(
  */
 async function handleDone(
   channelId: string,
+  threadTs: string | undefined,
   client: WebClient,
   streamState: Map<string, ActiveStream>,
-  callbacks: OutboundCallbacks,
+  callbacks: AdapterOutboundCallbacks,
   startTime: number,
 ): Promise<DeliveryResult> {
-  const existing = streamState.get(channelId);
-  streamState.delete(channelId);
+  const key = streamKey(channelId, threadTs);
+  const existing = streamState.get(key);
+  streamState.delete(key);
 
   if (!existing) {
     // No active stream — nothing to finalize
     return { success: true, durationMs: Date.now() - startTime };
   }
 
-  try {
-    await client.chat.update({
+  return wrapSlackCall(
+    () => client.chat.update({
       channel: channelId,
       ts: existing.messageTs,
       text: truncateText(existing.accumulatedText, MAX_MESSAGE_LENGTH),
-    });
-    callbacks.trackOutbound();
-    return { success: true, durationMs: Date.now() - startTime };
-  } catch (err) {
-    callbacks.recordError(err);
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-      durationMs: Date.now() - startTime,
-    };
-  }
+    }),
+    callbacks,
+    startTime,
+    true,
+  );
 }
 
 /**
@@ -214,7 +238,7 @@ async function handleDone(
  *
  * @param channelId - The Slack channel ID
  * @param errorMsg - The error message to display
- * @param threadTs - Optional thread_ts for standalone error posting
+ * @param threadTs - Optional thread_ts for stream key lookup and standalone posting
  * @param client - Slack WebClient instance
  * @param streamState - Per-channel active stream state map
  * @param callbacks - Callbacks to track delivery metrics
@@ -226,11 +250,12 @@ async function handleError(
   threadTs: string | undefined,
   client: WebClient,
   streamState: Map<string, ActiveStream>,
-  callbacks: OutboundCallbacks,
+  callbacks: AdapterOutboundCallbacks,
   startTime: number,
 ): Promise<DeliveryResult> {
-  const existing = streamState.get(channelId);
-  streamState.delete(channelId);
+  const key = streamKey(channelId, threadTs);
+  const existing = streamState.get(key);
+  streamState.delete(key);
 
   if (existing) {
     // Append error to accumulated text and update the message
@@ -238,42 +263,30 @@ async function handleError(
       `${existing.accumulatedText}\n\n[Error: ${errorMsg}]`,
       MAX_MESSAGE_LENGTH,
     );
-    try {
-      await client.chat.update({
+    return wrapSlackCall(
+      () => client.chat.update({
         channel: channelId,
         ts: existing.messageTs,
         text: finalText,
-      });
-      callbacks.trackOutbound();
-      return { success: true, durationMs: Date.now() - startTime };
-    } catch (err) {
-      callbacks.recordError(err);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-        durationMs: Date.now() - startTime,
-      };
-    }
+      }),
+      callbacks,
+      startTime,
+      true,
+    );
   }
 
   // No active stream — post standalone error message
   const text = truncateText(`[Error: ${errorMsg}]`, MAX_MESSAGE_LENGTH);
-  try {
-    await client.chat.postMessage({
+  return wrapSlackCall(
+    () => client.chat.postMessage({
       channel: channelId,
       text,
       ...(threadTs ? { thread_ts: threadTs } : {}),
-    });
-    callbacks.trackOutbound();
-    return { success: true, durationMs: Date.now() - startTime };
-  } catch (err) {
-    callbacks.recordError(err);
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-      durationMs: Date.now() - startTime,
-    };
-  }
+    }),
+    callbacks,
+    startTime,
+    true,
+  );
 }
 
 // === Public API ===
@@ -295,31 +308,13 @@ async function handleError(
  * All bot responses are threaded under the original inbound message using
  * `platformData.ts` as the `thread_ts`.
  *
- * @param adapterId - The adapter instance ID for error messages
- * @param subject - The Relay subject (e.g. relay.human.slack.D123456)
- * @param envelope - The relay envelope to deliver
- * @param context - Optional adapter context (unused by this adapter)
- * @param client - Slack WebClient instance, or null if not started
- * @param streamState - Per-channel active stream state map
- * @param botUserId - The bot's own user ID (reserved for future echo prevention)
- * @param callbacks - Callbacks to track delivery metrics
+ * @param opts - Delivery options
  */
-export async function deliverMessage(
-  adapterId: string,
-  subject: string,
-  envelope: RelayEnvelope,
-  context: AdapterContext | undefined,
-  client: WebClient | null,
-  streamState: Map<string, ActiveStream>,
-  botUserId: string,
-  callbacks: OutboundCallbacks,
-): Promise<DeliveryResult> {
+export async function deliverMessage(opts: SlackDeliverOptions): Promise<DeliveryResult> {
+  const { adapterId, subject, envelope, client, streamState, callbacks } = opts;
   const startTime = Date.now();
 
   // Echo prevention: skip messages originating from this adapter.
-  // Inbound messages are published with `from: relay.human.slack.bot`,
-  // which starts with our subject prefix. Without this guard the publish
-  // pipeline routes the message right back to deliver(), creating a loop.
   if (envelope.from.startsWith(SUBJECT_PREFIX)) {
     return { success: true, durationMs: Date.now() - startTime };
   }
@@ -362,7 +357,7 @@ export async function deliverMessage(
 
     // done: finalize the stream
     if (eventType === 'done') {
-      return handleDone(channelId, client, streamState, callbacks, startTime);
+      return handleDone(channelId, threadTs, client, streamState, callbacks, startTime);
     }
 
     // Silent events: skip without sending anything
@@ -376,20 +371,14 @@ export async function deliverMessage(
   const mrkdwn = formatForPlatform(content, 'slack');
   const text = truncateText(mrkdwn, MAX_MESSAGE_LENGTH);
 
-  try {
-    await client.chat.postMessage({
+  return wrapSlackCall(
+    () => client.chat.postMessage({
       channel: channelId,
       text,
       ...(threadTs ? { thread_ts: threadTs } : {}),
-    });
-    callbacks.trackOutbound();
-    return { success: true, durationMs: Date.now() - startTime };
-  } catch (err) {
-    callbacks.recordError(err);
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-      durationMs: Date.now() - startTime,
-    };
-  }
+    }),
+    callbacks,
+    startTime,
+    true,
+  );
 }

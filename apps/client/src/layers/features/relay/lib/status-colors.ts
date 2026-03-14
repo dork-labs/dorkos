@@ -6,6 +6,7 @@ export const RELAY_STATUS_COLORS = {
   pending:      { dot: 'bg-blue-500',  text: 'text-blue-600 dark:text-blue-400',   border: 'border-l-blue-500' },
   starting:     { dot: 'bg-blue-500',  text: 'text-blue-600 dark:text-blue-400',   border: 'border-l-blue-500' },
   new:          { dot: 'bg-blue-500',  text: 'text-blue-600 dark:text-blue-400',   border: 'border-l-blue-500' },
+  reconnecting: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400', border: 'border-l-amber-500' },
   degraded:     { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400', border: 'border-l-amber-500' },
   warning:      { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400', border: 'border-l-amber-500' },
   rate_limited: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400', border: 'border-l-amber-500' },

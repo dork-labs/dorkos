@@ -101,6 +101,8 @@ export type {
   SlackAdapterConfig,
   AdapterRegistryLike,
   PublishResultLike,
+  AdapterInboundCallbacks,
+  AdapterOutboundCallbacks,
 } from './types.js';
 
 // Base class (optional convenience for adapter authors)

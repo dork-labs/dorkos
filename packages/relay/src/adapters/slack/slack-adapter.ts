@@ -11,14 +11,17 @@ import { App } from '@slack/bolt';
 import type { AdapterManifest, RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
-import type { RelayPublisher, AdapterContext, DeliveryResult } from '../../types.js';
+import type {
+  RelayPublisher, AdapterContext, DeliveryResult,
+  AdapterInboundCallbacks, AdapterOutboundCallbacks,
+} from '../../types.js';
 import {
   SUBJECT_PREFIX,
   handleInboundMessage,
   clearCaches,
 } from './inbound.js';
 import { deliverMessage } from './outbound.js';
-import type { ActiveStream, OutboundCallbacks } from './outbound.js';
+import type { ActiveStream } from './outbound.js';
 
 /** Static adapter manifest for the Slack built-in adapter. */
 export const SLACK_MANIFEST: AdapterManifest = {
@@ -178,35 +181,34 @@ export class SlackAdapter extends BaseRelayAdapter {
    *
    * @param subject - The target Relay subject (e.g. relay.human.slack.D123456)
    * @param envelope - The relay envelope to deliver
-   * @param context - Optional adapter context (unused by this adapter)
+   * @param _context - Optional adapter context (unused by this adapter)
    */
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    context?: AdapterContext,
+    _context?: AdapterContext,
   ): Promise<DeliveryResult> {
-    return deliverMessage(
-      this.id,
+    return deliverMessage({
+      adapterId: this.id,
       subject,
       envelope,
-      context,
-      this.app?.client ?? null,
-      this.streamState,
-      this.botUserId,
-      this.makeOutboundCallbacks(),
-    );
+      client: this.app?.client ?? null,
+      streamState: this.streamState,
+      botUserId: this.botUserId,
+      callbacks: this.makeOutboundCallbacks(),
+    });
   }
 
   /** Build callbacks for inbound message handling. */
-  private makeInboundCallbacks() {
+  private makeInboundCallbacks(): AdapterInboundCallbacks {
     return {
-      updateStatus: () => this.trackInbound(),
+      trackInbound: () => this.trackInbound(),
       recordError: (err: unknown) => this.recordError(err),
     };
   }
 
   /** Build callbacks for outbound message delivery. */
-  private makeOutboundCallbacks(): OutboundCallbacks {
+  private makeOutboundCallbacks(): AdapterOutboundCallbacks {
     return {
       trackOutbound: () => this.trackOutbound(),
       recordError: (err: unknown) => this.recordError(err),

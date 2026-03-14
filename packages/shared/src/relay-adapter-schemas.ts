@@ -121,7 +121,7 @@ export const AdapterStatusSchema = z
     id: z.string(),
     type: AdapterTypeSchema,
     displayName: z.string(),
-    state: z.enum(['connected', 'disconnected', 'error', 'starting', 'stopping']),
+    state: z.enum(['connected', 'disconnected', 'error', 'starting', 'stopping', 'reconnecting']),
     messageCount: z.object({
       inbound: z.number().int().nonnegative(),
       outbound: z.number().int().nonnegative(),

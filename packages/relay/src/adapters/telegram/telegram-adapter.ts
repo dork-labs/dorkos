@@ -11,8 +11,9 @@ import { Bot } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
 import type { Server } from 'node:http';
 import type { Signal, AdapterManifest, RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import { BaseRelayAdapter } from '../../base-adapter.js';
 import type {
-  RelayAdapter, RelayPublisher, AdapterStatus, AdapterContext,
+  RelayPublisher, AdapterContext,
   DeliveryResult, TelegramAdapterConfig, Unsubscribe,
 } from '../../types.js';
 import { SUBJECT_PREFIX, handleInboundMessage } from './inbound.js';
@@ -79,36 +80,25 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
 /**
  * Telegram Bot API adapter for the Relay message bus.
  *
- * Implements {@link RelayAdapter} to bridge Telegram chats into the Relay
+ * Extends {@link BaseRelayAdapter} to bridge Telegram chats into the Relay
  * subject hierarchy. Delegates heavy logic to sub-modules while owning
  * lifecycle, polling reconnection, and state management.
  */
-export class TelegramAdapter implements RelayAdapter {
-  readonly id: string;
-  readonly subjectPrefix = SUBJECT_PREFIX;
-  readonly displayName: string;
-
+export class TelegramAdapter extends BaseRelayAdapter {
   /** Reconnection delay schedule (ms) -- exponential backoff. */
   private static readonly RECONNECT_DELAYS = [5_000, 10_000, 30_000, 60_000, 60_000];
 
   private readonly config: TelegramAdapterConfig;
   private bot: Bot | null = null;
   private webhookServer: Server | null = null;
-  private relay: RelayPublisher | null = null;
   private signalUnsub: Unsubscribe | null = null;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private responseBuffers = new Map<number, string>();
-  private status: AdapterStatus = {
-    state: 'disconnected',
-    messageCount: { inbound: 0, outbound: 0 },
-    errorCount: 0,
-  };
 
   constructor(id: string, config: TelegramAdapterConfig, displayName = 'Telegram') {
-    this.id = id;
+    super(id, SUBJECT_PREFIX, displayName);
     this.config = config;
-    this.displayName = displayName;
   }
 
   /** Validate the bot token without starting polling or webhook. */
@@ -122,16 +112,12 @@ export class TelegramAdapter implements RelayAdapter {
     }
   }
 
-  /** Start the adapter. Idempotent. */
-  async start(relay: RelayPublisher): Promise<void> {
-    if (this.bot !== null) return;
-    this.relay = relay;
-    this.status = { ...this.status, state: 'starting', startedAt: new Date().toISOString() };
-
+  /** Connect to Telegram and start receiving messages. */
+  protected async _start(relay: RelayPublisher): Promise<void> {
     const bot = new Bot(this.config.token);
     bot.api.config.use(autoRetry());
     bot.on('message', (ctx) =>
-      handleInboundMessage(ctx, this.relay!, this.status, this.makeCallbacks()),
+      handleInboundMessage(ctx, relay, this.makeInboundCallbacks()),
     );
     bot.catch((err) => this.recordError(err));
     this.bot = bot;
@@ -147,57 +133,56 @@ export class TelegramAdapter implements RelayAdapter {
     } else {
       await this.startPollingMode(bot);
     }
-    this.status = { ...this.status, state: 'connected' };
   }
 
-  /** Stop the adapter. Idempotent. */
-  async stop(): Promise<void> {
-    if (this.bot === null) return;
-    this.status = { ...this.status, state: 'stopping' };
-
+  /** Disconnect from Telegram and clean up state. */
+  protected async _stop(): Promise<void> {
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.signalUnsub) { this.signalUnsub(); this.signalUnsub = null; }
 
-    if (this.config.mode === 'webhook') {
-      try { await this.bot.api.deleteWebhook(); } catch { /* best-effort */ }
-    }
-    try {
-      if (this.config.mode === 'polling') await this.bot.stop();
-      await stopWebhookServer(this.webhookServer);
-      this.webhookServer = null;
-    } catch (err) {
-      this.recordError(err);
-    } finally {
-      this.bot = null;
-      this.relay = null;
-      this.reconnectAttempts = 0;
-      this.status = {
-        state: 'disconnected',
-        messageCount: this.status.messageCount,
-        errorCount: this.status.errorCount,
-      };
+    if (this.bot) {
+      if (this.config.mode === 'webhook') {
+        try { await this.bot.api.deleteWebhook(); } catch { /* best-effort */ }
+      }
+      try {
+        if (this.config.mode === 'polling') await this.bot.stop();
+        await stopWebhookServer(this.webhookServer);
+        this.webhookServer = null;
+      } catch (err) {
+        this.recordError(err);
+      } finally {
+        this.bot = null;
+        this.reconnectAttempts = 0;
+      }
     }
   }
 
   /** Deliver a Relay message to Telegram. Delegates to outbound module. */
-  async deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult> {
-    return deliverMessage(
-      this.id, subject, envelope, context,
-      this.bot, this.responseBuffers, this.status, this.makeCallbacks(),
-    );
-  }
-
-  /** Return the current adapter status snapshot. */
-  getStatus(): AdapterStatus {
-    return { ...this.status };
+  async deliver(subject: string, envelope: RelayEnvelope, _context?: AdapterContext): Promise<DeliveryResult> {
+    return deliverMessage({
+      adapterId: this.id,
+      subject,
+      envelope,
+      bot: this.bot,
+      responseBuffers: this.responseBuffers,
+      callbacks: this.makeOutboundCallbacks(),
+    });
   }
 
   // --- Private helpers ---
 
-  /** Build the callbacks object that sub-modules use to mutate adapter state. */
-  private makeCallbacks() {
+  /** Build callbacks for inbound message handling. */
+  private makeInboundCallbacks() {
     return {
-      updateStatus: (patch: Partial<AdapterStatus>) => { this.status = { ...this.status, ...patch }; },
+      trackInbound: () => this.trackInbound(),
+      recordError: (err: unknown) => this.recordError(err),
+    };
+  }
+
+  /** Build callbacks for outbound message delivery. */
+  private makeOutboundCallbacks() {
+    return {
+      trackOutbound: () => this.trackOutbound(),
       recordError: (err: unknown) => this.recordError(err),
     };
   }
@@ -207,7 +192,7 @@ export class TelegramAdapter implements RelayAdapter {
     await bot.init();
     bot.start({
       drop_pending_updates: true,
-      onStart: () => { this.reconnectAttempts = 0; this.status = { ...this.status, state: 'connected' }; },
+      onStart: () => { this.reconnectAttempts = 0; this.markConnected(); },
     }).catch((err: unknown) => this.handlePollingError(err));
   }
 
@@ -215,36 +200,25 @@ export class TelegramAdapter implements RelayAdapter {
   private handlePollingError(err: unknown): void {
     this.recordError(err);
     if (this.reconnectAttempts >= TelegramAdapter.RECONNECT_DELAYS.length) {
-      this.status = { ...this.status, lastError: 'Max reconnection attempts exhausted \u2014 adapter will not retry' };
+      this.recordError(new Error('Max reconnection attempts exhausted \u2014 adapter will not retry'));
       return;
     }
     const delay = TelegramAdapter.RECONNECT_DELAYS[this.reconnectAttempts]!;
     this.reconnectAttempts++;
+    this.setReconnecting();
 
     this.reconnectTimer = setTimeout(async () => {
-      if (this.status.state === 'disconnected' || this.status.state === 'stopping') return;
+      if (this.isStopped) return;
       try { await this.bot?.stop(); } catch { /* old bot likely dead */ }
 
       const newBot = new Bot(this.config.token);
       newBot.api.config.use(autoRetry());
       newBot.on('message', (ctx) =>
-        handleInboundMessage(ctx, this.relay!, this.status, this.makeCallbacks()),
+        handleInboundMessage(ctx, this.relay!, this.makeInboundCallbacks()),
       );
       newBot.catch((e) => this.recordError(e));
       this.bot = newBot;
       this.startPollingMode(newBot).catch((e) => this.handlePollingError(e));
     }, delay);
-  }
-
-  /** Record an error in the adapter status without throwing. */
-  private recordError(err: unknown): void {
-    const message = err instanceof Error ? err.message : String(err);
-    this.status = {
-      ...this.status,
-      state: 'error',
-      errorCount: this.status.errorCount + 1,
-      lastError: message,
-      lastErrorAt: new Date().toISOString(),
-    };
   }
 }

@@ -36,6 +36,17 @@ export function extractPayloadContent(payload: unknown): string {
   }
 }
 
+/**
+ * Truncate a string to a maximum length, appending an ellipsis if cut.
+ *
+ * @param text - The text to truncate
+ * @param maxLen - Maximum character length
+ */
+export function truncateText(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 3)}...`;
+}
+
 // === StreamEvent helpers ===
 
 /** Known StreamEvent types that carry no user-visible text. */

@@ -10,7 +10,7 @@
  */
 import type { WebClient } from '@slack/web-api';
 import type { StandardPayload } from '@dorkos/shared/relay-schemas';
-import type { RelayPublisher, AdapterStatus } from '../../types.js';
+import type { RelayPublisher, AdapterInboundCallbacks } from '../../types.js';
 
 // === Constants ===
 
@@ -57,19 +57,6 @@ export interface SlackMessageEvent {
   thread_ts?: string;
   team?: string;
   bot_id?: string;
-}
-
-/**
- * Callback interface for reporting status changes from inbound handling.
- *
- * The facade passes a thin callback so inbound logic can update adapter state
- * without owning the full class instance.
- */
-export interface InboundCallbacks {
-  /** Update the adapter status (partial merge). */
-  updateStatus: (patch: Partial<AdapterStatus>) => void;
-  /** Record an error without throwing. */
-  recordError: (err: unknown) => void;
 }
 
 // === Caches ===
@@ -212,7 +199,7 @@ export async function handleInboundMessage(
   client: WebClient,
   relay: RelayPublisher,
   botUserId: string,
-  callbacks: InboundCallbacks,
+  callbacks: AdapterInboundCallbacks,
 ): Promise<void> {
   // Skip bot's own messages (echo prevention)
   if (event.user === botUserId) return;
@@ -263,7 +250,7 @@ export async function handleInboundMessage(
       from: `${SUBJECT_PREFIX}.bot`,
       replyTo: subject,
     });
-    callbacks.updateStatus({});
+    callbacks.trackInbound();
   } catch (err) {
     callbacks.recordError(err);
   }

@@ -192,6 +192,20 @@ export interface PublishOptions {
   budget?: Partial<RelayBudget>;
 }
 
+// === Adapter Callbacks ===
+
+/** Callbacks for inbound message handling (used by adapter sub-modules). */
+export interface AdapterInboundCallbacks {
+  trackInbound: () => void;
+  recordError: (err: unknown) => void;
+}
+
+/** Callbacks for outbound message delivery (used by adapter sub-modules). */
+export interface AdapterOutboundCallbacks {
+  trackOutbound: () => void;
+  recordError: (err: unknown) => void;
+}
+
 // === External Adapters ===
 
 /**

@@ -9,12 +9,13 @@
  */
 import type { Bot } from 'grammy';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { AdapterContext, AdapterStatus, DeliveryResult } from '../../types.js';
+import type { AdapterOutboundCallbacks, DeliveryResult } from '../../types.js';
 import {
   extractPayloadContent,
   detectStreamEventType,
   extractTextDelta,
   extractErrorMessage,
+  truncateText,
   SILENT_EVENT_TYPES,
 } from '../../lib/payload-utils.js';
 import { extractChatId, SUBJECT_PREFIX, MAX_MESSAGE_LENGTH } from './inbound.js';
@@ -22,28 +23,14 @@ import { extractChatId, SUBJECT_PREFIX, MAX_MESSAGE_LENGTH } from './inbound.js'
 /** Telegram sendChatAction type for typing indicator. */
 const TELEGRAM_TYPING_ACTION = 'typing' as const;
 
-/**
- * Truncate a string to a maximum length, appending an ellipsis if cut.
- *
- * @param text - The text to truncate
- * @param maxLen - Maximum character length
- */
-function truncateText(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return `${text.slice(0, maxLen - 3)}...`;
-}
-
-/**
- * Callback interface for reporting status changes from outbound delivery.
- *
- * The facade passes a thin callback so outbound logic can update adapter state
- * without owning the full class instance.
- */
-export interface OutboundCallbacks {
-  /** Update the adapter status (partial merge). */
-  updateStatus: (patch: Partial<AdapterStatus>) => void;
-  /** Record an error without throwing. */
-  recordError: (err: unknown) => void;
+/** Options for delivering a Relay message to Telegram. */
+export interface TelegramDeliverOptions {
+  adapterId: string;
+  subject: string;
+  envelope: RelayEnvelope;
+  bot: Bot | null;
+  responseBuffers: Map<number, string>;
+  callbacks: AdapterOutboundCallbacks;
 }
 
 /**
@@ -53,7 +40,6 @@ export interface OutboundCallbacks {
  * @param chatId - The Telegram chat ID
  * @param text - The message text to send
  * @param startTime - Timestamp (ms) for delivery duration calculation
- * @param status - Current adapter status for counter reads
  * @param callbacks - Callbacks to mutate adapter state
  */
 async function sendAndTrack(
@@ -61,17 +47,11 @@ async function sendAndTrack(
   chatId: number,
   text: string,
   startTime: number,
-  status: AdapterStatus,
-  callbacks: OutboundCallbacks,
+  callbacks: AdapterOutboundCallbacks,
 ): Promise<DeliveryResult> {
   try {
     await bot.api.sendMessage(chatId, text);
-    callbacks.updateStatus({
-      messageCount: {
-        ...status.messageCount,
-        outbound: status.messageCount.outbound + 1,
-      },
-    });
+    callbacks.trackOutbound();
     return { success: true, durationMs: Date.now() - startTime };
   } catch (err) {
     callbacks.recordError(err);
@@ -91,25 +71,10 @@ async function sendAndTrack(
  * Telegram's 4096-character message limit. StreamEvent payloads are buffered
  * per-chat and flushed on 'done' or 'error' events.
  *
- * @param adapterId - The adapter instance ID for error messages
- * @param subject - The Relay subject (e.g. relay.human.telegram.123456)
- * @param envelope - The relay envelope to deliver
- * @param _context - Optional adapter context (unused by this adapter)
- * @param bot - The grammy Bot instance, or null if not started
- * @param responseBuffers - Per-chat response buffer for text_delta accumulation
- * @param status - Current adapter status for counter reads
- * @param callbacks - Callbacks to mutate adapter state
+ * @param opts - Delivery options
  */
-export async function deliverMessage(
-  adapterId: string,
-  subject: string,
-  envelope: RelayEnvelope,
-  _context: AdapterContext | undefined,
-  bot: Bot | null,
-  responseBuffers: Map<number, string>,
-  status: AdapterStatus,
-  callbacks: OutboundCallbacks,
-): Promise<DeliveryResult> {
+export async function deliverMessage(opts: TelegramDeliverOptions): Promise<DeliveryResult> {
+  const { adapterId, subject, envelope, bot, responseBuffers, callbacks } = opts;
   const startTime = Date.now();
 
   // Guard: skip messages that originated from this adapter to prevent echo.
@@ -157,7 +122,7 @@ export async function deliverMessage(
       const text = buffered
         ? truncateText(`${buffered}\n\n[Error: ${errorMsg}]`, MAX_MESSAGE_LENGTH)
         : truncateText(`[Error: ${errorMsg}]`, MAX_MESSAGE_LENGTH);
-      return sendAndTrack(bot, chatId, text, startTime, status, callbacks);
+      return sendAndTrack(bot, chatId, text, startTime, callbacks);
     }
 
     // done: flush accumulated buffer as a single message
@@ -165,7 +130,7 @@ export async function deliverMessage(
       const buffered = responseBuffers.get(chatId);
       responseBuffers.delete(chatId);
       if (buffered) {
-        return sendAndTrack(bot, chatId, truncateText(buffered, MAX_MESSAGE_LENGTH), startTime, status, callbacks);
+        return sendAndTrack(bot, chatId, truncateText(buffered, MAX_MESSAGE_LENGTH), startTime, callbacks);
       }
       return { success: true, durationMs: Date.now() - startTime };
     }
@@ -179,7 +144,7 @@ export async function deliverMessage(
   // --- Standard payload (non-StreamEvent) ---
   const content = extractPayloadContent(envelope.payload);
   const text = truncateText(content, MAX_MESSAGE_LENGTH);
-  return sendAndTrack(bot, chatId, text, startTime, status, callbacks);
+  return sendAndTrack(bot, chatId, text, startTime, callbacks);
 }
 
 /**

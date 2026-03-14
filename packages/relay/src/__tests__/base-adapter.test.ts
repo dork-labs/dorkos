@@ -37,6 +37,9 @@ class TestAdapter extends BaseRelayAdapter {
   // Expose protected helpers for testing
   callTrackInbound(): void { this.trackInbound(); }
   callRecordError(err: unknown): void { this.recordError(err); }
+  callSetReconnecting(): void { this.setReconnecting(); }
+  callMarkConnected(): void { this.markConnected(); }
+  callIsStopped(): boolean { return this.isStopped; }
   getRelayRef(): RelayPublisher | null { return this.relay; }
 }
 
@@ -220,5 +223,97 @@ describe('BaseRelayAdapter', () => {
     const s1 = adapter.getStatus();
     const s2 = adapter.getStatus();
     expect(s1).not.toBe(s2);
+  });
+
+  // --- setReconnecting() ---
+
+  it('setReconnecting() transitions from error to reconnecting', () => {
+    adapter.callRecordError(new Error('Connection lost'));
+    expect(adapter.getStatus().state).toBe('error');
+
+    adapter.callSetReconnecting();
+    expect(adapter.getStatus().state).toBe('reconnecting');
+  });
+
+  it('setReconnecting() preserves errorCount and lastError', () => {
+    adapter.callRecordError(new Error('Connection lost'));
+    adapter.callSetReconnecting();
+
+    const status = adapter.getStatus();
+    expect(status.errorCount).toBe(1);
+    expect(status.lastError).toBe('Connection lost');
+  });
+
+  it('setReconnecting() is ignored from non-error states', async () => {
+    await adapter.start(relay);
+    expect(adapter.getStatus().state).toBe('connected');
+
+    adapter.callSetReconnecting();
+    expect(adapter.getStatus().state).toBe('connected');
+  });
+
+  // --- markConnected() ---
+
+  it('markConnected() transitions from reconnecting to connected', () => {
+    adapter.callRecordError(new Error('err'));
+    adapter.callSetReconnecting();
+    expect(adapter.getStatus().state).toBe('reconnecting');
+
+    adapter.callMarkConnected();
+    expect(adapter.getStatus().state).toBe('connected');
+  });
+
+  it('markConnected() does not reset startedAt', async () => {
+    await adapter.start(relay);
+    const { startedAt } = adapter.getStatus();
+
+    adapter.callRecordError(new Error('err'));
+    adapter.callSetReconnecting();
+    adapter.callMarkConnected();
+
+    expect(adapter.getStatus().startedAt).toBe(startedAt);
+  });
+
+  it('markConnected() is ignored from connected state', async () => {
+    await adapter.start(relay);
+    adapter.callMarkConnected(); // no-op
+    expect(adapter.getStatus().state).toBe('connected');
+  });
+
+  it('markConnected() is ignored from disconnected state', () => {
+    adapter.callMarkConnected();
+    expect(adapter.getStatus().state).toBe('disconnected');
+  });
+
+  // --- isStopped ---
+
+  it('isStopped is true when disconnected', () => {
+    expect(adapter.callIsStopped()).toBe(true);
+  });
+
+  it('isStopped is false when connected', async () => {
+    await adapter.start(relay);
+    expect(adapter.callIsStopped()).toBe(false);
+  });
+
+  it('isStopped is false when in error state', () => {
+    adapter.callRecordError(new Error('err'));
+    expect(adapter.callIsStopped()).toBe(false);
+  });
+
+  it('isStopped is false when reconnecting', () => {
+    adapter.callRecordError(new Error('err'));
+    adapter.callSetReconnecting();
+    expect(adapter.callIsStopped()).toBe(false);
+  });
+
+  // --- stop() clears startedAt ---
+
+  it('stop() clears startedAt from status', async () => {
+    await adapter.start(relay);
+    expect(adapter.getStatus().startedAt).toBeDefined();
+
+    await adapter.stop();
+    expect(adapter.getStatus().startedAt).toBeUndefined();
   });
 });

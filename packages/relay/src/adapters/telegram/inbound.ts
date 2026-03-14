@@ -10,7 +10,7 @@
  */
 import type { Context as GrammyContext } from 'grammy';
 import type { StandardPayload } from '@dorkos/shared/relay-schemas';
-import type { RelayPublisher, AdapterStatus } from '../../types.js';
+import type { RelayPublisher, AdapterInboundCallbacks } from '../../types.js';
 
 // === Constants ===
 
@@ -95,19 +95,6 @@ function extractChannelName(chat: GrammyContext['chat']): string | undefined {
 }
 
 /**
- * Callback interface for reporting status changes from inbound handling.
- *
- * The facade passes a thin callback so inbound logic can update adapter state
- * without owning the full class instance.
- */
-export interface InboundCallbacks {
-  /** Update the adapter status (partial merge). */
-  updateStatus: (patch: Partial<AdapterStatus>) => void;
-  /** Record an error without throwing. */
-  recordError: (err: unknown) => void;
-}
-
-/**
  * Handle an inbound Telegram message and publish it to the Relay.
  *
  * Builds the subject from the chat ID, constructs a {@link StandardPayload},
@@ -116,14 +103,12 @@ export interface InboundCallbacks {
  *
  * @param ctx - The grammy context for the inbound message
  * @param relay - The relay publisher
- * @param status - Current adapter status (for counter reads)
  * @param callbacks - Callbacks to mutate adapter state
  */
 export async function handleInboundMessage(
   ctx: GrammyContext,
   relay: RelayPublisher,
-  status: AdapterStatus,
-  callbacks: InboundCallbacks,
+  callbacks: AdapterInboundCallbacks,
 ): Promise<void> {
   if (!ctx.message) return;
 
@@ -170,12 +155,7 @@ export async function handleInboundMessage(
       from: `${SUBJECT_PREFIX}.bot`,
       replyTo: subject,
     });
-    callbacks.updateStatus({
-      messageCount: {
-        ...status.messageCount,
-        inbound: status.messageCount.inbound + 1,
-      },
-    });
+    callbacks.trackInbound();
   } catch (err) {
     callbacks.recordError(err);
   }

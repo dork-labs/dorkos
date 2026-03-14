@@ -104,7 +104,11 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
       await this._stop();
     } finally {
       this.relay = null;
-      this._status = { ...this._status, state: 'disconnected' };
+      this._status = {
+        state: 'disconnected',
+        messageCount: this._status.messageCount,
+        errorCount: this._status.errorCount,
+      };
     }
   }
 
@@ -164,6 +168,33 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
       lastError: message,
       lastErrorAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Transition from 'error' to 'reconnecting'.
+   *
+   * Silently ignored from other states. Does not reset `errorCount` or
+   * `lastError` — these persist across reconnection attempts.
+   */
+  protected setReconnecting(): void {
+    if (this._status.state !== 'error') return;
+    this._status = { ...this._status, state: 'reconnecting' };
+  }
+
+  /**
+   * Transition from 'reconnecting' or 'starting' to 'connected'.
+   *
+   * Does not reset `startedAt` (set once on initial connect).
+   * Silently ignored from 'connected', 'disconnected', or 'stopping'.
+   */
+  protected markConnected(): void {
+    if (this._status.state !== 'reconnecting' && this._status.state !== 'starting') return;
+    this._status = { ...this._status, state: 'connected' };
+  }
+
+  /** Whether the adapter has been stopped or is stopping. */
+  protected get isStopped(): boolean {
+    return this._status.state === 'disconnected' || this._status.state === 'stopping';
   }
 
   /** Subclass hook: connect to the external service. */

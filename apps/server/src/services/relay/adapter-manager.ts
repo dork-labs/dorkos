@@ -211,32 +211,19 @@ export class AdapterManager {
    * List all adapter configs paired with their current runtime status.
    */
   listAdapters(): Array<{ config: AdapterConfig; status: AdapterStatus }> {
-    return this.configs.map((config) => {
-      const adapter = this.registry.get(config.id);
-      const manifest = this.manifests.get(config.type);
-      const status = {
-        id: config.id,
-        type: config.type,
-        displayName: manifest?.displayName ?? config.type,
-        ...(adapter?.getStatus() ?? defaultAdapterStatus()),
-      };
-      const maskedConfig = {
-        ...config,
-        config: maskSensitiveFields(
-          config.config as Record<string, unknown>,
-          manifest,
-        ),
-      };
-      return { config: maskedConfig, status };
-    });
+    return this.configs.map((config) => this.buildAdapterView(config));
   }
 
   /** Get a single adapter's config and status. Sensitive fields are masked. */
   getAdapter(id: string): { config: AdapterConfig; status: AdapterStatus } | undefined {
     const config = this.configs.find((c) => c.id === id);
     if (!config) return undefined;
+    return this.buildAdapterView(config);
+  }
 
-    const adapter = this.registry.get(id);
+  /** Build a masked config + status snapshot for an adapter. */
+  private buildAdapterView(config: AdapterConfig): { config: AdapterConfig; status: AdapterStatus } {
+    const adapter = this.registry.get(config.id);
     const manifest = this.manifests.get(config.type);
     const status = {
       id: config.id,
