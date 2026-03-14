@@ -10,6 +10,7 @@
  *
  * @module relay/lib/payload-utils
  */
+import { slackifyMarkdown } from 'slackify-markdown';
 
 /**
  * Extract text content from an unknown Relay envelope payload.
@@ -94,4 +95,41 @@ export function extractErrorMessage(payload: unknown): string | null {
   if (obj.type !== 'error') return null;
   const data = obj.data as Record<string, unknown> | undefined;
   return typeof data?.message === 'string' ? data.message : null;
+}
+
+// === Format conversion ===
+
+/**
+ * Convert standard Markdown to a platform-specific format.
+ *
+ * @param content - Standard Markdown text (as produced by agents)
+ * @param platform - Target platform identifier
+ * @returns Content formatted for the target platform
+ */
+export function formatForPlatform(
+  content: string,
+  platform: 'slack' | 'telegram' | 'plain',
+): string {
+  switch (platform) {
+    case 'slack':
+      return slackifyMarkdown(content);
+    case 'telegram':
+      // Telegram accepts standard Markdown via parse_mode: 'MarkdownV2'
+      // but our current implementation sends plain text. Pass through for now.
+      return content;
+    case 'plain':
+      // Strip Markdown formatting for webhook adapter and similar
+      return content
+        .replace(/\*\*(.+?)\*\*/g, '$1') // bold
+        .replace(/\*(.+?)\*/g, '$1') // italic
+        .replace(/__(.+?)__/g, '$1') // bold (underscore)
+        .replace(/_(.+?)_/g, '$1') // italic (underscore)
+        .replace(/~~(.+?)~~/g, '$1') // strikethrough
+        .replace(/`{3}[\s\S]*?`{3}/g, (m) => m.replace(/`{3}\w*\n?/g, '').trim()) // code blocks
+        .replace(/`(.+?)`/g, '$1') // inline code
+        .replace(/^#{1,6}\s+/gm, '') // headings
+        .replace(/^[*-]\s+/gm, '- ') // list items
+        .replace(/^>\s+/gm, '') // blockquotes
+        .replace(/\[(.+?)\]\(.+?\)/g, '$1'); // links
+  }
 }

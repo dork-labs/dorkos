@@ -883,7 +883,14 @@
       "title": "Fix Chat UI Streaming Bugs — Duplicate Messages & Stale Model Display",
       "created": "2026-03-12",
       "status": "specified"
+    },
+    {
+      "number": 127,
+      "slug": "slack-adapter",
+      "title": "Slack Adapter for Relay",
+      "created": "2026-03-13",
+      "status": "specified"
     }
   ],
-  "nextNumber": 127
+  "nextNumber": 128
 }

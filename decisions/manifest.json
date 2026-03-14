@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "nextNumber": 118,
+  "nextNumber": 121,
   "decisions": [
+    {
+      "number": 120,
+      "slug": "shared-format-conversion-layer",
+      "title": "Add Shared Format Conversion Layer to payload-utils",
+      "status": "draft",
+      "created": "2026-03-13",
+      "extractedFrom": "slack-adapter",
+      "specSlug": "slack-adapter"
+    },
+    {
+      "number": 119,
+      "slug": "slack-socket-mode-only",
+      "title": "Use Socket Mode Only for Slack Adapter",
+      "status": "draft",
+      "created": "2026-03-13",
+      "extractedFrom": "slack-adapter",
+      "specSlug": "slack-adapter"
+    },
+    {
+      "number": 118,
+      "slug": "use-slack-native-streaming-api",
+      "title": "Use Slack Native Streaming API for Agent Responses",
+      "status": "draft",
+      "created": "2026-03-13",
+      "extractedFrom": "slack-adapter",
+      "specSlug": "slack-adapter"
+    },
     {
       "number": 117,
       "slug": "direct-sse-as-sole-web-client-transport",

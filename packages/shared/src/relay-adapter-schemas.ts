@@ -13,7 +13,7 @@ extendZodWithOpenApi(z);
 // === Adapter Configuration Schemas ===
 
 export const AdapterTypeSchema = z
-  .enum(['telegram', 'webhook', 'claude-code', 'plugin'])
+  .enum(['telegram', 'webhook', 'claude-code', 'slack', 'plugin'])
   .openapi('AdapterType');
 
 export type AdapterType = z.infer<typeof AdapterTypeSchema>;
@@ -78,6 +78,16 @@ export type WebhookAdapterConfig = z.infer<typeof WebhookAdapterConfigSchema>;
 /** @deprecated Use {@link WebhookAdapterConfig} */
 export type WebhookAdapterConfigZ = WebhookAdapterConfig;
 
+export const SlackAdapterConfigSchema = z
+  .object({
+    botToken: z.string().min(1),
+    appToken: z.string().min(1),
+    signingSecret: z.string().min(1),
+  })
+  .openapi('SlackAdapterConfig');
+
+export type SlackAdapterConfig = z.infer<typeof SlackAdapterConfigSchema>;
+
 export const AdapterConfigSchema = z
   .object({
     id: z
@@ -96,6 +106,7 @@ export const AdapterConfigSchema = z
     config: z.union([
       TelegramAdapterConfigSchema,
       WebhookAdapterConfigSchema,
+      SlackAdapterConfigSchema,
       z.record(z.string(), z.unknown()),
     ]),
   })

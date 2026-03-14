@@ -12,11 +12,13 @@ import type {
   AdapterConfig,
   TelegramAdapterConfig,
   WebhookAdapterConfig,
+  SlackAdapterConfig,
   AdapterStatus,
 } from '@dorkos/relay';
 import {
   TelegramAdapter,
   WebhookAdapter,
+  SlackAdapter,
   ClaudeCodeAdapter,
   loadAdapters,
 } from '@dorkos/relay';
@@ -75,6 +77,11 @@ export async function createAdapter(
       return new WebhookAdapter(
         config.id,
         config.config as WebhookAdapterConfig,
+      );
+    case 'slack':
+      return new SlackAdapter(
+        config.id,
+        config.config as SlackAdapterConfig,
       );
     case 'claude-code':
       return new ClaudeCodeAdapter(

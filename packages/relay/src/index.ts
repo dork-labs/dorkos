@@ -98,6 +98,7 @@ export type {
   DeliveryResult,
   TelegramAdapterConfig,
   WebhookAdapterConfig,
+  SlackAdapterConfig,
   AdapterRegistryLike,
   PublishResultLike,
 } from './types.js';
@@ -111,6 +112,7 @@ export { AdapterRegistry } from './adapter-registry.js';
 // Adapter implementations
 export { TelegramAdapter, TELEGRAM_MANIFEST } from './adapters/telegram/index.js';
 export { WebhookAdapter, verifySignature, WEBHOOK_MANIFEST } from './adapters/webhook/index.js';
+export { SlackAdapter, SLACK_MANIFEST } from './adapters/slack/index.js';
 
 // Built-in adapters
 export { ClaudeCodeAdapter, CLAUDE_CODE_MANIFEST } from './adapters/claude-code/index.js';
@@ -122,6 +124,9 @@ export type {
   TraceStoreLike,
   PulseStoreLike,
 } from './adapters/claude-code/index.js';
+
+// Payload utilities
+export { formatForPlatform } from './lib/payload-utils.js';
 
 // Plugin loader
 export { loadAdapters, validateAdapterShape } from './adapter-plugin-loader.js';

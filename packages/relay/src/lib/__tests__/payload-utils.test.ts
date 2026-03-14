@@ -4,6 +4,7 @@ import {
   detectStreamEventType,
   extractTextDelta,
   extractErrorMessage,
+  formatForPlatform,
   SILENT_EVENT_TYPES,
 } from '../payload-utils.js';
 
@@ -185,5 +186,60 @@ describe('SILENT_EVENT_TYPES', () => {
     expect(SILENT_EVENT_TYPES.has('text_delta')).toBe(false);
     expect(SILENT_EVENT_TYPES.has('done')).toBe(false);
     expect(SILENT_EVENT_TYPES.has('error')).toBe(false);
+  });
+});
+
+describe('formatForPlatform', () => {
+  describe('slack', () => {
+    it('converts **bold** to *bold*', () => {
+      const result = formatForPlatform('**bold**', 'slack');
+      // slackify-markdown may add zero-width spaces around formatting markers
+      expect(result).toContain('*bold*');
+      expect(result).not.toContain('**');
+    });
+
+    it('converts [link](url) to <url|link>', () => {
+      const result = formatForPlatform('[Click here](https://example.com)', 'slack');
+      expect(result).toContain('<https://example.com|Click here>');
+    });
+
+    it('handles multi-line markdown', () => {
+      const input = '# Heading\n\n**Bold** and *italic*';
+      const result = formatForPlatform(input, 'slack');
+      expect(result).not.toContain('**');
+      expect(result).toContain('*Bold*');
+    });
+
+    it('returns empty string for empty input', () => {
+      expect(formatForPlatform('', 'slack')).toBe('');
+    });
+  });
+
+  describe('telegram', () => {
+    it('passes through unchanged', () => {
+      expect(formatForPlatform('**bold**', 'telegram')).toBe('**bold**');
+    });
+  });
+
+  describe('plain', () => {
+    it('strips bold markers', () => {
+      expect(formatForPlatform('**bold**', 'plain')).toBe('bold');
+    });
+
+    it('strips italic markers', () => {
+      expect(formatForPlatform('*italic*', 'plain')).toBe('italic');
+    });
+
+    it('strips inline code backticks', () => {
+      expect(formatForPlatform('use `foo()`', 'plain')).toBe('use foo()');
+    });
+
+    it('strips link markdown, keeps text', () => {
+      expect(formatForPlatform('[link](https://example.com)', 'plain')).toBe('link');
+    });
+
+    it('strips heading markers', () => {
+      expect(formatForPlatform('## Heading', 'plain')).toBe('Heading');
+    });
   });
 });

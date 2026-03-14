@@ -23,8 +23,11 @@
     "@dorkos/db": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@grammyjs/auto-retry": "^2.0.2",
+    "@slack/bolt": "^4.6.0",
+    "@slack/web-api": "^7.15.0",
     "chokidar": "^4.0.0",
     "grammy": "^1.40.0",
+    "slackify-markdown": "^5.0.0",
     "ulidx": "^2.4.0"
   },
   "devDependencies": {

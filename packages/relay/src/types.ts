@@ -22,6 +22,7 @@ import type {
   ReliabilityConfig,
   TelegramAdapterConfig,
   WebhookAdapterConfig,
+  SlackAdapterConfig,
   AdapterConfig,
   AdapterStatus as SharedAdapterStatus,
 } from '@dorkos/shared/relay-schemas';
@@ -50,6 +51,9 @@ export type { TelegramAdapterConfig };
 
 /** Configuration for the generic webhook adapter. */
 export type { WebhookAdapterConfig };
+
+/** Configuration for the Slack adapter. */
+export type { SlackAdapterConfig };
 
 /** Persisted configuration for a single adapter instance. */
 export type { AdapterConfig };
