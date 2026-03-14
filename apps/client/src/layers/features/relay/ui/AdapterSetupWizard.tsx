@@ -327,7 +327,7 @@ export function AdapterSetupWizard({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
             {isEditMode ? `Edit ${manifest.displayName}` : `Add ${manifest.displayName}`}
@@ -340,7 +340,7 @@ export function AdapterSetupWizard({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="min-h-0 space-y-4 overflow-y-auto py-2">
           {/* Step indicator — edit mode only shows 3 steps (no bind). */}
           <StepIndicator current={step} showBindStep={!isEditMode} />
 
