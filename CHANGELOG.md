@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add upgrade guidance, rollback instructions, and breaking-change callouts
 - Add dedicated Docker guide and Docker install tab
 - Fix documentation drift — update CLAUDE.md, API reference, and broken links
 - Unify adapter system with BaseRelayAdapter, shared callbacks, and DRY utilities

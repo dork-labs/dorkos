@@ -146,8 +146,20 @@ DorkOS checks the npm registry for new versions at startup. When a newer version
 
 The check runs in the background with a 3-second timeout and caches results for 24 hours. To update:
 
-```bash
+```bash tab="npm"
 npm install -g dorkos@latest
+```
+
+```bash tab="pnpm"
+pnpm add -g dorkos@latest
+```
+
+```bash tab="yarn"
+yarn global add dorkos@latest
+```
+
+```bash tab="bun"
+bun add -g dorkos@latest
 ```
 
 ## Next Steps

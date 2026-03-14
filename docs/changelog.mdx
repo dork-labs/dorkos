@@ -130,6 +130,10 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 
 > MCP server integration, file uploads, chat UX overhaul, and SSE reliability fixes
 
+<Callout type="warn">
+  **Breaking changes:** The `POST /sessions` endpoint has been removed — API consumers must use message-first session creation (send a message to create a session implicitly). Pulse and agent MCP tool names have been renamed to follow the `domain_verb_noun` convention (e.g., `pulse_create_schedule`). Update any scripts or integrations that reference the old names.
+</Callout>
+
 ### Added
 
 - Embed MCP server with Streamable HTTP transport — external agents (Claude Code, Cursor, Windsurf) can connect via `/mcp`
@@ -324,6 +328,10 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 
 > Multi-agent infrastructure — Relay message bus, Mesh discovery, Agent Identity, and unified database
 
+<Callout type="warn">
+  **Breaking changes:** Three separate SQLite databases have been consolidated into a single `dork.db` — this is handled automatically on first startup, but back up your `~/.dork/` directory before upgrading if you want to preserve the originals. The package manager for self-hosted installs has changed from npm to pnpm — run `pnpm install` instead of `npm install` after pulling.
+</Callout>
+
 ### Added
 
 - Elevate topology chart with ELK.js layout, zoom LOD, and enriched nodes
@@ -399,6 +407,10 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Complete documentation overhaul — fill all stubs, add concepts section, rewrite stale guides
 
 ## [0.2.0] - 2026-02-17
+
+<Callout type="warn">
+  **Breaking change:** The default server port changed from 6942 to 4242. Update any hardcoded port references in scripts, reverse proxies, bookmarks, or `DORKOS_PORT` environment variables.
+</Callout>
 
 ### Added
 

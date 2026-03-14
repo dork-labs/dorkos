@@ -144,6 +144,24 @@ docker run --rm -p 4242:4242 \
   dorkos
 ```
 
+## Updating
+
+DorkOS checks for new versions on startup and displays an update notice when one is available. Check your current version:
+
+```bash
+dorkos --version
+```
+
+Update to the latest release:
+
+```bash
+npm install -g dorkos@latest
+# or
+pnpm add -g dorkos@latest
+```
+
+For Homebrew, Docker, and other update methods, see the [full upgrade guide](https://dorkos.ai/docs/getting-started/installation#updating).
+
 ## API Documentation
 
 Interactive API docs at `/api/docs` (Scalar UI) and raw OpenAPI spec at `/api/openapi.json`.

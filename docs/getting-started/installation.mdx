@@ -378,9 +378,31 @@ pnpm install
 pnpm build
 ```
 
+Restart the running server after rebuilding. Database migrations run automatically on startup. Check the [changelog](/docs/changelog) for breaking changes before upgrading — major releases may require configuration updates.
+
 </Tab>
 
 </Tabs>
+
+## Rollback and Version Pinning
+
+<Callout type="info">
+  If an update causes issues, pin a specific version to roll back:
+
+  ```bash tab="npm"
+  npm install -g dorkos@0.11.0
+  ```
+
+  ```bash tab="Homebrew"
+  brew install dorkos-ai/tap/dorkos@0.11.0
+  ```
+
+  ```bash tab="Docker"
+  docker pull ghcr.io/dork-labs/dorkos:0.11.0
+  ```
+
+  Replace `0.11.0` with the version you want. Available versions are listed on [npm](https://www.npmjs.com/package/dorkos?activeTab=versions) and [GitHub Releases](https://github.com/dork-labs/dorkos/releases).
+</Callout>
 
 ## Next Steps
 
