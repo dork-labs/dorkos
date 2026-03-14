@@ -977,9 +977,9 @@ No existing ADRs directly relate to Relay. This spec will likely generate draft 
 ## References
 
 - [Ideation document](./01-ideation.md) — Discovery and research findings
-- [Relay Design Doc](../../docs/plans/2026-02-24-relay-design.md) — Full design decisions and TypeScript interfaces
+- [Relay Design Doc](../../plans/2026-02-24-relay-design.md) — Full design decisions and TypeScript interfaces
 - [Relay Litepaper](../../meta/modules/relay-litepaper.md) — Vision and architecture
-- [Relay Spec Definition](../../docs/plans/relay-specs/01-relay-core-library.md) — Verification criteria
+- [Relay Spec Definition](../../plans/relay-specs/01-relay-core-library.md) — Verification criteria
 - [Research: Transport Libraries](../../research/20260224_agent_messaging_transport_libraries.md) — Library evaluation
 - [Research: Relay Core Library](../../research/20260224_relay_core_library_typescript.md) — Implementation research (Maildir, NATS, ULID, SQLite WAL, EventEmitter)
 - [Research: Communication Protocols](../../research/mesh/communication-protocols.md) — FIPA ACL, Maildir mechanics

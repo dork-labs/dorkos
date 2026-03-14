@@ -11,7 +11,7 @@ status: ideation
 **Author:** Claude Code
 **Date:** 2026-02-24
 **Branch:** preflight/relay-server-client-integration
-**Related:** [Relay Core Library (Spec 50)](../relay-core-library/) | [Relay Litepaper](../../meta/modules/relay-litepaper.md) | [Relay Design Doc](../../docs/plans/2026-02-24-relay-design.md)
+**Related:** [Relay Core Library (Spec 50)](../relay-core-library/) | [Relay Litepaper](../../meta/modules/relay-litepaper.md) | [Relay Design Doc](../../plans/2026-02-24-relay-design.md)
 
 ---
 
@@ -36,7 +36,7 @@ status: ideation
 - `contributing/data-fetching.md`: TanStack Query patterns used for server state, SSE streaming integration with React Query cache
 - `contributing/api-reference.md`: Zod schema validation, OpenAPI spec generation via `openapi-registry.ts`, Scalar docs UI
 - `meta/modules/relay-litepaper.md`: Relay as "kernel IPC for agents", D-Bus analog, message + signal modes, budget envelopes, Console-as-endpoint vision
-- `docs/plans/2026-02-24-relay-design.md`: HTTP routes spec (lines 306-330), MCP tool patterns, Console activity feed design (lines 458-476), observability section
+- `plans/2026-02-24-relay-design.md`: HTTP routes spec (lines 306-330), MCP tool patterns, Console activity feed design (lines 458-476), observability section
 - `apps/server/src/routes/pulse.ts` (136 lines): CRUD router with Zod `safeParse()`, boundary checking, error handling — exact pattern for Relay routes
 - `apps/server/src/services/mcp-tool-server.ts` (289 lines): `McpToolDeps` injection, `requirePulse()` guard pattern, `jsonContent()` helper, conditional tool registration
 - `apps/server/src/services/pulse-store.ts` (375 lines): Dual storage (SQLite for runs, JSON for schedules), WAL mode, CRUD operations, atomic writes

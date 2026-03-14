@@ -34,7 +34,7 @@ status: ideation
 
 ## 2) Pre-reading Log
 
-- `docs/plans/2026-02-28-telegram-adapter-investigation.md`: Current state of Telegram adapter — working end-to-end except for routing layer (Gap #2). Identified four design options for routing, recommended Option B (chat-to-agent mapping)
+- `plans/2026-02-28-telegram-adapter-investigation.md`: Current state of Telegram adapter — working end-to-end except for routing layer (Gap #2). Identified four design options for routing, recommended Option B (chat-to-agent mapping)
 - `packages/relay/src/types.ts`: RelayAdapter interface with `subjectPrefix`, `deliver()`, `testConnection()`. AdapterContext already has `agent` field for passing directory/runtime info
 - `packages/relay/src/adapters/telegram-adapter.ts`: Telegram adapter with echo guard, testConnection(), grammY polling. Publishes to `relay.human.telegram.{chatId}`
 - `packages/relay/src/adapters/claude-code-adapter.ts`: Handles `relay.agent.*` and `relay.system.pulse.*`. Creates AgentManager sessions from relay messages

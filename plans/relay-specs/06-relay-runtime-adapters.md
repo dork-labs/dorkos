@@ -152,7 +152,7 @@ REFERENCE DOCUMENTS:
 - apps/server/src/services/context-builder.ts — how runtime context is injected into agent prompts
 
 CODEBASE PATTERNS TO STUDY:
-- docs/plans/relay-specs/04-relay-external-adapters.md — the Spec 4 adapter interface (what we're unifying)
+- plans/relay-specs/04-relay-external-adapters.md — the Spec 4 adapter interface (what we're unifying)
 - Whatever adapter code Spec 4 produced — the Telegram and webhook adapters to refactor
 - apps/server/src/services/agent-manager.ts — createSession(), Agent SDK query() call, streaming event handling
 - apps/server/src/services/sdk-event-mapper.ts — how SDK events are transformed (adapter needs similar mapping)

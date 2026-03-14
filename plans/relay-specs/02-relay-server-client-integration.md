@@ -72,8 +72,8 @@ KEY INTEGRATION PATTERNS (already established — follow these):
 
 REFERENCE DOCUMENTS:
 - meta/modules/relay-litepaper.md — "What Relay Enables" section describes Console-as-endpoint and activity feeds
-- docs/plans/2026-02-24-relay-design.md — HTTP routes spec (lines 306-330), MCP tool patterns, Console activity feed design (lines 458-476), observability section
-- docs/plans/2026-02-24-litepaper-review.md — OQ-1 (how agents send messages) directly addressed by MCP tools in this spec
+- plans/2026-02-24-relay-design.md — HTTP routes spec (lines 306-330), MCP tool patterns, Console activity feed design (lines 458-476), observability section
+- plans/2026-02-24-litepaper-review.md — OQ-1 (how agents send messages) directly addressed by MCP tools in this spec
 
 CODEBASE PATTERNS TO STUDY:
 - apps/server/src/routes/pulse.ts — CRUD router pattern with Zod validation

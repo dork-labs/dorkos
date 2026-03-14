@@ -11,7 +11,7 @@ status: specified
 **Author:** Claude Code
 **Date:** 2026-02-24
 **Ideation:** [01-ideation.md](./01-ideation.md)
-**Relay Spec Plan:** [03-relay-advanced-reliability.md](../../docs/plans/relay-specs/03-relay-advanced-reliability.md)
+**Relay Spec Plan:** [03-relay-advanced-reliability.md](../../plans/relay-specs/03-relay-advanced-reliability.md)
 
 ---
 
@@ -942,5 +942,5 @@ Add config hot-reload:
 
 - [01-ideation.md](./01-ideation.md) — Ideation document with research findings and decision rationale
 - [Relay Litepaper](../../meta/modules/relay-litepaper.md) — Phase 2: "Rate limiting per sender. Circuit breakers per endpoint pair. Backpressure handling."
-- [Relay Spec Plan](../../docs/plans/relay-specs/03-relay-advanced-reliability.md) — Verification checklist and design constraints
+- [Relay Spec Plan](../../plans/relay-specs/03-relay-advanced-reliability.md) — Verification checklist and design constraints
 - [Research Report](../../research/20260224_relay_advanced_reliability.md) — Algorithm comparisons, build-vs-buy analysis, sensible defaults

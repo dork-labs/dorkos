@@ -101,6 +101,24 @@ Fetch message history for a session.
 - `304` - Not Modified (when `If-None-Match` matches current `ETag`)
 - `404` - Session not found
 
+### GET /api/sessions/:id/tasks
+
+Fetch the current task list (TodoWrite state) for a session.
+
+**Query params:**
+
+- `cwd` (optional) - Working directory path
+
+**Headers:**
+
+- `If-None-Match` (optional) - ETag from previous response. Returns 304 if content unchanged.
+
+**Responses:**
+
+- `200` - `{ tasks: Task[] }` with `ETag` header
+- `304` - Not Modified (when `If-None-Match` matches current `ETag`)
+- `404` - Session not found
+
 ### GET /api/config
 
 Returns server runtime information (version, port, uptime, working directory, tunnel status, Claude CLI path).
@@ -350,6 +368,15 @@ List messages with optional filtering and cursor-based pagination.
 
 - `200` - `{ messages: RelayEnvelope[], cursor?: string }`
 
+### GET /api/relay/conversations
+
+Grouped request/response exchanges with human-readable labels. Builds structured conversations from relay messages by pairing requests with their replies and resolving agent/session names.
+
+**Responses:**
+
+- `200` - `{ conversations: Conversation[] }`
+- `500` - Server error
+
 ### GET /api/relay/messages/:id
 
 Get a single message by ID.
@@ -530,6 +557,15 @@ Returns the full adapter catalog with manifests and running instances for each a
 
 - `500` - Internal error
 
+### POST /api/relay/adapters/reload
+
+Hot-reload adapter configuration from disk without server restart.
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `500` - Reload failed
+
 ### POST /api/relay/adapters
 
 Create a new adapter instance. Persists to `~/.dork/relay/adapters.json` and starts the adapter.
@@ -672,6 +708,28 @@ Create a new adapter-agent binding. Zod-validated via `CreateBindingRequestSchem
 - `400` - Validation error
 - `503` - Binding subsystem not available
 
+### PATCH /api/relay/bindings/:id
+
+Update an existing binding's fields.
+
+**Request body:** Partial update — all fields optional:
+
+```json
+{
+  "sessionStrategy": "per-chat",
+  "label": "Updated label",
+  "chatId": "67890",
+  "channelType": "telegram"
+}
+```
+
+**Responses:**
+
+- `200` - `{ binding: AdapterBinding }`
+- `400` - Validation error
+- `404` - Binding not found
+- `503` - Binding subsystem not available
+
 ### DELETE /api/relay/bindings/:id
 
 Delete an adapter-agent binding.
@@ -724,6 +782,14 @@ Register an agent in the mesh.
 
 - `201` - Registered `AgentManifest`
 - `400` - Validation error
+
+### GET /api/mesh/agents/paths
+
+Lightweight agent list returning only IDs and project paths. Used by onboarding and scheduling UIs.
+
+**Responses:**
+
+- `200` - `{ agents: { id: string, projectPath: string }[] }`
 
 ### GET /api/mesh/agents
 

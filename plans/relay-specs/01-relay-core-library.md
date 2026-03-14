@@ -71,12 +71,12 @@ KEY DESIGN DECISIONS (already made — see design doc):
 
 REFERENCE DOCUMENTS (read these during exploration):
 - meta/modules/relay-litepaper.md — full vision document
-- docs/plans/2026-02-24-relay-design.md — all technical decisions, TypeScript interfaces, directory structure, implementation estimates
+- plans/2026-02-24-relay-design.md — all technical decisions, TypeScript interfaces, directory structure, implementation estimates
 - research/mesh/communication-protocols.md — FIPA ACL, Maildir mechanics, loop prevention
 - research/mesh/architecture-analogies.md — D-Bus, Mach ports, NATS subject patterns
 - research/mesh/access-control-coordination.md — budget envelopes, circuit breakers, capability-based access
 - research/20260224_agent_messaging_transport_libraries.md — transport library evaluation (concluded: inline implementation, ~200-300 lines)
-- docs/plans/2026-02-24-litepaper-review.md — open design questions OQ-3 (agent identity fallback), OQ-4 (access control in Relay litepaper), OQ-5 (deadline vs ttl redundancy)
+- plans/2026-02-24-litepaper-review.md — open design questions OQ-3 (agent identity fallback), OQ-4 (access control in Relay litepaper), OQ-5 (deadline vs ttl redundancy)
 
 CODEBASE PATTERNS TO FOLLOW:
 - Package structure: packages/shared/package.json (dual-entry exports, @dorkos/ scope, private, ESM)

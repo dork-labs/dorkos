@@ -69,8 +69,8 @@ The migrations should be backwards-compatible during transition — existing API
 
 REFERENCE DOCUMENTS:
 - meta/modules/relay-litepaper.md — "What Relay Enables" section (Console as endpoint, Pulse through Relay, agent execution as subscription), Phase 4 roadmap
-- docs/plans/2026-02-24-relay-design.md — Pulse migration path (lines 344-360), Engine → Relay migration (lines 479-484), Agent Runtime Adapter (lines 487-496), observability (lines 306-330)
-- docs/plans/2026-02-24-litepaper-review.md — OQ-2 (lazy activation — what happens when a message arrives for an offline agent?) is directly relevant to the Engine subscription model
+- plans/2026-02-24-relay-design.md — Pulse migration path (lines 344-360), Engine → Relay migration (lines 479-484), Agent Runtime Adapter (lines 487-496), observability (lines 306-330)
+- plans/2026-02-24-litepaper-review.md — OQ-2 (lazy activation — what happens when a message arrives for an offline agent?) is directly relevant to the Engine subscription model
 - meta/dorkos-litepaper.md — architecture diagram and workflow example show the converged state
 
 CODEBASE AREAS TO STUDY:

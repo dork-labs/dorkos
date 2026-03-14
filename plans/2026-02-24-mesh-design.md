@@ -47,7 +47,7 @@ Mesh is the agent discovery and network topology layer for DorkOS. It discovers 
 - Access control rules (Mesh writes them, Relay enforces them)
 - Agent lifecycle management
 
-**Design sequencing:** Relay first (foundation), then Mesh on top. See `docs/plans/2026-02-24-relay-design.md`.
+**Design sequencing:** Relay first (foundation), then Mesh on top. See `plans/2026-02-24-relay-design.md`.
 
 **Package architecture:** Each module is a separate npm package composed by the server:
 - `@dorkos/relay` — message bus (foundation)

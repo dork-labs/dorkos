@@ -11,7 +11,7 @@ status: draft
 **Authors:** Claude Code, 2026-02-25
 **Ideation:** [01-ideation.md](./01-ideation.md)
 **Research:** [research/20260224_relay_convergence.md](../../research/20260224_relay_convergence.md)
-**Design Doc:** [docs/plans/2026-02-24-relay-design.md](../../docs/plans/2026-02-24-relay-design.md)
+**Design Doc:** [plans/2026-02-24-relay-design.md](../../plans/2026-02-24-relay-design.md)
 
 ---
 
@@ -876,9 +876,9 @@ The Relay panel gains a metrics section showing system health:
 
 - [Ideation document](./01-ideation.md)
 - [Research report](../../research/20260224_relay_convergence.md)
-- [Relay design doc](../../docs/plans/2026-02-24-relay-design.md)
+- [Relay design doc](../../plans/2026-02-24-relay-design.md)
 - [Relay litepaper](../../meta/modules/relay-litepaper.md)
-- [Convergence spec prompt](../../docs/plans/relay-specs/05-relay-convergence.md)
+- [Convergence spec prompt](../../plans/relay-specs/05-relay-convergence.md)
 - [Strangler Fig Pattern — AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/strangler-fig.html)
 - [OpenTelemetry Context Propagation](https://opentelemetry.io/docs/concepts/context-propagation/)
 - [SSE Fan-In Pattern — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)

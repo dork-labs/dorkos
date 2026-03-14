@@ -18,8 +18,8 @@ description: Review and issue tracking for Relay, Mesh, and main DorkOS litepape
 | Main litepaper (v2) | [meta/dorkos-litepaper.md](../../meta/dorkos-litepaper.md) |
 | Relay litepaper | [meta/modules/relay-litepaper.md](../../meta/modules/relay-litepaper.md) |
 | Mesh litepaper | [meta/modules/mesh-litepaper.md](../../meta/modules/mesh-litepaper.md) |
-| Relay design doc | [docs/plans/2026-02-24-relay-design.md](./2026-02-24-relay-design.md) |
-| Mesh design doc | [docs/plans/2026-02-24-mesh-design.md](./2026-02-24-mesh-design.md) |
+| Relay design doc | [plans/2026-02-24-relay-design.md](./2026-02-24-relay-design.md) |
+| Mesh design doc | [plans/2026-02-24-mesh-design.md](./2026-02-24-mesh-design.md) |
 | Main litepaper v1 (archived) | [meta/archive/dorkos-litepaper-v1.md](../../meta/archive/dorkos-litepaper-v1.md) |
 | Loop litepaper (tone reference) | [research/loop-litepaper.md](../../research/loop-litepaper.md) |
 | Brand foundation | [meta/brand-foundation.md](../../meta/brand-foundation.md) |

@@ -12,7 +12,7 @@ title: Relay Conversation View Implementation Plan
 
 **Tech Stack:** Express routes, RelayCore (packages/relay), Zod schemas, React 19, TanStack Query, motion/react, Tailwind 4, shadcn/ui
 
-**Design Doc:** `docs/plans/2026-02-27-relay-conversation-view-design.md`
+**Design Doc:** `plans/2026-02-27-relay-conversation-view-design.md`
 
 ---
 

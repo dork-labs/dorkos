@@ -11,7 +11,7 @@ status: ideation
 **Author:** Claude Code
 **Date:** 2026-02-24
 **Branch:** preflight/relay-advanced-reliability
-**Related:** [Relay Spec Plan](../../docs/plans/relay-specs/03-relay-advanced-reliability.md), [Relay Litepaper](../../meta/modules/relay-litepaper.md)
+**Related:** [Relay Spec Plan](../../plans/relay-specs/03-relay-advanced-reliability.md), [Relay Litepaper](../../meta/modules/relay-litepaper.md)
 
 ---
 
@@ -47,10 +47,10 @@ status: ideation
 - `packages/relay/src/index.ts`: Barrel exports. Well-documented public API surface. ~65 lines.
 - `packages/relay/package.json`: Dependencies — `better-sqlite3`, `chokidar`, `ulidx`. No external HTTP libraries.
 - `meta/modules/relay-litepaper.md`: Phase 2 roadmap — "Rate limiting per sender. Circuit breakers per endpoint pair. Backpressure handling."
-- `docs/plans/relay-specs/00-overview.md`: Spec dependency graph. Spec 3 blocked by Spec 2, parallel with Spec 4.
-- `docs/plans/relay-specs/01-relay-core-library.md`: Foundation spec — defines types, SQLite schema, Maildir storage, budget enforcement.
-- `docs/plans/relay-specs/03-relay-advanced-reliability.md`: This spec's requirements. Verification checklist, design considerations, reference documents.
-- `docs/plans/2026-02-24-relay-design.md`: Rate limiting in SQLite index, circuit breakers in access control section.
+- `plans/relay-specs/00-overview.md`: Spec dependency graph. Spec 3 blocked by Spec 2, parallel with Spec 4.
+- `plans/relay-specs/01-relay-core-library.md`: Foundation spec — defines types, SQLite schema, Maildir storage, budget enforcement.
+- `plans/relay-specs/03-relay-advanced-reliability.md`: This spec's requirements. Verification checklist, design considerations, reference documents.
+- `plans/2026-02-24-relay-design.md`: Rate limiting in SQLite index, circuit breakers in access control section.
 - `research/20260224_relay_core_library_typescript.md`: Core library research from Spec 1.
 
 ## 3) Codebase Map

@@ -75,7 +75,7 @@ dorkos/
 ├── decisions/            # Architecture Decision Records (ADRs)
 ├── docs/                 # External user-facing docs (MDX for Fumadocs)
 ├── plans/                # Implementation plans, design reviews
-├── research/             # Research artifacts (80+ reports)
+├── research/             # Research artifacts (140+ reports)
 ├── specs/                # Feature specs with manifest.json
 └── contributing/         # Internal dev guides (architecture, design system, patterns)
 ```
@@ -107,7 +107,7 @@ Run a single test: `pnpm vitest run <path-to-test-file>`. Agent worktree command
 
 Express server on `DORKOS_PORT` (default 4242). Routes obtain the active runtime via `runtimeRegistry.getDefault()`. The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends. SDK interactions are confined to `services/runtimes/claude-code/` (enforced by ESLint).
 
-**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/pulse/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery). API docs at `/api/docs`.
+**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/pulse/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management). API docs at `/api/docs`.
 
 **Key conventions:**
 - `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` in production, `apps/server/.temp/.dork/` in dev). See `.claude/rules/dork-home.md`
@@ -127,7 +127,7 @@ Sessions derive entirely from SDK JSONL files (`~/.claude/projects/{slug}/*.json
 
 React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). Uses **Feature-Sliced Design (FSD)** with strict unidirectional layer imports.
 
-**FSD layer rule**: `shared` ← `entities` ← `features` ← `widgets` ← `app`. This is inviolable. See `.claude/rules/fsd-layers.md`. Layers live in `apps/client/src/layers/`. Each module has a barrel `index.ts` — always import from barrels, never internal paths.
+**FSD layer rule**: `shared` ← `entities` ← `features` ← `widgets`. This is inviolable. See `.claude/rules/fsd-layers.md`. Layers live in `apps/client/src/layers/`. The app shell (`App.tsx`, `main.tsx`) lives at the `src/` root and can import from any layer. Each module has a barrel `index.ts` — always import from barrels, never internal paths.
 
 **State**: Zustand for UI state, TanStack Query for server state. See `contributing/state-management.md`.
 
@@ -135,7 +135,7 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). U
 
 ### Shared Package (`packages/shared/src/`)
 
-Cross-package imports use `@dorkos/shared/*` subpaths: `/agent-runtime`, `/types`, `/config-schema`, `/relay-schemas`, `/mesh-schemas`, `/manifest`, `/logger`.
+Cross-package imports use `@dorkos/shared/*` subpaths: `/agent-runtime`, `/types`, `/config-schema`, `/relay-schemas`, `/mesh-schemas`, `/manifest`, `/logger`, `/transport`, `/schemas`, `/constants`.
 
 ### Path Aliases
 
@@ -161,6 +161,12 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 | [`contributing/obsidian-plugin-development.md`](contributing/obsidian-plugin-development.md) | Plugin lifecycle, Electron quirks |
 | [`contributing/interactive-tools.md`](contributing/interactive-tools.md) | Tool approval, AskUserQuestion flows |
 | [`contributing/parallel-execution.md`](contributing/parallel-execution.md) | Parallel agent patterns |
+| [`contributing/browser-testing.md`](contributing/browser-testing.md) | Playwright E2E test patterns |
+| [`contributing/environment-variables.md`](contributing/environment-variables.md) | Env var conventions, turbo.json |
+| [`contributing/keyboard-shortcuts.md`](contributing/keyboard-shortcuts.md) | Keybinding system, customization |
+| [`contributing/project-structure.md`](contributing/project-structure.md) | FSD layers, file organization |
+| [`contributing/relay-adapters.md`](contributing/relay-adapters.md) | Adapter development guide |
+| [`contributing/adapter-catalog.md`](contributing/adapter-catalog.md) | Adapter catalog system |
 
 `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 
@@ -185,7 +191,7 @@ GitHub Actions validates CLI on push to main: smoke tests (Node 20/22) and integ
 
 ## Research
 
-80+ research reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
+140+ research reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
 
 ## Artifacts
 

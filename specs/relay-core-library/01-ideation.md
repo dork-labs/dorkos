@@ -20,7 +20,7 @@ status: ideation
 - **Task brief:** Build `@dorkos/relay` — a pure TypeScript library implementing the foundational message bus for DorkOS. Includes NATS-style hierarchical subject matching, Maildir-based message storage with SQLite indexing, budget envelope enforcement, ephemeral signals via EventEmitter, dead letter queue, and pattern-based access control.
 - **Assumptions:**
   - This is a new package at `packages/relay/` following existing monorepo conventions
-  - The design doc (`docs/plans/2026-02-24-relay-design.md`) and litepaper (`meta/modules/relay-litepaper.md`) contain all settled design decisions
+  - The design doc (`plans/2026-02-24-relay-design.md`) and litepaper (`meta/modules/relay-litepaper.md`) contain all settled design decisions
   - The library is standalone — no dependency on `apps/server` or `apps/client`
   - `better-sqlite3` (already used by PulseStore) and `ulidx` are acceptable dependencies
   - `chokidar` (already used by session-broadcaster) is acceptable for file watching
@@ -36,12 +36,12 @@ status: ideation
 ## 2) Pre-reading Log
 
 - `meta/modules/relay-litepaper.md`: Vision for Relay as kernel IPC for agents — D-Bus analogy, Maildir + SQLite storage, NATS-style hierarchical subjects, budget envelopes for loop prevention, message persistence vs ephemeral signals
-- `docs/plans/2026-02-24-relay-design.md`: Complete technical decisions with TypeScript interfaces, directory structure (`~/.dork/relay/`), all design patterns settled, Maildir delivery via atomic rename, SQLite WAL mode, subject matching inline implementation (~80-200 lines)
+- `plans/2026-02-24-relay-design.md`: Complete technical decisions with TypeScript interfaces, directory structure (`~/.dork/relay/`), all design patterns settled, Maildir delivery via atomic rename, SQLite WAL mode, subject matching inline implementation (~80-200 lines)
 - `research/mesh/communication-protocols.md`: FIPA ACL reference, Maildir specifics (tmp/new/cur/failed), loop prevention via hop count + ancestor chain, dead letter queue, contract net protocol
 - `research/mesh/architecture-analogies.md`: D-Bus control/data plane split, Mach ports capability model, Consul registry pattern, service mesh concepts
 - `research/mesh/access-control-coordination.md`: Layered authorization (declared capabilities + scoped tokens + policy evaluation), object-capability model, budget envelopes, threat model
 - `research/20260224_agent_messaging_transport_libraries.md`: Transport library evaluation — concluded inline implementation (~200-300 lines)
-- `docs/plans/2026-02-24-litepaper-review.md`: Open design questions OQ-3 (agent identity fallback), OQ-4 (access control in Relay litepaper), OQ-5 (deadline vs TTL redundancy — resolved: TTL only)
+- `plans/2026-02-24-litepaper-review.md`: Open design questions OQ-3 (agent identity fallback), OQ-4 (access control in Relay litepaper), OQ-5 (deadline vs TTL redundancy — resolved: TTL only)
 - `packages/shared/package.json`: Dual-entry exports pattern, `@dorkos/` scope, private workspace, zod-to-openapi dependency
 - `packages/shared/tsconfig.json`: Extends `@dorkos/typescript-config/node.json` with `outDir: ./dist`
 - `packages/shared/src/schemas.ts`: Zod schema + inferred type export pattern with `.openapi()` metadata

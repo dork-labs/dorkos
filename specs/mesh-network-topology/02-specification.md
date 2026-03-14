@@ -10,7 +10,7 @@ status: draft
 **Status:** Draft
 **Authors:** Claude Code, 2026-02-25
 **Ideation:** [01-ideation.md](./01-ideation.md)
-**Plan:** [03-mesh-network-topology.md](../../docs/plans/mesh-specs/03-mesh-network-topology.md)
+**Plan:** [03-mesh-network-topology.md](../../plans/mesh-specs/03-mesh-network-topology.md)
 
 ---
 
@@ -622,7 +622,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 
 - [Mesh Litepaper](../../meta/modules/mesh-litepaper.md) — "Network Topology and Access Control" section
 - [Relay Litepaper](../../meta/modules/relay-litepaper.md) — Budget envelopes, access control
-- [Spec 3 Plan](../../docs/plans/mesh-specs/03-mesh-network-topology.md) — Original plan with verification criteria
+- [Spec 3 Plan](../../plans/mesh-specs/03-mesh-network-topology.md) — Original plan with verification criteria
 - [Research](../../research/20260225_mesh_network_topology.md) — Kubernetes, Istio, NATS, OWASP research
 - [Relay AccessControl](../../packages/relay/src/access-control.ts) — Policy engine implementation
 - [Relay BudgetEnforcer](../../packages/relay/src/budget-enforcer.ts) — Budget enforcement

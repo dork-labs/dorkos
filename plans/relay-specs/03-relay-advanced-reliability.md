@@ -64,8 +64,8 @@ KEY DESIGN CONSIDERATIONS:
 
 REFERENCE DOCUMENTS:
 - meta/modules/relay-litepaper.md — Phase 2 roadmap: "Advanced Reliability. Rate limiting per sender. Circuit breakers per endpoint pair. Backpressure handling."
-- docs/plans/2026-02-24-relay-design.md — mentions rate limiting in SQLite index (line 43), circuit breakers in access control section
-- docs/plans/2026-02-24-litepaper-review.md — OQ-6 (backpressure handling) is directly addressed by this spec
+- plans/2026-02-24-relay-design.md — mentions rate limiting in SQLite index (line 43), circuit breakers in access control section
+- plans/2026-02-24-litepaper-review.md — OQ-6 (backpressure handling) is directly addressed by this spec
 - research/mesh/access-control-coordination.md — circuit breaker patterns, rate limiting approaches
 
 CODEBASE PATTERNS:

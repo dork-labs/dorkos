@@ -11,7 +11,7 @@ status: draft
 **Authors:** Claude Code, 2026-02-24
 **Spec:** 51
 **Depends on:** [Spec 50 — Relay Core Library](../relay-core-library/)
-**Related:** [Relay Litepaper](../../meta/modules/relay-litepaper.md) | [Relay Design Doc](../../docs/plans/2026-02-24-relay-design.md)
+**Related:** [Relay Litepaper](../../meta/modules/relay-litepaper.md) | [Relay Design Doc](../../plans/2026-02-24-relay-design.md)
 
 ---
 
@@ -591,7 +591,7 @@ Test RelayPanel and ActivityFeed with mock data:
 
 - [Relay Core Library (Spec 50)](../relay-core-library/)
 - [Relay Litepaper](../../meta/modules/relay-litepaper.md)
-- [Relay Design Doc](../../docs/plans/2026-02-24-relay-design.md)
+- [Relay Design Doc](../../plans/2026-02-24-relay-design.md)
 - [Pulse Router Pattern](../../apps/server/src/routes/pulse.ts)
 - [MCP Tool Server](../../apps/server/src/services/mcp-tool-server.ts)
 - [SSE Stream Adapter](../../apps/server/src/services/stream-adapter.ts)

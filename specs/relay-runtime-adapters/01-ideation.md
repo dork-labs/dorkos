@@ -11,7 +11,7 @@ status: ideation
 **Author:** Claude Code
 **Date:** 2026-02-25
 **Branch:** preflight/relay-runtime-adapters
-**Related:** Relay Spec 6 (`docs/plans/relay-specs/06-relay-runtime-adapters.md`), Spec 53 (relay-external-adapters), Spec 50 (relay-core-library), Spec 55 (relay-convergence)
+**Related:** Relay Spec 6 (`plans/relay-specs/06-relay-runtime-adapters.md`), Spec 53 (relay-external-adapters), Spec 50 (relay-core-library), Spec 55 (relay-convergence)
 
 ---
 

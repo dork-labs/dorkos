@@ -673,7 +673,7 @@ No unresolved questions — all key decisions were made during ideation (see Sec
 
 - Ideation: `specs/relay-runtime-adapters/01-ideation.md`
 - Research: `research/20260225_relay_runtime_adapters.md`
-- Relay Spec 6 Plan: `docs/plans/relay-specs/06-relay-runtime-adapters.md`
+- Relay Spec 6 Plan: `plans/relay-specs/06-relay-runtime-adapters.md`
 - Relay Litepaper: `meta/modules/relay-litepaper.md` — "Adapters: Bridging Relay to Everything"
 - Mesh Litepaper: `meta/modules/mesh-litepaper.md` — agent manifest format
 - NATS Connector Framework: https://nats.io/blog/nats-connector-framework/

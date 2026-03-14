@@ -38,7 +38,7 @@ status: ideation
 - `meta/modules/mesh-litepaper.md`: Full Mesh vision — agent lifecycle (Unknown → Discovered → Registered/Denied), pluggable discovery strategies, .dork/agent.json as commitment artifact, three approval interfaces, Relay integration on registration
 - `meta/modules/relay-litepaper.md`: Foundation messaging layer — subject hierarchy, endpoint registry, access control, budget envelopes. Mesh depends on Relay, Relay depends on nothing.
 - `meta/dorkos-litepaper.md`: System architecture showing Mesh (discovery) sits above Relay (messaging)
-- `docs/plans/mesh-specs/01-mesh-core-library.md`: Detailed spec with verification criteria, ~15-20 files, ~1500-2500 LOC
+- `plans/mesh-specs/01-mesh-core-library.md`: Detailed spec with verification criteria, ~15-20 files, ~1500-2500 LOC
 - `packages/relay/package.json`: Workspace package pattern — ESM, @dorkos/ scope, exports main entry. Dependencies: better-sqlite3, ulidx, chokidar, @dorkos/shared
 - `packages/relay/tsconfig.json`: Extends @dorkos/typescript-config/node.json, outDir: dist
 - `packages/relay/vitest.config.ts`: Node environment, includes src/**/__tests__/**/*.test.ts

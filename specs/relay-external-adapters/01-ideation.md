@@ -11,7 +11,7 @@ status: ideation
 **Author:** Claude Code
 **Date:** 2026-02-24
 **Branch:** preflight/relay-external-adapters
-**Related:** Relay Spec 4 (`docs/plans/relay-specs/04-relay-external-adapters.md`)
+**Related:** Relay Spec 4 (`plans/relay-specs/04-relay-external-adapters.md`)
 
 ---
 
@@ -55,10 +55,10 @@ status: ideation
 - `packages/shared/src/relay-schemas.ts`: Zod schemas for `RelayEnvelope`, `RelayBudget`, `Signal`, `Attachment`, `ResponseContext`, and HTTP shapes.
 - `packages/shared/src/config-schema.ts`: `UserConfigSchema` for `~/.dork/config.json` with relay.enabled flag.
 - `meta/modules/relay-litepaper.md` (lines 100-108): Vision for adapter model — adapters listen for external messages, publish to Relay subject hierarchy, normalize to shared envelope schema.
-- `docs/plans/2026-02-24-relay-design.md` (lines 239-262): `RelayAdapter` interface spec — `{ id, subjectPrefix, start(relay), stop(), deliver(subject, envelope) }`. Adapters translate bidirectionally.
-- `docs/plans/2026-02-24-relay-design.md` (lines 389-405): Group message mapping — external groups to single Relay subjects (e.g., `relay.human.telegram.group.birthday-planning`).
-- `docs/plans/2026-02-24-relay-design.md` (lines 409-423): File attachments and message editing as payload conventions. Adapters translate to platform APIs.
-- `docs/plans/2026-02-24-relay-design.md` (lines 458-476): Console activity feed via Relay SSE — subscribe to `/api/relay/events`, display live events with module, text, timestamp.
+- `plans/2026-02-24-relay-design.md` (lines 239-262): `RelayAdapter` interface spec — `{ id, subjectPrefix, start(relay), stop(), deliver(subject, envelope) }`. Adapters translate bidirectionally.
+- `plans/2026-02-24-relay-design.md` (lines 389-405): Group message mapping — external groups to single Relay subjects (e.g., `relay.human.telegram.group.birthday-planning`).
+- `plans/2026-02-24-relay-design.md` (lines 409-423): File attachments and message editing as payload conventions. Adapters translate to platform APIs.
+- `plans/2026-02-24-relay-design.md` (lines 458-476): Console activity feed via Relay SSE — subscribe to `/api/relay/events`, display live events with module, text, timestamp.
 - `contributing/architecture.md`: Hexagonal architecture with Transport interface, dependency injection patterns, module layout.
 - `.claude/rules/server-structure.md`: Service count threshold — < 15 flat OK, 15-20 suggest grouping, 20+ restructure required. Currently at 24 services.
 

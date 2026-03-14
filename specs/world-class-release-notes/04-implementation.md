@@ -42,7 +42,7 @@
 - `.claude/commands/system/release.md` — Fixed Phase 5.9 content drift, added Phase 5.5b blog scaffolding
 - `.claude/commands/changelog/backfill.md` — Changelog backfill command
 - `.claude/skills/writing-changelogs/SKILL.md` — Added theme blockquote convention
-- `docs/plans/2026-02-18-automatic-adr-extraction-design.md` — Fixed missing frontmatter (pre-existing issue)
+- `plans/2026-02-18-automatic-adr-extraction-design.md` — Fixed missing frontmatter (pre-existing issue)
 
 **Test files:**
 
@@ -50,7 +50,7 @@ _(No test suite for web app — validation via build)_
 
 ## Known Issues
 
-- Pre-existing: `docs/plans/2026-02-18-automatic-adr-extraction-design.md` had no frontmatter `title` — fixed as part of build verification
+- Pre-existing: `plans/2026-02-18-automatic-adr-extraction-design.md` had no frontmatter `title` — fixed as part of build verification
 
 ## Implementation Notes
 

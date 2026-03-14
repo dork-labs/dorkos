@@ -73,8 +73,8 @@ KEY DESIGN DECISIONS (from design doc):
 
 REFERENCE DOCUMENTS:
 - meta/modules/relay-litepaper.md — "External Channels: The Adapter Model" section (lines 100-108)
-- docs/plans/2026-02-24-relay-design.md — RelayAdapter interface (lines 239-262), group messages (lines 389-405), file attachments and message editing (lines 409-423), Console activity feed (lines 458-476)
-- docs/plans/2026-02-24-litepaper-review.md — OQ-7 (voice/streaming interaction with message model) is relevant context but out of scope for this spec
+- plans/2026-02-24-relay-design.md — RelayAdapter interface (lines 239-262), group messages (lines 389-405), file attachments and message editing (lines 409-423), Console activity feed (lines 458-476)
+- plans/2026-02-24-litepaper-review.md — OQ-7 (voice/streaming interaction with message model) is relevant context but out of scope for this spec
 - research/mesh/communication-protocols.md — message normalization patterns
 - apps/web/src/layers/features/marketing/ui/ActivityFeedHero.tsx — the simulated activity feed that this spec replaces with live Relay data
 

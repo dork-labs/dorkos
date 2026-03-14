@@ -11,7 +11,7 @@ status: ideation
 **Author:** Claude Code
 **Date:** 2026-02-25
 **Branch:** preflight/mesh-observability-lifecycle
-**Related:** [Mesh Spec 4](../../docs/plans/mesh-specs/04-mesh-observability-lifecycle.md)
+**Related:** [Mesh Spec 4](../../plans/mesh-specs/04-mesh-observability-lifecycle.md)
 
 ---
 

@@ -11,7 +11,7 @@ status: ideation
 **Author:** Claude Code
 **Date:** 2026-02-25
 **Branch:** preflight/mesh-network-topology
-**Related:** [Mesh Spec 3 Plan](../../docs/plans/mesh-specs/03-mesh-network-topology.md)
+**Related:** [Mesh Spec 3 Plan](../../plans/mesh-specs/03-mesh-network-topology.md)
 
 ---
 
@@ -35,7 +35,7 @@ status: ideation
 
 ## 2) Pre-reading Log
 
-- `docs/plans/mesh-specs/03-mesh-network-topology.md`: Spec 3 plan document. Lists three namespace derivation strategies (scan-root-relative, manifest-declared, directory proximity). Identifies Relay AccessControl as the policy engine. Verification criteria include invisible boundaries, dynamic ACL updates, and budget enforcement.
+- `plans/mesh-specs/03-mesh-network-topology.md`: Spec 3 plan document. Lists three namespace derivation strategies (scan-root-relative, manifest-declared, directory proximity). Identifies Relay AccessControl as the policy engine. Verification criteria include invisible boundaries, dynamic ACL updates, and budget enforcement.
 - `meta/modules/mesh-litepaper.md`: "Default-allow within a project. Default-deny across projects." Mesh depends on Relay (not vice versa). Discovery is passive; registration is the gate where Mesh writes ACL rules to Relay.
 - `meta/modules/relay-litepaper.md`: Budget envelopes are immutable (can only shrink). AccessControl rules use NATS-style wildcard subjects and hot-reload from disk.
 - `packages/relay/src/access-control.ts` (231 lines): Rules are `{ from, to, action, priority }`. Default-allow when no rules match. First match by priority wins. `addRule()` persists immediately to `access-rules.json`. Hot-reloads via chokidar.

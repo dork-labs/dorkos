@@ -11,7 +11,7 @@ status: ideation
 **Author:** Claude Code
 **Date:** 2026-02-25
 **Branch:** preflight/relay-convergence
-**Related:** [Relay Design](../../docs/plans/2026-02-24-relay-design.md), [Relay Litepaper](../../meta/modules/relay-litepaper.md), [Convergence Spec](../../docs/plans/relay-specs/05-relay-convergence.md)
+**Related:** [Relay Design](../../plans/2026-02-24-relay-design.md), [Relay Litepaper](../../meta/modules/relay-litepaper.md), [Convergence Spec](../../plans/relay-specs/05-relay-convergence.md)
 
 ---
 
@@ -35,8 +35,8 @@ status: ideation
 
 ## 2) Pre-reading Log
 
-- `docs/plans/relay-specs/05-relay-convergence.md`: Full spec prompt — goals, migration strategy, codebase areas, risks, verification criteria
-- `docs/plans/2026-02-24-relay-design.md`: Pulse migration path (lines 344-360), Engine→Relay migration (lines 479-484), Agent Runtime Adapter (lines 487-496), observability (lines 306-330)
+- `plans/relay-specs/05-relay-convergence.md`: Full spec prompt — goals, migration strategy, codebase areas, risks, verification criteria
+- `plans/2026-02-24-relay-design.md`: Pulse migration path (lines 344-360), Engine→Relay migration (lines 479-484), Agent Runtime Adapter (lines 487-496), observability (lines 306-330)
 - `meta/modules/relay-litepaper.md`: "What Relay Enables" — Console as endpoint, Pulse through Relay, activity feeds, Phase 5 roadmap
 - `apps/server/src/services/pulse/scheduler-service.ts`: Current Pulse dispatch — `SchedulerAgentManager` interface with `ensureSession()` and `sendMessage()`. `executeRun()` calls `this.agentManager.sendMessage()` directly. `buildPulseAppend()` injects schedule context into system prompt.
 - `apps/server/src/services/core/agent-manager.ts`: Session creation flow — `ensureSession()`, `sendMessage()`, session locking via `SessionLockManager`. Entry point for all message dispatch currently.
