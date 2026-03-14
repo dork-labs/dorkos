@@ -890,7 +890,14 @@
       "title": "Slack Adapter for Relay",
       "created": "2026-03-13",
       "status": "specified"
+    },
+    {
+      "number": 128,
+      "slug": "adapter-setup-experience",
+      "title": "Adapter Setup Experience",
+      "created": "2026-03-14",
+      "status": "ideation"
     }
   ],
-  "nextNumber": 128
+  "nextNumber": 129
 }

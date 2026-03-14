@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "nextNumber": 121,
+  "nextNumber": 124,
   "decisions": [
+    {
+      "number": 123,
+      "slug": "slack-manifest-url-for-one-click-app-creation",
+      "title": "Use Slack Manifest URL for One-Click App Creation",
+      "status": "draft",
+      "created": "2026-03-14",
+      "extractedFrom": "adapter-setup-experience",
+      "specSlug": "adapter-setup-experience"
+    },
+    {
+      "number": 122,
+      "slug": "layered-adapter-documentation-system",
+      "title": "Layered Documentation System for Adapter Setup",
+      "status": "draft",
+      "created": "2026-03-14",
+      "extractedFrom": "adapter-setup-experience",
+      "specSlug": "adapter-setup-experience"
+    },
+    {
+      "number": 121,
+      "slug": "file-based-adapter-documentation",
+      "title": "File-Based Adapter Documentation Over Inline Template Literals",
+      "status": "draft",
+      "created": "2026-03-14",
+      "extractedFrom": "adapter-setup-experience",
+      "specSlug": "adapter-setup-experience"
+    },
     {
       "number": 120,
       "slug": "shared-format-conversion-layer",

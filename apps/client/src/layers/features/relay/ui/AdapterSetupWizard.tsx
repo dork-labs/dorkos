@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { Fragment, useState, useMemo, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Dialog,
@@ -24,6 +24,7 @@ import { ConfigureStep } from './wizard/ConfigureStep';
 import { TestStep } from './wizard/TestStep';
 import { ConfirmStep } from './wizard/ConfirmStep';
 import { BindStep } from './wizard/BindStep';
+import { SetupGuideSheet } from './SetupGuideSheet';
 
 type WizardStep = 'configure' | 'test' | 'confirm' | 'bind';
 
@@ -116,6 +117,7 @@ export function AdapterSetupWizard({
 }: AdapterSetupWizardProps) {
   const isEditMode = Boolean(existingInstance);
   const [step, setStep] = useState<WizardStep>('configure');
+  const [guideOpen, setGuideOpen] = useState(false);
   const [adapterId, setAdapterId] = useState(() =>
     existingInstance?.id ?? generateDefaultId(manifest, existingAdapterIds),
   );
@@ -312,6 +314,7 @@ export function AdapterSetupWizard({
         setCreatedAdapterId('');
         setBindAgentId('');
         setBindStrategy('per-chat');
+        setGuideOpen(false);
         testConnection.reset();
       }
       onOpenChange(nextOpen);
@@ -325,135 +328,150 @@ export function AdapterSetupWizard({
     ? manifest.setupSteps[setupStepIndex]
     : undefined;
 
+  // SetupGuideSheet renders as a Dialog sibling to avoid overlay z-index conflicts.
+  const maybeSetupGuide = manifest.setupGuide ? (
+    <SetupGuideSheet
+      open={guideOpen}
+      onOpenChange={setGuideOpen}
+      title={manifest.displayName}
+      content={manifest.setupGuide}
+    />
+  ) : null;
+
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>
-            {isEditMode ? `Edit ${manifest.displayName}` : `Add ${manifest.displayName}`}
-          </DialogTitle>
-          <DialogDescription>
-            {step === 'configure' && (currentSetupStep?.description ?? 'Configure the adapter settings.')}
-            {step === 'test' && 'Testing connection to the adapter.'}
-            {step === 'confirm' && 'Review your configuration before saving.'}
-            {step === 'bind' && 'Optionally bind this adapter to an agent.'}
-          </DialogDescription>
-        </DialogHeader>
+    <Fragment>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>
+              {isEditMode ? `Edit ${manifest.displayName}` : `Add ${manifest.displayName}`}
+            </DialogTitle>
+            <DialogDescription>
+              {step === 'configure' && (currentSetupStep?.description ?? 'Configure the adapter settings.')}
+              {step === 'test' && 'Testing connection to the adapter.'}
+              {step === 'confirm' && 'Review your configuration before saving.'}
+              {step === 'bind' && 'Optionally bind this adapter to an agent.'}
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="min-h-0 space-y-4 overflow-y-auto py-2">
-          {/* Step indicator — edit mode only shows 3 steps (no bind). */}
-          <StepIndicator current={step} showBindStep={!isEditMode} />
+          <div className="min-h-0 space-y-4 overflow-y-auto py-2">
+            {/* Step indicator — edit mode only shows 3 steps (no bind). */}
+            <StepIndicator current={step} showBindStep={!isEditMode} />
 
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              {/* Configure step */}
-              {step === 'configure' && (
-                <ConfigureStep
-                  manifest={manifest}
-                  isEditMode={isEditMode}
-                  adapterId={adapterId}
-                  onAdapterIdChange={setAdapterId}
-                  idError={idError}
-                  label={label}
-                  onLabelChange={setLabel}
-                  fields={visibleFields}
-                  values={values}
-                  errors={errors}
-                  onChange={handleFieldChange}
-                  currentSetupStep={currentSetupStep}
-                />
-              )}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={step}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                {/* Configure step */}
+                {step === 'configure' && (
+                  <ConfigureStep
+                    manifest={manifest}
+                    isEditMode={isEditMode}
+                    adapterId={adapterId}
+                    onAdapterIdChange={setAdapterId}
+                    idError={idError}
+                    label={label}
+                    onLabelChange={setLabel}
+                    fields={visibleFields}
+                    values={values}
+                    errors={errors}
+                    onChange={handleFieldChange}
+                    currentSetupStep={currentSetupStep}
+                    hasSetupGuide={Boolean(manifest.setupGuide)}
+                    onOpenGuide={() => setGuideOpen(true)}
+                  />
+                )}
 
-              {/* Test step */}
-              {step === 'test' && (
-                <TestStep
-                  isPending={testConnection.isPending}
-                  isSuccess={testConnection.isSuccess}
-                  isError={testConnection.isError}
-                  errorMessage={testConnection.error?.message}
-                  botUsername={botUsername}
-                  onRetry={() =>
-                    testConnection.mutate({
-                      type: manifest.type,
-                      config: unflattenConfig(values as Record<string, unknown>),
-                    })
-                  }
-                />
-              )}
+                {/* Test step */}
+                {step === 'test' && (
+                  <TestStep
+                    isPending={testConnection.isPending}
+                    isSuccess={testConnection.isSuccess}
+                    isError={testConnection.isError}
+                    errorMessage={testConnection.error?.message}
+                    botUsername={botUsername}
+                    onRetry={() =>
+                      testConnection.mutate({
+                        type: manifest.type,
+                        config: unflattenConfig(values as Record<string, unknown>),
+                      })
+                    }
+                  />
+                )}
 
-              {/* Confirm step */}
-              {step === 'confirm' && (
-                <ConfirmStep
-                  manifest={manifest}
-                  adapterId={adapterId}
-                  isEditMode={isEditMode}
-                  values={values}
-                />
-              )}
+                {/* Confirm step */}
+                {step === 'confirm' && (
+                  <ConfirmStep
+                    manifest={manifest}
+                    adapterId={adapterId}
+                    isEditMode={isEditMode}
+                    values={values}
+                  />
+                )}
 
-              {/* Bind step */}
-              {step === 'bind' && (
-                <BindStep
-                  agentOptions={agentOptions}
-                  agentId={bindAgentId}
-                  onAgentIdChange={setBindAgentId}
-                  strategy={bindStrategy}
-                  onStrategyChange={setBindStrategy}
-                  botUsername={botUsername}
-                  adapterType={manifest.type}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </div>
+                {/* Bind step */}
+                {step === 'bind' && (
+                  <BindStep
+                    agentOptions={agentOptions}
+                    agentId={bindAgentId}
+                    onAgentIdChange={setBindAgentId}
+                    strategy={bindStrategy}
+                    onStrategyChange={setBindStrategy}
+                    botUsername={botUsername}
+                    adapterType={manifest.type}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
 
-        <DialogFooter>
-          {step !== 'configure' && step !== 'bind' && (
-            <Button variant="outline" onClick={handleBack} disabled={isSaving}>
-              Back
-            </Button>
-          )}
-          {step === 'configure' && hasSetupSteps && setupStepIndex > 0 && (
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
-          )}
-          {step === 'test' && (
-            <Button variant="ghost" onClick={() => setStep('confirm')}>
-              Skip
-            </Button>
-          )}
-          {step === 'configure' && (
-            <Button onClick={handleContinue}>Continue</Button>
-          )}
-          {step === 'test' && !testConnection.isPending && (
-            <Button onClick={handleContinue}>Continue</Button>
-          )}
-          {step === 'confirm' && (
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
-              {isEditMode ? 'Save Changes' : 'Add Adapter'}
-            </Button>
-          )}
-          {step === 'bind' && (
-            <>
-              <Button variant="ghost" onClick={handleSkipBind} disabled={isBinding}>
+          <DialogFooter>
+            {step !== 'configure' && step !== 'bind' && (
+              <Button variant="outline" onClick={handleBack} disabled={isSaving}>
+                Back
+              </Button>
+            )}
+            {step === 'configure' && hasSetupSteps && setupStepIndex > 0 && (
+              <Button variant="outline" onClick={handleBack}>
+                Back
+              </Button>
+            )}
+            {step === 'test' && (
+              <Button variant="ghost" onClick={() => setStep('confirm')}>
                 Skip
               </Button>
-              <Button onClick={handleBind} disabled={!bindAgentId || isBinding}>
-                {isBinding && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Bind to Agent
+            )}
+            {step === 'configure' && (
+              <Button onClick={handleContinue}>Continue</Button>
+            )}
+            {step === 'test' && !testConnection.isPending && (
+              <Button onClick={handleContinue}>Continue</Button>
+            )}
+            {step === 'confirm' && (
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
+                {isEditMode ? 'Save Changes' : 'Add Adapter'}
               </Button>
-            </>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            )}
+            {step === 'bind' && (
+              <>
+                <Button variant="ghost" onClick={handleSkipBind} disabled={isBinding}>
+                  Skip
+                </Button>
+                <Button onClick={handleBind} disabled={!bindAgentId || isBinding}>
+                  {isBinding && <Loader2 className="mr-2 size-4 animate-spin" />}
+                  Bind to Agent
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {maybeSetupGuide}
+    </Fragment>
   );
 }

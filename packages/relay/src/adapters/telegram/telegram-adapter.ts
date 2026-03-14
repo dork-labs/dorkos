@@ -53,7 +53,12 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
       description: 'Paste the token from @BotFather. Message @BotFather on Telegram → /newbot → copy the token.',
       pattern: '^\\d+:[\\w-]{35,}$',
       patternMessage: 'Expected format: 123456789:ABCDefGHijklMNOpqrSTUvwxYZ',
-      visibleByDefault: true },
+      visibleByDefault: true,
+      helpMarkdown: `1. Open Telegram and search for **@BotFather**
+2. Send \`/newbot\` to start creating a bot
+3. Choose a display name and username for your bot
+4. BotFather will send you the token (format: \`123456789:ABCDefGHijklMNOpqrSTUvwxYZ\`)
+5. If you already have a bot, send \`/myBots\` to BotFather to find existing tokens` },
     { key: 'mode', label: 'Receiving Mode', type: 'select', displayAs: 'radio-cards', required: true, default: 'polling',
       options: [
         { label: 'Long Polling', value: 'polling',
@@ -64,7 +69,13 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
     { key: 'webhookUrl', label: 'Webhook URL', type: 'url', required: true,
       placeholder: 'https://your-domain.com/relay/webhooks/telegram',
       description: 'Public HTTPS URL where Telegram sends updates.',
-      showWhen: { field: 'mode', equals: 'webhook' } },
+      showWhen: { field: 'mode', equals: 'webhook' },
+      helpMarkdown: `Your webhook URL must be:
+- **HTTPS** (Telegram requires TLS)
+- **Publicly accessible** from the internet
+- Pointing to: \`https://your-domain.com/relay/webhooks/telegram\`
+
+For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).` },
     { key: 'webhookPort', label: 'Webhook Port', type: 'number', required: false, default: 8443,
       description: 'Port for the webhook HTTP server.',
       showWhen: { field: 'mode', equals: 'webhook' } },

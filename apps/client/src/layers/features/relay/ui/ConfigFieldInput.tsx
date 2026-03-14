@@ -9,10 +9,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/layers/shared/ui/select';
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from '@/layers/shared/ui/collapsible';
 import { Label } from '@/layers/shared/ui/label';
 import { Button } from '@/layers/shared/ui/button';
-import { Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, HelpCircle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { MarkdownContent } from '@/layers/shared/ui/markdown-content';
 import type { ConfigField } from '@dorkos/shared/relay-schemas';
 
 interface ConfigFieldInputProps {
@@ -225,6 +231,20 @@ export function ConfigFieldInput({
       {renderControl()}
       {field.description && (
         <p className="text-xs text-muted-foreground">{field.description}</p>
+      )}
+      {field.helpMarkdown && (
+        <Collapsible>
+          <CollapsibleTrigger className="mt-1 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+            <HelpCircle className="size-3" />
+            Where do I find this?
+            <ChevronDown className="size-3 transition-transform [[data-state=open]_&]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-2 rounded-md border bg-muted/50 p-3">
+              <MarkdownContent content={field.helpMarkdown} className="text-xs" />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       )}
       {(error ?? patternError) && (
         <p className="text-xs text-red-500">{error ?? patternError}</p>

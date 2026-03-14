@@ -7,7 +7,9 @@
  *
  * @module services/relay/adapter-manager
  */
-import { dirname } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import type { FSWatcher } from 'chokidar';
 import type {
   AdapterRegistry,
@@ -94,6 +96,7 @@ export class AdapterManager {
   /** Load config, start enabled adapters, begin watching for changes. */
   async initialize(): Promise<void> {
     this.populateBuiltinManifests();
+    await this.enrichManifestsWithDocs();
     await ensureDefaultAdapterConfig(this.configPath);
     this.configs = await loadAdapterConfig(this.configPath);
     await this.startEnabledAdapters();
@@ -535,5 +538,44 @@ export class AdapterManager {
     this.manifests.set('webhook', WEBHOOK_MANIFEST);
     this.manifests.set('slack', SLACK_MANIFEST);
     this.manifests.set('claude-code', CLAUDE_CODE_MANIFEST);
+  }
+
+  /**
+   * Enrich built-in adapter manifests with documentation from disk.
+   *
+   * Reads `docs/setup.md` from each adapter's dist directory and sets
+   * the content as `setupGuide` on the manifest. Adapters without docs
+   * are silently skipped. Plugin adapters that already have inline
+   * setupGuide are also skipped.
+   */
+  private async enrichManifestsWithDocs(): Promise<void> {
+    for (const [type, manifest] of this.manifests) {
+      if (manifest.setupGuide) continue; // Already has inline guide (plugin adapters)
+      try {
+        const docsPath = this.resolveAdapterDocsPath(type);
+        const setupGuide = await readFile(
+          join(docsPath, 'setup.md'),
+          'utf-8',
+        );
+        this.manifests.set(type, { ...manifest, setupGuide });
+      } catch {
+        // No docs/setup.md — that's fine, setupGuide stays undefined
+      }
+    }
+  }
+
+  /**
+   * Resolve the docs directory path for a built-in adapter type.
+   *
+   * Uses createRequire to find the relay package's dist/index.js,
+   * then walks up to the package root to construct the path to
+   * `dist/adapters/<type>/docs/`.
+   */
+  private resolveAdapterDocsPath(adapterType: string): string {
+    const require = createRequire(import.meta.url);
+    const relayEntry = require.resolve('@dorkos/relay');
+    // relayEntry points to dist/index.js; go up to package root
+    const distDir = dirname(relayEntry);
+    return join(distDir, 'adapters', adapterType, 'docs');
   }
 }

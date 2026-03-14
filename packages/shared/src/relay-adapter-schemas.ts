@@ -189,6 +189,8 @@ export const ConfigFieldSchema = z
     visibleByDefault: z.boolean().optional(),
     /** When 'radio-cards', renders select options as selectable card buttons instead of a dropdown. */
     displayAs: z.literal('radio-cards').optional(),
+    /** Markdown help content shown in a collapsible disclosure below the field. */
+    helpMarkdown: z.string().optional(),
   })
   .openapi('ConfigField');
 
@@ -228,6 +230,8 @@ export const AdapterManifestSchema = z
     apiVersion: z.string().optional(),
     /** Deep-link button shown in the Configure step banner (e.g. to open @BotFather). */
     actionButton: z.object({ label: z.string(), url: z.string() }).optional(),
+    /** Full setup guide markdown content, rendered in a side panel Sheet. */
+    setupGuide: z.string().optional(),
   })
   .openapi('AdapterManifest');
 

@@ -18,6 +18,7 @@ An `AdapterManifest` describes an adapter type's identity, configuration shape, 
 | `configFields`      | `ConfigField[]`         | Yes      | Array of configuration field definitions (see below)                        |
 | `setupSteps`        | `AdapterSetupStep[]`    | No       | Ordered steps for a multi-step setup wizard                                 |
 | `setupInstructions` | `string`                | No       | Markdown-formatted setup instructions (shown above the config form)         |
+| `setupGuide`        | `string`                | No       | Full setup guide markdown, rendered in a slide-out Sheet panel in the UI    |
 | `multiInstance`      | `boolean`               | Yes      | Whether multiple instances of this adapter type can coexist (default false) |
 
 **Notes:**
@@ -25,6 +26,7 @@ An `AdapterManifest` describes an adapter type's identity, configuration shape, 
 - `multiInstance: true` means the user can create multiple instances (e.g., multiple webhook endpoints). When false, only one instance per type is allowed.
 - `setupSteps` groups config fields into an ordered wizard flow. Each step references field keys from `configFields`.
 - `setupInstructions` supports Markdown and is rendered before the configuration form in the UI.
+- `setupGuide` contains full markdown documentation loaded from `docs/setup.md` files (built-in adapters) or provided inline by plugin adapters via `getManifest()`. The client renders this content in a slide-out Sheet panel. See `contributing/relay-adapters.md` for the documentation convention.
 
 ### AdapterSetupStep
 
@@ -98,6 +100,7 @@ Each `ConfigField` defines a single configuration input. The UI renders the appr
 | `options`     | `ConfigFieldOption[]`             | No       | Options for `select` type fields                         |
 | `section`     | `string`                          | No       | Group label for visually grouping related fields         |
 | `showWhen`    | `{ field: string; equals: ... }`  | No       | Conditional visibility based on another field's value    |
+| `helpMarkdown`| `string`                          | No       | Markdown content shown in a collapsible disclosure below the field |
 
 ### Field Types
 

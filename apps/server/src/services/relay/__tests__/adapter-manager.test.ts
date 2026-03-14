@@ -24,6 +24,16 @@ vi.mock('chokidar', () => {
   };
 });
 
+// Mock node:module (createRequire)
+vi.mock('node:module', () => ({
+  createRequire: () => ({
+    resolve: (id: string) => {
+      if (id === '@dorkos/relay') return '/mock-relay/dist/index.js';
+      return id;
+    },
+  }),
+}));
+
 // Mock logger
 vi.mock('../../../lib/logger.js', () => ({
   logger: {
@@ -1384,6 +1394,76 @@ describe('AdapterManager', () => {
 
       const ctx = manager.buildContext('relay.agent.01JN4M2X5SZMHXP3EZFM9DWRXFK');
       expect(ctx?.agent.directory).toBe('/path/to/agent');
+    });
+  });
+
+  describe('enrichManifestsWithDocs()', () => {
+    // With the node:module mock, docs paths resolve to /mock-relay/dist/adapters/<type>/docs/setup.md
+
+    it('enriches manifests with setupGuide when docs/setup.md exists', async () => {
+      vi.mocked(readFile).mockImplementation(async (filePath: unknown) => {
+        const p = String(filePath);
+        if (p.endsWith('setup.md')) return '# Slack Setup\n\nFollow these steps.';
+        return VALID_CONFIG;
+      });
+
+      await manager.initialize();
+
+      const slackManifest = manager.getManifest('slack');
+      expect(slackManifest?.setupGuide).toBe('# Slack Setup\n\nFollow these steps.');
+    });
+
+    it('leaves setupGuide undefined when docs/setup.md is missing', async () => {
+      vi.mocked(readFile).mockImplementation(async (filePath: unknown) => {
+        const p = String(filePath);
+        if (p.endsWith('setup.md')) throw new Error('ENOENT');
+        return VALID_CONFIG;
+      });
+
+      await manager.initialize();
+
+      const claudeCodeManifest = manager.getManifest('claude-code');
+      expect(claudeCodeManifest?.setupGuide).toBeUndefined();
+    });
+
+    it('does not overwrite existing inline setupGuide from plugin adapters', async () => {
+      vi.mocked(readFile).mockImplementation(async (filePath: unknown) => {
+        const p = String(filePath);
+        if (p.endsWith('setup.md')) return 'Disk guide content';
+        return JSON.stringify({ adapters: [] });
+      });
+
+      // Register a plugin manifest with inline setupGuide before initialization
+      const freshManager = new AdapterManager(registry, configPath, mockDeps);
+      freshManager.registerPluginManifest('custom', {
+        type: 'custom',
+        displayName: 'Custom',
+        description: 'Custom adapter',
+        category: 'custom',
+        builtin: false,
+        configFields: [],
+        setupGuide: 'Inline guide content',
+      });
+
+      await freshManager.initialize();
+
+      const manifest = freshManager.getManifest('custom');
+      expect(manifest?.setupGuide).toBe('Inline guide content');
+    });
+
+    it('enriches catalog entries with setupGuide content', async () => {
+      vi.mocked(readFile).mockImplementation(async (filePath: unknown) => {
+        const p = String(filePath);
+        if (p.includes('/slack/') && p.endsWith('setup.md')) return '# Slack Guide';
+        if (p.endsWith('setup.md')) throw new Error('ENOENT');
+        return VALID_CONFIG;
+      });
+
+      await manager.initialize();
+
+      const catalog = manager.getCatalog();
+      const slack = catalog.find((e) => e.manifest.type === 'slack');
+      expect(slack?.manifest.setupGuide).toBe('# Slack Guide');
     });
   });
 

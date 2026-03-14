@@ -55,6 +55,13 @@ export const WEBHOOK_MANIFEST: AdapterManifest = {
       required: true,
       description: 'HMAC-SHA256 secret for verifying inbound webhooks (min 16 characters).',
       section: 'Inbound',
+      helpMarkdown: `Generate a secure random secret (minimum 16 characters):
+
+\`\`\`bash
+openssl rand -hex 32
+\`\`\`
+
+This secret is used to verify that incoming webhook requests are authentic. Share it with the service sending webhooks to your DorkOS instance.`,
     },
     {
       key: 'outbound.url',
@@ -64,6 +71,10 @@ export const WEBHOOK_MANIFEST: AdapterManifest = {
       placeholder: 'https://api.example.com/webhook',
       description: 'URL to POST outbound messages to.',
       section: 'Outbound',
+      helpMarkdown: `The URL where DorkOS sends outbound messages. Requirements:
+- Must accept **POST** requests with JSON body
+- Should return **2xx** status for success
+- Response body is ignored`,
     },
     {
       key: 'outbound.secret',
@@ -81,6 +92,16 @@ export const WEBHOOK_MANIFEST: AdapterManifest = {
       placeholder: '{"Authorization": "Bearer xxx"}',
       description: 'JSON object of custom HTTP headers for outbound requests.',
       section: 'Outbound',
+      helpMarkdown: `JSON object of custom HTTP headers sent with every outbound request. Example:
+
+\`\`\`json
+{
+  "Authorization": "Bearer your-api-key",
+  "X-Custom-Header": "value"
+}
+\`\`\`
+
+Leave empty if no custom headers are needed.`,
     },
   ],
 };

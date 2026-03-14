@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { AdapterManifestSchema } from '@dorkos/shared/relay-schemas';
 import { TELEGRAM_MANIFEST } from '../adapters/telegram/index.js';
 import { WEBHOOK_MANIFEST } from '../adapters/webhook/index.js';
+import { SLACK_MANIFEST } from '../adapters/slack/index.js';
 import { CLAUDE_CODE_MANIFEST } from '../adapters/claude-code/index.js';
 
 describe('Built-in adapter manifests', () => {
@@ -84,6 +85,59 @@ describe('Built-in adapter manifests', () => {
     });
   });
 
+  describe('SLACK_MANIFEST', () => {
+    it('validates against AdapterManifestSchema', () => {
+      const result = AdapterManifestSchema.safeParse(SLACK_MANIFEST);
+      expect(result.success).toBe(true);
+    });
+
+    it('has type "slack"', () => {
+      expect(SLACK_MANIFEST.type).toBe('slack');
+    });
+
+    it('is a builtin adapter', () => {
+      expect(SLACK_MANIFEST.builtin).toBe(true);
+    });
+
+    it('supports multiple instances', () => {
+      expect(SLACK_MANIFEST.multiInstance).toBe(true);
+    });
+
+    it('has configFields keys matching SlackAdapterConfig', () => {
+      const keys = SLACK_MANIFEST.configFields.map((f) => f.key);
+      expect(keys).toContain('botToken');
+      expect(keys).toContain('appToken');
+      expect(keys).toContain('signingSecret');
+    });
+
+    it('has category "messaging"', () => {
+      expect(SLACK_MANIFEST.category).toBe('messaging');
+    });
+
+    it('has a manifest URL that starts with the Slack API endpoint', () => {
+      expect(SLACK_MANIFEST.actionButton?.url).toMatch(
+        /^https:\/\/api\.slack\.com\/apps\?new_app=1&manifest_yaml=/,
+      );
+    });
+
+    it('manifest URL contains URL-encoded YAML with socket_mode_enabled', () => {
+      const url = SLACK_MANIFEST.actionButton?.url ?? '';
+      const encoded = url.split('manifest_yaml=')[1] ?? '';
+      const decoded = decodeURIComponent(encoded);
+      expect(decoded).toContain('socket_mode_enabled: true');
+    });
+
+    it('manifest URL does not contain user scopes section', () => {
+      const url = SLACK_MANIFEST.actionButton?.url ?? '';
+      const encoded = url.split('manifest_yaml=')[1] ?? '';
+      const decoded = decodeURIComponent(encoded);
+      // Must not have a "user:" key under scopes (user-level OAuth scopes)
+      expect(decoded).not.toMatch(/^\s+user:\s*$/m);
+      // Sanity check: bot scopes like "users:read" are fine and expected
+      expect(decoded).toContain('users:read');
+    });
+  });
+
   describe('CLAUDE_CODE_MANIFEST', () => {
     it('validates against AdapterManifestSchema', () => {
       const result = AdapterManifestSchema.safeParse(CLAUDE_CODE_MANIFEST);
@@ -114,7 +168,7 @@ describe('Built-in adapter manifests', () => {
   });
 
   describe('all manifests', () => {
-    const manifests = [TELEGRAM_MANIFEST, WEBHOOK_MANIFEST, CLAUDE_CODE_MANIFEST];
+    const manifests = [TELEGRAM_MANIFEST, WEBHOOK_MANIFEST, SLACK_MANIFEST, CLAUDE_CODE_MANIFEST];
 
     it('all have unique types', () => {
       const types = manifests.map((m) => m.type);

@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && for d in src/adapters/*/docs; do [ -d \"$d\" ] && mkdir -p \"${d/src/dist}\" && cp \"$d\"/*.md \"${d/src/dist}/\"; done",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint ."

@@ -334,3 +334,65 @@ describe('ConfigFieldGroup', () => {
     expect(screen.getByText('Name is required')).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// helpMarkdown disclosure tests
+// ---------------------------------------------------------------------------
+
+describe('helpMarkdown disclosure', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const fieldWithHelp: ConfigField = {
+    key: 'botToken',
+    label: 'Bot Token',
+    type: 'password',
+    required: true,
+    helpMarkdown: '1. Go to **Settings**\n2. Copy the token',
+  };
+
+  const fieldWithoutHelp: ConfigField = {
+    key: 'botToken',
+    label: 'Bot Token',
+    type: 'password',
+    required: true,
+  };
+
+  it('does not render collapsible when helpMarkdown is absent', () => {
+    render(
+      <ConfigFieldInput
+        field={fieldWithoutHelp}
+        value=""
+        onChange={vi.fn()}
+        allValues={{}}
+      />,
+    );
+    expect(screen.queryByText('Where do I find this?')).not.toBeInTheDocument();
+  });
+
+  it('renders collapsible trigger when helpMarkdown is present', () => {
+    render(
+      <ConfigFieldInput
+        field={fieldWithHelp}
+        value=""
+        onChange={vi.fn()}
+        allValues={{}}
+      />,
+    );
+    expect(screen.getByText('Where do I find this?')).toBeInTheDocument();
+  });
+
+  it('expands help content when trigger is clicked', () => {
+    render(
+      <ConfigFieldInput
+        field={fieldWithHelp}
+        value=""
+        onChange={vi.fn()}
+        allValues={{}}
+      />,
+    );
+    fireEvent.click(screen.getByText('Where do I find this?'));
+    expect(screen.getByText(/Settings/)).toBeInTheDocument();
+  });
+});

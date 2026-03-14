@@ -1232,6 +1232,86 @@ export class SlackAdapter implements RelayAdapter {
 5. **getStatus()**: Return a shallow copy of status
 6. **Error handling**: Always use `recordError()` to update status, never throw during stop
 
+## Adapter Documentation
+
+Each built-in adapter can ship a `docs/setup.md` file containing a full setup guide rendered in the client's side-panel Sheet. Plugin adapters can provide equivalent content inline via their `getManifest()` return value.
+
+### File Convention
+
+Place a `setup.md` file under `src/adapters/<type>/docs/`:
+
+```
+packages/relay/src/adapters/
+├── telegram/
+│   ├── docs/
+│   │   └── setup.md        # Full markdown setup guide
+│   └── telegram-adapter.ts
+├── slack/
+│   ├── docs/
+│   │   └── setup.md
+│   └── slack-adapter.ts
+└── webhook/
+    ├── docs/
+    │   └── setup.md
+    └── webhook-adapter.ts
+```
+
+The guide is standard Markdown. It typically covers prerequisites, step-by-step configuration instructions, and troubleshooting tips.
+
+### Build Step
+
+The `packages/relay` build script copies `.md` files from source adapter docs directories into `dist/`:
+
+```json
+{
+  "build": "tsc && for d in src/adapters/*/docs; do [ -d \"$d\" ] && mkdir -p \"${d/src/dist}\" && cp \"$d\"/*.md \"${d/src/dist}/\"; done"
+}
+```
+
+After building, the compiled package contains `dist/adapters/<type>/docs/setup.md` alongside the compiled adapter code.
+
+### Server-Side Loading
+
+On startup, `AdapterManager.initialize()` calls `enrichManifestsWithDocs()` after populating built-in manifests. This method:
+
+1. Iterates over all registered manifests
+2. Skips any manifest that already has a `setupGuide` value (e.g., plugin adapters with inline guides)
+3. Resolves the adapter's `docs/setup.md` path using `createRequire` to locate the `@dorkos/relay` package dist directory
+4. Reads the file and sets its contents as the `setupGuide` field on the manifest
+5. Silently skips adapters without a docs file (no error)
+
+### Plugin Adapters
+
+Plugin adapters can provide a `setupGuide` string directly in their `getManifest()` return value:
+
+```typescript
+export function getManifest(): AdapterManifest {
+  return {
+    type: 'my-adapter',
+    displayName: 'My Adapter',
+    // ... other fields
+    setupGuide: '# Setup\n\nFollow these steps to configure My Adapter...',
+  };
+}
+```
+
+When `setupGuide` is already present, `enrichManifestsWithDocs()` does not attempt to load a file.
+
+### `helpMarkdown` on Config Fields
+
+Individual config fields can include a `helpMarkdown` property containing Markdown content displayed in a collapsible disclosure below the field input. Use this for field-specific instructions that would be too verbose for the `description` property:
+
+```typescript
+{
+  key: 'token',
+  label: 'Bot Token',
+  type: 'password',
+  required: true,
+  description: 'Token from @BotFather on Telegram.',
+  helpMarkdown: '1. Open Telegram and search for **@BotFather**\n2. Send `/newbot`\n3. Copy the token provided',
+}
+```
+
 ## Related
 
 - `packages/relay/src/types.ts` — RelayAdapter interface and config types
