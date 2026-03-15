@@ -13,9 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Resolve duplicate createRequire declaration in ESM bundle
-- Use POSIX-compatible shell substitution in build script
 ---
+
+## [0.13.1] - 2026-03-14
+
+### Fixed
+
+- Fix CLI crash on startup caused by duplicate `createRequire` declaration in ESM bundle
+- Fix relay build script failing on non-Bash shells by using POSIX-compatible substitution
 
 ## [0.13.0] - 2026-03-14
 

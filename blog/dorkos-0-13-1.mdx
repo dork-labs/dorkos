@@ -1,0 +1,29 @@
+---
+title: DorkOS 0.13.1
+description: Fix CLI startup crash and relay build compatibility
+date: 2026-03-14
+author: DorkOS Team
+category: release
+tags: [release, cli, bugfix]
+---
+
+DorkOS 0.13.1 fixes a CLI startup crash introduced in 0.13.0 and improves build script portability.
+
+## Highlights
+
+**CLI Startup Fix** — The `dorkos` command crashed immediately with a `SyntaxError: Identifier 'createRequire' has already been declared`. This was caused by a naming collision in the esbuild ESM bundle banner and is now resolved.
+
+**POSIX Build Compatibility** — The relay package build script now uses POSIX-compatible shell substitution, fixing builds on non-Bash shells.
+
+## All Changes
+
+### Fixed
+
+- Fix CLI crash on startup caused by duplicate `createRequire` declaration in ESM bundle
+- Fix relay build script failing on non-Bash shells by using POSIX-compatible substitution
+
+## Install / Update
+
+```
+npm install -g dorkos@0.13.1
+```

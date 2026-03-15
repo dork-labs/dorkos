@@ -5,6 +5,13 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] - 2026-03-14
+
+### Fixed
+
+- Fix CLI crash on startup caused by duplicate `createRequire` declaration in ESM bundle
+- Fix relay build script failing on non-Bash shells by using POSIX-compatible substitution
+
 ## [0.13.0] - 2026-03-14
 
 > Slack integration, Docker containerization, and adapter system unification
