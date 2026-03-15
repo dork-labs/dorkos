@@ -3,7 +3,7 @@
  *
  * @module shared/lib/transport/relay-methods
  */
-import type { AdapterListItem, AdapterEvent } from '@dorkos/shared/transport';
+import type { AdapterListItem, AdapterEvent, AggregatedDeadLetter } from '@dorkos/shared/transport';
 import type {
   TraceSpan,
   DeliveryMetrics,
@@ -89,6 +89,17 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
     listRelayDeadLetters(filters?: { endpointHash?: string }): Promise<unknown[]> {
       const qs = buildQueryString({ endpointHash: filters?.endpointHash });
       return fetchJSON(baseUrl, `/relay/dead-letters${qs}`);
+    },
+
+    listAggregatedDeadLetters(): Promise<{ groups: AggregatedDeadLetter[] }> {
+      return fetchJSON(baseUrl, '/relay/dead-letters/aggregated');
+    },
+
+    dismissDeadLetterGroup(source: string, reason: string): Promise<{ dismissed: number }> {
+      return fetchJSON(baseUrl, '/relay/dead-letters', {
+        method: 'DELETE',
+        body: JSON.stringify({ source, reason }),
+      });
     },
 
     listRelayConversations(): Promise<{ conversations: RelayConversation[] }> {
@@ -219,7 +230,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     updateBinding(
       id: string,
-      updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>>,
+      updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
     ): Promise<AdapterBinding> {
       return fetchJSON<{ binding: AdapterBinding }>(baseUrl, `/relay/bindings/${encodeURIComponent(id)}`, {
         method: 'PATCH',

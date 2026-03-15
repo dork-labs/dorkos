@@ -128,6 +128,15 @@ export class BindingRouter {
         return;
       }
 
+      // Permission check: drop inbound if canReceive is false
+      if (binding.canReceive === false) {
+        logger.debug(
+          '[BindingRouter] Dropping inbound \u2014 canReceive=false for binding %s',
+          binding.id,
+        );
+        return;
+      }
+
       const projectPath = this.deps.meshCore.getProjectPath(binding.agentId);
       if (!projectPath) {
         logger.warn(
@@ -140,7 +149,14 @@ export class BindingRouter {
 
       const enrichedPayload =
         envelope.payload && typeof envelope.payload === 'object'
-          ? { ...(envelope.payload as Record<string, unknown>), cwd: projectPath }
+          ? {
+              ...(envelope.payload as Record<string, unknown>),
+              cwd: projectPath,
+              __bindingPermissions: {
+                canReply: binding.canReply,
+                canInitiate: binding.canInitiate,
+              },
+            }
           : envelope.payload;
 
       await this.deps.relayCore.publish(`relay.agent.${sessionId}`, enrichedPayload, {

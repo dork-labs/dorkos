@@ -37,7 +37,7 @@ export function useAddAdapter() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
       queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });
-      toast.success('Adapter added');
+      // Toast removed — wizard provides adapter-specific success message
     },
     onError: (error) => {
       toast.error(getErrorMessage(error));

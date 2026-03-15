@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Shield } from 'lucide-react';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -19,6 +19,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
   Badge,
+  Switch,
 } from '@/layers/shared/ui';
 import { useAdapterCatalog, useObservedChats } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -67,6 +68,9 @@ export interface BindingFormValues {
   label: string;
   chatId?: string;
   channelType?: 'dm' | 'group' | 'channel' | 'thread';
+  canInitiate?: boolean;
+  canReply?: boolean;
+  canReceive?: boolean;
 }
 
 export interface BindingDialogProps {
@@ -86,8 +90,8 @@ export interface BindingDialogProps {
 /**
  * Modal dialog for configuring or editing an adapter-agent binding.
  *
- * In create mode, shows adapter picker, agent picker, session strategy, label,
- * and a collapsible chat filter section (chatId + channelType).
+ * In create mode, shows adapter picker, agent picker, label, and collapsible
+ * sections for chat filter and advanced options (session strategy, permissions).
  * In edit mode, adapter and agent are read-only and all other fields are editable.
  */
 export function BindingDialog({
@@ -114,6 +118,19 @@ export function BindingDialog({
   const [chatFilterOpen, setChatFilterOpen] = useState(
     !!(initialValues?.chatId || initialValues?.channelType),
   );
+  // Permission fields — defaults match AdapterBindingSchema defaults.
+  const [canInitiate, setCanInitiate] = useState(initialValues?.canInitiate ?? false);
+  const [canReply, setCanReply] = useState(initialValues?.canReply ?? true);
+  const [canReceive, setCanReceive] = useState(initialValues?.canReceive ?? true);
+  // Auto-open advanced section when initial values have non-default permissions or strategy.
+  const [advancedOpen, setAdvancedOpen] = useState(
+    !!(
+      initialValues?.canInitiate ||
+      initialValues?.canReply === false ||
+      initialValues?.canReceive === false ||
+      (initialValues?.sessionStrategy && initialValues.sessionStrategy !== 'per-chat')
+    ),
+  );
 
   // Sync all state when initialValues change (e.g. opening a different binding to edit)
   useEffect(() => {
@@ -124,8 +141,19 @@ export function BindingDialog({
       setLabel(initialValues.label ?? '');
       setChatId(initialValues.chatId ?? SELECT_ANY);
       setChannelType(initialValues.channelType ?? SELECT_ANY);
+      setCanInitiate(initialValues.canInitiate ?? false);
+      setCanReply(initialValues.canReply ?? true);
+      setCanReceive(initialValues.canReceive ?? true);
       if (initialValues.chatId || initialValues.channelType) {
         setChatFilterOpen(true);
+      }
+      if (
+        initialValues.canInitiate ||
+        initialValues.canReply === false ||
+        initialValues.canReceive === false ||
+        (initialValues.sessionStrategy && initialValues.sessionStrategy !== 'per-chat')
+      ) {
+        setAdvancedOpen(true);
       }
     }
   }, [initialValues]);
@@ -149,10 +177,8 @@ export function BindingDialog({
   const selectedStrategy = SESSION_STRATEGIES.find((s) => s.value === strategy);
   // SELECT_ANY means "no filter selected" — convert back to undefined before submitting.
   const hasChatFilter = chatId !== SELECT_ANY || channelType !== SELECT_ANY;
-
-  function handleAgentChange(selectedId: string) {
-    setAgentId(selectedId);
-  }
+  // Advanced section has non-default values when strategy or permissions deviate from defaults.
+  const hasAdvancedChanges = strategy !== 'per-chat' || canInitiate || !canReply || !canReceive;
 
   function handleConfirm() {
     onConfirm({
@@ -165,6 +191,9 @@ export function BindingDialog({
         channelType === SELECT_ANY
           ? undefined
           : (channelType as BindingFormValues['channelType']),
+      canInitiate,
+      canReply,
+      canReceive,
     });
     if (!isEdit) {
       resetForm();
@@ -179,6 +208,10 @@ export function BindingDialog({
     setChatId(SELECT_ANY);
     setChannelType(SELECT_ANY);
     setChatFilterOpen(false);
+    setCanInitiate(false);
+    setCanReply(true);
+    setCanReceive(true);
+    setAdvancedOpen(false);
   }
 
   function handleCancel() {
@@ -232,7 +265,7 @@ export function BindingDialog({
 
               <div className="space-y-1.5">
                 <Label htmlFor="binding-agent">Agent</Label>
-                <Select value={agentId} onValueChange={handleAgentChange}>
+                <Select value={agentId} onValueChange={(id) => setAgentId(id)}>
                   <SelectTrigger id="binding-agent" className="w-full">
                     <SelectValue placeholder="Select an agent" />
                   </SelectTrigger>
@@ -245,29 +278,8 @@ export function BindingDialog({
                   </SelectContent>
                 </Select>
               </div>
-
             </>
           )}
-
-          {/* Session strategy selector */}
-          <div className="space-y-1.5">
-            <Label htmlFor="binding-session-strategy">Session Strategy</Label>
-            <Select value={strategy} onValueChange={(v) => setStrategy(v as SessionStrategy)}>
-              <SelectTrigger id="binding-session-strategy" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SESSION_STRATEGIES.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedStrategy && (
-              <p className="text-xs text-muted-foreground">{selectedStrategy.description}</p>
-            )}
-          </div>
 
           {/* Optional label */}
           <div className="space-y-1.5">
@@ -345,6 +357,84 @@ export function BindingDialog({
                   Clear filters
                 </Button>
               )}
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Advanced — collapsible: session strategy + permission toggles */}
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <ChevronRight
+                className={cn(
+                  'size-3.5 transition-transform',
+                  advancedOpen && 'rotate-90',
+                )}
+              />
+              Advanced
+              {hasAdvancedChanges && (
+                <Badge variant="secondary" className="text-xs">
+                  Modified
+                </Badge>
+              )}
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-4 pt-3">
+              {/* Session strategy selector */}
+              <div className="space-y-1.5">
+                <Label htmlFor="binding-session-strategy">Session Strategy</Label>
+                <Select value={strategy} onValueChange={(v) => setStrategy(v as SessionStrategy)}>
+                  <SelectTrigger id="binding-session-strategy" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SESSION_STRATEGIES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedStrategy && (
+                  <p className="text-xs text-muted-foreground">{selectedStrategy.description}</p>
+                )}
+              </div>
+
+              {/* Permission toggles */}
+              <div className="space-y-2.5">
+                <p className="text-xs font-medium text-muted-foreground">Permissions</p>
+                <div className="flex cursor-pointer items-center justify-between gap-3">
+                  <Label htmlFor="perm-initiate" className="flex cursor-pointer items-center gap-1.5 text-xs font-normal">
+                    <Shield className="size-3 text-muted-foreground" />
+                    Allow agent to initiate messages
+                  </Label>
+                  <Switch
+                    id="perm-initiate"
+                    checked={canInitiate}
+                    onCheckedChange={setCanInitiate}
+                    aria-label="Allow agent to initiate messages"
+                  />
+                </div>
+                <div className="flex cursor-pointer items-center justify-between gap-3">
+                  <Label htmlFor="perm-reply" className="cursor-pointer text-xs font-normal">
+                    Allow agent to reply
+                  </Label>
+                  <Switch
+                    id="perm-reply"
+                    checked={canReply}
+                    onCheckedChange={setCanReply}
+                    aria-label="Allow agent to reply"
+                  />
+                </div>
+                <div className="flex cursor-pointer items-center justify-between gap-3">
+                  <Label htmlFor="perm-receive" className="cursor-pointer text-xs font-normal">
+                    Receive inbound messages
+                  </Label>
+                  <Switch
+                    id="perm-receive"
+                    checked={canReceive}
+                    onCheckedChange={setCanReceive}
+                    aria-label="Receive inbound messages"
+                  />
+                </div>
+              </div>
             </CollapsibleContent>
           </Collapsible>
         </div>

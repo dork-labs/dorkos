@@ -177,8 +177,10 @@ describe('BindingDialog', () => {
       expect(screen.getByLabelText('Agent')).toBeInTheDocument();
     });
 
-    it('renders session strategy selector', () => {
+    it('renders session strategy selector inside Advanced section', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
+      // Session strategy lives inside the collapsible Advanced section — open it first.
+      fireEvent.click(screen.getByText('Advanced'));
       expect(screen.getByText('Session Strategy')).toBeInTheDocument();
     });
 
@@ -194,8 +196,10 @@ describe('BindingDialog', () => {
       expect(within(dialog).getByRole('button', { name: /cancel/i })).toBeInTheDocument();
     });
 
-    it('shows the per-chat strategy description by default', () => {
+    it('shows the per-chat strategy description when Advanced section is open', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
+      // Description is visible only when the Advanced section is expanded.
+      fireEvent.click(screen.getByText('Advanced'));
       expect(screen.getByText(/one session per chat\/conversation/i)).toBeInTheDocument();
     });
 

@@ -133,7 +133,7 @@ const makeConversation = (overrides: Partial<RelayConversation> = {}): RelayConv
   id: 'conv-1',
   direction: 'inbound',
   status: 'delivered',
-  from: { label: 'Telegram Bot', raw: 'relay.adapter.telegram-1' },
+  from: { label: 'Telegram Bot', raw: 'relay.human.telegram.12345' },
   to: { label: 'Agent Alpha', raw: 'relay.agent.agent-1' },
   preview: 'Hello world',
   responseCount: 1,
@@ -421,6 +421,70 @@ describe('ConversationRow', () => {
       });
 
       expect(mockMutate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('extractAdapterId inference', () => {
+    it('returns adapterId from payload metadata when available', async () => {
+      const { wrapper } = createWrapper();
+      const conversation = makeConversation({
+        payload: { adapterId: 'tg-bot-1' },
+        from: { raw: 'relay.human.telegram.12345', label: 'Telegram' },
+      });
+      render(<ConversationRow conversation={conversation} />, { wrapper });
+
+      // Open popover and select an agent to trigger quick route
+      fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
+      await waitFor(() => { expect(screen.getByRole('combobox')).toBeInTheDocument(); });
+      fireEvent.click(screen.getByRole('combobox'));
+      await waitFor(() => { expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument(); });
+      fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
+      await waitFor(() => { expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled(); });
+      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ adapterId: 'tg-bot-1' }),
+      );
+    });
+
+    it('infers platform from relay.human.<platform>.<chatId> subject', async () => {
+      const { wrapper } = createWrapper();
+      const conversation = makeConversation({
+        from: { raw: 'relay.human.slack.C12345', label: 'Slack' },
+      });
+      render(<ConversationRow conversation={conversation} />, { wrapper });
+
+      fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
+      await waitFor(() => { expect(screen.getByRole('combobox')).toBeInTheDocument(); });
+      fireEvent.click(screen.getByRole('combobox'));
+      await waitFor(() => { expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument(); });
+      fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
+      await waitFor(() => { expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled(); });
+      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ adapterId: 'slack' }),
+      );
+    });
+
+    it('returns empty string for unrecognized subject patterns', async () => {
+      const { wrapper } = createWrapper();
+      const conversation = makeConversation({
+        from: { raw: 'some.other.subject', label: 'Unknown' },
+      });
+      render(<ConversationRow conversation={conversation} />, { wrapper });
+
+      fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
+      await waitFor(() => { expect(screen.getByRole('combobox')).toBeInTheDocument(); });
+      fireEvent.click(screen.getByRole('combobox'));
+      await waitFor(() => { expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument(); });
+      fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
+      await waitFor(() => { expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled(); });
+      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ adapterId: '' }),
+      );
     });
   });
 

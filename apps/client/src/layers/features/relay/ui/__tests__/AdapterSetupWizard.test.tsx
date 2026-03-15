@@ -114,7 +114,7 @@ describe('AdapterSetupWizard', () => {
     cleanup();
   });
 
-  it('opens in add mode with empty form and adapter ID field visible', () => {
+  it('opens in add mode with empty form and no adapter ID field (auto-generated)', () => {
     const { Wrapper } = createWrapper();
     render(
       <AdapterSetupWizard
@@ -126,7 +126,8 @@ describe('AdapterSetupWizard', () => {
     );
 
     expect(screen.getByText('Add Slack')).toBeInTheDocument();
-    expect(screen.getByLabelText(/adapter id/i)).toBeInTheDocument();
+    // Adapter ID is auto-generated — no input field shown
+    expect(screen.queryByLabelText(/adapter id/i)).not.toBeInTheDocument();
     // Channel should have default value, token should be empty
     expect(screen.getByLabelText(/channel/i)).toHaveValue('#general');
   });

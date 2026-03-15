@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "nextNumber": 131,
+  "nextNumber": 135,
   "decisions": [
+    {
+      "number": 133,
+      "slug": "semantic-health-status-over-raw-metrics",
+      "title": "Semantic Health Status Over Raw Metrics",
+      "status": "draft",
+      "created": "2026-03-15",
+      "extractedFrom": "relay-panel-redesign",
+      "specSlug": "relay-panel-redesign"
+    },
+    {
+      "number": 132,
+      "slug": "two-tab-information-architecture-for-relay-panel",
+      "title": "Two-Tab Information Architecture for Relay Panel",
+      "status": "draft",
+      "created": "2026-03-15",
+      "extractedFrom": "relay-panel-redesign",
+      "specSlug": "relay-panel-redesign"
+    },
+    {
+      "number": 131,
+      "slug": "binding-level-permissions-over-adapter-level",
+      "title": "Binding-Level Permissions Over Adapter-Level Permissions",
+      "status": "draft",
+      "created": "2026-03-15",
+      "extractedFrom": "relay-panel-redesign",
+      "specSlug": "relay-panel-redesign"
+    },
     {
       "number": 130,
       "slug": "derive-binding-cwd-from-agent-registry",
@@ -1040,6 +1067,15 @@
       "created": "2026-03-10",
       "extractedFrom": "update-top-nav",
       "specSlug": "update-top-nav"
+    },
+    {
+      "number": 134,
+      "slug": "sdk-primary-command-discovery-with-filesystem-enrichment",
+      "title": "SDK-Primary Command Discovery with Filesystem Enrichment",
+      "status": "draft",
+      "created": "2026-03-15",
+      "extractedFrom": "sdk-command-discovery",
+      "specSlug": "sdk-command-discovery"
     }
   ]
 }

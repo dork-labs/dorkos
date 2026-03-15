@@ -1,7 +1,7 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
-import { Inbox, Search } from 'lucide-react';
+import { AlertTriangle, Inbox, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useRelayConversations } from '@/layers/entities/relay';
+import { useRelayConversations, useAggregatedDeadLetters } from '@/layers/entities/relay';
 import {
   Button,
   Input,
@@ -80,8 +80,11 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchFilter, setSearchFilter] = useState('');
+  const [showFailures, setShowFailures] = useState(false);
   const { data, isLoading } = useRelayConversations(enabled);
+  const { data: deadLetterGroups = [] } = useAggregatedDeadLetters(enabled);
   const conversations = data?.conversations ?? [];
+  const hasDeadLetters = deadLetterGroups.length > 0;
 
   // Track which conversation IDs were present on first render so history items
   // are not animated — only SSE-delivered items that arrive later get entrance animations.
@@ -121,10 +124,6 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
 
   return (
     <div className="flex flex-col gap-3 p-4">
-      <div ref={deadLetterRef}>
-        <DeadLetterSection enabled={enabled} />
-      </div>
-
       <div className="flex flex-wrap items-center gap-2">
         <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as SourceFilter)}>
           <SelectTrigger className="w-32">
@@ -150,6 +149,21 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
           </SelectContent>
         </Select>
 
+        <Button
+          variant={showFailures ? 'secondary' : 'ghost'}
+          size="sm"
+          className="relative"
+          onClick={() => setShowFailures(!showFailures)}
+          aria-pressed={showFailures}
+          aria-label="Show failures"
+        >
+          <AlertTriangle className="mr-1 size-3.5" />
+          Failures
+          {hasDeadLetters && !showFailures && (
+            <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-red-500" />
+          )}
+        </Button>
+
         <Input
           className="h-9 w-44"
           placeholder="Filter by agent or message..."
@@ -169,11 +183,44 @@ export function ActivityFeed({ enabled, deadLetterRef, onSwitchToAdapters }: Act
         </div>
       </div>
 
+      {showFailures && (
+        <div ref={deadLetterRef}>
+          <DeadLetterSection enabled={enabled} />
+        </div>
+      )}
+
       {filteredConversations.length === 0 && !hasActiveFilters ? (
         <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+          {/* Ghost preview rows — faded placeholders showing what conversations will look like */}
+          <div className="mb-2 w-full max-w-sm select-none opacity-20 pointer-events-none">
+            <div className="space-y-2">
+              <div className="rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <div className="size-4 rounded bg-muted" />
+                  <div className="h-3 w-32 rounded bg-muted" />
+                  <div className="ml-auto h-3 w-12 rounded bg-muted" />
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <div className="size-4 rounded bg-muted" />
+                  <div className="h-3 w-44 rounded bg-muted" />
+                  <div className="ml-auto h-3 w-12 rounded bg-muted" />
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <div className="size-4 rounded bg-muted" />
+                  <div className="h-3 w-24 rounded bg-muted" />
+                  <div className="ml-auto h-3 w-12 rounded bg-muted" />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <Inbox className="size-10 text-muted-foreground/50" />
           <div className="space-y-1">
-            <p className="text-sm font-medium">No messages yet</p>
+            <p className="text-sm font-medium">Waiting for messages</p>
             <p className="text-sm text-muted-foreground">
               Messages will appear here once your adapters are connected and agents start communicating.
             </p>

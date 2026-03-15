@@ -309,6 +309,17 @@ export class RelayCore {
     return executeGetDeadLetters(options, this.endpointDeps);
   }
 
+  /**
+   * Remove a single dead letter by endpoint hash and message ID.
+   *
+   * @param endpointHash - The endpoint hash where the dead letter resides
+   * @param messageId - The ULID message ID to remove
+   */
+  async removeDeadLetter(endpointHash: string, messageId: string): Promise<void> {
+    this.assertOpen();
+    await this.endpointDeps.deadLetterQueue.removeDeadLetter(endpointHash, messageId);
+  }
+
   /** Add an access control rule. */
   addAccessRule(rule: RelayAccessRule): void {
     this.assertOpen();

@@ -1,10 +1,17 @@
 import { useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
-import { Badge } from '@/layers/shared/ui';
+import { AlertTriangle, Eye, Trash2 } from 'lucide-react';
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { useDeadLetters } from '@/layers/entities/relay';
-import type { DeadLetter } from '@/layers/entities/relay';
-import { resolveSubjectLabelLocal } from '../lib/resolve-label';
+import { useAggregatedDeadLetters, useDismissDeadLetterGroup } from '@/layers/entities/relay';
+import type { AggregatedDeadLetter } from '@/layers/entities/relay';
 import { formatTimeAgo } from '../lib/format-time';
 
 /** Map of rejection reason codes to display label and badge variant. */
@@ -21,117 +28,111 @@ const DEFAULT_REASON_CONFIG = {
   className: 'bg-muted text-muted-foreground',
 };
 
-/** Extract a short preview string from an envelope payload. */
-function extractPreview(payload: unknown): string {
-  if (!payload || typeof payload !== 'object') return '';
-  const p = payload as Record<string, unknown>;
-  const text = p?.content ?? p?.text ?? p?.message;
-  return typeof text === 'string' ? text.slice(0, 80) : '';
+/** Format a time range from two ISO timestamps into a compact relative string. */
+function formatTimeRange(firstSeen: string, lastSeen: string): string {
+  const first = formatTimeAgo(firstSeen);
+  const last = formatTimeAgo(lastSeen);
+  if (first === last) return last;
+  return `${first} — ${last}`;
 }
 
-/** Build a human-readable summary line for a dead letter envelope. */
-function buildSummary(envelope: Record<string, unknown>): string {
-  const subject = typeof envelope.subject === 'string' ? envelope.subject : '';
-  const label = subject ? resolveSubjectLabelLocal(subject) : '';
-  const preview = extractPreview(envelope.payload);
-
-  if (preview && label) return `"${preview}" → ${label}`;
-  if (preview) return `"${preview}"`;
-  if (label) return label;
-  return '';
+interface AggregatedCardProps {
+  group: AggregatedDeadLetter;
 }
 
-interface DeadLetterRowProps {
-  item: DeadLetter;
-}
-
-/** Single dead-letter row with red left border and expandable envelope detail. */
-function DeadLetterRow({ item }: DeadLetterRowProps) {
-  const [expanded, setExpanded] = useState(false);
-  const reasonConfig = REASON_CONFIG[item.reason] ?? DEFAULT_REASON_CONFIG;
-  const summary = buildSummary(item.envelope);
+/** Single aggregated failure card showing collapsed dead letters for a source + reason pair. */
+function AggregatedCard({ group }: AggregatedCardProps) {
+  const [sampleOpen, setSampleOpen] = useState(false);
+  const dismissMutation = useDismissDeadLetterGroup();
+  const reasonConfig = REASON_CONFIG[group.reason] ?? DEFAULT_REASON_CONFIG;
 
   return (
-    <div className="border-l-2 border-red-500 pl-3">
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 rounded py-1.5 text-left transition-colors hover:bg-muted/50"
-      >
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          {summary || <span className="font-mono">{item.messageId}</span>}
-        </span>
-        <Badge
-          className={cn('shrink-0 text-xs font-normal border-0', reasonConfig.className)}
-        >
-          {reasonConfig.label}
-        </Badge>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {formatTimeAgo(item.failedAt)}
-        </span>
-      </button>
-
-      {expanded && (
-        <div className="pb-2 pr-2 pt-1">
-          <span className="text-xs font-medium text-muted-foreground">Envelope</span>
-          <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 font-mono text-xs">
-            {JSON.stringify(item.envelope, null, 2)}
-          </pre>
+    <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-900/40 dark:bg-red-950/20">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-500" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{group.source}</span>
+            <Badge
+              className={cn('shrink-0 border-0 text-xs font-normal', reasonConfig.className)}
+            >
+              {reasonConfig.label}
+            </Badge>
+            <Badge variant="destructive" className="shrink-0 tabular-nums">
+              {group.count.toLocaleString()}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {formatTimeRange(group.firstSeen, group.lastSeen)}
+          </p>
         </div>
-      )}
+        <div className="flex shrink-0 items-center gap-1">
+          {group.sample != null && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setSampleOpen(true)}
+              >
+                <Eye className="mr-1 size-3" />
+                View Sample
+              </Button>
+              <Dialog open={sampleOpen} onOpenChange={setSampleOpen}>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Sample Envelope</DialogTitle>
+                    <DialogDescription>
+                      Representative failure from {group.source} ({reasonConfig.label})
+                    </DialogDescription>
+                  </DialogHeader>
+                  <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 font-mono text-xs">
+                    {JSON.stringify(group.sample, null, 2)}
+                  </pre>
+                </DialogContent>
+              </Dialog>
+            </>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+            onClick={() => dismissMutation.mutate({ source: group.source, reason: group.reason })}
+            disabled={dismissMutation.isPending}
+          >
+            <Trash2 className="mr-1 size-3" />
+            Dismiss All
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
 
 interface DeadLetterSectionProps {
-  /** Optional endpoint hash to scope dead-letter results. */
-  endpointHash?: string;
   /** When false, the query is skipped (Relay feature gate). Defaults to true. */
   enabled?: boolean;
 }
 
 /**
- * Collapsible section listing dead-lettered relay messages.
+ * Aggregated failure cards for dead-lettered relay messages.
  *
- * Renders nothing when the list is empty. Shows an AlertTriangle header
- * with a count badge; each row has a red 2px left border and a
- * color-coded rejection reason badge.
+ * Collapses identical dead letters into grouped cards by source + reason.
+ * Each card shows the count, time range, and provides "View Sample" and
+ * "Dismiss All" actions. Renders nothing when there are no dead letters.
  *
- * @param endpointHash - Optional endpoint hash filter.
  * @param enabled - When false, skips the query entirely.
  */
-export function DeadLetterSection({ endpointHash, enabled = true }: DeadLetterSectionProps) {
-  const [open, setOpen] = useState(false);
-  const filters = endpointHash != null ? { endpointHash } : undefined;
-  const { data: deadLetters = [], isLoading } = useDeadLetters(filters, enabled);
+export function DeadLetterSection({ enabled = true }: DeadLetterSectionProps) {
+  const { data: groups = [], isLoading } = useAggregatedDeadLetters(enabled);
 
-  if (isLoading || deadLetters.length === 0) return null;
-
-  const ChevronIcon = open ? ChevronDown : ChevronRight;
+  if (isLoading || groups.length === 0) return null;
 
   return (
-    <div className="border-t">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50"
-        aria-expanded={open}
-      >
-        <AlertTriangle className="size-4 shrink-0 text-red-500" />
-        <span className="flex-1 text-sm font-medium">Dead Letters</span>
-        <Badge variant="destructive" className="shrink-0 tabular-nums">
-          {deadLetters.length}
-        </Badge>
-        <ChevronIcon className="size-4 shrink-0 text-muted-foreground" />
-      </button>
-
-      {open && (
-        <div className="space-y-1 px-3 pb-3">
-          {deadLetters.map((item) => (
-            <DeadLetterRow key={item.messageId} item={item} />
-          ))}
-        </div>
-      )}
+    <div className="space-y-2">
+      {groups.map((group) => (
+        <AggregatedCard key={`${group.source}:${group.reason}`} group={group} />
+      ))}
     </div>
   );
 }

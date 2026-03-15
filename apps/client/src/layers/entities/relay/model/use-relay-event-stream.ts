@@ -42,14 +42,10 @@ export function useRelayEventStream(
 
     source.addEventListener('relay_message', (e) => {
       try {
-        const envelope = JSON.parse(e.data);
-        queryClient.setQueryData(
-          ['relay', 'messages', undefined],
-          (old: { messages: unknown[]; nextCursor?: string } | undefined) => {
-            if (!old) return { messages: [envelope] };
-            return { ...old, messages: [envelope, ...old.messages] };
-          },
-        );
+        JSON.parse(e.data); // validate parseable
+        // Invalidate conversations — the buildConversations() server function
+        // handles grouping, so we let TanStack Query refetch the structured data
+        queryClient.invalidateQueries({ queryKey: ['relay', 'conversations'] });
       } catch {
         console.warn('[Relay] Failed to parse relay_message event:', e.data);
       }
@@ -57,20 +53,8 @@ export function useRelayEventStream(
 
     source.addEventListener('relay_delivery', (e) => {
       try {
-        const data = JSON.parse(e.data);
-        queryClient.setQueryData(
-          ['relay', 'messages', undefined],
-          (old: { messages: unknown[]; nextCursor?: string } | undefined) => {
-            if (!old) return old;
-            return {
-              ...old,
-              messages: old.messages.map((msg) => {
-                const m = msg as Record<string, unknown>;
-                return m.id === data.messageId ? { ...m, status: data.status } : msg;
-              }),
-            };
-          },
-        );
+        JSON.parse(e.data); // validate parseable
+        queryClient.invalidateQueries({ queryKey: ['relay', 'conversations'] });
       } catch {
         console.warn('[Relay] Failed to parse relay_delivery event:', e.data);
       }

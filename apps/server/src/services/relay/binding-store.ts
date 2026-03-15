@@ -16,7 +16,6 @@ import {
   AdapterBindingSchema,
   CreateBindingRequestSchema,
   type AdapterBinding,
-  type CreateBindingRequest,
 } from '@dorkos/shared/relay-schemas';
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
@@ -91,7 +90,7 @@ export class BindingStore {
    * @param input - Binding configuration (without id/timestamps)
    * @returns The created binding with generated id and timestamps
    */
-  async create(input: CreateBindingRequest): Promise<AdapterBinding> {
+  async create(input: z.input<typeof CreateBindingRequestSchema>): Promise<AdapterBinding> {
     // Parse through schema to apply defaults (sessionStrategy, label)
     const parsed = CreateBindingRequestSchema.parse(input);
     const now = new Date().toISOString();
@@ -124,12 +123,12 @@ export class BindingStore {
    * Update an existing binding's mutable fields.
    *
    * @param id - The binding UUID to update
-   * @param updates - Fields to update (sessionStrategy, label, chatId, channelType)
+   * @param updates - Fields to update (sessionStrategy, label, chatId, channelType, permissions)
    * @returns The updated binding, or undefined if not found
    */
   async update(
     id: string,
-    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>>,
+    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
   ): Promise<AdapterBinding | undefined> {
     const existing = this.bindings.get(id);
     if (!existing) return undefined;
@@ -191,14 +190,7 @@ export class BindingStore {
   private async load(): Promise<void> {
     try {
       const raw = await readFile(this.filePath, 'utf-8');
-      const json = JSON.parse(raw) as { bindings?: Record<string, unknown>[] };
-      if (json.bindings) {
-        for (const b of json.bindings) {
-          // Strip legacy fields — projectPath is now derived from agent registry
-          delete b.projectPath;
-          delete b.agentDir;
-        }
-      }
+      const json = JSON.parse(raw) as unknown;
       const parsed = BindingsFileSchema.parse(json);
       this.bindings.clear();
       for (const b of parsed.bindings) {

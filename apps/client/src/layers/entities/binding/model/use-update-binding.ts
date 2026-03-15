@@ -13,7 +13,7 @@ export function useUpdateBinding() {
   return useMutation({
     mutationFn: ({ id, updates }: {
       id: string;
-      updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>>;
+      updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>;
     }) => transport.updateBinding(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...BINDINGS_QUERY_KEY] });

@@ -97,6 +97,8 @@ export class HttpTransport implements Transport {
   ) => Promise<{ messages: unknown[]; nextCursor?: string }>;
   declare getRelayMetrics: () => Promise<unknown>;
   declare listRelayDeadLetters: (filters?: { endpointHash?: string }) => Promise<unknown[]>;
+  declare listAggregatedDeadLetters: () => Promise<{ groups: import('@dorkos/shared/transport').AggregatedDeadLetter[] }>;
+  declare dismissDeadLetterGroup: (source: string, reason: string) => Promise<{ dismissed: number }>;
   declare listRelayConversations: () => Promise<{ conversations: RelayConversation[] }>;
   declare sendMessageRelay: (
     sessionId: string,
@@ -134,7 +136,7 @@ export class HttpTransport implements Transport {
   declare deleteBinding: (id: string) => Promise<void>;
   declare updateBinding: (
     id: string,
-    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>>,
+    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
   ) => Promise<AdapterBinding>;
 
   declare listMeshAgentPaths: () => Promise<{ agents: AgentPathEntry[] }>;

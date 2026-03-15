@@ -17,4 +17,4 @@ export { RelayHealthBar } from './ui/RelayHealthBar';
 export { DeadLetterSection } from './ui/DeadLetterSection';
 export { ComposeMessageDialog } from './ui/ComposeMessageDialog';
 export { AdapterEventLog } from './ui/AdapterEventLog';
-export { BindingList } from './ui/BindingList';
+export { ConnectionsTab } from './ui/ConnectionsTab';

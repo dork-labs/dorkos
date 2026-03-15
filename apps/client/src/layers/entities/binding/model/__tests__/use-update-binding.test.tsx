@@ -18,6 +18,9 @@ const mockBinding: AdapterBinding = {
   agentId: 'agent-1',
   sessionStrategy: 'per-chat',
   label: 'Main bot',
+  canInitiate: false,
+  canReply: true,
+  canReceive: true,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };

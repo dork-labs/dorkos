@@ -24,11 +24,18 @@ vi.mock('../DeliveryMetrics', () => ({
   DeliveryMetricsDashboard: () => <div data-testid="delivery-metrics-dashboard" />,
 }));
 
-import { RelayHealthBar } from '../RelayHealthBar';
+import { RelayHealthBar, computeHealthState } from '../RelayHealthBar';
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
+
+const defaultBudgetRejections = {
+  hopLimit: 0,
+  ttlExpired: 0,
+  cycleDetected: 0,
+  budgetExhausted: 0,
+};
 
 const mockMetrics = {
   totalMessages: 142,
@@ -38,12 +45,7 @@ const mockMetrics = {
   avgDeliveryLatencyMs: 45,
   p95DeliveryLatencyMs: 120,
   activeEndpoints: 2,
-  budgetRejections: {
-    hopLimit: 0,
-    ttlExpired: 0,
-    cycleDetected: 0,
-    budgetExhausted: 0,
-  },
+  budgetRejections: defaultBudgetRejections,
 };
 
 const mockMetricsNoFailures = {
@@ -72,17 +74,25 @@ const catalogPartiallyConnected = [
   { manifest: { type: 'telegram', displayName: 'Telegram', description: '', iconEmoji: '📨', category: 'messaging', builtin: false, configFields: [], multiInstance: false }, instances: [connectedInstance, disconnectedInstance] },
 ];
 
+const emptyMetrics = {
+  totalMessages: 0,
+  deliveredCount: 0,
+  failedCount: 0,
+  deadLetteredCount: 0,
+  avgDeliveryLatencyMs: null,
+  p95DeliveryLatencyMs: null,
+  activeEndpoints: 0,
+  budgetRejections: defaultBudgetRejections,
+};
+
 // ---------------------------------------------------------------------------
 // Helper to enable relay with data
 // ---------------------------------------------------------------------------
 
-function enableRelayWithData(options: { failedCount?: number; catalog?: typeof catalogAllConnected } = {}) {
-  const { failedCount = 3, catalog = catalogAllConnected } = options;
+function enableRelayWithData(options: { metrics?: typeof mockMetrics; catalog?: typeof catalogAllConnected } = {}) {
+  const { metrics = mockMetrics, catalog = catalogAllConnected } = options;
   mockUseRelayEnabled.mockReturnValue(true);
-  mockUseDeliveryMetrics.mockReturnValue({
-    data: failedCount === 0 ? mockMetricsNoFailures : mockMetrics,
-    isLoading: false,
-  });
+  mockUseDeliveryMetrics.mockReturnValue({ data: metrics, isLoading: false });
   mockUseAdapterCatalog.mockReturnValue({ data: catalog, isLoading: false });
 }
 
@@ -96,7 +106,94 @@ beforeEach(() => {
 afterEach(cleanup);
 
 // ---------------------------------------------------------------------------
-// Tests
+// Unit tests: computeHealthState
+// ---------------------------------------------------------------------------
+
+describe('computeHealthState', () => {
+  it('returns healthy with "No connections configured" when total is zero', () => {
+    const result = computeHealthState(emptyMetrics, 0, 0);
+    expect(result.state).toBe('healthy');
+    expect(result.message).toBe('No connections configured');
+  });
+
+  it('returns healthy when all adapters connected and failure rate < 5%', () => {
+    const result = computeHealthState(
+      { ...mockMetrics, failedCount: 2, deadLetteredCount: 0 },
+      3,
+      3,
+    );
+    expect(result.state).toBe('healthy');
+    expect(result.message).toBe('3 connections active');
+  });
+
+  it('uses singular "connection" when only one adapter is active', () => {
+    const result = computeHealthState(mockMetricsNoFailures, 1, 1);
+    expect(result.state).toBe('healthy');
+    expect(result.message).toBe('1 connection active');
+  });
+
+  it('returns degraded when an adapter is disconnected', () => {
+    const result = computeHealthState(mockMetricsNoFailures, 2, 3);
+    expect(result.state).toBe('degraded');
+    expect(result.message).toContain('1 connection disconnected');
+  });
+
+  it('uses plural "connections" when multiple adapters are disconnected', () => {
+    const result = computeHealthState(mockMetricsNoFailures, 1, 3);
+    expect(result.state).toBe('degraded');
+    expect(result.message).toContain('2 connections disconnected');
+  });
+
+  it('returns degraded when failure rate is between 5% and 50% with all connected', () => {
+    const result = computeHealthState(
+      { ...mockMetrics, failedCount: 10, deadLetteredCount: 0 },
+      3,
+      3,
+    );
+    expect(result.state).toBe('degraded');
+    expect(result.message).toContain('10 failures in last 24h');
+  });
+
+  it('returns critical when failure rate exceeds 50%', () => {
+    // 60 failed out of 100 total = 60% > 50%
+    const result = computeHealthState(
+      { ...mockMetrics, totalMessages: 100, failedCount: 60, deadLetteredCount: 0 },
+      3,
+      3,
+    );
+    expect(result.state).toBe('critical');
+    expect(result.message).toContain('60% failure rate');
+    expect(result.message).toContain('60 messages failed today');
+  });
+
+  it('returns critical when zero adapters are connected', () => {
+    const result = computeHealthState(emptyMetrics, 0, 3);
+    expect(result.state).toBe('critical');
+  });
+
+  it('includes dead-lettered count in failure rate calculation', () => {
+    // 50 failed + 10 dead-lettered = 60/100 = 60% > 50%
+    const result = computeHealthState(
+      { ...mockMetrics, totalMessages: 100, failedCount: 50, deadLetteredCount: 10 },
+      3,
+      3,
+    );
+    expect(result.state).toBe('critical');
+  });
+
+  it('returns healthy when no messages sent and all adapters connected', () => {
+    const result = computeHealthState(
+      { ...emptyMetrics, totalMessages: 0, failedCount: 0 },
+      2,
+      2,
+    );
+    expect(result.state).toBe('healthy');
+    expect(result.message).toBe('2 connections active');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration tests: RelayHealthBar component
 // ---------------------------------------------------------------------------
 
 describe('RelayHealthBar', () => {
@@ -140,27 +237,17 @@ describe('RelayHealthBar', () => {
     });
   });
 
-  describe('renders health summary when relay is enabled with data', () => {
-    beforeEach(() => enableRelayWithData());
+  describe('healthy state', () => {
+    beforeEach(() => enableRelayWithData({ metrics: mockMetricsNoFailures }));
 
-    it('shows total messages', () => {
+    it('shows the healthy status message with connection count', () => {
       render(<RelayHealthBar />);
-      expect(screen.getByText('142 today')).toBeInTheDocument();
+      expect(screen.getByText('1 connection active')).toBeInTheDocument();
     });
 
-    it('shows failed count', () => {
+    it('shows latency alongside the status message', () => {
       render(<RelayHealthBar />);
-      expect(screen.getByText('3 failed')).toBeInTheDocument();
-    });
-
-    it('shows adapter connectivity', () => {
-      render(<RelayHealthBar />);
-      expect(screen.getByText('1/1 connected')).toBeInTheDocument();
-    });
-
-    it('shows average latency', () => {
-      render(<RelayHealthBar />);
-      expect(screen.getByText('45ms avg')).toBeInTheDocument();
+      expect(screen.getByText('45ms')).toBeInTheDocument();
     });
 
     it('renders the metrics button', () => {
@@ -169,68 +256,81 @@ describe('RelayHealthBar', () => {
     });
   });
 
-  describe('adapter connectivity dot color', () => {
-    it('shows green dot when all adapters are connected', () => {
-      enableRelayWithData({ catalog: catalogAllConnected });
+  describe('status dot colors', () => {
+    it('shows emerald dot when healthy (all adapters connected, low failures)', () => {
+      enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogAllConnected });
       const { container } = render(<RelayHealthBar />);
-      expect(container.querySelector('.bg-green-500')).toBeInTheDocument();
+      expect(container.querySelector('.bg-emerald-500')).toBeInTheDocument();
       expect(container.querySelector('.bg-amber-500')).toBeNull();
+      expect(container.querySelector('.bg-red-500')).toBeNull();
     });
 
-    it('shows amber dot when some adapters are disconnected', () => {
-      enableRelayWithData({ catalog: catalogPartiallyConnected });
+    it('shows amber dot when degraded (some adapters disconnected)', () => {
+      enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
       const { container } = render(<RelayHealthBar />);
       expect(container.querySelector('.bg-amber-500')).toBeInTheDocument();
-      expect(container.querySelector('.bg-green-500')).toBeNull();
+      expect(container.querySelector('.bg-emerald-500')).toBeNull();
+    });
+
+    it('shows red dot when critical (failure rate > 50%)', () => {
+      enableRelayWithData({
+        metrics: { ...mockMetrics, totalMessages: 10, failedCount: 6, deadLetteredCount: 0 },
+        catalog: catalogAllConnected,
+      });
+      const { container } = render(<RelayHealthBar />);
+      expect(container.querySelector('.bg-red-500')).toBeInTheDocument();
+      expect(container.querySelector('.bg-emerald-500')).toBeNull();
     });
   });
 
-  describe('failure count interaction', () => {
-    it('renders failure count as a clickable button when failures exist', () => {
-      enableRelayWithData({ failedCount: 3 });
-      render(<RelayHealthBar />);
-      const btn = screen.getByLabelText('3 failed messages — click to view');
-      expect(btn).toBeInTheDocument();
-      expect(btn.tagName).toBe('BUTTON');
-    });
-
-    it('renders failure count as plain text when zero failures', () => {
-      enableRelayWithData({ failedCount: 0 });
-      render(<RelayHealthBar />);
-      expect(screen.queryByLabelText(/failed messages/)).toBeNull();
-      expect(screen.getByText('0 failed')).toBeInTheDocument();
-    });
-
-    it('calls onFailedClick when failure count button is clicked', () => {
-      enableRelayWithData({ failedCount: 3 });
+  describe('degraded/critical clickable status message', () => {
+    it('renders status message as a clickable button when degraded and onFailedClick is provided', () => {
+      enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
       const onFailedClick = vi.fn();
       render(<RelayHealthBar onFailedClick={onFailedClick} />);
-      fireEvent.click(screen.getByLabelText('3 failed messages — click to view'));
+      const btn = screen.getByRole('button', { name: /disconnected — click to view failures/ });
+      expect(btn).toBeInTheDocument();
+    });
+
+    it('calls onFailedClick when the degraded status message is clicked', () => {
+      enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
+      const onFailedClick = vi.fn();
+      render(<RelayHealthBar onFailedClick={onFailedClick} />);
+      fireEvent.click(screen.getByRole('button', { name: /disconnected — click to view failures/ }));
       expect(onFailedClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders status as plain text when onFailedClick is not provided', () => {
+      enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
+      render(<RelayHealthBar />);
+      expect(screen.getByText('1 connection disconnected')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /disconnected/ })).toBeNull();
     });
   });
 
-  describe('latency display', () => {
-    it('shows em-dash when latency is null', () => {
+  describe('latency display in healthy state', () => {
+    it('omits the latency separator when latency is null', () => {
       mockUseRelayEnabled.mockReturnValue(true);
       mockUseDeliveryMetrics.mockReturnValue({
-        data: { ...mockMetrics, avgDeliveryLatencyMs: null },
+        data: { ...mockMetricsNoFailures, avgDeliveryLatencyMs: null },
         isLoading: false,
       });
       mockUseAdapterCatalog.mockReturnValue({ data: catalogAllConnected, isLoading: false });
       render(<RelayHealthBar />);
-      expect(screen.getByText('— avg')).toBeInTheDocument();
+      // No latency span when null
+      expect(screen.queryByText('—')).toBeNull();
+      expect(screen.getByText('1 connection active')).toBeInTheDocument();
     });
 
     it('shows <1ms for sub-millisecond latency', () => {
       mockUseRelayEnabled.mockReturnValue(true);
       mockUseDeliveryMetrics.mockReturnValue({
-        data: { ...mockMetrics, avgDeliveryLatencyMs: 0.5 },
+        data: { ...mockMetricsNoFailures, avgDeliveryLatencyMs: 0.5 },
         isLoading: false,
       });
       mockUseAdapterCatalog.mockReturnValue({ data: catalogAllConnected, isLoading: false });
       render(<RelayHealthBar />);
-      expect(screen.getByText('<1ms avg')).toBeInTheDocument();
+      expect(screen.getByText('<1ms')).toBeInTheDocument();
     });
   });
 

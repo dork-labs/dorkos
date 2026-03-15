@@ -406,15 +406,17 @@ export class AdapterManager {
     this.configs.splice(index, 1);
     await saveAdapterConfig(this.configPath, this.configs);
 
-    // Check for orphaned bindings after adapter removal
+    // Auto-delete bindings that belonged to the removed adapter
     if (this.bindingStore) {
-      const knownAdapterIds = this.configs.map((c) => c.id);
-      const orphaned = this.bindingStore.getOrphaned(knownAdapterIds);
-      if (orphaned.length > 0) {
-        logger.warn(
-          `[AdapterManager] ${orphaned.length} orphaned binding(s) detected after removing adapter '${id}'. ` +
-          `Binding IDs: ${orphaned.map((b) => b.id).join(', ')}. ` +
-          `Delete them via DELETE /api/relay/bindings/:id to clean up.`,
+      const orphanBindings = this.bindingStore.getAll().filter((b) => b.adapterId === id);
+      for (const binding of orphanBindings) {
+        await this.bindingStore.delete(binding.id);
+      }
+      if (orphanBindings.length > 0) {
+        logger.info(
+          '[AdapterManager] Cleaned %d orphan binding(s) for removed adapter %s',
+          orphanBindings.length,
+          id,
         );
       }
     }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Activity, AlertTriangle, ChevronRight, MoreVertical, Settings, Trash2 } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronRight, MoreVertical, Settings, ShieldCheck, Trash2 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/layers/shared/ui/tooltip';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui/collapsible';
@@ -43,12 +44,10 @@ interface AdapterCardProps {
   onToggle: (enabled: boolean) => void;
   onConfigure: () => void;
   onRemove: () => void;
-  /** Optional callback invoked when the user clicks "Bind" in the no-bindings amber state. */
-  onBindClick?: () => void;
 }
 
 /** Displays a configured adapter instance with status, toggle, and kebab menu actions. */
-export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemove, onBindClick }: AdapterCardProps) {
+export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemove }: AdapterCardProps) {
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [eventsSheetOpen, setEventsSheetOpen] = useState(false);
   const isBuiltinClaude = manifest.type === 'claude-code' && manifest.builtin;
@@ -78,6 +77,9 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
         sessionStrategy: b.sessionStrategy,
         chatId: b.chatId,
         channelType: b.channelType,
+        canInitiate: b.canInitiate,
+        canReply: b.canReply,
+        canReceive: b.canReceive,
       };
     });
   }, [adapterBindings, agents]);
@@ -180,30 +182,20 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
                   sessionStrategy={row.sessionStrategy}
                   chatId={row.chatId}
                   channelType={row.channelType}
+                  canInitiate={row.canInitiate}
+                  canReply={row.canReply}
+                  canReceive={row.canReceive}
                 />
               ))}
               {overflowCount > 0 && (
-                <button
-                  onClick={onBindClick}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
+                <span className="text-xs text-muted-foreground">
                   and {overflowCount} more
-                </button>
+                </span>
               )}
             </>
           ) : isConnected ? (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-amber-600">No agent bound</span>
-              {onBindClick && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-5 px-1.5 text-xs"
-                  onClick={onBindClick}
-                >
-                  Bind
-                </Button>
-              )}
             </div>
           ) : null}
         </div>

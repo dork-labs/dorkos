@@ -1,5 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
+import type { AggregatedDeadLetter } from '@dorkos/shared/transport';
+
+export type { AggregatedDeadLetter } from '@dorkos/shared/transport';
 
 /** Shape of a dead-letter entry as returned by the server relay endpoint. */
 export interface DeadLetter {
@@ -37,5 +40,39 @@ export function useDeadLetters(
     },
     enabled,
     refetchInterval: 30_000,
+  });
+}
+
+/**
+ * Fetch aggregated dead-letter groups (collapsed by source + reason) with 30-second polling.
+ *
+ * @param enabled - When false, the query is skipped entirely (Relay feature gate).
+ */
+export function useAggregatedDeadLetters(enabled = true) {
+  const transport = useTransport();
+
+  return useQuery<AggregatedDeadLetter[]>({
+    queryKey: [...DEAD_LETTERS_KEY, 'aggregated'],
+    queryFn: async () => {
+      const result = await transport.listAggregatedDeadLetters();
+      return result.groups;
+    },
+    enabled,
+    refetchInterval: 30_000,
+  });
+}
+
+/** Dismiss all dead letters matching a source + reason pair. */
+export function useDismissDeadLetterGroup() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ source, reason }: { source: string; reason: string }) => {
+      return transport.dismissDeadLetterGroup(source, reason);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [...DEAD_LETTERS_KEY] });
+    },
   });
 }

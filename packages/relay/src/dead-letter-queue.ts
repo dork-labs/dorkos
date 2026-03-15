@@ -366,7 +366,7 @@ export class DeadLetterQueue {
    * @param endpointHash - The endpoint hash.
    * @param messageId - The message ID to remove.
    */
-  private async removeDeadLetter(endpointHash: string, messageId: string): Promise<void> {
+  async removeDeadLetter(endpointHash: string, messageId: string): Promise<void> {
     // Delete envelope file from Maildir failed/
     const failedDir = path.join(this.rootDir, endpointHash, 'failed');
     await silentUnlink(path.join(failedDir, `${messageId}.json`));

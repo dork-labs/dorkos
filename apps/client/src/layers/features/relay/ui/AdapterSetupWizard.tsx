@@ -9,7 +9,7 @@ import {
   DialogFooter,
 } from '@/layers/shared/ui/dialog';
 import { Button } from '@/layers/shared/ui/button';
-import { Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useAddAdapter,
@@ -129,7 +129,6 @@ export function AdapterSetupWizard({
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [setupStepIndex, setSetupStepIndex] = useState(0);
-  const [idError, setIdError] = useState('');
   const [botUsername, setBotUsername] = useState('');
 
   // Bind step state — tracks the newly created adapter ID and binding config.
@@ -182,17 +181,10 @@ export function AdapterSetupWizard({
         }
       }
 
-      // Validate adapter ID in add mode.
-      if (!isEditMode && step === 'configure' && !adapterId.trim()) {
-        setIdError('Adapter ID is required');
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0 && false;
-      }
-      setIdError('');
       setErrors(newErrors);
       return Object.keys(newErrors).length === 0;
     },
-    [values, isEditMode, adapterId, step],
+    [values],
   );
 
   const handleContinue = useCallback(() => {
@@ -268,9 +260,8 @@ export function AdapterSetupWizard({
             setStep('bind');
           },
           onError: (error) => {
-            // Handle duplicate ID by sending user back to configure step.
+            // If the server rejects the ID (e.g. duplicate), go back to configure.
             if (error.message?.includes('duplicate') || error.message?.includes('exists')) {
-              setIdError('An adapter with this ID already exists');
               setStep('configure');
               setSetupStepIndex(0);
             }
@@ -306,10 +297,8 @@ export function AdapterSetupWizard({
         setStep('configure');
         setSetupStepIndex(0);
         setErrors({});
-        setIdError('');
         setLabel('');
         setBotUsername('');
-        setAdapterId(existingInstance?.id ?? generateDefaultId(manifest, existingAdapterIds));
         setCreatedAdapterId('');
         setBindAgentId('');
         setBindStrategy('per-chat');
@@ -369,10 +358,6 @@ export function AdapterSetupWizard({
                 {step === 'configure' && (
                   <ConfigureStep
                     manifest={manifest}
-                    isEditMode={isEditMode}
-                    adapterId={adapterId}
-                    onAdapterIdChange={setAdapterId}
-                    idError={idError}
                     label={label}
                     onLabelChange={setLabel}
                     fields={visibleFields}
@@ -428,45 +413,65 @@ export function AdapterSetupWizard({
             </AnimatePresence>
           </div>
 
-          <DialogFooter>
-            {step !== 'configure' && step !== 'bind' && (
-              <Button variant="outline" onClick={handleBack} disabled={isSaving}>
-                Back
-              </Button>
-            )}
-            {step === 'configure' && hasSetupSteps && setupStepIndex > 0 && (
-              <Button variant="outline" onClick={handleBack}>
-                Back
-              </Button>
-            )}
-            {step === 'test' && (
-              <Button variant="ghost" onClick={() => setStep('confirm')}>
-                Skip
-              </Button>
-            )}
-            {step === 'configure' && (
-              <Button onClick={handleContinue}>Continue</Button>
-            )}
-            {step === 'test' && !testConnection.isPending && (
-              <Button onClick={handleContinue}>Continue</Button>
-            )}
-            {step === 'confirm' && (
-              <Button onClick={handleSave} disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
-                {isEditMode ? 'Save Changes' : 'Add Adapter'}
-              </Button>
-            )}
-            {step === 'bind' && (
-              <>
-                <Button variant="ghost" onClick={handleSkipBind} disabled={isBinding}>
+          <DialogFooter className="flex items-center justify-between sm:justify-between">
+            {/* Left side: Back button (where applicable) */}
+            <div>
+              {(step === 'test' || step === 'confirm') && (
+                <Button variant="ghost" onClick={handleBack} disabled={isSaving}>
+                  <ArrowLeft className="mr-1 size-4" />
+                  Back
+                </Button>
+              )}
+              {step === 'configure' && hasSetupSteps && setupStepIndex > 0 && (
+                <Button variant="ghost" onClick={handleBack}>
+                  <ArrowLeft className="mr-1 size-4" />
+                  Back
+                </Button>
+              )}
+            </div>
+
+            {/* Right side: Cancel + primary action */}
+            <div className="flex gap-2">
+              {step !== 'bind' && (
+                <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                  Cancel
+                </Button>
+              )}
+              {step === 'test' && (
+                <Button variant="ghost" onClick={() => setStep('confirm')}>
                   Skip
                 </Button>
-                <Button onClick={handleBind} disabled={!bindAgentId || isBinding}>
-                  {isBinding && <Loader2 className="mr-2 size-4 animate-spin" />}
-                  Bind to Agent
+              )}
+              {step === 'configure' && (
+                <Button onClick={handleContinue}>
+                  Continue
+                  <ArrowRight className="ml-1 size-4" />
                 </Button>
-              </>
-            )}
+              )}
+              {step === 'test' && !testConnection.isPending && (
+                <Button onClick={handleContinue}>
+                  Continue
+                  <ArrowRight className="ml-1 size-4" />
+                </Button>
+              )}
+              {step === 'confirm' && (
+                <Button onClick={handleSave} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
+                  {isEditMode ? 'Save Changes' : 'Add Adapter'}
+                </Button>
+              )}
+              {step === 'bind' && (
+                <>
+                  <Button variant="ghost" onClick={handleSkipBind} disabled={isBinding}>
+                    Skip
+                  </Button>
+                  <Button onClick={handleBind} disabled={!bindAgentId || isBinding}>
+                    {isBinding && <Loader2 className="mr-2 size-4 animate-spin" />}
+                    Bind to Agent
+                  </Button>
+                </>
+              )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

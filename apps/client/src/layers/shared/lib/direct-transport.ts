@@ -320,6 +320,14 @@ export class DirectTransport implements Transport {
     return [];
   }
 
+  async listAggregatedDeadLetters(): Promise<{ groups: never[] }> {
+    return { groups: [] };
+  }
+
+  async dismissDeadLetterGroup(_source: string, _reason: string): Promise<{ dismissed: number }> {
+    return { dismissed: 0 };
+  }
+
   async listRelayConversations(): Promise<{ conversations: never[] }> {
     return { conversations: [] };
   }
@@ -394,7 +402,7 @@ export class DirectTransport implements Transport {
 
   async updateBinding(
     _id: string,
-    _updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>>,
+    _updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
   ): Promise<AdapterBinding> {
     throw new Error('Relay bindings are not supported in embedded mode');
   }

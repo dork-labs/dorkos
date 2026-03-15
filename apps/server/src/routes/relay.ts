@@ -319,6 +319,61 @@ export function createRelayRouter(
     return res.json(deadLetters);
   });
 
+  // GET /dead-letters/aggregated — Dead letters grouped by source + reason
+  router.get('/dead-letters/aggregated', async (_req, res) => {
+    const deadLetters = await relayCore.getDeadLetters();
+
+    const groups = new Map<
+      string,
+      {
+        source: string;
+        reason: string;
+        count: number;
+        firstSeen: string;
+        lastSeen: string;
+        sample: unknown;
+      }
+    >();
+
+    for (const dl of deadLetters) {
+      const source = dl.envelope?.from ?? 'unknown';
+      const key = `${source}::${dl.reason}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.count++;
+        if (dl.failedAt < existing.firstSeen) existing.firstSeen = dl.failedAt;
+        if (dl.failedAt > existing.lastSeen) existing.lastSeen = dl.failedAt;
+      } else {
+        groups.set(key, {
+          source,
+          reason: dl.reason,
+          count: 1,
+          firstSeen: dl.failedAt,
+          lastSeen: dl.failedAt,
+          sample: dl.envelope,
+        });
+      }
+    }
+
+    return res.json({ groups: [...groups.values()] });
+  });
+
+  // DELETE /dead-letters — Remove dead letters matching a source + reason group
+  router.delete('/dead-letters', async (req, res) => {
+    const { source, reason } = req.body as { source: string; reason: string };
+    if (!source || !reason) {
+      return res.status(400).json({ error: 'source and reason are required' });
+    }
+    const deadLetters = await relayCore.getDeadLetters();
+    const toRemove = deadLetters.filter(
+      (dl) => (dl.envelope?.from ?? 'unknown') === source && dl.reason === reason,
+    );
+    for (const dl of toRemove) {
+      await relayCore.removeDeadLetter(dl.endpointHash, dl.messageId);
+    }
+    return res.json({ removed: toRemove.length });
+  });
+
   // GET /metrics — Relay system metrics (from RelayCore)
   router.get('/metrics', (_req, res) => res.json(relayCore.getMetrics()));
 
@@ -546,6 +601,9 @@ export function createRelayRouter(
         label: z.string().optional(),
         chatId: z.string().optional().nullable(),
         channelType: ChannelTypeSchema.optional().nullable(),
+        canInitiate: z.boolean().optional(),
+        canReply: z.boolean().optional(),
+        canReceive: z.boolean().optional(),
       });
 
       const result = UpdateBindingSchema.safeParse(req.body);

@@ -52,6 +52,22 @@ export interface AdapterListItem {
   status: AdapterStatus;
 }
 
+/** Aggregated dead-letter group — multiple failures collapsed by source + reason. */
+export interface AggregatedDeadLetter {
+  /** Source identifier (adapter name or from field). */
+  source: string;
+  /** Rejection reason code. */
+  reason: string;
+  /** Number of matching dead letters in this group. */
+  count: number;
+  /** ISO timestamp of the earliest failure in this group. */
+  firstSeen: string;
+  /** ISO timestamp of the most recent failure in this group. */
+  lastSeen: string;
+  /** Representative envelope sample from this group. */
+  sample?: unknown;
+}
+
 /** A single MCP server entry — from `.mcp.json` (config only) or SDK (with live status). */
 export interface McpServerEntry {
   name: string;
@@ -216,6 +232,10 @@ export interface Transport {
   getRelayMetrics(): Promise<unknown>;
   /** List dead-letter messages with optional filters. */
   listRelayDeadLetters(filters?: { endpointHash?: string }): Promise<unknown[]>;
+  /** List aggregated dead-letter groups (collapsed by source + reason). */
+  listAggregatedDeadLetters(): Promise<{ groups: AggregatedDeadLetter[] }>;
+  /** Dismiss all dead letters matching a source + reason pair. */
+  dismissDeadLetterGroup(source: string, reason: string): Promise<{ dismissed: number }>;
   /** List relay conversations (grouped request/response exchanges with human labels). */
   listRelayConversations(): Promise<{ conversations: RelayConversation[] }>;
 
@@ -264,10 +284,10 @@ export interface Transport {
   createBinding(input: CreateBindingRequest): Promise<AdapterBinding>;
   /** Delete an adapter-agent binding by ID. */
   deleteBinding(id: string): Promise<void>;
-  /** Update an existing binding's mutable fields (sessionStrategy, label, chatId, channelType). */
+  /** Update an existing binding's mutable fields. */
   updateBinding(
     id: string,
-    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>>,
+    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
   ): Promise<AdapterBinding>;
 
   // --- Mesh Agent Discovery ---

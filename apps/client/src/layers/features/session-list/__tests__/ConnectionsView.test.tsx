@@ -127,6 +127,9 @@ function makeBinding(adapterId: string, agentId: string): AdapterBinding {
     agentId,
     sessionStrategy: 'per-chat',
     label: '',
+    canInitiate: false,
+    canReply: true,
+    canReceive: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

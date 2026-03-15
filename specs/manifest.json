@@ -476,7 +476,8 @@
       "slug": "relay-ux-elevation",
       "title": "Relay UX Elevation \u2014 World-Class Relay Panel Experience",
       "created": "2026-02-27",
-      "status": "draft"
+      "status": "superseded",
+      "supersededBy": 132
     },
     {
       "number": 69,
@@ -840,7 +841,8 @@
       "slug": "adapter-binding-ux-overhaul",
       "title": "Adapter & Binding UX Overhaul",
       "created": "2026-03-11",
-      "status": "ideation"
+      "status": "superseded",
+      "supersededBy": 132
     },
     {
       "number": 121,
@@ -918,7 +920,21 @@
       "title": "Remove projectPath from AdapterBinding \u2014 Derive CWD from Agent Registry",
       "created": "2026-03-14",
       "status": "specification"
+    },
+    {
+      "number": 132,
+      "slug": "relay-panel-redesign",
+      "title": "Relay Panel Redesign \u2014 Jobs/Ive Design Overhaul",
+      "created": "2026-03-15",
+      "status": "in-progress"
+    },
+    {
+      "number": 133,
+      "slug": "sdk-command-discovery",
+      "title": "SDK-Based Command Discovery",
+      "created": "2026-03-15",
+      "status": "specified"
     }
   ],
-  "nextNumber": 132
+  "nextNumber": 134
 }

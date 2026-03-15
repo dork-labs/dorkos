@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Redesign relay panel — 2-tab IA, semantic health, permissions, dead letter aggregation
+
 ### Changed
 
 - Derive binding CWD from agent registry instead of storing projectPath

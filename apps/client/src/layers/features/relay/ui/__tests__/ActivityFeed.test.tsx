@@ -11,10 +11,12 @@ import '@testing-library/jest-dom/vitest';
 
 const mockUseRelayConversations = vi.fn();
 const mockUseSendRelayMessage = vi.fn(() => ({ mutate: vi.fn(), isPending: false }));
+const mockUseAggregatedDeadLetters = vi.fn((_enabled?: boolean) => ({ data: [] as unknown[], isLoading: false }));
 
 vi.mock('@/layers/entities/relay', () => ({
   useRelayConversations: (...args: unknown[]) => mockUseRelayConversations(...args),
   useSendRelayMessage: () => mockUseSendRelayMessage(),
+  useAggregatedDeadLetters: (enabled?: boolean) => mockUseAggregatedDeadLetters(enabled),
 }));
 
 // Mock DeadLetterSection — it has its own tests and fetches independently.
@@ -84,10 +86,10 @@ describe('ActivityFeed', () => {
   });
 
   describe('empty state', () => {
-    it('shows the "no messages yet" state when there are no conversations and no active filters', () => {
+    it('shows the "waiting for messages" state when there are no conversations and no active filters', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
-      expect(screen.getByText('No messages yet')).toBeInTheDocument();
+      expect(screen.getByText('Waiting for messages')).toBeInTheDocument();
     });
 
     it('shows contextual description in the no-messages state', () => {
@@ -157,7 +159,7 @@ describe('ActivityFeed', () => {
       const clearButtons = screen.getAllByText('Clear filters');
       fireEvent.click(clearButtons[clearButtons.length - 1]);
 
-      expect(screen.getByText('No messages yet')).toBeInTheDocument();
+      expect(screen.getByText('Waiting for messages')).toBeInTheDocument();
     });
   });
 
@@ -493,22 +495,81 @@ describe('ActivityFeed', () => {
     });
   });
 
-  describe('DeadLetterSection integration', () => {
-    it('renders DeadLetterSection with the enabled prop', () => {
+  describe('failures toggle', () => {
+    it('does not render DeadLetterSection by default', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
+
+      expect(screen.queryByTestId('dead-letter-section')).not.toBeInTheDocument();
+    });
+
+    it('renders the "Failures" toggle button', () => {
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
+      render(<ActivityFeed enabled={true} />);
+
+      expect(screen.getByRole('button', { name: 'Show failures' })).toBeInTheDocument();
+    });
+
+    it('shows DeadLetterSection when failures toggle is clicked', () => {
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
+      render(<ActivityFeed enabled={true} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show failures' }));
 
       const section = screen.getByTestId('dead-letter-section');
       expect(section).toBeInTheDocument();
       expect(section).toHaveAttribute('data-enabled', 'true');
     });
 
+    it('hides DeadLetterSection when failures toggle is clicked again', () => {
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
+      render(<ActivityFeed enabled={true} />);
+
+      const toggle = screen.getByRole('button', { name: 'Show failures' });
+      fireEvent.click(toggle);
+      expect(screen.getByTestId('dead-letter-section')).toBeInTheDocument();
+
+      fireEvent.click(toggle);
+      expect(screen.queryByTestId('dead-letter-section')).not.toBeInTheDocument();
+    });
+
     it('passes enabled=false to DeadLetterSection when relay is disabled', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={false} />);
 
+      fireEvent.click(screen.getByRole('button', { name: 'Show failures' }));
+
       const section = screen.getByTestId('dead-letter-section');
       expect(section).toHaveAttribute('data-enabled', 'false');
+    });
+
+    it('shows red dot indicator when dead letters exist and toggle is off', () => {
+      mockUseAggregatedDeadLetters.mockReturnValue({
+        data: [{ source: 'test', reason: 'hop_limit', count: 5, firstSeen: '', lastSeen: '' }],
+        isLoading: false,
+      });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
+      render(<ActivityFeed enabled={true} />);
+
+      const toggle = screen.getByRole('button', { name: 'Show failures' });
+      // Red dot is a span inside the button
+      const redDot = toggle.querySelector('.bg-red-500');
+      expect(redDot).toBeInTheDocument();
+    });
+
+    it('hides red dot indicator when failures toggle is active', () => {
+      mockUseAggregatedDeadLetters.mockReturnValue({
+        data: [{ source: 'test', reason: 'hop_limit', count: 5, firstSeen: '', lastSeen: '' }],
+        isLoading: false,
+      });
+      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
+      render(<ActivityFeed enabled={true} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show failures' }));
+
+      const toggle = screen.getByRole('button', { name: 'Show failures' });
+      const redDot = toggle.querySelector('.bg-red-500');
+      expect(redDot).not.toBeInTheDocument();
     });
   });
 
@@ -518,11 +579,13 @@ describe('ActivityFeed', () => {
       expect(() => render(<ActivityFeed enabled={true} />)).not.toThrow();
     });
 
-    it('attaches deadLetterRef to the dead-letter wrapper div', () => {
+    it('attaches deadLetterRef to the dead-letter wrapper div when toggle is active', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
 
       const ref = { current: null } as React.RefObject<HTMLDivElement | null>;
       render(<ActivityFeed enabled={true} deadLetterRef={ref} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show failures' }));
 
       expect(ref.current).not.toBeNull();
     });

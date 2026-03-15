@@ -91,6 +91,9 @@ export function BindingList() {
           label: values.label,
           chatId: values.chatId ?? undefined,
           channelType: values.channelType ?? undefined,
+          canInitiate: values.canInitiate,
+          canReply: values.canReply,
+          canReceive: values.canReceive,
         },
       });
       setEditState(null);
@@ -107,6 +110,9 @@ export function BindingList() {
         label: values.label,
         chatId: values.chatId,
         channelType: values.channelType,
+        canInitiate: values.canInitiate,
+        canReply: values.canReply,
+        canReceive: values.canReceive,
       });
       setCreateDialogOpen(false);
     },
@@ -122,6 +128,9 @@ export function BindingList() {
         label: values.label,
         chatId: values.chatId,
         channelType: values.channelType,
+        canInitiate: values.canInitiate,
+        canReply: values.canReply,
+        canReceive: values.canReceive,
       });
       setDuplicateSource(null);
     },
@@ -306,6 +315,9 @@ export function BindingList() {
             label: editState.binding.label,
             chatId: editState.binding.chatId,
             channelType: editState.binding.channelType,
+            canInitiate: editState.binding.canInitiate,
+            canReply: editState.binding.canReply,
+            canReceive: editState.binding.canReceive,
           }}
           onConfirm={handleEditConfirm}
         />

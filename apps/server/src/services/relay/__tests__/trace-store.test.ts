@@ -103,6 +103,67 @@ describe('TraceStore', () => {
     expect(metrics.p95DeliveryLatencyMs).toBeNull();
   });
 
+  describe('getMetrics date filter', () => {
+    it('excludes spans older than 24 hours by default', () => {
+      const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+      store.insertSpan({
+        messageId: 'old-msg',
+        traceId: 'old-trace',
+        subject: 'test.old',
+        status: 'delivered',
+      });
+      // Manually backdate sentAt to 25 hours ago via raw SQL
+      db.run(sql`UPDATE relay_traces SET sent_at = ${oldDate} WHERE message_id = 'old-msg'`);
+
+      // Insert a recent span
+      store.insertSpan({
+        messageId: 'new-msg',
+        traceId: 'new-trace',
+        subject: 'test.new',
+        status: 'delivered',
+      });
+
+      const metrics = store.getMetrics();
+      expect(metrics.totalMessages).toBe(1);
+      expect(metrics.deliveredCount).toBe(1);
+    });
+
+    it('includes spans within the provided since window', () => {
+      store.insertSpan({
+        messageId: 'recent-msg',
+        traceId: 'recent-trace',
+        subject: 'test.recent',
+        status: 'failed',
+      });
+
+      const metrics = store.getMetrics({ since: new Date(Date.now() - 60_000).toISOString() });
+      expect(metrics.totalMessages).toBe(1);
+      expect(metrics.failedCount).toBe(1);
+    });
+
+    it('applies date filter to latency and endpoint queries', () => {
+      const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+      store.insertSpan({
+        messageId: 'old-ep',
+        traceId: 'old-trace-ep',
+        subject: 'test.old-endpoint',
+        status: 'delivered',
+      });
+      db.run(sql`UPDATE relay_traces SET sent_at = ${oldDate} WHERE message_id = 'old-ep'`);
+
+      store.insertSpan({
+        messageId: 'new-ep',
+        traceId: 'new-trace-ep',
+        subject: 'test.new-endpoint',
+        status: 'delivered',
+      });
+
+      const metrics = store.getMetrics();
+      // Only the recent span's subject should count
+      expect(metrics.activeEndpoints).toBe(1);
+    });
+  });
+
   it('handles updateSpan with no fields gracefully', () => {
     store.insertSpan({ messageId: 'msg-001', traceId: 't1', subject: 's1' });
     store.updateSpan('msg-001', {});

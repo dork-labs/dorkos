@@ -369,6 +369,9 @@ describe('buildTopologyElements', () => {
         projectPath: '/projects/builder',
         sessionStrategy: 'per-chat' as const,
         label: '',
+        canInitiate: false,
+        canReply: true,
+        canReceive: true,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };
@@ -423,6 +426,9 @@ describe('buildTopologyElements', () => {
       projectPath: '/projects/builder',
       sessionStrategy: 'per-chat' as const,
       label: 'Support',
+      canInitiate: false,
+      canReply: true,
+      canReceive: true,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     };
@@ -539,6 +545,9 @@ describe('buildTopologyElements', () => {
         label: 'Support',
         chatId: '12345',
         channelType: 'dm' as const,
+        canInitiate: false,
+        canReply: true,
+        canReceive: true,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };
@@ -566,6 +575,9 @@ describe('buildTopologyElements', () => {
         projectPath: '/projects/builder',
         sessionStrategy: 'per-chat' as const,
         label: '',
+        canInitiate: false,
+        canReply: true,
+        canReceive: true,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };

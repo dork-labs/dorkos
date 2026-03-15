@@ -353,22 +353,9 @@ describe('AdapterCard', () => {
     expect(screen.queryByText('No agent bound')).toBeNull();
   });
 
-  it('shows "Bind" button when connected with no bindings and onBindClick provided', () => {
-    const onBindClick = vi.fn();
-    render(<AdapterCard {...defaultProps({ onBindClick })} />);
-    expect(screen.getByRole('button', { name: 'Bind' })).toBeTruthy();
-  });
-
-  it('does not show "Bind" button when onBindClick not provided', () => {
+  it('does not show "Bind" button (no Bindings tab to navigate to)', () => {
     render(<AdapterCard {...defaultProps()} />);
     expect(screen.queryByRole('button', { name: 'Bind' })).toBeNull();
-  });
-
-  it('calls onBindClick when "Bind" button is clicked', () => {
-    const onBindClick = vi.fn();
-    render(<AdapterCard {...defaultProps({ onBindClick })} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Bind' }));
-    expect(onBindClick).toHaveBeenCalledTimes(1);
   });
 
   it('does not show "No agent bound" when bindings exist', () => {

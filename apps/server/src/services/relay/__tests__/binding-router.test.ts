@@ -175,7 +175,7 @@ describe('BindingRouter', () => {
     expect(mockAgentManager.createSession).toHaveBeenCalledWith('/agents/a');
     expect(mockRelayCore.publish).toHaveBeenCalledWith(
       'relay.agent.session-abc',
-      { text: 'hello', cwd: '/agents/a' },
+      expect.objectContaining({ text: 'hello', cwd: '/agents/a' }),
       expect.objectContaining({ from: 'tg' }),
     );
   });
@@ -652,6 +652,118 @@ describe('BindingRouter', () => {
 
       // Should not throw
       await expect(router.shutdown()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('permission enforcement', () => {
+    const makeEnvelope = (chatId = '123') => ({
+      id: 'msg-1',
+      subject: `relay.human.telegram.${chatId}`,
+      payload: { content: 'hello' },
+      from: 'tg',
+      budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const makeBinding = (overrides: Record<string, unknown> = {}) => ({
+      id: 'bind-1',
+      adapterId: 'telegram',
+      agentId: 'agent-a',
+      sessionStrategy: 'per-chat',
+      label: '',
+      canInitiate: false,
+      canReply: true,
+      canReceive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    });
+
+    it('drops inbound messages when canReceive=false', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ canReceive: false }));
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).not.toHaveBeenCalled();
+      expect(mockAgentManager.createSession).not.toHaveBeenCalled();
+    });
+
+    it('allows inbound messages when canReceive=true (default)', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ canReceive: true }));
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.stringContaining('relay.agent.'),
+        expect.any(Object),
+        expect.any(Object),
+      );
+    });
+
+    it('includes __bindingPermissions in enriched payload', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(
+        makeBinding({ canReply: true, canInitiate: false }),
+      );
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          __bindingPermissions: {
+            canReply: true,
+            canInitiate: false,
+          },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('includes canReply=false in __bindingPermissions when set', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(
+        makeBinding({ canReply: false }),
+      );
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          __bindingPermissions: {
+            canReply: false,
+            canInitiate: false,
+          },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('includes canInitiate=true in __bindingPermissions when set', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(
+        makeBinding({ canInitiate: true }),
+      );
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          __bindingPermissions: {
+            canReply: true,
+            canInitiate: true,
+          },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('does not attach __bindingPermissions to non-object payloads', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      await capturedHandler!({
+        ...makeEnvelope(),
+        payload: 'plain string',
+      });
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.any(String),
+        'plain string',
+        expect.any(Object),
+      );
     });
   });
 

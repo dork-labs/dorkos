@@ -30,18 +30,19 @@ interface ConversationRowProps {
  *
  * Adapter ID may be embedded in the `payload` if the conversation carries
  * relay trace metadata, or can be inferred from the source subject for known
- * patterns (e.g., `relay.adapter.telegram-1.chat.123`).
+ * patterns (e.g., `relay.human.telegram.12345`).
  *
  * @param conversation - The relay conversation record
  * @returns The adapter ID string, or empty string when unavailable
  */
 function extractAdapterId(conversation: RelayConversation): string {
+  // Prefer explicit adapterId from payload metadata
   if (conversation.payload && typeof conversation.payload === 'object') {
     const payload = conversation.payload as Record<string, unknown>;
     if (typeof payload.adapterId === 'string') return payload.adapterId;
   }
-  // Infer from subject pattern relay.adapter.<id>.* (not a current format — best-effort)
-  const match = conversation.from.raw.match(/^relay\.adapter\.([^.]+)/);
+  // Infer from subject: relay.human.<platform>.<chatId>
+  const match = conversation.from.raw.match(/^relay\.human\.([^.]+)/);
   if (match) return match[1];
   return '';
 }
@@ -158,6 +159,9 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
         label: values.label,
         chatId: values.chatId,
         channelType: values.channelType,
+        canInitiate: values.canInitiate,
+        canReply: values.canReply,
+        canReceive: values.canReceive,
       });
       setBindingDialogOpen(false);
     },

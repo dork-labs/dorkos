@@ -29,12 +29,23 @@ describe('AdapterBindingSchema', () => {
     projectPath: '/home/user/agents/alpha',
     sessionStrategy: 'per-chat',
     label: 'Main bot',
+    canInitiate: false,
+    canReply: true,
+    canReceive: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   };
 
   it('validates a complete binding', () => {
     expect(AdapterBindingSchema.parse(validBinding)).toEqual(validBinding);
+  });
+
+  it('applies permission defaults when not provided', () => {
+    const { canInitiate, canReply, canReceive, ...withoutPerms } = validBinding;
+    const parsed = AdapterBindingSchema.parse(withoutPerms);
+    expect(parsed.canInitiate).toBe(false);
+    expect(parsed.canReply).toBe(true);
+    expect(parsed.canReceive).toBe(true);
   });
 
   it('accepts optional chatId and channelType', () => {
@@ -67,7 +78,7 @@ describe('AdapterBindingSchema', () => {
 });
 
 describe('CreateBindingRequestSchema', () => {
-  it('applies defaults for sessionStrategy and label', () => {
+  it('applies defaults for sessionStrategy, label, and permissions', () => {
     const input = {
       adapterId: 'telegram-main',
       agentId: 'agent-1',
@@ -76,6 +87,9 @@ describe('CreateBindingRequestSchema', () => {
     const parsed = CreateBindingRequestSchema.parse(input);
     expect(parsed.sessionStrategy).toBe('per-chat');
     expect(parsed.label).toBe('');
+    expect(parsed.canInitiate).toBe(false);
+    expect(parsed.canReply).toBe(true);
+    expect(parsed.canReceive).toBe(true);
   });
 
   it('does not include id, createdAt, or updatedAt in output', () => {
@@ -118,6 +132,9 @@ describe('BindingListResponseSchema', () => {
           projectPath: '/agents/alpha',
           sessionStrategy: 'per-chat',
           label: '',
+          canInitiate: false,
+          canReply: true,
+          canReceive: true,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
@@ -141,6 +158,9 @@ describe('BindingResponseSchema', () => {
         projectPath: '/agents/alpha',
         sessionStrategy: 'per-chat',
         label: '',
+        canInitiate: false,
+        canReply: true,
+        canReceive: true,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
       },

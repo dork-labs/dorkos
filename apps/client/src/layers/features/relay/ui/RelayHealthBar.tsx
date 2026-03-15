@@ -8,7 +8,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/layers/shared/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/layers/shared/ui/tooltip';
 import { useDeliveryMetrics, useAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
+import type { DeliveryMetrics } from '@dorkos/shared/relay-schemas';
 import { DeliveryMetricsDashboard } from './DeliveryMetrics';
 
 interface RelayHealthBarProps {
@@ -18,10 +25,70 @@ interface RelayHealthBarProps {
   onFailedClick?: () => void;
 }
 
+type HealthState = 'healthy' | 'degraded' | 'critical';
+
+const DOT_COLORS: Record<HealthState, string> = {
+  healthy: 'bg-emerald-500',
+  degraded: 'bg-amber-500',
+  critical: 'bg-red-500',
+};
+
 /** Format a latency value to a display string. */
 function fmtLatency(ms: number | null): string {
   if (ms == null) return '—';
   return ms < 1 ? '<1ms' : `${Math.round(ms)}ms`;
+}
+
+/**
+ * Compute a semantic health state from delivery metrics and adapter connectivity.
+ *
+ * @param metrics - Live delivery metrics for the last 24 hours
+ * @param connected - Number of adapters currently in connected state
+ * @param total - Total number of configured adapter instances
+ * @returns The health state and a human-readable status message
+ *
+ * @internal Exported for testing only.
+ */
+export function computeHealthState(
+  metrics: DeliveryMetrics,
+  connected: number,
+  total: number,
+): { state: HealthState; message: string } {
+  const failureRate =
+    metrics.totalMessages > 0
+      ? (metrics.failedCount + metrics.deadLetteredCount) / metrics.totalMessages
+      : 0;
+
+  if (total === 0) {
+    return { state: 'healthy', message: 'No connections configured' };
+  }
+
+  if (failureRate > 0.5 || connected === 0) {
+    const pct = Math.round(failureRate * 100);
+    return {
+      state: 'critical',
+      message: `${pct}% failure rate \u2014 ${metrics.failedCount} messages failed today`,
+    };
+  }
+
+  if (connected < total || failureRate >= 0.05) {
+    const disconnected = total - connected;
+    if (disconnected > 0) {
+      return {
+        state: 'degraded',
+        message: `${disconnected} connection${disconnected > 1 ? 's' : ''} disconnected`,
+      };
+    }
+    return {
+      state: 'degraded',
+      message: `${metrics.failedCount} failure${metrics.failedCount !== 1 ? 's' : ''} in last 24h`,
+    };
+  }
+
+  return {
+    state: 'healthy',
+    message: `${connected} connection${connected > 1 ? 's' : ''} active`,
+  };
 }
 
 /** Derive connected/total adapter counts from the catalog. */
@@ -36,9 +103,11 @@ function useAdapterConnectivity(enabled: boolean) {
 }
 
 /**
- * Compact health summary bar for the Relay panel.
+ * Compact semantic health bar for the Relay panel.
  *
- * Shows adapter connectivity, message throughput, failure count, and average latency.
+ * Shows a colored status dot (green/amber/red) and a plain-language status message.
+ * Healthy state includes a tooltip with detailed metrics breakdown.
+ * Degraded/critical failure text is clickable to scroll to dead letters.
  * Includes a BarChart3 icon button that opens a Dialog with the full DeliveryMetricsDashboard.
  *
  * Renders null when relay is disabled, the `enabled` prop is false, or data is loading.
@@ -54,57 +123,76 @@ export function RelayHealthBar({ enabled = true, onFailedClick }: RelayHealthBar
 
   if (!relayEnabled || !enabled || metricsLoading || catalogLoading || !metrics) return null;
 
-  const hasFailures = metrics.failedCount > 0;
-  const allConnected = total > 0 && connected === total;
-  const connectivityDotClass = allConnected ? 'bg-green-500' : 'bg-amber-500';
+  const { state, message } = computeHealthState(metrics, connected, total);
+  const isClickable = (state === 'degraded' || state === 'critical') && onFailedClick != null;
+  const latency = fmtLatency(metrics.avgDeliveryLatencyMs);
+
+  const tooltipContent = `${metrics.totalMessages} messages today \u00b7 ${metrics.failedCount} failed \u00b7 ${latency} avg latency`;
 
   return (
-    <div className="flex items-center gap-3 border-b px-3 py-1.5 text-xs text-muted-foreground">
-      {/* Adapter connectivity */}
-      <span className="flex items-center gap-1">
-        <span className={`h-2 w-2 rounded-full ${connectivityDotClass}`} aria-hidden="true" />
-        {connected}/{total} connected
-      </span>
+    <TooltipProvider>
+      <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs text-muted-foreground">
+        {/* Semantic status indicator */}
+        {state === 'healthy' ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex min-w-0 flex-1 cursor-default items-center gap-1.5">
+                <span
+                  className={`size-2 shrink-0 rounded-full ${DOT_COLORS[state]}`}
+                  aria-hidden="true"
+                />
+                <span className="truncate">{message}</span>
+                {metrics.avgDeliveryLatencyMs != null && (
+                  <>
+                    <span aria-hidden="true">&middot;</span>
+                    <span>{latency}</span>
+                  </>
+                )}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{tooltipContent}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span
+              className={`size-2 shrink-0 rounded-full ${DOT_COLORS[state]}`}
+              aria-hidden="true"
+            />
+            {isClickable ? (
+              <button
+                type="button"
+                onClick={onFailedClick}
+                className="truncate text-left hover:underline"
+                aria-label={`${message} — click to view failures`}
+              >
+                {message}
+              </button>
+            ) : (
+              <span className="truncate">{message}</span>
+            )}
+          </span>
+        )}
 
-      {/* Message throughput */}
-      <span>{metrics.totalMessages} today</span>
-
-      {/* Failure count — clickable when failures exist */}
-      {hasFailures ? (
-        <button
-          type="button"
-          onClick={onFailedClick}
-          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-          aria-label={`${metrics.failedCount} failed messages — click to view`}
-        >
-          {metrics.failedCount} failed
-        </button>
-      ) : (
-        <span>{metrics.failedCount} failed</span>
-      )}
-
-      {/* Average latency */}
-      <span>{fmtLatency(metrics.avgDeliveryLatencyMs)} avg</span>
-
-      {/* Metrics dashboard trigger */}
-      <Dialog open={metricsOpen} onOpenChange={setMetricsOpen}>
-        <DialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto size-6 p-0"
-            aria-label="Open delivery metrics"
-          >
-            <BarChart3 className="size-3.5" />
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Delivery Metrics</DialogTitle>
-          </DialogHeader>
-          <DeliveryMetricsDashboard />
-        </DialogContent>
-      </Dialog>
-    </div>
+        {/* Metrics dashboard trigger */}
+        <Dialog open={metricsOpen} onOpenChange={setMetricsOpen}>
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="size-6 shrink-0 p-0"
+              aria-label="Open delivery metrics"
+            >
+              <BarChart3 className="size-3.5" />
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Delivery Metrics</DialogTitle>
+            </DialogHeader>
+            <DeliveryMetricsDashboard />
+          </DialogContent>
+        </Dialog>
+      </div>
+    </TooltipProvider>
   );
 }

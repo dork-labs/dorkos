@@ -158,8 +158,16 @@ export class TraceStore {
       .all();
   }
 
-  /** Compute live delivery metrics from Drizzle aggregate queries. */
-  getMetrics(): DeliveryMetrics {
+  /**
+   * Compute live delivery metrics from Drizzle aggregate queries.
+   *
+   * @param options - Optional filter parameters
+   * @param options.since - ISO 8601 timestamp; only spans with sentAt >= since are counted.
+   *   Defaults to 24 hours ago.
+   */
+  getMetrics(options?: { since?: string }): DeliveryMetrics {
+    const sinceIso = options?.since ?? new Date(Date.now() - 86_400_000).toISOString();
+
     const [counts] = this.db
       .select({
         total: count(),
@@ -168,6 +176,7 @@ export class TraceStore {
         deadLettered: count(sql`CASE WHEN ${relayTraces.status} = 'timeout' THEN 1 END`),
       })
       .from(relayTraces)
+      .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
       .all();
 
     const [latency] = this.db
@@ -179,6 +188,7 @@ export class TraceStore {
         )`,
       })
       .from(relayTraces)
+      .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
       .all();
 
     const [endpointCount] = this.db
@@ -186,6 +196,7 @@ export class TraceStore {
         cnt: sql<number>`COUNT(DISTINCT ${relayTraces.subject})`,
       })
       .from(relayTraces)
+      .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
       .all();
 
     return {

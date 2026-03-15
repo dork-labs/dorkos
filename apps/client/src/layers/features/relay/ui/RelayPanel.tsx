@@ -1,186 +1,27 @@
 import { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { RefreshCw, Route } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Tabs, TabsList, TabsTrigger, TabsContent, FeatureDisabledState, Skeleton, Button } from '@/layers/shared/ui';
-import {
-  useRelayEnabled,
-  useRelayEventStream,
-  useAdapterCatalog,
-  useToggleAdapter,
-  useRemoveAdapter,
-} from '@/layers/entities/relay';
-import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
+import { Route } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent, FeatureDisabledState } from '@/layers/shared/ui';
+import { useRelayEnabled, useRelayEventStream, useAdapterCatalog } from '@/layers/entities/relay';
 import { ActivityFeed } from './ActivityFeed';
 import { ConnectionStatusBanner } from './ConnectionStatusBanner';
-import { EndpointList } from './EndpointList';
-import { InboxView } from './InboxView';
-import { AdapterCard } from './AdapterCard';
-import { CatalogCard } from './CatalogCard';
-import { AdapterSetupWizard } from './AdapterSetupWizard';
-import { BindingList } from './BindingList';
+import { ConnectionsTab } from './ConnectionsTab';
+import { RelayEmptyState } from './RelayEmptyState';
 import { RelayHealthBar } from './RelayHealthBar';
 
-interface WizardState {
-  open: boolean;
-  manifest?: AdapterManifest;
-  instanceId?: string;
-}
-
-interface AdaptersTabProps {
-  enabled: boolean;
-  /** Called when the user clicks "Bind" on an adapter with no bindings. */
-  onBindClick?: () => void;
-}
-
-/** Renders configured adapter instances and available adapter types from the catalog. */
-function AdaptersTab({ enabled, onBindClick }: AdaptersTabProps) {
-  const { data: catalog = [], isLoading } = useAdapterCatalog(enabled);
-  const { mutate: toggleAdapter } = useToggleAdapter();
-  const { mutate: removeAdapter } = useRemoveAdapter();
-  const [wizardState, setWizardState] = useState<WizardState>({ open: false });
-  const queryClient = useQueryClient();
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6 p-4">
-        <div className="space-y-3">
-          <Skeleton className="h-4 w-32" />
-          <div className="space-y-2">
-            {[1, 2].map((i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-lg" />
-            ))}
-          </div>
-        </div>
-        <div className="space-y-3">
-          <Skeleton className="h-4 w-32" />
-          <div className="grid grid-cols-2 gap-3">
-            {[1, 2].map((i) => (
-              <div key={i} className="rounded-lg border p-4">
-                <Skeleton className="mb-2 h-5 w-24" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="mt-3 h-8 w-full" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Configured: entries that have at least one instance — flatten to individual cards.
-  const configuredCards = catalog.flatMap((entry) =>
-    entry.instances.map((inst) => ({ instance: inst, manifest: entry.manifest })),
-  );
-
-  // Available: entries with no instances, OR multiInstance entries (can always add more).
-  const availableEntries = catalog.filter(
-    (entry) => entry.instances.length === 0 || entry.manifest.multiInstance,
-  );
-
-  const openWizardForAdd = (manifest: AdapterManifest) => {
-    setWizardState({ open: true, manifest });
-  };
-
-  const openWizardForConfigure = (manifest: AdapterManifest, instanceId: string) => {
-    setWizardState({ open: true, manifest, instanceId });
-  };
-
-  // Find the existing instance data for edit mode in the wizard.
-  const existingInstance = wizardState.instanceId
-    ? catalog
-        .flatMap((e) => e.instances)
-        .find((inst) => inst.id === wizardState.instanceId)
-    : undefined;
-
-  const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['relay', 'adapters', 'catalog'] });
-  };
-
-  return (
-    <div className="space-y-6 p-4">
-      {/* Configured Adapters */}
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Configured Adapters
-          </h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRefresh}
-            className="size-7 p-0"
-            aria-label="Refresh adapter catalog"
-          >
-            <RefreshCw className="size-3.5" />
-          </Button>
-        </div>
-        {configuredCards.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No adapters configured yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {configuredCards.map(({ instance, manifest }) => (
-              <AdapterCard
-                key={instance.id}
-                instance={instance}
-                manifest={manifest}
-                onToggle={(newEnabled) => toggleAdapter({ id: instance.id, enabled: newEnabled })}
-                onConfigure={() => openWizardForConfigure(manifest, instance.id)}
-                onRemove={() => removeAdapter(instance.id)}
-                onBindClick={onBindClick}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Available Adapters */}
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Available Adapters
-        </h3>
-        {availableEntries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            All available adapter types are configured.
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {availableEntries.map((entry) => (
-              <CatalogCard
-                key={entry.manifest.type}
-                manifest={entry.manifest}
-                onAdd={() => openWizardForAdd(entry.manifest)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Setup Wizard */}
-      {wizardState.manifest && (
-        <AdapterSetupWizard
-          open={wizardState.open}
-          onOpenChange={(open) => {
-            if (!open) setWizardState({ open: false });
-          }}
-          manifest={wizardState.manifest}
-          existingInstance={existingInstance}
-          existingAdapterIds={catalog.flatMap((e) => e.instances.map((i) => i.id))}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Main Relay panel — tabs for Activity Feed, Endpoints, Bindings, and Adapters, with disabled/loading states. */
+/** Main Relay panel — progressive disclosure based on adapter configuration state. */
 export function RelayPanel() {
   const relayEnabled = useRelayEnabled();
-  const [selectedEndpoint, setSelectedEndpoint] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('activity');
+  const [activeTab, setActiveTab] = useState('connections');
+  const [showCatalog, setShowCatalog] = useState(false);
   const deadLetterRef = useRef<HTMLDivElement>(null);
 
   // Connect SSE stream when relay is enabled; track connection health for banner
   const { connectionState } = useRelayEventStream(relayEnabled);
+
+  // Mode A/B: determine whether any adapters are configured
+  const { data: catalog = [] } = useAdapterCatalog(relayEnabled);
+  const hasConfiguredAdapters = catalog.some((entry) => entry.instances.length > 0);
 
   /** Switch to the activity tab and scroll dead letters section into view. */
   const handleFailedClick = () => {
@@ -203,50 +44,67 @@ export function RelayPanel() {
   }
 
   return (
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
-      <RelayHealthBar enabled={relayEnabled} onFailedClick={handleFailedClick} />
-      <ConnectionStatusBanner connectionState={connectionState} className="mx-4 mt-2" />
-
-      <TabsList className="mx-4 mt-3 shrink-0">
-        <TabsTrigger value="activity">Activity</TabsTrigger>
-        <TabsTrigger value="endpoints">Endpoints</TabsTrigger>
-        <TabsTrigger value="bindings">Bindings</TabsTrigger>
-        <TabsTrigger value="adapters">Adapters</TabsTrigger>
-      </TabsList>
-
-      <AnimatePresence mode="wait">
+    <AnimatePresence mode="wait">
+      {hasConfiguredAdapters ? (
         <motion.div
-          key={activeTab}
+          key="mode-b"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
-          className="min-h-0 flex-1 overflow-y-auto"
+          transition={{ duration: 0.2 }}
+          className="flex h-full flex-col"
         >
-          <TabsContent value="activity" className="h-full">
-            <ActivityFeed enabled={relayEnabled} deadLetterRef={deadLetterRef} onSwitchToAdapters={() => setActiveTab('adapters')} />
-          </TabsContent>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
+            <RelayHealthBar enabled={relayEnabled} onFailedClick={handleFailedClick} />
+            <ConnectionStatusBanner connectionState={connectionState} className="mx-4 mt-2" />
 
-          <TabsContent value="endpoints" className="h-full">
-            {selectedEndpoint ? (
-              <InboxView subject={selectedEndpoint} onBack={() => setSelectedEndpoint(null)} />
-            ) : (
-              <EndpointList enabled={relayEnabled} onSelectEndpoint={setSelectedEndpoint} />
-            )}
-          </TabsContent>
+            <TabsList className="mx-4 mt-3 shrink-0">
+              <TabsTrigger value="connections">Connections</TabsTrigger>
+              <TabsTrigger value="activity">Activity</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="bindings" className="h-full">
-            <BindingList />
-          </TabsContent>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="min-h-0 flex-1 overflow-y-auto"
+              >
+                <TabsContent value="connections" className="h-full">
+                  <ConnectionsTab enabled={relayEnabled} />
+                </TabsContent>
 
-          <TabsContent value="adapters" className="h-full">
-            <AdaptersTab
-              enabled={relayEnabled}
-              onBindClick={() => setActiveTab('bindings')}
-            />
-          </TabsContent>
+                <TabsContent value="activity" className="h-full">
+                  <ActivityFeed
+                    enabled={relayEnabled}
+                    deadLetterRef={deadLetterRef}
+                    onSwitchToAdapters={() => setActiveTab('connections')}
+                  />
+                </TabsContent>
+              </motion.div>
+            </AnimatePresence>
+          </Tabs>
         </motion.div>
-      </AnimatePresence>
-    </Tabs>
+      ) : (
+        <motion.div
+          key="mode-a"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="flex h-full flex-col"
+        >
+          {showCatalog ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ConnectionsTab enabled={relayEnabled} />
+            </div>
+          ) : (
+            <RelayEmptyState onAddAdapter={() => setShowCatalog(true)} />
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

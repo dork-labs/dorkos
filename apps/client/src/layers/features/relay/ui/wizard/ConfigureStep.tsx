@@ -8,10 +8,6 @@ import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 
 interface ConfigureStepProps {
   manifest: AdapterManifest;
-  isEditMode: boolean;
-  adapterId: string;
-  onAdapterIdChange: (id: string) => void;
-  idError: string;
   label: string;
   onLabelChange: (label: string) => void;
   fields: AdapterManifest['configFields'];
@@ -28,10 +24,6 @@ interface ConfigureStepProps {
 /** Form step for configuring adapter credentials and settings. */
 export function ConfigureStep({
   manifest,
-  isEditMode,
-  adapterId,
-  onAdapterIdChange,
-  idError,
   label,
   onLabelChange,
   fields,
@@ -74,21 +66,6 @@ export function ConfigureStep({
 
       {currentSetupStep && (
         <h4 className="text-sm font-medium">{currentSetupStep.title}</h4>
-      )}
-
-      {!isEditMode && (
-        <div className="space-y-2">
-          <Label htmlFor="adapter-id" className="after:ml-0.5 after:text-red-500 after:content-['*']">
-            Adapter ID
-          </Label>
-          <Input
-            id="adapter-id"
-            value={adapterId}
-            onChange={(e) => onAdapterIdChange(e.target.value)}
-            placeholder={manifest.type}
-          />
-          {idError && <p className="text-xs text-red-500">{idError}</p>}
-        </div>
       )}
 
       <div className="space-y-2">

@@ -1169,6 +1169,51 @@ describe('AdapterManager', () => {
         expect((err as AdapterError).code).toBe('REMOVE_BUILTIN_DENIED');
       }
     });
+
+    it('auto-deletes orphan bindings for the removed adapter', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      // Inject a mock BindingStore with bindings for multiple adapters
+      const mockBindingStore = {
+        getAll: vi.fn().mockReturnValue([
+          { id: 'b1', adapterId: 'tg-main', agentId: 'agent-1' },
+          { id: 'b2', adapterId: 'tg-main', agentId: 'agent-2' },
+          { id: 'b3', adapterId: 'wh-github', agentId: 'agent-3' },
+        ]),
+        delete: vi.fn().mockResolvedValue(true),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (manager as any).bindingStore = mockBindingStore;
+
+      await manager.removeAdapter('tg-main');
+
+      // Should delete bindings for tg-main only
+      expect(mockBindingStore.delete).toHaveBeenCalledTimes(2);
+      expect(mockBindingStore.delete).toHaveBeenCalledWith('b1');
+      expect(mockBindingStore.delete).toHaveBeenCalledWith('b2');
+      // Should NOT delete the binding for wh-github
+      expect(mockBindingStore.delete).not.toHaveBeenCalledWith('b3');
+    });
+
+    it('does not affect bindings for other adapters on removal', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await manager.initialize();
+
+      const mockBindingStore = {
+        getAll: vi.fn().mockReturnValue([
+          { id: 'b1', adapterId: 'wh-github', agentId: 'agent-1' },
+        ]),
+        delete: vi.fn().mockResolvedValue(true),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (manager as any).bindingStore = mockBindingStore;
+
+      await manager.removeAdapter('tg-main');
+
+      // No bindings belong to tg-main, so nothing should be deleted
+      expect(mockBindingStore.delete).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateConfig()', () => {

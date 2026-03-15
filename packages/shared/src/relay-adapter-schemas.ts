@@ -278,6 +278,9 @@ export const AdapterBindingSchema = z
     channelType: ChannelTypeSchema.optional(),
     sessionStrategy: SessionStrategySchema.default('per-chat'),
     label: z.string().default(''),
+    canInitiate: z.boolean().default(false),
+    canReply: z.boolean().default(true),
+    canReceive: z.boolean().default(true),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
@@ -291,7 +294,7 @@ export const CreateBindingRequestSchema = AdapterBindingSchema.omit({
   updatedAt: true,
 }).openapi('CreateBindingRequest');
 
-export type CreateBindingRequest = z.infer<typeof CreateBindingRequestSchema>;
+export type CreateBindingRequest = z.input<typeof CreateBindingRequestSchema>;
 
 export const BindingListResponseSchema = z
   .object({
