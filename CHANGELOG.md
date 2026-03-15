@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Use POSIX-compatible shell substitution in build script
 ---
 
 ## [0.13.0] - 2026-03-14
