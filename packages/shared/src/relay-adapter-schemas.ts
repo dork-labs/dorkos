@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 
 import { ChannelTypeSchema } from './relay-envelope-schemas.js';
+import { PermissionModeSchema } from './schemas.js';
 
 extendZodWithOpenApi(z);
 
@@ -278,6 +279,7 @@ export const AdapterBindingSchema = z
     channelType: ChannelTypeSchema.optional(),
     sessionStrategy: SessionStrategySchema.default('per-chat'),
     label: z.string().default(''),
+    permissionMode: PermissionModeSchema.optional().default('acceptEdits'),
     canInitiate: z.boolean().default(false),
     canReply: z.boolean().default(true),
     canReceive: z.boolean().default(true),

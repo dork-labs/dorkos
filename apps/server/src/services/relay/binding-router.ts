@@ -15,6 +15,7 @@ import { join as pathJoin } from 'node:path';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { PublishOptions, Unsubscribe } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
 import type { BindingStore } from './binding-store.js';
@@ -22,7 +23,7 @@ import type { AdapterMeshCoreLike } from './adapter-manager.js';
 
 /** Minimal interface for AgentManager session creation. */
 export interface AgentSessionCreator {
-  createSession(cwd: string): Promise<{ id: string }>;
+  createSession(cwd: string, permissionMode?: PermissionMode): Promise<{ id: string }>;
 }
 
 /** Minimal interface for RelayCore publish and subscription. */
@@ -155,6 +156,7 @@ export class BindingRouter {
               __bindingPermissions: {
                 canReply: binding.canReply,
                 canInitiate: binding.canInitiate,
+                permissionMode: binding.permissionMode ?? 'acceptEdits',
               },
             }
           : envelope.payload;
@@ -264,7 +266,10 @@ export class BindingRouter {
       agentId: binding.agentId,
       projectPath,
     });
-    const session = await this.deps.agentManager.createSession(projectPath);
+    const session = await this.deps.agentManager.createSession(
+      projectPath,
+      binding.permissionMode,
+    );
     return session.id;
   }
 

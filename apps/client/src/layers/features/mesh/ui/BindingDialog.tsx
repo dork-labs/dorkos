@@ -34,6 +34,7 @@ import { useAdapterCatalog, useObservedChats } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { cn } from '@/layers/shared/lib';
 import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
+import type { PermissionMode } from '@dorkos/shared/schemas';
 
 /** Options for the session strategy selector with human-readable descriptions. */
 const SESSION_STRATEGIES: { value: SessionStrategy; label: string; description: string }[] = [
@@ -69,12 +70,21 @@ const CHANNEL_TYPE_OPTIONS: { value: string; label: string }[] = [
  */
 const SELECT_ANY = '__any__';
 
+/** Human-readable labels and descriptions for each permission mode. */
+const PERMISSION_MODES: { value: PermissionMode; label: string; description: string }[] = [
+  { value: 'default', label: 'Default', description: 'Agent asks for approval before using any tools' },
+  { value: 'plan', label: 'Plan Only', description: 'Agent can read files but asks before making changes' },
+  { value: 'acceptEdits', label: 'Accept Edits', description: 'Agent can read and write files; asks before running shell commands' },
+  { value: 'bypassPermissions', label: 'Full Access', description: 'Agent can use all tools without asking for approval' },
+];
+
 /** Values submitted when the user confirms the dialog. */
 export interface BindingFormValues {
   adapterId: string;
   agentId: string;
   sessionStrategy: SessionStrategy;
   label: string;
+  permissionMode?: PermissionMode;
   chatId?: string;
   channelType?: 'dm' | 'group' | 'channel' | 'thread';
   canInitiate?: boolean;
@@ -137,15 +147,21 @@ export function BindingDialog({
     !!(initialValues?.chatId || initialValues?.channelType),
   );
   // Permission fields — defaults match AdapterBindingSchema defaults.
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>(
+    initialValues?.permissionMode ?? 'acceptEdits',
+  );
   const [canInitiate, setCanInitiate] = useState(initialValues?.canInitiate ?? false);
   const [canReply, setCanReply] = useState(initialValues?.canReply ?? true);
   const [canReceive, setCanReceive] = useState(initialValues?.canReceive ?? true);
+  // Track whether the bypass-permissions security warning is open.
+  const [bypassWarningOpen, setBypassWarningOpen] = useState(false);
   // Auto-open advanced section when initial values have non-default permissions or strategy.
   const [advancedOpen, setAdvancedOpen] = useState(
     !!(
       initialValues?.canInitiate ||
       initialValues?.canReply === false ||
       initialValues?.canReceive === false ||
+      (initialValues?.permissionMode !== undefined && initialValues.permissionMode !== 'acceptEdits') ||
       (initialValues?.sessionStrategy && initialValues.sessionStrategy !== 'per-chat')
     ),
   );
@@ -159,6 +175,7 @@ export function BindingDialog({
       setLabel(initialValues.label ?? '');
       setChatId(initialValues.chatId ?? SELECT_ANY);
       setChannelType(initialValues.channelType ?? SELECT_ANY);
+      setPermissionMode(initialValues.permissionMode ?? 'acceptEdits');
       setCanInitiate(initialValues.canInitiate ?? false);
       setCanReply(initialValues.canReply ?? true);
       setCanReceive(initialValues.canReceive ?? true);
@@ -169,6 +186,7 @@ export function BindingDialog({
         initialValues.canInitiate ||
         initialValues.canReply === false ||
         initialValues.canReceive === false ||
+        (initialValues.permissionMode !== undefined && initialValues.permissionMode !== 'acceptEdits') ||
         (initialValues.sessionStrategy && initialValues.sessionStrategy !== 'per-chat')
       ) {
         setAdvancedOpen(true);
@@ -196,7 +214,7 @@ export function BindingDialog({
   // SELECT_ANY means "no filter selected" — convert back to undefined before submitting.
   const hasChatFilter = chatId !== SELECT_ANY || channelType !== SELECT_ANY;
   // Advanced section has non-default values when strategy or permissions deviate from defaults.
-  const hasAdvancedChanges = strategy !== 'per-chat' || canInitiate || !canReply || !canReceive;
+  const hasAdvancedChanges = strategy !== 'per-chat' || permissionMode !== 'acceptEdits' || canInitiate || !canReply || !canReceive;
 
   function handleConfirm() {
     onConfirm({
@@ -204,6 +222,7 @@ export function BindingDialog({
       agentId,
       sessionStrategy: strategy,
       label,
+      permissionMode,
       chatId: chatId === SELECT_ANY ? undefined : chatId,
       channelType:
         channelType === SELECT_ANY
@@ -223,6 +242,7 @@ export function BindingDialog({
     setAgentId('');
     setStrategy('per-chat');
     setLabel('');
+    setPermissionMode('acceptEdits');
     setChatId(SELECT_ANY);
     setChannelType(SELECT_ANY);
     setChatFilterOpen(false);
@@ -230,6 +250,15 @@ export function BindingDialog({
     setCanReply(true);
     setCanReceive(true);
     setAdvancedOpen(false);
+  }
+
+  /** Handle permission mode selection with security warning for bypassPermissions. */
+  function handlePermissionModeChange(value: string) {
+    if (value === 'bypassPermissions') {
+      setBypassWarningOpen(true);
+    } else {
+      setPermissionMode(value as PermissionMode);
+    }
   }
 
   function handleCancel() {
@@ -414,6 +443,51 @@ export function BindingDialog({
                   <p className="text-xs text-muted-foreground">{selectedStrategy.description}</p>
                 )}
               </div>
+
+              {/* Permission mode selector */}
+              <div className="space-y-1.5">
+                <Label htmlFor="binding-permission-mode">Permission Mode</Label>
+                <Select value={permissionMode} onValueChange={handlePermissionModeChange}>
+                  <SelectTrigger id="binding-permission-mode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PERMISSION_MODES.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {PERMISSION_MODES.find((m) => m.value === permissionMode) && (
+                  <p className="text-xs text-muted-foreground">
+                    {PERMISSION_MODES.find((m) => m.value === permissionMode)!.description}
+                  </p>
+                )}
+              </div>
+
+              {/* bypassPermissions security warning */}
+              <AlertDialog open={bypassWarningOpen} onOpenChange={setBypassWarningOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Enable Full Access?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Any user who can send messages through this adapter (e.g., members of your
+                      Slack workspace) will be able to trigger unrestricted agent actions, including
+                      file system access and command execution.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => setPermissionMode('bypassPermissions')}
+                      className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                    >
+                      Enable Full Access
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               {/* Permission toggles */}
               <div className="space-y-2.5">

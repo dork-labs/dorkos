@@ -101,7 +101,7 @@ describe('BindingRouter', () => {
       id: 'bind-1',
       adapterId: 'telegram',
       agentId: 'agent-a',
-
+      permissionMode: 'acceptEdits' as const,
       sessionStrategy: 'per-chat',
       label: '',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -128,7 +128,7 @@ describe('BindingRouter', () => {
       id: 'bind-1',
       adapterId: 'telegram',
       agentId: 'agent-a',
-
+      permissionMode: 'acceptEdits' as const,
       sessionStrategy: 'per-chat',
       label: '',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -157,7 +157,7 @@ describe('BindingRouter', () => {
       id: 'bind-1',
       adapterId: 'telegram',
       agentId: 'agent-a',
-
+      permissionMode: 'acceptEdits' as const,
       sessionStrategy: 'per-chat',
       label: '',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -172,7 +172,7 @@ describe('BindingRouter', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     await capturedHandler!(envelope);
-    expect(mockAgentManager.createSession).toHaveBeenCalledWith('/agents/a');
+    expect(mockAgentManager.createSession).toHaveBeenCalledWith('/agents/a', 'acceptEdits');
     expect(mockRelayCore.publish).toHaveBeenCalledWith(
       'relay.agent.session-abc',
       expect.objectContaining({ text: 'hello', cwd: '/agents/a' }),
@@ -199,7 +199,7 @@ describe('BindingRouter', () => {
       id: 'bind-1',
       adapterId: 'telegram',
       agentId: 'agent-a',
-
+      permissionMode: 'acceptEdits' as const,
       sessionStrategy: strategy,
       label: '',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -671,6 +671,7 @@ describe('BindingRouter', () => {
       agentId: 'agent-a',
       sessionStrategy: 'per-chat',
       label: '',
+      permissionMode: 'acceptEdits' as const,
       canInitiate: false,
       canReply: true,
       canReceive: true,
@@ -710,6 +711,7 @@ describe('BindingRouter', () => {
           __bindingPermissions: {
             canReply: true,
             canInitiate: false,
+            permissionMode: 'acceptEdits',
           },
         }),
         expect.any(Object),
@@ -728,6 +730,7 @@ describe('BindingRouter', () => {
           __bindingPermissions: {
             canReply: false,
             canInitiate: false,
+            permissionMode: 'acceptEdits',
           },
         }),
         expect.any(Object),
@@ -746,6 +749,7 @@ describe('BindingRouter', () => {
           __bindingPermissions: {
             canReply: true,
             canInitiate: true,
+            permissionMode: 'acceptEdits',
           },
         }),
         expect.any(Object),

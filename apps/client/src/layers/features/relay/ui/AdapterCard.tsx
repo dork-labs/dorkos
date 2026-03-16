@@ -362,6 +362,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
                 agentId: editingBinding.agentId,
                 sessionStrategy: editingBinding.sessionStrategy,
                 label: editingBinding.label ?? '',
+                permissionMode: editingBinding.permissionMode,
                 chatId: editingBinding.chatId,
                 channelType: editingBinding.channelType,
                 canInitiate: editingBinding.canInitiate,

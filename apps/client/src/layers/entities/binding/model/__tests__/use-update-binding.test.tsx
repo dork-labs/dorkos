@@ -18,6 +18,7 @@ const mockBinding: AdapterBinding = {
   agentId: 'agent-1',
   sessionStrategy: 'per-chat',
   label: 'Main bot',
+  permissionMode: 'acceptEdits',
   canInitiate: false,
   canReply: true,
   canReceive: true,

@@ -26,9 +26,9 @@ describe('AdapterBindingSchema', () => {
     id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
     adapterId: 'telegram-main',
     agentId: 'agent-1',
-    projectPath: '/home/user/agents/alpha',
     sessionStrategy: 'per-chat',
     label: 'Main bot',
+    permissionMode: 'acceptEdits',
     canInitiate: false,
     canReply: true,
     canReceive: true,
@@ -46,6 +46,28 @@ describe('AdapterBindingSchema', () => {
     expect(parsed.canInitiate).toBe(false);
     expect(parsed.canReply).toBe(true);
     expect(parsed.canReceive).toBe(true);
+  });
+
+  it('defaults permissionMode to acceptEdits when omitted', () => {
+    const { permissionMode, ...withoutMode } = validBinding;
+    const parsed = AdapterBindingSchema.parse(withoutMode);
+    expect(parsed.permissionMode).toBe('acceptEdits');
+  });
+
+  it('accepts all valid permission modes', () => {
+    for (const mode of ['default', 'plan', 'acceptEdits', 'bypassPermissions']) {
+      const result = AdapterBindingSchema.parse({ ...validBinding, permissionMode: mode });
+      expect(result.permissionMode).toBe(mode);
+    }
+  });
+
+  it('rejects invalid permission mode values', () => {
+    expect(() =>
+      AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'auto' }),
+    ).toThrow();
+    expect(() =>
+      AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'yolo' }),
+    ).toThrow();
   });
 
   it('accepts optional chatId and channelType', () => {
@@ -78,15 +100,15 @@ describe('AdapterBindingSchema', () => {
 });
 
 describe('CreateBindingRequestSchema', () => {
-  it('applies defaults for sessionStrategy, label, and permissions', () => {
+  it('applies defaults for sessionStrategy, label, permissionMode, and permissions', () => {
     const input = {
       adapterId: 'telegram-main',
       agentId: 'agent-1',
-      projectPath: '/home/user/agents/alpha',
     };
     const parsed = CreateBindingRequestSchema.parse(input);
     expect(parsed.sessionStrategy).toBe('per-chat');
     expect(parsed.label).toBe('');
+    expect(parsed.permissionMode).toBe('acceptEdits');
     expect(parsed.canInitiate).toBe(false);
     expect(parsed.canReply).toBe(true);
     expect(parsed.canReceive).toBe(true);
@@ -97,7 +119,6 @@ describe('CreateBindingRequestSchema', () => {
       id: 'should-not-be-here',
       adapterId: 'telegram-main',
       agentId: 'agent-1',
-      projectPath: '/home/user/agents/alpha',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     };
@@ -111,7 +132,6 @@ describe('CreateBindingRequestSchema', () => {
     const input = {
       adapterId: 'telegram-main',
       agentId: 'agent-1',
-      projectPath: '/home/user/agents/alpha',
       chatId: '12345',
       channelType: 'group',
     };
@@ -129,9 +149,9 @@ describe('BindingListResponseSchema', () => {
           id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
           adapterId: 'telegram-main',
           agentId: 'agent-1',
-          projectPath: '/agents/alpha',
           sessionStrategy: 'per-chat',
           label: '',
+          permissionMode: 'acceptEdits',
           canInitiate: false,
           canReply: true,
           canReceive: true,
@@ -155,9 +175,9 @@ describe('BindingResponseSchema', () => {
         id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         adapterId: 'telegram-main',
         agentId: 'agent-1',
-        projectPath: '/agents/alpha',
         sessionStrategy: 'per-chat',
         label: '',
+        permissionMode: 'acceptEdits',
         canInitiate: false,
         canReply: true,
         canReceive: true,

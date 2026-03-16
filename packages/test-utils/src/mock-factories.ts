@@ -313,6 +313,7 @@ export function createMockBinding(overrides: Partial<AdapterBinding> = {}): Adap
     agentId: 'agent-1',
     sessionStrategy: 'per-chat',
     label: '',
+    permissionMode: 'acceptEdits',
     canInitiate: false,
     canReply: true,
     canReceive: true,

@@ -29,6 +29,7 @@ import type {
   PulseStoreLike,
 } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
+import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
 import { BindingStore } from './binding-store.js';
@@ -127,9 +128,9 @@ export class AdapterManager {
 
       const agentManager = this.deps.agentManager;
       const sessionCreator: AgentSessionCreator = {
-        async createSession(cwd: string) {
+        async createSession(cwd: string, permissionMode?: PermissionMode) {
           const id = crypto.randomUUID();
-          agentManager.ensureSession(id, { permissionMode: 'auto', cwd });
+          agentManager.ensureSession(id, { permissionMode: permissionMode ?? 'acceptEdits', cwd });
           return { id };
         },
       };

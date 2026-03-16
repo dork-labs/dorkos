@@ -128,7 +128,7 @@ export class BindingStore {
    */
   async update(
     id: string,
-    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
+    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'permissionMode' | 'canInitiate' | 'canReply' | 'canReceive'>>,
   ): Promise<AdapterBinding | undefined> {
     const existing = this.bindings.get(id);
     if (!existing) return undefined;

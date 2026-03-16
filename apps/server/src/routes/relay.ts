@@ -20,6 +20,7 @@ import {
   SessionStrategySchema,
   ChannelTypeSchema,
 } from '@dorkos/shared/relay-schemas';
+import { PermissionModeSchema } from '@dorkos/shared/schemas';
 import { initSSEStream } from '../services/core/stream-adapter.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
@@ -604,6 +605,7 @@ export function createRelayRouter(
         canInitiate: z.boolean().optional(),
         canReply: z.boolean().optional(),
         canReceive: z.boolean().optional(),
+        permissionMode: PermissionModeSchema.optional(),
       });
 
       const result = UpdateBindingSchema.safeParse(req.body);
