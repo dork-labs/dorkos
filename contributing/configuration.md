@@ -499,6 +499,41 @@ Config validation failed:
   - server.port: Number must be greater than or equal to 1024
 ```
 
+### `dorkos cleanup`
+
+Interactively remove all DorkOS data. Prompts for confirmation at each phase.
+
+**Safety checks:**
+
+- Verifies the DorkOS server is not running (checks `/api/health` on configured port)
+- Prompts before each deletion phase
+
+**What it removes:**
+
+1. **Global data** (`~/.dork/`): `config.json`, `dork.db` (+ WAL/SHM), `logs/`, `relay/`
+2. **Per-project data**: Each project's `.dork/` directory (discovered from the database before deletion)
+
+Does **not** touch `~/.claude/` (Claude Code's own data).
+
+```bash
+$ dorkos cleanup
+Checking if DorkOS server is running...
+Server is not running.
+
+This will remove all DorkOS data:
+  - ~/.dork/ (config, database, logs, relay state)
+  - .dork/ directories in discovered projects
+
+? Remove global DorkOS data (~/.dork/)? Yes
+Removed ~/.dork/
+
+? Remove per-project .dork/ directories? Yes
+Removed /home/user/myapp/.dork/
+Removed /home/user/api/.dork/
+
+Cleanup complete.
+```
+
 ### `dorkos init`
 
 Run the interactive setup wizard. Prompts for port, theme, tunnel, and working directory. If a config file already exists, asks for confirmation before overwriting.

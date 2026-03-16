@@ -59,7 +59,7 @@ Event types are documented in the `StreamEventType` enum in the OpenAPI spec. Th
 
 **Responses:**
 
-- `200` - SSE stream. Event types: `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`, `subagent_started`, `subagent_progress`, `subagent_done`, `rate_limit`
+- `200` - SSE stream. Event types: `text_delta`, `thinking_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `tool_progress`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`, `subagent_started`, `subagent_progress`, `subagent_done`, `rate_limit`
 - `409` - Session locked by another client. Response body: `{ error: 'Session locked', code: 'SESSION_LOCKED', lockedBy: string, lockedAt: string }`
 
 ### GET /api/sessions/:id/stream
@@ -700,7 +700,7 @@ Create a new adapter-agent binding. Zod-validated via `CreateBindingRequestSchem
 }
 ```
 
-`adapterId`, `agentId`, and `projectPath` are required. `sessionStrategy` defaults to `per-chat`. `chatId`, `channelType`, and `label` are optional.
+`adapterId`, `agentId`, and `projectPath` are required. `sessionStrategy` defaults to `per-chat`. `permissionMode` defaults to `acceptEdits` (controls the Claude Code permission mode for sessions created by this binding). `chatId`, `channelType`, and `label` are optional.
 
 **Responses:**
 

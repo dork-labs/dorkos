@@ -44,21 +44,21 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 |---|---|---|---|
 | `project-structure.md` | 2026-03-06 | Claude | Added eslint-config and icons packages |
 | `architecture.md` | 2026-03-12 | Claude | Updated in relay-removal commit: SSE-only client transport, removed subscribe-first handshake section |
-| `design-system.md` | 2026-03-06 | Claude | Reviewed — no content changes required |
-| `api-reference.md` | 2026-03-12 | Claude | Removed 202/relay mode for POST /messages; removed relay events from GET /stream; removed Relay Mode section |
-| `configuration.md` | 2026-03-09 | Claude | Added uploads config section (maxFileSize, maxFiles, allowedTypes) |
+| `design-system.md` | 2026-03-16 | Claude | Reconciled — lint fixes only, no content changes required |
+| `api-reference.md` | 2026-03-16 | Claude | Added thinking_delta/tool_progress SSE events, binding permissionMode field |
+| `configuration.md` | 2026-03-16 | Claude | Added `dorkos cleanup` CLI command section |
 | `interactive-tools.md` | 2026-03-06 | Claude | Fixed INTERACTION_TIMEOUT_MS constant ref, reject implementations, auto-approve logic, InteractiveSession type |
-| `keyboard-shortcuts.md` | 2026-03-06 | Claude | Fixed useInteractiveShortcuts location (shared/model, not features/chat), corrected PaletteFooter shortcut table |
-| `obsidian-plugin-development.md` | 2026-03-06 | Claude | Updated sdk-utils paths for runtime abstraction |
+| `keyboard-shortcuts.md` | 2026-03-16 | Claude | Reconciled — lint fix only, no content changes required |
+| `obsidian-plugin-development.md` | 2026-03-16 | Claude | Reconciled — lint fixes only, no content changes required |
 | `data-fetching.md` | 2026-03-12 | Claude | Added Pulse entity hooks section (usePulsePresets), useMcpConfig in agent entity section, updated key files table |
 | `state-management.md` | 2026-03-12 | Claude | Added cross-feature signal store pattern (usePulsePresetDialog), added to decision matrix |
-| `animations.md` | 2026-03-12 | Claude | Added Height Collapse Animation section (height: 0 ↔ auto pattern, ConnectionsView usage) |
-| `styling-theming.md` | 2026-03-06 | Claude | Reviewed — no content changes required |
-| `parallel-execution.md` | 2026-03-06 | Claude | Reviewed — no stale patterns found |
-| `relay-adapters.md` | 2026-03-11 | Claude | Added eventRecorder field to AdapterManagerDeps |
-| `adapter-catalog.md` | 2026-03-11 | Claude | Fixed 4 stale adapter file paths (flat files → subdirectories) |
-| `browser-testing.md` | 2026-03-12 | Claude | Added seed-agent endpoint to Test Control API, expanded beforeEach pattern |
-| `environment-variables.md` | 2026-03-09 | Claude | Added MCP_API_KEY env var |
+| `animations.md` | 2026-03-16 | Claude | Reconciled — no changes since last review |
+| `styling-theming.md` | 2026-03-16 | Claude | Reconciled — lint fixes only, no content changes required |
+| `parallel-execution.md` | 2026-03-16 | Claude | Reconciled — release.md command update only |
+| `relay-adapters.md` | 2026-03-16 | Claude | Added SlackAdapter built-in section, binding permissionMode/capability fields, updated custom adapter example to use BaseRelayAdapter |
+| `adapter-catalog.md` | 2026-03-16 | Claude | Reconciled — ConfigFieldInput lint fix only |
+| `browser-testing.md` | 2026-03-16 | Claude | Reconciled — lint fixes only, no content changes required |
+| `environment-variables.md` | 2026-03-16 | Claude | Reconciled — no changes since last review |
 
 ## External Docs Coverage
 

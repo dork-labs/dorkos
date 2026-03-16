@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reconcile contributing guides with recent commits (37 commits since 2026-03-12)
 - Improve playground UX with demo wells and DRY cleanup
 
 ### Fixed

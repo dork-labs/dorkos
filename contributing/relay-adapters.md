@@ -290,7 +290,7 @@ Adapter configurations are persisted in `~/.dork/relay/adapters.json`:
 ```typescript
 interface AdapterConfig {
   id: string;                           // Unique adapter ID
-  type: 'telegram' | 'webhook' | 'claude-code' | 'plugin';  // Adapter type
+  type: 'telegram' | 'webhook' | 'slack' | 'claude-code' | 'plugin';  // Adapter type
   enabled: boolean;                     // Whether this adapter should be running
   plugin?: PluginSource;                // Required when type is 'plugin'
   config: TelegramAdapterConfig | WebhookAdapterConfig | Record<string, unknown>;  // Type-specific config
@@ -379,6 +379,80 @@ Subscribes to `relay.human.telegram.>` signals and forwards typing actions to Te
   "config": {
     "token": "123456:ABC...",
     "mode": "polling"
+  }
+}
+```
+
+### SlackAdapter
+
+Bridges Slack workspaces into the Relay subject hierarchy using Socket Mode (no public URL required). Supports real-time streaming responses, threading, and typing indicators.
+
+**Subject Convention:**
+
+- DMs: `relay.human.slack.{channelId}` (D-prefix channels)
+- Groups/Channels: `relay.human.slack.group.{channelId}` (C/G-prefix channels)
+
+**Inbound:**
+
+Receives Slack messages via Socket Mode (`message` and `app_mention` events). Skips bot messages, file shares, and edits. Normalizes into `StandardPayload`:
+
+```typescript
+interface StandardPayload {
+  content: string;                    // Message text (capped at 32 KB)
+  senderName: string;                 // Display name (cached, 1h TTL)
+  channelName?: string;               // Channel name for groups (cached, 1h TTL)
+  channelType: 'dm' | 'group';
+  responseContext: {
+    platform: 'slack';
+    maxLength: number;                // 4000 for Slack
+    supportedFormats: string[];       // ['text', 'mrkdwn']
+    instructions: string;
+  };
+  platformData: {
+    channelId: string;
+    userId: string;
+    ts: string;                       // Message timestamp (used for threading)
+    threadTs?: string;
+    teamId?: string;
+  };
+}
+```
+
+**Outbound:**
+
+Supports two delivery modes controlled by the `streaming` config field:
+
+| Mode | Behavior |
+|------|----------|
+| Streaming (`true`) | Posts initial message on first `text_delta`, then updates via `chat.update` every 1 second. Final update on `done`. |
+| Buffered (`false`) | Accumulates text in memory, posts once on `done`. Reduces API quota usage. |
+
+All bot responses thread under the original inbound message using `platformData.ts`. Messages are truncated to Slack's 4000-character limit.
+
+**Typing Indicators:**
+
+| Mode | Behavior |
+|------|----------|
+| `reaction` | Adds/removes `:hourglass_flowing_sand:` emoji reaction during processing |
+| `none` | No visual feedback |
+
+**Connection:**
+
+Uses `@slack/bolt` with `socketMode: true`. No public URL or ngrok required — connects outbound to Slack's WebSocket. Validates credentials via `testConnection()` before starting.
+
+**Example Configuration:**
+
+```json
+{
+  "id": "slack",
+  "type": "slack",
+  "enabled": true,
+  "config": {
+    "botToken": "xoxb-...",
+    "appToken": "xapp-...",
+    "signingSecret": "abc123...",
+    "streaming": true,
+    "typingIndicator": "reaction"
   }
 }
 ```
@@ -782,10 +856,13 @@ interface AdapterBinding {
   id: string;             // UUID, assigned on creation
   adapterId: string;      // Matches an adapter config id (e.g., 'my-telegram')
   agentId: string;        // Agent identity ID for display purposes
-  projectPath: string;    // Working directory passed to runtime.createSession()
   chatId?: string;        // Optional: restrict to a specific chat/user ID
   channelType?: 'dm' | 'group';  // Optional: restrict to a channel type
   sessionStrategy: 'per-chat' | 'per-user' | 'stateless';
+  permissionMode?: 'default' | 'plan' | 'bypassPermissions' | 'acceptEdits';  // Permission mode for sessions (default: 'acceptEdits')
+  canInitiate: boolean;   // Whether the adapter can start new conversations (default: false)
+  canReply: boolean;      // Whether the adapter can reply to messages (default: true)
+  canReceive: boolean;    // Whether the adapter can receive inbound messages (default: true)
   label: string;          // Human-readable label shown in the UI
   createdAt: string;      // ISO 8601 timestamp
   updatedAt: string;      // ISO 8601 timestamp
@@ -1079,158 +1156,70 @@ Package naming convention: `dorkos-relay-{channel}` (e.g., `dorkos-relay-slack`,
 
 ## Creating a Custom Adapter
 
-Here's a minimal example implementing a hypothetical Slack adapter:
+For a real-world example, see the built-in Slack adapter at `packages/relay/src/adapters/slack/`. It demonstrates:
+
+- Extending `BaseRelayAdapter` for boilerplate elimination
+- Splitting inbound/outbound into separate modules for testability
+- Streaming delivery with throttled updates
+- Name caching to reduce external API calls
+- `testConnection()` for lightweight credential validation
+
+Here's a minimal custom adapter using `BaseRelayAdapter`:
 
 ```typescript
-import type { RelayAdapter, RelayPublisher, AdapterStatus, AdapterContext, DeliveryResult } from '@dorkos/relay';
+import { BaseRelayAdapter } from '@dorkos/relay';
+import type { RelayPublisher, DeliveryResult, AdapterContext } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
-interface SlackAdapterConfig {
-  token: string;
-  signingSecret: string;
-}
+export class DiscordAdapter extends BaseRelayAdapter {
+  private client: DiscordClient | null = null;
 
-export class SlackAdapter implements RelayAdapter {
-  readonly id: string;
-  readonly subjectPrefix = 'relay.human.slack';
-  readonly displayName = 'Slack';
-
-  private readonly config: SlackAdapterConfig;
-  private relay: RelayPublisher | null = null;
-  private client: any = null; // Slack SDK client
-  private status: AdapterStatus = {
-    state: 'disconnected',
-    messageCount: { inbound: 0, outbound: 0 },
-    errorCount: 0,
-  };
-
-  constructor(id: string, config: SlackAdapterConfig) {
-    this.id = id;
-    this.config = config;
+  constructor(id: string, private readonly config: { token: string }) {
+    super(id, 'relay.human.discord', 'Discord');
   }
 
-  async start(relay: RelayPublisher): Promise<void> {
-    if (this.client !== null) return; // Already started
+  protected async _start(relay: RelayPublisher): Promise<void> {
+    this.client = new DiscordClient(this.config.token);
+    await this.client.connect();
 
-    this.relay = relay;
-    this.status.state = 'starting';
-
-    // Initialize Slack client
-    const { App } = await import('@slack/bolt');
-    this.client = new App({
-      token: this.config.token,
-      signingSecret: this.config.signingSecret,
+    this.client.on('message', async (msg) => {
+      this.trackInbound();
+      await relay.publish(`relay.human.discord.${msg.channelId}`, {
+        content: msg.content,
+        senderName: msg.author.username,
+        channelType: msg.isDM ? 'dm' : 'group',
+      }, { from: `relay.human.discord.${this.id}` });
     });
-
-    // Register message handler
-    this.client.message(async (args: any) => {
-      await this.handleInboundMessage(args);
-    });
-
-    // Start the client
-    await this.client.start();
-
-    this.status = { ...this.status, state: 'connected', startedAt: new Date().toISOString() };
   }
 
-  async stop(): Promise<void> {
-    if (this.client === null) return; // Already stopped
-
-    this.status = { ...this.status, state: 'stopping' };
-
-    try {
-      await this.client.stop();
-    } catch (err) {
-      this.recordError(err);
-    } finally {
-      this.client = null;
-      this.relay = null;
-      this.status = { ...this.status, state: 'disconnected' };
-    }
+  protected async _stop(): Promise<void> {
+    await this.client?.disconnect();
+    this.client = null;
   }
 
   async deliver(subject: string, envelope: RelayEnvelope, _context?: AdapterContext): Promise<DeliveryResult> {
-    if (!this.client) return { success: false, error: 'SlackAdapter: not started' };
+    if (!this.client) return { success: false, error: 'Not connected' };
 
-    const start = Date.now();
-    const userId = this.extractUserIdFromSubject(subject);
-    if (!userId) return { success: false, error: `Cannot extract user ID from subject: ${subject}` };
+    const channelId = subject.slice('relay.human.discord.'.length);
+    const content = typeof envelope.payload === 'object' && 'content' in envelope.payload
+      ? String(envelope.payload.content)
+      : JSON.stringify(envelope.payload);
 
-    const content = this.extractContent(envelope.payload);
-
-    try {
-      await this.client.client.chat.postMessage({
-        channel: userId,
-        text: content,
-      });
-      this.status.messageCount.outbound++;
-      return { success: true, durationMs: Date.now() - start };
-    } catch (err) {
-      this.recordError(err);
-      const message = err instanceof Error ? err.message : String(err);
-      return { success: false, error: message, durationMs: Date.now() - start };
-    }
-  }
-
-  getStatus(): AdapterStatus {
-    return { ...this.status };
-  }
-
-  private async handleInboundMessage(args: any): Promise<void> {
-    if (!this.relay || !args.message.text) return;
-
-    const subject = `relay.human.slack.${args.message.user}`;
-    const payload = {
-      content: args.message.text,
-      senderName: args.message.user,
-      platform: 'slack',
-    };
-
-    try {
-      await this.relay.publish(subject, payload, {
-        from: 'relay.human.slack.bot',
-      });
-      this.status.messageCount.inbound++;
-    } catch (err) {
-      this.recordError(err);
-    }
-  }
-
-  private extractUserIdFromSubject(subject: string): string | null {
-    if (!subject.startsWith(this.subjectPrefix)) return null;
-    return subject.slice(this.subjectPrefix.length + 1);
-  }
-
-  private extractContent(payload: unknown): string {
-    if (typeof payload === 'string') return payload;
-    if (payload && typeof payload === 'object' && 'content' in payload) {
-      const obj = payload as any;
-      if (typeof obj.content === 'string') return obj.content;
-    }
-    return JSON.stringify(payload);
-  }
-
-  private recordError(err: unknown): void {
-    const message = err instanceof Error ? err.message : String(err);
-    this.status = {
-      ...this.status,
-      state: 'error',
-      errorCount: this.status.errorCount + 1,
-      lastError: message,
-      lastErrorAt: new Date().toISOString(),
-    };
+    await this.client.send(channelId, content);
+    this.trackOutbound();
+    return { success: true };
   }
 }
 ```
 
 **Key patterns:**
 
-1. **Constructor**: Store config, initialize ID and subject prefix
-2. **start()**: Connect to external service, set status to 'connected', return early if already started
-3. **stop()**: Gracefully shut down, set status to 'disconnected', catch errors locally
-4. **deliver()**: Extract recipient from subject, send message, return DeliveryResult
-5. **getStatus()**: Return a shallow copy of status
-6. **Error handling**: Always use `recordError()` to update status, never throw during stop
+1. **Extend `BaseRelayAdapter`**: Pass `id`, `subjectPrefix`, and `displayName` to `super()`
+2. **`_start()`**: Connect to external service — base class handles status transitions
+3. **`_stop()`**: Clean up resources — base class handles idempotency
+4. **`deliver()`**: Extract recipient from subject, send message, return `DeliveryResult`
+5. **`trackInbound()` / `trackOutbound()`**: Call base class helpers to increment message counts
+6. **Error handling**: Call `this.recordError(err)` to update status; never throw during `_stop()`
 
 ## Adapter Documentation
 
