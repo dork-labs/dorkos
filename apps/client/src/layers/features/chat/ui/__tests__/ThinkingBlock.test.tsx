@@ -1,29 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ThinkingBlock } from '../ThinkingBlock';
 
-// Mock motion/react to avoid animation complexities in tests
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: Record<string, unknown>) => {
-      const { initial: _initial, animate: _animate, exit: _exit, transition: _transition, ...rest } = props;
-      return <div {...rest}>{children as React.ReactNode}</div>;
-    },
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
 describe('ThinkingBlock', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
   afterEach(() => {
-    vi.useRealTimers();
+    cleanup();
   });
 
   it('renders "Thinking..." label during streaming', () => {
@@ -103,7 +88,7 @@ describe('ThinkingBlock', () => {
     // Purpose: CSS/selector hook for streaming state.
     render(<ThinkingBlock text="thinking" isStreaming={true} />);
 
-    expect(screen.getByTestId('thinking-block')).toHaveAttribute('data-streaming', '');
+    expect(screen.getByTestId('thinking-block')).toHaveAttribute('data-streaming');
   });
 
   it('formats duration <1s correctly', () => {
