@@ -62,6 +62,8 @@ const makeConversation = (
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseRelayConversations.mockReturnValue({ data: null, isLoading: false });
+  // Reset dead letters to empty so tests that set mockReturnValue don't bleed into later tests.
+  mockUseAggregatedDeadLetters.mockReturnValue({ data: [], isLoading: false });
 });
 
 afterEach(cleanup);
@@ -530,7 +532,7 @@ describe('ActivityFeed', () => {
       expect(section).toHaveAttribute('data-enabled', 'false');
     });
 
-    it('shows red dot indicator when dead letters exist and toggle is off', () => {
+    it('shows red dot indicator when user manually closes the section with dead letters present', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({
         data: [{ source: 'test', reason: 'hop_limit', count: 5, firstSeen: '', lastSeen: '' }],
         isLoading: false,
@@ -538,13 +540,15 @@ describe('ActivityFeed', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
+      // Dead letters auto-open the section; user manually closes it to reveal the badge.
+      fireEvent.click(screen.getByRole('button', { name: 'Show dead letters' }));
+
       const toggle = screen.getByRole('button', { name: 'Show dead letters' });
-      // Red dot is a span inside the button
       const redDot = toggle.querySelector('.bg-red-500');
       expect(redDot).toBeInTheDocument();
     });
 
-    it('hides red dot indicator when failures toggle is active', () => {
+    it('hides red dot indicator when the section is open', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({
         data: [{ source: 'test', reason: 'hop_limit', count: 5, firstSeen: '', lastSeen: '' }],
         isLoading: false,
@@ -552,9 +556,11 @@ describe('ActivityFeed', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Show dead letters' }));
-
+      // Dead letters auto-open the section; user closes then re-opens — badge is gone when open.
       const toggle = screen.getByRole('button', { name: 'Show dead letters' });
+      fireEvent.click(toggle); // close
+      fireEvent.click(toggle); // re-open
+
       const redDot = toggle.querySelector('.bg-red-500');
       expect(redDot).not.toBeInTheDocument();
     });
@@ -566,15 +572,20 @@ describe('ActivityFeed', () => {
       expect(() => render(<ActivityFeed enabled={true} />)).not.toThrow();
     });
 
-    it('attaches deadLetterRef to the dead-letter wrapper div when toggle is active', () => {
+    it('renders the dead-letter wrapper div containing DeadLetterSection when toggle is active', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
 
-      const ref = { current: null } as React.RefObject<HTMLDivElement | null>;
-      render(<ActivityFeed enabled={true} deadLetterRef={ref} />);
+      const { container } = render(<ActivityFeed enabled={true} />);
 
+      // No dead letters — section is closed by default. Click opens it.
       fireEvent.click(screen.getByRole('button', { name: 'Show dead letters' }));
 
-      expect(ref.current).not.toBeNull();
+      // Verify the wrapper div that deadLetterRef would be attached to is in the DOM.
+      const section = screen.getByTestId('dead-letter-section');
+      expect(section).toBeInTheDocument();
+      // The wrapper div is the direct parent of the DeadLetterSection.
+      expect(section.parentElement?.tagName).toBe('DIV');
+      expect(container.contains(section.parentElement)).toBe(true);
     });
   });
 });

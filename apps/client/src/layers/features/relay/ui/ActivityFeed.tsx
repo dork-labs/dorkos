@@ -180,13 +180,16 @@ export function ActivityFeed({
           variant={showFailures ? 'secondary' : 'ghost'}
           size="sm"
           className="relative"
-          onClick={() => setShowFailures(!showFailures)}
+          onClick={() => {
+            setShowFailures(!showFailures);
+            setUserToggled(true);
+          }}
           aria-pressed={showFailures}
           aria-label="Show dead letters"
         >
           <AlertTriangle className="mr-1 size-3.5" />
           Dead Letters
-          {hasDeadLetters && !showFailures && (
+          {deadLetterGroups.length > 0 && !showFailures && userToggled && (
             <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-red-500" />
           )}
         </Button>
