@@ -30,6 +30,13 @@ import { isRelayEnabled } from '../../relay/relay-state.js';
 import { isPulseEnabled } from '../../pulse/pulse-state.js';
 import { configManager } from '../../core/config-manager.js';
 
+/** Lightweight projection of the SDK's SlashCommand type — avoids leaking SDK types. */
+export interface SdkCommandEntry {
+  name: string;
+  description: string;
+  argumentHint: string;
+}
+
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
 export interface MessageSenderOpts {
   cwd: string;
@@ -41,9 +48,7 @@ export interface MessageSenderOpts {
     models: Array<{ value: string; displayName: string; description: string }>
   ) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
-  onCommandsReceived?: (
-    commands: Array<{ name: string; description: string; argumentHint: string }>
-  ) => void;
+  onCommandsReceived?: (commands: SdkCommandEntry[]) => void;
   sdkSessionIndex: Map<string, string>;
   sessionMapKey: string;
 }

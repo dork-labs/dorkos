@@ -115,9 +115,40 @@ describe('CommandRegistryService', () => {
     expect(result.commands[1].fullCommand).toBe('/system:review');
   });
 
-  it('skips non-directory entries', async () => {
+  it('discovers root-level .md files as non-namespaced commands', async () => {
     vi.mocked(fs.readdir).mockResolvedValueOnce([
-      makeDirent('README.md', false),
+      makeDirent('ideate.md', false),
+      makeDirent('daily', true),
+    ] as never);
+    vi.mocked(fs.readdir).mockResolvedValueOnce(['plan.md'] as never);
+    vi.mocked(fs.readFile)
+      .mockResolvedValueOnce('---\ndescription: Run ideation\n---\n')
+      .mockResolvedValueOnce('---\ndescription: Plan\n---\n');
+
+    const registry = new CommandRegistryService('/vault');
+    const result = await registry.getCommands();
+
+    expect(result.commands).toHaveLength(2);
+
+    const ideate = result.commands.find((c) => c.fullCommand === '/ideate');
+    expect(ideate).toMatchObject({
+      command: 'ideate',
+      fullCommand: '/ideate',
+      description: 'Run ideation',
+    });
+    expect(ideate?.namespace).toBeUndefined();
+
+    const plan = result.commands.find((c) => c.fullCommand === '/daily:plan');
+    expect(plan).toMatchObject({
+      namespace: 'daily',
+      command: 'plan',
+      fullCommand: '/daily:plan',
+    });
+  });
+
+  it('skips non-md non-directory entries', async () => {
+    vi.mocked(fs.readdir).mockResolvedValueOnce([
+      makeDirent('.DS_Store', false),
       makeDirent('daily', true),
     ] as never);
     vi.mocked(fs.readdir).mockResolvedValueOnce(['plan.md'] as never);

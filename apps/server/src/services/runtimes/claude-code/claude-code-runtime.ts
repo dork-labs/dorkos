@@ -37,7 +37,7 @@ import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './transcript-reader.js';
 import { SessionBroadcaster } from './session-broadcaster.js';
 import { CommandRegistryService } from './command-registry.js';
-import { executeSdkQuery } from './message-sender.js';
+import { executeSdkQuery, type SdkCommandEntry } from './message-sender.js';
 
 export { buildTaskEvent } from './build-task-event.js';
 
@@ -99,11 +99,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private mcpServerFactory: (() => Record<string, McpServerConfig>) | null = null;
   private cachedModels: ModelOption[] | null = null;
   private cachedMcpStatus = new Map<string, McpServerEntry[]>();
-  private cachedSdkCommands: Array<{
-    name: string;
-    description: string;
-    argumentHint: string;
-  }> | null = null;
+  private cachedSdkCommands: SdkCommandEntry[] | null = null;
   private meshCore: AgentRegistryPort | null = null;
 
   constructor(cwd?: string) {
@@ -432,9 +428,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   async getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
     const root = cwd || this.cwd;
-    if (forceRefresh) {
-      this.cachedSdkCommands = null;
-    }
 
     if (this.cachedSdkCommands) {
       const sdkEntries: CommandEntry[] = this.cachedSdkCommands.map((c) => ({
@@ -443,9 +436,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         argumentHint: c.argumentHint || undefined,
       }));
 
-      // Enrich SDK commands with filesystem metadata where available
+      // Enrich SDK commands with filesystem metadata (forceRefresh refreshes filesystem only —
+      // SDK cache persists since it represents the authoritative process command list)
       const registry = this.getOrCreateRegistry(root);
-      const fsCommands = await registry.getCommands(false);
+      const fsCommands = await registry.getCommands(forceRefresh);
       const fsLookup = new Map(fsCommands.commands.map((c) => [c.fullCommand, c]));
 
       const merged = sdkEntries.map((entry) => {

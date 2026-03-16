@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Discover root-level commands and improve SDK cache semantics
 ---
 
 ## [0.13.1] - 2026-03-14

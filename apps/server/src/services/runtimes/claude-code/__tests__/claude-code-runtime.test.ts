@@ -782,7 +782,7 @@ describe('ClaudeCodeRuntime', () => {
       expect(queryResult2.supportedCommands).not.toHaveBeenCalled();
     });
 
-    it('clears SDK cache on forceRefresh', async () => {
+    it('preserves SDK commands on forceRefresh (only refreshes filesystem metadata)', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       const mockCommands = [
         { name: '/compact', description: 'Compact conversation', argumentHint: '' },
@@ -802,9 +802,10 @@ describe('ClaudeCodeRuntime', () => {
         expect(result.commands).toHaveLength(1);
       });
 
-      // forceRefresh should clear SDK cache and fall back to filesystem
+      // forceRefresh refreshes filesystem metadata but preserves SDK commands
       const result = await agentManager.getCommands(true);
-      expect(result.commands).toEqual([]);
+      expect(result.commands).toHaveLength(1);
+      expect(result.commands[0].fullCommand).toBe('/compact');
     });
 
     it('sorts SDK commands alphabetically by fullCommand', async () => {

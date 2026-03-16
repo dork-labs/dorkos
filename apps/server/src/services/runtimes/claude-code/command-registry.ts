@@ -53,45 +53,38 @@ class CommandRegistryService {
       });
 
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+        if (entry.isDirectory()) {
+          // Namespaced commands: {namespace}/{command}.md → /{namespace}:{command}
+          const nsPath = path.join(this.commandsDir, entry.name);
+          const files = await fs.readdir(nsPath);
 
-        const nsPath = path.join(this.commandsDir, entry.name);
-        const files = await fs.readdir(nsPath);
+          for (const file of files) {
+            if (!file.endsWith('.md')) continue;
 
-        for (const file of files) {
-          if (!file.endsWith('.md')) continue;
-
-          const filePath = path.join(nsPath, file);
-          try {
-            const content = await fs.readFile(filePath, 'utf-8');
-
-            let frontmatter: Record<string, unknown>;
-            try {
-              frontmatter = matter(content).data;
-            } catch {
-              // YAML parse failed (e.g. unquoted brackets/colons) — use simple fallback
-              frontmatter = parseFrontmatterFallback(content);
-            }
+            const filePath = path.join(nsPath, file);
+            const parsed = await this.parseCommandFile(filePath);
+            if (!parsed) continue;
 
             const commandName = file.replace('.md', '');
-            const allowedToolsRaw = frontmatter['allowed-tools'];
             commands.push({
               namespace: entry.name,
               command: commandName,
               fullCommand: `/${entry.name}:${commandName}`,
-              description: (frontmatter.description as string) || '',
-              argumentHint: frontmatter['argument-hint'] as string | undefined,
-              allowedTools:
-                typeof allowedToolsRaw === 'string'
-                  ? allowedToolsRaw.split(',').map((t: string) => t.trim())
-                  : (allowedToolsRaw as string[] | undefined),
-              filePath: path.relative(process.cwd(), filePath),
+              ...parsed,
             });
-          } catch (fileErr) {
-            logger.warn(
-              `[CommandRegistry] Skipping ${entry.name}/${file}: ${(fileErr as Error).message}`
-            );
           }
+        } else if (entry.name.endsWith('.md')) {
+          // Root-level commands: {command}.md → /{command}
+          const filePath = path.join(this.commandsDir, entry.name);
+          const parsed = await this.parseCommandFile(filePath);
+          if (!parsed) continue;
+
+          const commandName = entry.name.replace('.md', '');
+          commands.push({
+            command: commandName,
+            fullCommand: `/${commandName}`,
+            ...parsed,
+          });
         }
       }
     } catch (err) {
@@ -104,6 +97,41 @@ class CommandRegistryService {
     this.cache = { commands, lastScanned: new Date().toISOString() };
     this.cacheTime = Date.now();
     return this.cache;
+  }
+
+  /**
+   * Parse a command `.md` file, extracting frontmatter metadata.
+   *
+   * @returns Partial command fields, or `null` if the file could not be read.
+   */
+  private async parseCommandFile(
+    filePath: string,
+  ): Promise<Pick<CommandEntry, 'description' | 'argumentHint' | 'allowedTools' | 'filePath'> | null> {
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+
+      let frontmatter: Record<string, unknown>;
+      try {
+        frontmatter = matter(content).data;
+      } catch {
+        // YAML parse failed (e.g. unquoted brackets/colons) — use simple fallback
+        frontmatter = parseFrontmatterFallback(content);
+      }
+
+      const allowedToolsRaw = frontmatter['allowed-tools'];
+      return {
+        description: (frontmatter.description as string) || '',
+        argumentHint: frontmatter['argument-hint'] as string | undefined,
+        allowedTools:
+          typeof allowedToolsRaw === 'string'
+            ? allowedToolsRaw.split(',').map((t: string) => t.trim())
+            : (allowedToolsRaw as string[] | undefined),
+        filePath: path.relative(process.cwd(), filePath),
+      };
+    } catch (err) {
+      logger.warn(`[CommandRegistry] Skipping ${filePath}: ${(err as Error).message}`);
+      return null;
+    }
   }
 
   invalidateCache(): void {
