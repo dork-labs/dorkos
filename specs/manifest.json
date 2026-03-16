@@ -941,7 +941,14 @@
       "title": "Relay Panel UX Fixes \u2014 Binding CRUD, Health Bar, Activity Feed",
       "created": "2026-03-15",
       "status": "specified"
+    },
+    {
+      "number": 135,
+      "slug": "agent-permission-mode",
+      "title": "Agent Permission Mode for Adapter Bindings",
+      "created": "2026-03-15",
+      "status": "specified"
     }
   ],
-  "nextNumber": 135
+  "nextNumber": 136
 }

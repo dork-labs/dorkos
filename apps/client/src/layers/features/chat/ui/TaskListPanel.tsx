@@ -19,6 +19,7 @@ const STATUS_ICON: Record<TaskStatus, React.ReactNode> = {
 
 const MAX_VISIBLE = 10;
 
+/** Collapsible panel showing agent task progress with status icons and celebration effects. */
 export function TaskListPanel({
   tasks,
   activeForm,

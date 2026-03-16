@@ -13,6 +13,7 @@ interface ContextBarProps {
   onFileClick: (path: string) => void;
 }
 
+/** Display the active file and context file chips above the chat input. */
 export function ContextBar({
   activeFile,
   contextFiles,

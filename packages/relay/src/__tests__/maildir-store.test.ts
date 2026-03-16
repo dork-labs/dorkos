@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { MaildirStore } from '../maildir-store.js';
-import type { RelayEnvelope, RelayBudget } from '@dorkos/shared/relay-schemas';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { DeadLetter } from '../types.js';
 
 // ---------------------------------------------------------------------------

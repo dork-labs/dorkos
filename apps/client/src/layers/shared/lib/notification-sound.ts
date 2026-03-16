@@ -1,5 +1,6 @@
 let audio: HTMLAudioElement | null = null;
 
+/** Play the notification WAV sound, lazily initializing the audio element. */
 export function playNotificationSound(): void {
   try {
     if (!audio) {

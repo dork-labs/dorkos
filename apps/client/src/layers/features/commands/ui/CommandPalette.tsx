@@ -8,6 +8,7 @@ interface CommandPaletteProps {
   onSelect: (cmd: CommandEntry) => void;
 }
 
+/** Dropdown list of available commands grouped by namespace. */
 export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: CommandPaletteProps) {
   // Pre-compute grouped structure with stable flat indices
   const groups = useMemo(() => {

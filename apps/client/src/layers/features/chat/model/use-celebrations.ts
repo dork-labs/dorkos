@@ -14,6 +14,7 @@ export interface CelebrationsAPI {
   clearCelebration: () => void;
 }
 
+/** Manages task completion celebration effects with idle detection and reduced-motion support. */
 export function useCelebrations(): CelebrationsAPI {
   const showTaskCelebrations = useAppStore((s) => s.showTaskCelebrations);
   const [activeCelebration, setActiveCelebration] = useState<CelebrationEvent | null>(null);

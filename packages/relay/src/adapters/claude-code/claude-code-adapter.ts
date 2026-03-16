@@ -118,6 +118,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   };
 
   /**
+   * Create a Claude Code relay adapter.
+   *
    * @param id - Unique adapter identifier (e.g., 'claude-code')
    * @param config - Adapter configuration (concurrency, timeout, default cwd)
    * @param deps - Injected dependencies (agentManager, traceStore, pulseStore)

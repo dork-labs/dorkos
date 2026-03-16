@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
 
 describe('--log-level CLI flag', () => {
+  // eslint-disable-next-line no-restricted-syntax -- test saves/restores process.env to verify env var behavior
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
@@ -9,7 +10,7 @@ describe('--log-level CLI flag', () => {
   });
 
   afterEach(() => {
-    process.env = { ...originalEnv };
+    process.env = { ...originalEnv }; // eslint-disable-line no-restricted-syntax -- restoring saved env
   });
 
   describe('LOG_LEVEL_MAP integration', () => {
@@ -124,15 +125,20 @@ describe('--log-level CLI flag', () => {
 
   describe('DORKOS_LOG_LEVEL env var', () => {
     it('is parseable as integer by server', () => {
+      // eslint-disable-next-line no-restricted-syntax -- testing env var parsing behavior
       process.env.DORKOS_LOG_LEVEL = '4';
+      // eslint-disable-next-line no-restricted-syntax -- testing env var parsing behavior
       const parsed = parseInt(process.env.DORKOS_LOG_LEVEL, 10);
       expect(parsed).toBe(4);
       expect(Number.isNaN(parsed)).toBe(false);
     });
 
     it('undefined DORKOS_LOG_LEVEL results in undefined parsed value', () => {
+      // eslint-disable-next-line no-restricted-syntax -- testing env var absence behavior
       delete process.env.DORKOS_LOG_LEVEL;
+      // eslint-disable-next-line no-restricted-syntax -- testing env var parsing behavior
       const logLevel = process.env.DORKOS_LOG_LEVEL
+        // eslint-disable-next-line no-restricted-syntax -- testing env var parsing behavior
         ? parseInt(process.env.DORKOS_LOG_LEVEL, 10)
         : undefined;
       expect(logLevel).toBeUndefined();

@@ -43,7 +43,11 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse | Git
 const CONFLICT_CODES = new Set(['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD']);
 const STAGED_CODES = new Set(['M', 'A', 'D', 'R', 'C']);
 
-/** @internal Parse `git status --porcelain=v1 --branch` output into structured data. */
+/**
+ * Parse `git status --porcelain=v1 --branch` output into structured data.
+ *
+ * @internal Exported for testing only.
+ */
 export function parsePorcelainOutput(stdout: string): GitStatusResponse {
   const lines = stdout.split('\n').filter(Boolean);
 

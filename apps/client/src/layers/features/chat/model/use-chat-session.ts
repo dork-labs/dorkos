@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { SessionStatusEvent, MessagePart, HistoryMessage, TaskUpdateEvent } from '@dorkos/shared/types';
+import type { SessionStatusEvent, MessagePart, HistoryMessage } from '@dorkos/shared/types';
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import { QUERY_TIMING, TIMING } from '@/layers/shared/lib';
 import { insertOptimisticSession } from '@/layers/entities/session';
@@ -52,6 +52,7 @@ function mapHistoryMessage(m: HistoryMessage): ChatMessage {
   };
 }
 
+/** Orchestrates chat session state, message history, SSE streaming, and optimistic UI updates. */
 export function useChatSession(sessionId: string | null, options: ChatSessionOptions = {}) {
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -142,7 +143,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         onSessionIdChangeRef,
         onStreamingDoneRef,
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Refs are stable; only sessionId drives recreation
+     
     [sessionId]
   );
 
@@ -337,7 +338,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     if (!input.trim() || status === 'streaming') return;
     const userContent = input.trim();
     await executeSubmission(userContent, true, userContent);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeSubmission is stable; input/status drive re-creation
+     
   }, [input, status, executeSubmission]);
 
   /**
@@ -348,7 +349,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const submitContent = useCallback(async (content: string) => {
     if (!content.trim() || status === 'streaming') return;
     await executeSubmission(content.trim(), false, '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeSubmission is stable; status drives re-creation
+     
   }, [status, executeSubmission]);
 
   const stop = useCallback(() => {

@@ -507,7 +507,7 @@ describe('SubscriptionRegistry', () => {
     it('messages published before subscriber registration are lost without pending buffer', async () => {
       // Demonstrates the gap that bufferForPendingSubscriber (task 2.1) addresses.
       // Without the buffer, messages published before subscribe() are dropped.
-      const envelope = makeEnvelope('relay.human.console.abc');
+      const _envelope = makeEnvelope('relay.human.console.abc');
 
       // Publish BEFORE any subscriber exists
       const subscribersBefore = registry.getSubscribers('relay.human.console.abc');

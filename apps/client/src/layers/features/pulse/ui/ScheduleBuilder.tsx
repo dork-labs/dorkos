@@ -73,8 +73,9 @@ const ANIMATION_TRANSITION = { duration: 0.2, ease: [0.4, 0, 0.2, 1] as const };
 // ─── Helper Functions ────────────────────────────────────────────────
 
 /**
- * @internal Exported for testing only.
  * Parse a cron expression into a SimpleConfig, or null if not representable.
+ *
+ * @internal Exported for testing only.
  */
 export function parseCronToSimple(cron: string): SimpleConfig | null {
   const trimmed = cron.trim();
@@ -149,8 +150,9 @@ function parseDayOfWeek(field: string): number[] | null {
 }
 
 /**
- * @internal Exported for testing only.
  * Build a cron expression from a SimpleConfig.
+ *
+ * @internal Exported for testing only.
  */
 export function buildCron(config: SimpleConfig): string {
   switch (config.frequency) {
@@ -168,8 +170,9 @@ export function buildCron(config: SimpleConfig): string {
 }
 
 /**
- * @internal Exported for testing only.
  * Format a 24-hour number as a 12-hour time string.
+ *
+ * @internal Exported for testing only.
  */
 export function formatHour(hour: number): string {
   const period = hour < 12 ? 'AM' : 'PM';
@@ -194,8 +197,9 @@ function arraysEqual(a: number[], b: number[]): boolean {
 }
 
 /**
- * @internal Exported for testing only.
  * Generate a human-readable preview of a SimpleConfig.
+ *
+ * @internal Exported for testing only.
  */
 export function getSimplePreview(config: SimpleConfig): string {
   const time = formatHour(config.hour);

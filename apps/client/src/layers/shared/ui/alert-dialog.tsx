@@ -40,6 +40,7 @@ const AlertDialogContent = React.forwardRef<
 ));
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
 
+/** Header layout container for alert dialog title and description. */
 function AlertDialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
@@ -50,6 +51,7 @@ function AlertDialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
   );
 }
 
+/** Footer layout container for alert dialog action buttons. */
 function AlertDialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div

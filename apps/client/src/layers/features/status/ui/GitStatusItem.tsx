@@ -6,6 +6,7 @@ interface GitStatusItemProps {
   data: GitStatusResponse | GitStatusError | undefined;
 }
 
+/** Status bar item displaying the git branch with ahead/behind counts. */
 export function GitStatusItem({ data }: GitStatusItemProps) {
   if (!data) return null;
 

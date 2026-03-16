@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { wrapSdkQuery, sdkSimpleText, sdkToolCall, sdkError } from './sdk-scenarios.js';
+import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
 
 // Hoist shared mock functions so the test and ClaudeCodeRuntime share the same
 // vi.fn() instances for context-builder and tool-filter.
 const {
-  mockBuildSystemPromptAppend,
-  mockResolveToolConfig,
-  mockBuildAllowedTools,
+  _mockBuildSystemPromptAppend,
+  _mockResolveToolConfig,
+  _mockBuildAllowedTools,
   contextBuilderFactory,
   toolFilterFactory,
 } = vi.hoisted(() => {
@@ -14,9 +14,9 @@ const {
   const rtc = vi.fn().mockReturnValue({ pulse: true, relay: true, mesh: true, adapter: true });
   const bat = vi.fn().mockReturnValue(undefined);
   return {
-    mockBuildSystemPromptAppend: bspa,
-    mockResolveToolConfig: rtc,
-    mockBuildAllowedTools: bat,
+    _mockBuildSystemPromptAppend: bspa,
+    _mockResolveToolConfig: rtc,
+    _mockBuildAllowedTools: bat,
     contextBuilderFactory: () => ({ buildSystemPromptAppend: bspa }),
     toolFilterFactory: () => ({ resolveToolConfig: rtc, buildAllowedTools: bat }),
   };

@@ -116,7 +116,7 @@ export function TokensPage() {
       <header className="border-border border-b px-6 py-4">
         <h1 className="text-xl font-bold">Design Tokens</h1>
         <p className="text-muted-foreground text-sm">
-          Visual reference for the design system's color, type, spacing, and shape tokens.
+          Visual reference for the design system&apos;s color, type, spacing, and shape tokens.
         </p>
       </header>
 

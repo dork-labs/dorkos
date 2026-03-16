@@ -7,7 +7,7 @@
  *
  * @module features/mesh/ui/TopologyGraph
  */
-import { useMemo, useCallback, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -129,7 +129,7 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
         onGhostClick: () => onOpenAdapterCatalogRef.current?.(),
       },
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [namespaces, accessRules, relayEnabled, adapters, bindings, bindingCountByAdapter]);
 
   const {

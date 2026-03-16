@@ -1183,7 +1183,7 @@ describe('AdapterManager', () => {
         ]),
         delete: vi.fn().mockResolvedValue(true),
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (manager as any).bindingStore = mockBindingStore;
 
       await manager.removeAdapter('tg-main');
@@ -1206,7 +1206,7 @@ describe('AdapterManager', () => {
         ]),
         delete: vi.fn().mockResolvedValue(true),
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (manager as any).bindingStore = mockBindingStore;
 
       await manager.removeAdapter('tg-main');

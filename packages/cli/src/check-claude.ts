@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 
+/** Verify the Claude Code CLI is installed and available in PATH. */
 export function checkClaude(): void {
   try {
     execSync('claude --version', { stdio: 'pipe' });

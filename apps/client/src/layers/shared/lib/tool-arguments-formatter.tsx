@@ -71,6 +71,7 @@ function renderValue(value: unknown, maxLen: number): React.ReactNode {
   return <span>{String(value)}</span>;
 }
 
+/** Render a tool call's JSON arguments as a human-readable key-value grid. */
 export function ToolArgumentsDisplay({ toolName: _toolName, input }: ToolArgumentsDisplayProps) {
   if (!input) return null;
 

@@ -4,7 +4,7 @@
  * @module lib/route-utils
  */
 import type { Response } from 'express';
-import type { ZodSchema, ZodError } from 'zod';
+import type { ZodSchema } from 'zod';
 import { z } from 'zod';
 import { validateBoundary, BoundaryError } from './boundary.js';
 

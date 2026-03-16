@@ -51,6 +51,7 @@ function buildTitle({
   return title;
 }
 
+/** Manage the browser document title with status prefixes, badge counts, and visibility tracking. */
 export function useDocumentTitle({
   cwd,
   activeForm,

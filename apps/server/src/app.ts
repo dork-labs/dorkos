@@ -31,6 +31,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * so that requests from the tunnel URL are accepted without restarting the server.
  */
 function buildCorsOrigin(): cors.CorsOptions['origin'] {
+  // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts (optional CORS override, not worth validating)
   const envOrigin = process.env.DORKOS_CORS_ORIGIN;
 
   // Explicit wildcard opt-in
@@ -42,7 +43,8 @@ function buildCorsOrigin(): cors.CorsOptions['origin'] {
   }
 
   // Dynamic callback: localhost origins + tunnel URL when connected
-  const port = process.env.DORKOS_PORT || '4242';
+  const port = String(env.DORKOS_PORT);
+  // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
   const vitePort = process.env.VITE_PORT || '4241';
   const staticOrigins = [
     `http://localhost:${port}`,
@@ -68,6 +70,7 @@ function buildCorsOrigin(): cors.CorsOptions['origin'] {
   };
 }
 
+/** Create and configure the Express application with middleware and routes. */
 export function createApp() {
   const app = express();
 

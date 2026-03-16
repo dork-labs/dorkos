@@ -9,6 +9,7 @@ interface AdvancedTabProps {
   onRestartComplete: () => void;
 }
 
+/** Settings danger zone with reset and restart actions. */
 export function AdvancedTab({ onResetComplete, onRestartComplete }: AdvancedTabProps) {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);

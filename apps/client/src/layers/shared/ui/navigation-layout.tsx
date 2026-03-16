@@ -237,7 +237,7 @@ function NavigationLayoutSidebarKeyboardHandler({
   );
 
   return (
-    <div id={id} onKeyDown={handleKeyDown} className="shrink-0">
+    <div id={id} role="toolbar" onKeyDown={handleKeyDown} className="shrink-0">
       {children}
     </div>
   );
@@ -347,6 +347,7 @@ function NavigationLayoutContent({ children, className }: NavigationLayoutConten
             transition={{ duration: 0.15 }}
             onClick={goBack}
             className="text-muted-foreground hover:text-foreground flex items-center gap-1 px-3 py-2 text-sm transition-colors"
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- Focus back button on sub-view navigation for keyboard accessibility
             autoFocus
           >
             <ChevronLeft className="size-(--size-icon-sm)" />
@@ -448,6 +449,7 @@ function NavigationLayoutDialogHeader({ children, className }: NavigationLayoutD
           transition={{ duration: 0.15 }}
           onClick={goBack}
           className="text-muted-foreground hover:text-foreground flex flex-1 items-center gap-1 px-3 py-3 text-sm font-medium transition-colors"
+          // eslint-disable-next-line jsx-a11y/no-autofocus -- Focus back button in dialog header for keyboard accessibility
           autoFocus
         >
           <ChevronLeft className="size-(--size-icon-sm)" />

@@ -10,6 +10,7 @@ export interface IdleDetectorState {
   isIdle: boolean;
 }
 
+/** Detect user inactivity after a configurable timeout, invoking callbacks on idle and return. */
 export function useIdleDetector(options: IdleDetectorOptions = {}): IdleDetectorState {
   const { timeoutMs = 30_000, onIdle, onReturn } = options;
   const isIdleRef = useRef(false);

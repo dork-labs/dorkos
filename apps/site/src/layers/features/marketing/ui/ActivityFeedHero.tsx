@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { motion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { REVEAL, STAGGER } from '../lib/motion-variants'
-import { ConsoleMockup } from './ConsoleMockup'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

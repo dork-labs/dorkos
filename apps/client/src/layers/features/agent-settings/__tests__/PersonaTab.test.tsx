@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { PersonaTab } from '../ui/PersonaTab';

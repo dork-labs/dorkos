@@ -7,7 +7,7 @@ import {
   Play,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useRuns, useCancelRun } from '@/layers/entities/pulse';
 import { useSessionId, useDirectoryState } from '@/layers/entities/session';
@@ -158,6 +158,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
   const startedLabel = run.startedAt ? formatAbsoluteTime(run.startedAt) : 'unknown time';
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- role/tabIndex/onKeyDown are conditionally set based on isClickable
     <div
       role={isClickable ? 'button' : undefined}
       tabIndex={isClickable ? 0 : undefined}
@@ -260,7 +261,10 @@ export function RunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
   const [selectedCwd, setSelectedCwd] = useDirectoryState();
 
   // Combine previously loaded runs with current page
-  const allRuns = offset === 0 ? currentPage : [...previousRuns, ...currentPage];
+  const allRuns = useMemo(
+    () => (offset === 0 ? currentPage : [...previousRuns, ...currentPage]),
+    [offset, currentPage, previousRuns],
+  );
 
   const handleLoadMore = useCallback(() => {
     setPreviousRuns(allRuns);

@@ -3,7 +3,7 @@ import {
   resolveToolConfig,
   buildAllowedTools,
 } from '../../runtimes/claude-code/tool-filter.js';
-import type { ToolFilterDeps, ResolvedToolConfig } from '../../runtimes/claude-code/tool-filter.js';
+import type { ToolFilterDeps } from '../../runtimes/claude-code/tool-filter.js';
 
 // Fixture: all features enabled, all global toggles on
 const allEnabledDeps: ToolFilterDeps = {

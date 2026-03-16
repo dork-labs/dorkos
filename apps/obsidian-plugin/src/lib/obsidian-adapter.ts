@@ -1,6 +1,7 @@
 import { App, TFile } from 'obsidian';
 import { PlatformAdapter } from '@dorkos/client/lib/platform';
 
+/** Create a PlatformAdapter backed by the Obsidian vault and workspace APIs. */
 export function createObsidianAdapter(app: App): PlatformAdapter {
   return {
     isEmbedded: true,

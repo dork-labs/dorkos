@@ -36,7 +36,11 @@ class CommandRegistryService {
   private static readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private readonly commandsDir: string;
 
-  /** @param vaultRoot - Must be pre-validated against directory boundary by caller */
+  /**
+   * Create a command registry scoped to a vault root.
+   *
+   * @param vaultRoot - Must be pre-validated against directory boundary by caller
+   */
   constructor(vaultRoot: string) {
     this.commandsDir = path.join(vaultRoot, '.claude', 'commands');
   }

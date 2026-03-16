@@ -39,12 +39,10 @@ function HWall({
   x,
   y,
   w,
-  key: _key,
 }: {
   x: number;
   y: number;
   w: number;
-  key?: string;
 }) {
   return <rect x={x} y={y} width={w} height={WALL} fill="#000" />;
 }
@@ -57,12 +55,10 @@ function VWall({
   x,
   y,
   h,
-  key: _key,
 }: {
   x: number;
   y: number;
   h: number;
-  key?: string;
 }) {
   return <rect x={x} y={y} width={WALL} height={h} fill="#000" />;
 }
@@ -126,7 +122,6 @@ function LetterD({ ox, oy }: { ox: number; oy: number }) {
   //   Interior hollow: cut out with white, then add corridor stripes
 
   const H = 110; // letter height
-  const W = 80; // letter width
   // Right-side step column positions
   const colR1 = ox + 52; // step-in column (cols 4–5 zone)
   const colR2 = ox + 65; // outer right column

@@ -14,6 +14,7 @@ const FETCH_TIMEOUT = 3000; // 3 seconds
 
 /** Lazily resolve cache path so process.env.DORK_HOME (set by cli.ts) is available. */
 function getCachePath(): string {
+  // eslint-disable-next-line no-restricted-syntax -- DORK_HOME is set imperatively by cli.ts after module load; env.ts is parsed too early
   const home = process.env.DORK_HOME || join(homedir(), '.dork');
   return join(home, 'cache', 'update-check.json');
 }

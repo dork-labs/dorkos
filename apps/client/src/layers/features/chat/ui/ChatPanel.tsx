@@ -31,6 +31,7 @@ interface ChatPanelProps {
   transformContent?: (content: string) => string | Promise<string>;
 }
 
+/** Top-level chat view composing message list, input, task panel, and celebration effects. */
 export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();

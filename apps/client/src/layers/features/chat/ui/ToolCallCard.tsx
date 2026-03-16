@@ -10,6 +10,7 @@ interface ToolCallCardProps {
   defaultExpanded?: boolean;
 }
 
+/** Expandable card displaying a tool call's status, arguments, and result. */
 export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 

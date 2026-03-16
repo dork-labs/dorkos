@@ -1,4 +1,4 @@
-import { USER_CONFIG_DEFAULTS, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
+import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { execFileSync } from 'child_process';
 

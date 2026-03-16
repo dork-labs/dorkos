@@ -6,6 +6,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RelayAdapter, AdapterStatus } from '@dorkos/relay';
 import type { ObservedChat, AdapterBinding } from '@dorkos/shared/relay-schemas';
 
+/** Create a mock Session with sensible defaults. */
 export function createMockSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 'test-session-1',
@@ -17,6 +18,7 @@ export function createMockSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
+/** Create a mock StreamEvent with the given type and data. */
 export function createMockStreamEvent(
   type: StreamEvent['type'],
   data: StreamEvent['data']
@@ -24,6 +26,7 @@ export function createMockStreamEvent(
   return { type, data };
 }
 
+/** Create a mock CommandEntry with sensible defaults. */
 export function createMockCommandEntry(overrides: Partial<CommandEntry> = {}): CommandEntry {
   return {
     namespace: 'test',

@@ -7,6 +7,7 @@ import { useActiveFile } from '../hooks/use-active-file';
 import { useFileOpener } from '../hooks/use-file-opener';
 import { ContextBar } from './ContextBar';
 
+/** Root component for the DorkOS Obsidian plugin view. */
 export function ObsidianApp() {
   const { app } = useObsidian();
   const activeFile = useActiveFile();

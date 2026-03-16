@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { RelayEnvelope, TraceSpan } from '@dorkos/shared/relay-schemas';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeAdapter } from '../index.js';
 import type {

@@ -34,7 +34,7 @@ interface IdentityTabProps {
 /**
  * Identity form with name, description, color picker, emoji picker, and runtime dropdown.
  */
-export function IdentityTab({ agent, projectPath, onUpdate }: IdentityTabProps) {
+export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: IdentityTabProps) {
   // Debounced name input
   const [nameValue, setNameValue] = useState(agent.name);
   const nameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

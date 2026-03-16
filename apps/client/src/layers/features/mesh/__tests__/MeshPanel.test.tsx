@@ -92,7 +92,8 @@ vi.mock('../ui/DiscoveryView', () => ({
 
 vi.mock('../ui/TopologyGraph', () => ({
   TopologyGraph: ({ onSelectAgent }: { onSelectAgent?: (id: string, projectPath: string) => void }) => (
-    <div data-testid="topology-graph" onClick={() => onSelectAgent?.('agent-1', '/projects/agent-1')} />
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- Test mock; keyboard handler not needed
+    <div data-testid="topology-graph" role="button" tabIndex={0} onClick={() => onSelectAgent?.('agent-1', '/projects/agent-1')} />
   ),
 }));
 

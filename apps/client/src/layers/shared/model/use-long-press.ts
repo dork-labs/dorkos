@@ -6,6 +6,7 @@ interface UseLongPressOptions {
   onLongPress: () => void;
 }
 
+/** Return touch event handlers that trigger a callback after a sustained press. */
 export function useLongPress({ onLongPress, ms = TIMING.LONG_PRESS_MS }: UseLongPressOptions) {
   const timerRef = useRef<number | null>(null);
 

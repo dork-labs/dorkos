@@ -27,6 +27,7 @@ interface ModelItemProps {
   disabled?: boolean;
 }
 
+/** Status bar item with a dropdown to view and change the active model. */
 export function ModelItem({ model, onChangeModel, disabled }: ModelItemProps) {
   const { data: models = [] } = useModels();
 

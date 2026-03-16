@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import rateLimit from 'express-rate-limit';
+import { env } from '../env.js';
 
 /** Dependencies injected into the admin router. */
 export interface AdminDeps {
@@ -19,7 +20,7 @@ export interface AdminDeps {
  * In production / CLI mode, we spawn a detached child first.
  */
 function triggerRestart(): void {
-  if (process.env.NODE_ENV === 'development') {
+  if (env.NODE_ENV === 'development') {
     // Dev mode: nodemon/turbo watches for exit and restarts
     process.exit(0);
   } else {
@@ -27,6 +28,7 @@ function triggerRestart(): void {
     const child = spawn(process.argv[0], process.argv.slice(1), {
       detached: true,
       stdio: 'inherit',
+      // eslint-disable-next-line no-restricted-syntax -- passing full env to spawned child process
       env: process.env,
     });
     child.unref();

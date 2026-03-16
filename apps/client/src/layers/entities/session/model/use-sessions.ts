@@ -19,6 +19,7 @@ export function insertOptimisticSession(
   );
 }
 
+/** Fetch and manage the session list for the current working directory. */
 export function useSessions() {
   const [activeSessionId, setActiveSession] = useSessionId();
   const transport = useTransport();

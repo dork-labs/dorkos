@@ -142,7 +142,7 @@ describe('useRegisterAgent', () => {
       registerMeshAgent: vi.fn().mockResolvedValue({ id: 'new-agent' }),
       listMeshAgents: vi.fn().mockResolvedValue({ agents: [] }),
     });
-    const { Wrapper, queryClient } = createWrapper(transport);
+    const { Wrapper } = createWrapper(transport);
 
     // Prime the agents cache
     const { result: agentsResult } = renderHook(() => useRegisteredAgents(), { wrapper: Wrapper });

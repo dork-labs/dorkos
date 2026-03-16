@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TelegramAdapter } from '../index.js';
-import type { RelayPublisher, AdapterStatus, Unsubscribe } from '../../../types.js';
+import type { RelayPublisher, Unsubscribe } from '../../../types.js';
 
 // --- node:http mock ---
 // Replaces the real HTTP server to avoid port-binding in tests and to expose
@@ -72,9 +72,9 @@ const mockBotCatch = vi.fn();
 /** Captured message handler registered via bot.on('message', handler) */
 let capturedMessageHandler: ((ctx: unknown) => Promise<void>) | null = null;
 /** Captured error handler registered via bot.catch(handler) */
-let capturedErrorHandler: ((err: unknown) => void) | null = null;
+let _capturedErrorHandler: ((err: unknown) => void) | null = null;
 /** Captured onStart callback from bot.start({ onStart }) */
-let capturedOnStart: (() => void) | null = null;
+let _capturedOnStart: (() => void) | null = null;
 
 vi.mock('grammy', () => {
   class MockBot {
@@ -95,7 +95,7 @@ vi.mock('grammy', () => {
     }
 
     catch(handler: (err: unknown) => void) {
-      capturedErrorHandler = handler;
+      _capturedErrorHandler = handler;
       mockBotCatch(handler);
     }
 
@@ -104,7 +104,7 @@ vi.mock('grammy', () => {
     }
 
     async start(opts?: { drop_pending_updates?: boolean; onStart?: () => void }) {
-      capturedOnStart = opts?.onStart ?? null;
+      _capturedOnStart = opts?.onStart ?? null;
       // Simulate onStart being called immediately for polling mode
       if (opts?.onStart) opts.onStart();
       return mockBotStart(opts);
@@ -217,8 +217,8 @@ describe('TelegramAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedMessageHandler = null;
-    capturedErrorHandler = null;
-    capturedOnStart = null;
+    _capturedErrorHandler = null;
+    _capturedOnStart = null;
     lastMockServer = null;
 
     adapter = new TelegramAdapter('telegram', { token: 'test-token', mode: 'polling' });

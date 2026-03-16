@@ -1,6 +1,9 @@
 import { Plugin } from 'obsidian';
 import { CopilotView, VIEW_TYPE_COPILOT } from './views/CopilotView';
 
+/**
+ *
+ */
 export default class CopilotPlugin extends Plugin {
   async onload() {
     this.registerView(VIEW_TYPE_COPILOT, (leaf) => new CopilotView(leaf, this));

@@ -57,6 +57,7 @@ export interface ButtonProps extends React.ComponentProps<"button">, VariantProp
   responsive?: boolean;
 }
 
+/** Styled button with variant, size, and responsive scaling support. */
 function Button({
   className,
   variant = "default",

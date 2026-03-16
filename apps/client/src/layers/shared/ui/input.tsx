@@ -6,6 +6,7 @@ export interface InputProps extends React.ComponentProps<"input"> {
   responsive?: boolean;
 }
 
+/** Styled text input with responsive height and focus ring. */
 function Input({ className, type, responsive = true, ...props }: InputProps) {
   return (
     <input

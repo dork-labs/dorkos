@@ -76,7 +76,11 @@ export function usePaletteSearch(items: SearchableItem[], search: string) {
   return { results, prefix, term };
 }
 
-/** @internal Exported for testing only. */
+/**
+ * Parse a prefix character (@, >) from the search string.
+ *
+ * @internal Exported for testing only.
+ */
 export function parsePrefix(search: string): { prefix: string | null; term: string } {
   if (search.startsWith('@')) return { prefix: '@', term: search.slice(1) };
   if (search.startsWith('>')) return { prefix: '>', term: search.slice(1) };

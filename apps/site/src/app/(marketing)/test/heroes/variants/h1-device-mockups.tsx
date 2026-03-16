@@ -10,7 +10,6 @@ export interface ParallaxOffset {
   y: number
 }
 
-const ORANGE = '#E85D04'
 const CHARCOAL = '#1A1814'
 
 /** Laptop mockup with screen content placeholder. */

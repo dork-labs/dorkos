@@ -118,7 +118,7 @@ export function AdapterSetupWizard({
   const isEditMode = Boolean(existingInstance);
   const [step, setStep] = useState<WizardStep>('configure');
   const [guideOpen, setGuideOpen] = useState(false);
-  const [adapterId, setAdapterId] = useState(() =>
+  const [adapterId, _setAdapterId] = useState(() =>
     existingInstance?.id ?? generateDefaultId(manifest, existingAdapterIds),
   );
   const [label, setLabel] = useState(() =>
@@ -184,7 +184,7 @@ export function AdapterSetupWizard({
       setErrors(newErrors);
       return Object.keys(newErrors).length === 0;
     },
-    [values],
+    [values, manifest],
   );
 
   const handleContinue = useCallback(() => {
@@ -307,7 +307,7 @@ export function AdapterSetupWizard({
       }
       onOpenChange(nextOpen);
     },
-    [onOpenChange, testConnection, existingInstance, manifest, existingAdapterIds],
+    [onOpenChange, testConnection],
   );
 
   const isSaving = addAdapter.isPending || updateConfig.isPending;

@@ -4,6 +4,7 @@ interface CwdItemProps {
   cwd: string;
 }
 
+/** Status bar item displaying the current working directory folder name. */
 export function CwdItem({ cwd }: CwdItemProps) {
   const folderName = cwd.split('/').filter(Boolean).pop() ?? cwd;
   return (

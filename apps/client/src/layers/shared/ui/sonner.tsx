@@ -8,6 +8,7 @@ import {
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 import { useTheme } from '../model/use-theme';
 
+/** Theme-aware toast notification container with custom status icons. */
 function Toaster({ ...props }: ToasterProps) {
   const { theme } = useTheme();
 

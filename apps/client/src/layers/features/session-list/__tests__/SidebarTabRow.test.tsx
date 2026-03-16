@@ -130,7 +130,7 @@ describe('SidebarTabRow', () => {
   });
 
   it('hides connections status dot when status is none', () => {
-    const { container } = render(
+    render(
       <SidebarTabRow {...defaultProps} connectionsStatus="none" />,
       { wrapper: Wrapper },
     );

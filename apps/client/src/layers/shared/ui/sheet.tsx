@@ -6,16 +6,19 @@ import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { cn } from "@/layers/shared/lib/utils"
 
+/** Accessible slide-out panel root that manages open state. */
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
 
+/** Element that toggles the sheet panel open on click. */
 function SheetTrigger({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
   return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />
 }
 
+/** Element that dismisses the sheet panel on click. */
 function SheetClose({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Close>) {
@@ -44,6 +47,7 @@ function SheetOverlay({
   )
 }
 
+/** Animated slide-out panel content with configurable side and close button. */
 function SheetContent({
   className,
   children,
@@ -85,6 +89,7 @@ function SheetContent({
   )
 }
 
+/** Header layout container for sheet title and description. */
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -95,6 +100,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+/** Footer layout container for sheet action buttons. */
 function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -105,6 +111,7 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+/** Accessible title heading for the sheet panel. */
 function SheetTitle({
   className,
   ...props
@@ -118,6 +125,7 @@ function SheetTitle({
   )
 }
 
+/** Muted description text for the sheet panel. */
 function SheetDescription({
   className,
   ...props

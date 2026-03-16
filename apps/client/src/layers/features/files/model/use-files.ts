@@ -3,6 +3,7 @@ import { useTransport } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
 import type { FileListResponse } from '@dorkos/shared/types';
 
+/** Fetch the file listing for a given working directory. */
 export function useFiles(cwd?: string | null) {
   const transport = useTransport();
   return useQuery<FileListResponse>({

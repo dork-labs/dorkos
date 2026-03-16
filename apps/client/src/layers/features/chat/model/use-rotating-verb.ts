@@ -5,6 +5,7 @@ interface RotatingVerbResult {
   key: string;
 }
 
+/** Cycles through a list of verbs at a fixed interval, avoiding consecutive repeats. */
 export function useRotatingVerb(verbs: readonly string[], intervalMs: number): RotatingVerbResult {
   const keyCounterRef = useRef(0);
   const lastVerbRef = useRef<string | null>(null);

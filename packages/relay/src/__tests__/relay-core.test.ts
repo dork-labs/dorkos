@@ -5,7 +5,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { RelayCore } from '../relay-core.js';
 import { MaildirStore } from '../maildir-store.js';
-import { SqliteIndex } from '../sqlite-index.js';
 import type { RelayEnvelope, Signal } from '@dorkos/shared/relay-schemas';
 import type { AdapterRegistryLike, AdapterContext, TraceStoreLike } from '../types.js';
 
@@ -35,7 +34,7 @@ function createRelay(
  * Wait for a specified number of milliseconds.
  * Used for access control hot-reload timing.
  */
-function wait(ms: number): Promise<void> {
+function _wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -1369,7 +1368,7 @@ describe('reliability pipeline integration', () => {
     });
 
     const infoA = await rRelay.registerEndpoint('relay.agent.multi.a');
-    const infoB = await rRelay.registerEndpoint('relay.agent.multi.b');
+    const _infoB = await rRelay.registerEndpoint('relay.agent.multi.b');
 
     // Fill endpoint A's mailbox to capacity (no subscriber, messages stay in new/)
     for (let i = 0; i < 2; i++) {

@@ -267,10 +267,9 @@ function useTypewriterSequence(headline: string) {
     // Step 4 — CTA pulses in after everything
     schedule(() => setCtaVisible(true), lineDelay + 600)
 
-    // Empty deps array is intentional: this sequence runs exactly once on mount.
-    // `typeString` and `schedule` are stable (useCallback), and mountedRef
-    // guards against any stale setState calls after unmount.
-  }, [typeString, schedule])
+    // `headline` is a static prop; `typeString` and `schedule` are stable (useCallback).
+    // mountedRef guards against stale setState calls after unmount.
+  }, [headline, typeString, schedule])
 
   return {
     typedHeadline,

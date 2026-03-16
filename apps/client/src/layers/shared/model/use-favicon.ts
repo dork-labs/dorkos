@@ -16,6 +16,7 @@ interface UseFaviconOptions {
 /** ms per frame — 20 frames × 100ms = 2s per full breathing cycle */
 const FRAME_INTERVAL = 100;
 
+/** Generate a CWD-based colored favicon and pulse-animate it while streaming. */
 export function useFavicon({ cwd, isStreaming, color: colorOverride }: UseFaviconOptions) {
   const solidRef = useRef<string>('');
   const framesRef = useRef<string[]>([]);

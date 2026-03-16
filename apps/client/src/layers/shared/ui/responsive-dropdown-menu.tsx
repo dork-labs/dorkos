@@ -29,6 +29,7 @@ interface ResponsiveDropdownMenuProps {
   onOpenChange?: (open: boolean) => void;
 }
 
+/** Renders a dropdown menu on desktop or a drawer on mobile. */
 function ResponsiveDropdownMenu({
   children,
   open: controlledOpen,
@@ -71,6 +72,7 @@ function ResponsiveDropdownMenu({
 
 // --- Trigger ---
 
+/** Trigger element that opens the responsive dropdown or drawer. */
 function ResponsiveDropdownMenuTrigger({
   className,
   children,
@@ -87,6 +89,7 @@ function ResponsiveDropdownMenuTrigger({
 
 // --- Content ---
 
+/** Content panel for the responsive dropdown menu or drawer. */
 function ResponsiveDropdownMenuContent({
   className,
   children,
@@ -109,6 +112,7 @@ function ResponsiveDropdownMenuContent({
 
 // --- Label ---
 
+/** Section label for grouping items in the responsive dropdown menu. */
 function ResponsiveDropdownMenuLabel({
   className,
   children,
@@ -148,6 +152,7 @@ const RadioGroupContext = React.createContext<{
   closeOnSelect: boolean;
 }>({ closeOnSelect: true });
 
+/** Radio group for single-selection within the responsive dropdown menu. */
 function ResponsiveDropdownMenuRadioGroup({
   value,
   onValueChange,
@@ -182,6 +187,7 @@ interface ResponsiveDropdownMenuRadioItemProps {
   className?: string;
 }
 
+/** Selectable radio item with optional icon and description. */
 function ResponsiveDropdownMenuRadioItem({
   value,
   children,

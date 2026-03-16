@@ -546,7 +546,8 @@ interface AnimatedNodeProps {
   children: React.ReactNode
 }
 
-function AnimatedNode({ nodeId, position: _pos, delay, children }: AnimatedNodeProps) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- position is accepted as a prop but controlled imperatively via transform
+function AnimatedNode({ nodeId, position, delay, children }: AnimatedNodeProps) {
   return (
     <motion.g
       key={nodeId}

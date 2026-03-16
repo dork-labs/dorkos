@@ -15,6 +15,7 @@ import type { InteractiveToolHandle } from './message';
 import { InferenceIndicator } from './InferenceIndicator';
 import { ScrollThumb } from './ScrollThumb';
 
+/** Computes positional grouping metadata for consecutive same-role messages. */
 export function computeGrouping(messages: ChatMessage[]): MessageGrouping[] {
   let groupIndex = 0;
   return messages.map((msg, i) => {

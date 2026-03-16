@@ -19,7 +19,7 @@ import type { RelayBridge } from './relay-bridge.js';
 import { resolveNamespace } from './namespace-resolver.js';
 import { unifiedScan } from './discovery/unified-scanner.js';
 import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
-import { readManifest, writeManifest, removeManifest } from './manifest.js';
+import { writeManifest, removeManifest } from './manifest.js';
 
 /** Default registrar identifier when none is provided. */
 const DEFAULT_REGISTRAR = 'mesh';

@@ -286,17 +286,17 @@ describe('runInitWizard', () => {
 
       const callOrder: string[] = [];
 
-      vi.mocked(input).mockImplementation(async (options: any) => {
+      vi.mocked(input).mockImplementation(async (options: Record<string, unknown>) => {
         callOrder.push(`input:${options.message}`);
-        return options.default || '';
+        return (options.default as string) || '';
       });
 
-      vi.mocked(select).mockImplementation(async (options: any) => {
+      vi.mocked(select).mockImplementation(async (options: Record<string, unknown>) => {
         callOrder.push(`select:${options.message}`);
         return 'system';
       });
 
-      vi.mocked(confirm).mockImplementation(async (options: any) => {
+      vi.mocked(confirm).mockImplementation(async (options: Record<string, unknown>) => {
         callOrder.push(`confirm:${options.message}`);
         return false;
       });

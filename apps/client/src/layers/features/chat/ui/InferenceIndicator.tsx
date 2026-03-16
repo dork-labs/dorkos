@@ -24,6 +24,7 @@ function formatTokens(count: number): string {
   return `~${Math.round(count)} tokens`;
 }
 
+/** Displays streaming progress with a rotating verb, elapsed time, token count, and waiting state. */
 export function InferenceIndicator({
   status,
   streamStartTime,

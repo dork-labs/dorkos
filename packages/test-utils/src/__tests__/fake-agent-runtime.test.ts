@@ -48,7 +48,7 @@ describe('FakeAgentRuntime', () => {
     // work correctly — important for route tests that verify message dispatch.
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([async function* () {}]);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     for await (const _ of runtime.sendMessage('s1', 'x')) {
       /* noop */
     }
@@ -62,8 +62,8 @@ describe('FakeAgentRuntime', () => {
         yield { type: 'text_delta', data: { text: 'first' } } as StreamEvent;
       },
     ]);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of runtime.sendMessage('s1', 'x')) {}
+     
+    for await (const _event of runtime.sendMessage('s1', 'x')) { /* drain */ }
     // Reset with a new scenario — should dequeue from index 0 again
     runtime.withScenarios([
       async function* () {

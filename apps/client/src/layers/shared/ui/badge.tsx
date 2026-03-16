@@ -19,6 +19,7 @@ const badgeVariants = cva(
   }
 );
 
+/** Styled inline badge with color variant support. */
 function Badge({
   className,
   variant,

@@ -57,6 +57,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
+/** Sidebar row representing a single session with expandable details. */
 export function SessionItem({ session, isActive, onClick, isNew = false }: SessionItemProps) {
   const [expanded, setExpanded] = useState(false);
   const isSkipMode = session.permissionMode === 'bypassPermissions';

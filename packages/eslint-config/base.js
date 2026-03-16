@@ -60,7 +60,7 @@ export default [
       'jsdoc/require-param-type': 'off',
       'jsdoc/require-returns-type': 'off',
       'jsdoc/no-types': 'warn',
-      'jsdoc/check-tag-names': 'warn',
+      'jsdoc/check-tag-names': ['warn', { definedTags: ['vitest-environment'] }],
     },
   },
 

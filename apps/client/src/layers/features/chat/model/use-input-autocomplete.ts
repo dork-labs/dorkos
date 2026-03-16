@@ -68,7 +68,7 @@ export function useInputAutocomplete({
       fileComplete.setShowFiles(false);
       cmdPalette.setShowCommands(false);
     },
-    [fileComplete.detectFileTrigger, cmdPalette.detectCommandTrigger, fileComplete.setShowFiles, cmdPalette.setShowCommands]
+    [fileComplete, cmdPalette]
   );
 
   const handleInputChange = useCallback(
@@ -92,7 +92,7 @@ export function useInputAutocomplete({
       const newValue = cmdPalette.handleCommandSelect(cmd);
       setInput(newValue);
     },
-    [cmdPalette.handleCommandSelect, setInput]
+    [cmdPalette, setInput]
   );
 
   const handleFileSelect = useCallback(
@@ -103,7 +103,7 @@ export function useInputAutocomplete({
         setCursorPos(result.newCursorPos);
       }
     },
-    [fileComplete.handleFileSelect, setInput]
+    [fileComplete, setInput]
   );
 
   const handleArrowDown = useCallback(() => {
@@ -112,7 +112,7 @@ export function useInputAutocomplete({
     } else {
       cmdPalette.handleArrowDown();
     }
-  }, [fileComplete.showFiles, fileComplete.handleArrowDown, cmdPalette.handleArrowDown]);
+  }, [fileComplete, cmdPalette]);
 
   const handleArrowUp = useCallback(() => {
     if (fileComplete.showFiles) {
@@ -120,7 +120,7 @@ export function useInputAutocomplete({
     } else {
       cmdPalette.handleArrowUp();
     }
-  }, [fileComplete.showFiles, fileComplete.handleArrowUp, cmdPalette.handleArrowUp]);
+  }, [fileComplete, cmdPalette]);
 
   const handleKeyboardSelect = useCallback(() => {
     if (fileComplete.showFiles) {
@@ -137,7 +137,7 @@ export function useInputAutocomplete({
         setInput(newValue);
       }
     }
-  }, [fileComplete.showFiles, cmdPalette.showCommands, fileComplete.handleKeyboardSelect, cmdPalette.handleKeyboardSelect, setInput]);
+  }, [fileComplete, cmdPalette, setInput]);
 
   const handleChipClick = useCallback(
     (trigger: string) => {
@@ -169,13 +169,13 @@ export function useInputAutocomplete({
       detectTrigger(newValue, newValue.length);
       requestAnimationFrame(() => chatInputRef.current?.focusAt(newValue.length));
     },
-    [input, setInput, detectTrigger, fileComplete.setShowFiles, cmdPalette.setShowCommands, chatInputRef]
+    [input, setInput, detectTrigger, fileComplete, cmdPalette, chatInputRef]
   );
 
   const dismissPalettes = useCallback(() => {
     cmdPalette.setShowCommands(false);
     fileComplete.setShowFiles(false);
-  }, [cmdPalette.setShowCommands, fileComplete.setShowFiles]);
+  }, [cmdPalette, fileComplete]);
 
   const isPaletteOpen = cmdPalette.showCommands || fileComplete.showFiles;
 

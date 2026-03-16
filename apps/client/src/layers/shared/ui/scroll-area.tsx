@@ -3,6 +3,7 @@ import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 
 import { cn } from "@/layers/shared/lib/utils"
 
+/** Styled scroll container with custom scrollbar overlay. */
 function ScrollArea({
   className,
   children,
@@ -35,6 +36,7 @@ function ScrollArea({
   )
 }
 
+/** Custom scrollbar track and thumb for vertical or horizontal scrolling. */
 function ScrollBar({
   className,
   orientation = "vertical",

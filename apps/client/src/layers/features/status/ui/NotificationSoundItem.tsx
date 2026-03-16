@@ -5,6 +5,7 @@ interface NotificationSoundItemProps {
   onToggle: () => void;
 }
 
+/** Status bar toggle button for muting and unmuting notification sounds. */
 export function NotificationSoundItem({ enabled, onToggle }: NotificationSoundItemProps) {
   const Icon = enabled ? Volume2 : VolumeOff;
   return (

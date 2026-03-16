@@ -4,6 +4,7 @@ import { SearchIcon } from 'lucide-react';
 
 import { cn } from '../lib/utils';
 
+/** Command palette root container with search and list support. */
 function Command({
   className,
   ...props
@@ -20,6 +21,7 @@ function Command({
   );
 }
 
+/** Search input field with icon for filtering command items. */
 function CommandInput({
   className,
   ...props
@@ -39,6 +41,7 @@ function CommandInput({
   );
 }
 
+/** Scrollable list container for command items and groups. */
 function CommandList({
   className,
   ...props
@@ -52,6 +55,7 @@ function CommandList({
   );
 }
 
+/** Placeholder displayed when no command results match the search query. */
 function CommandEmpty({ ...props }: React.ComponentProps<typeof CommandPrimitive.Empty>) {
   return (
     <CommandPrimitive.Empty
@@ -62,6 +66,7 @@ function CommandEmpty({ ...props }: React.ComponentProps<typeof CommandPrimitive
   );
 }
 
+/** Labeled group container for organizing related command items. */
 function CommandGroup({
   className,
   ...props
@@ -78,6 +83,7 @@ function CommandGroup({
   );
 }
 
+/** Visual divider between command groups. */
 function CommandSeparator({
   className,
   ...props
@@ -91,6 +97,7 @@ function CommandSeparator({
   );
 }
 
+/** Selectable item within a command list or group. */
 function CommandItem({
   className,
   ...props
@@ -107,6 +114,7 @@ function CommandItem({
   );
 }
 
+/** Muted keyboard shortcut hint displayed alongside a command item. */
 function CommandShortcut({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span

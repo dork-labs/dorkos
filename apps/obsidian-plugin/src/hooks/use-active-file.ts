@@ -7,6 +7,7 @@ export interface ActiveFileInfo {
   extension: string;
 }
 
+/** Track the currently active file in the Obsidian workspace. */
 export function useActiveFile(): ActiveFileInfo | null {
   const { app } = useObsidian();
   const [activeFile, setActiveFile] = useState<ActiveFileInfo | null>(() => {

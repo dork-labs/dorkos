@@ -16,6 +16,9 @@ export interface CelebrationEngineConfig {
   onCelebrate: (event: CelebrationEvent) => void;
 }
 
+/**
+ *
+ */
 export class CelebrationEngine {
   private config: CelebrationEngineConfig;
   private recentCompletions: number[] = [];

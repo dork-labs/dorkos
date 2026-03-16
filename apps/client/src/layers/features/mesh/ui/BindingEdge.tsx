@@ -97,6 +97,7 @@ function BindingEdgeInner({
               transition: 'opacity 150ms ease-out',
             }}
             className="nodrag nopan flex max-w-[160px] flex-col items-center gap-0.5 rounded-md bg-background/90 px-1.5 py-0.5 shadow-sm"
+            role="presentation"
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
           >

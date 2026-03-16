@@ -18,6 +18,7 @@ interface RestartDialogProps {
   onRestartComplete: () => void;
 }
 
+/** Confirmation dialog for restarting the DorkOS server. */
 export function RestartDialog({ open, onOpenChange, onRestartComplete }: RestartDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const transport = useTransport();

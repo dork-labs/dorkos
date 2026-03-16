@@ -17,6 +17,7 @@ function formatElapsed(ms: number): string {
   return `${hours}h ${String(minutes).padStart(2, '0')}m`;
 }
 
+/** Track and format elapsed time from a start timestamp, updating every second. */
 export function useElapsedTime(startTime: number | null): ElapsedTimeResult {
   const [now, setNow] = useState(() => Date.now());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);

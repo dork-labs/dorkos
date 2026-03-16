@@ -36,6 +36,7 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+/** Tabbed settings dialog for appearance, behavior, and advanced options. */
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('appearance');

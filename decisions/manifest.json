@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 135,
+  "nextNumber": 136,
   "decisions": [
+    {
+      "number": 135,
+      "slug": "binding-level-permission-mode",
+      "title": "Binding-Level Permission Mode for Adapter Sessions",
+      "status": "draft",
+      "created": "2026-03-15",
+      "extractedFrom": "agent-permission-mode",
+      "specSlug": "agent-permission-mode"
+    },
     {
       "number": 133,
       "slug": "semantic-health-status-over-raw-metrics",

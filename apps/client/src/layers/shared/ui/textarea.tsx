@@ -2,6 +2,7 @@ import * as React from "react"
 
 import { cn } from "@/layers/shared/lib/utils"
 
+/** Styled multi-line text input with focus ring and validation states. */
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (
     <textarea

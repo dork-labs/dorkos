@@ -191,7 +191,7 @@ describe('DeadLetterSection', () => {
       render(<DeadLetterSection />);
       fireEvent.click(screen.getByText('Mark Resolved'));
       // The description text is split across multiple DOM nodes due to JSX interpolation
-      const description = screen.getByRole('alertdialog').querySelector('[id^="radix-"]');
+      const _description = screen.getByRole('alertdialog').querySelector('[id^="radix-"]');
       const descText = screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')?.textContent ?? '';
       expect(descText).toMatch(/15044/);
       expect(descText).toMatch(/slack-adapter/);

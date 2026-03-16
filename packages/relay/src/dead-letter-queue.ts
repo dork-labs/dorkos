@@ -19,7 +19,6 @@ import * as path from 'node:path';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { MaildirStore } from './maildir-store.js';
 import type { SqliteIndex } from './sqlite-index.js';
-import type { DeadLetter } from './types.js';
 
 // === Types ===
 

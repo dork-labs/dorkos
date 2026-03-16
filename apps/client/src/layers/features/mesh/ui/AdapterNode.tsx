@@ -155,7 +155,9 @@ function AdapterNodeInner({ data, selected }: NodeProps) {
         className="flex items-center gap-2 rounded-lg border border-dashed border-muted-foreground/30 bg-card/40 px-3 py-2 opacity-40 transition-opacity hover:opacity-70"
         style={{ width: ADAPTER_NODE_WIDTH, height: ADAPTER_NODE_HEIGHT }}
         onClick={d.onGhostClick}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); d.onGhostClick?.(); } }}
         role="button"
+        tabIndex={0}
         aria-label="Add adapter"
       >
         <Plus className="size-4 text-muted-foreground" />

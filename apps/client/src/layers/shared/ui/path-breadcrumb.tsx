@@ -11,6 +11,7 @@ interface PathBreadcrumbProps {
   size?: 'sm' | 'md';
 }
 
+/** Renders a filesystem path as clickable breadcrumb segments with optional truncation. */
 export function PathBreadcrumb({
   path,
   maxSegments,

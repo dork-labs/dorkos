@@ -6,7 +6,7 @@ import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { sql } from 'drizzle-orm';
 import { SqliteIndex } from '../sqlite-index.js';
 import { MaildirStore } from '../maildir-store.js';
-import type { IndexedMessage, MessageStatus } from '../sqlite-index.js';
+import type { IndexedMessage } from '../sqlite-index.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
 // ---------------------------------------------------------------------------

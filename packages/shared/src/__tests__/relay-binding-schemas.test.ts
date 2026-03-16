@@ -41,7 +41,7 @@ describe('AdapterBindingSchema', () => {
   });
 
   it('applies permission defaults when not provided', () => {
-    const { canInitiate, canReply, canReceive, ...withoutPerms } = validBinding;
+    const { canInitiate: _ci, canReply: _cr, canReceive: _crc, ...withoutPerms } = validBinding;
     const parsed = AdapterBindingSchema.parse(withoutPerms);
     expect(parsed.canInitiate).toBe(false);
     expect(parsed.canReply).toBe(true);
@@ -49,7 +49,7 @@ describe('AdapterBindingSchema', () => {
   });
 
   it('defaults permissionMode to acceptEdits when omitted', () => {
-    const { permissionMode, ...withoutMode } = validBinding;
+    const { permissionMode: _pm, ...withoutMode } = validBinding;
     const parsed = AdapterBindingSchema.parse(withoutMode);
     expect(parsed.permissionMode).toBe('acceptEdits');
   });

@@ -12,6 +12,7 @@ interface ServerRestartOverlayProps {
   onDismiss: () => void;
 }
 
+/** Full-screen overlay that polls the server until it comes back online after a restart. */
 export function ServerRestartOverlay({ open, onDismiss }: ServerRestartOverlayProps) {
   const [timedOut, setTimedOut] = useState(false);
   const transport = useTransport();

@@ -20,6 +20,7 @@ interface UseInteractiveShortcutsOptions {
   focusedIndex?: number;
 }
 
+/** Bind keyboard shortcuts for interactive tool approval and question flows. */
 export function useInteractiveShortcuts({
   activeInteraction,
   onApprove,

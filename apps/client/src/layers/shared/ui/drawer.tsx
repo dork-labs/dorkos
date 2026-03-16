@@ -47,11 +47,13 @@ const DrawerContent = React.forwardRef<
 ));
 DrawerContent.displayName = 'DrawerContent';
 
+/** Header layout container for drawer title and description. */
 function DrawerHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('grid gap-1.5 p-4 text-center sm:text-left', className)} {...props} />;
 }
 DrawerHeader.displayName = 'DrawerHeader';
 
+/** Footer layout container for drawer action buttons. */
 function DrawerFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('mt-auto flex flex-col gap-2 p-4', className)} {...props} />;
 }

@@ -7,6 +7,7 @@ interface CelebrationOverlayProps {
   onComplete: () => void;
 }
 
+/** Renders a full-screen confetti and radial glow overlay for major task completion celebrations. */
 export function CelebrationOverlay({ celebration, onComplete }: CelebrationOverlayProps) {
   const confettiCleanupRef = useRef<(() => void) | null>(null);
   const isMajor = celebration?.level === 'major';

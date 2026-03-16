@@ -3,6 +3,7 @@ import { Separator as SeparatorPrimitive } from "radix-ui"
 
 import { cn } from "@/layers/shared/lib/utils"
 
+/** Accessible horizontal or vertical separator line. */
 function Separator({
   className,
   orientation = "horizontal",

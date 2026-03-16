@@ -29,7 +29,7 @@ interface UseFileAutocompleteReturn {
 export function useFileAutocomplete({
   fileEntries,
   input,
-  cursorPos,
+  cursorPos: _cursorPos,
 }: UseFileAutocompleteOptions): UseFileAutocompleteReturn {
   const [showFiles, setShowFiles] = useState(false);
   const [fileQuery, setFileQuery] = useState('');

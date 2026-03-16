@@ -66,7 +66,11 @@ export class MeshCore {
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private readonly onUnregisterCallbacks: Array<(agentId: string) => void> = [];
 
-  /** @param options - Configuration options */
+  /**
+   * Create the Mesh coordination core.
+   *
+   * @param options - Configuration options
+   */
   constructor(options: MeshOptions) {
     const registry = new AgentRegistry(options.db);
     const denialList = new DenialList(options.db);

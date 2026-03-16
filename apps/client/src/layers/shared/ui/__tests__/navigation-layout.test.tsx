@@ -54,6 +54,7 @@ vi.mock('motion/react', () => ({
           ...props
         }: Record<string, unknown> & { children?: React.ReactNode; autoFocus?: boolean },
         ref: React.Ref<HTMLButtonElement>
+        // eslint-disable-next-line jsx-a11y/no-autofocus -- Test mock passes through autoFocus to mirror production component
       ) => <button ref={ref} autoFocus={autoFocus} {...props} />
     ),
   },

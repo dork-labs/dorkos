@@ -38,6 +38,9 @@ interface TestCaseResult {
   duration: number;
 }
 
+/**
+ *
+ */
 class ManifestReporter implements Reporter {
   private manifestPath: string;
   private manifest: Manifest;

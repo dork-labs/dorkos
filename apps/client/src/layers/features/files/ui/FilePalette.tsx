@@ -34,6 +34,7 @@ function HighlightedText({
   );
 }
 
+/** Dropdown list of files with keyboard navigation and fuzzy-match highlighting. */
 export function FilePalette({ filteredFiles, selectedIndex, onSelect }: FilePaletteProps) {
   useEffect(() => {
     const activeEl = document.getElementById(`file-item-${selectedIndex}`);

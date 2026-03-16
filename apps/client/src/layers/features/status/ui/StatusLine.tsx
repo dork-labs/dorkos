@@ -17,8 +17,9 @@ interface StatusLineContextValue {
 const StatusLineContext = React.createContext<StatusLineContextValue | null>(null);
 
 /**
+ * Access the StatusLine registration context. Throws if called outside a StatusLine provider.
+ *
  * @internal Use within StatusLine.Item only.
- * Throws if called outside a StatusLine provider.
  */
 function useStatusLineContext(): StatusLineContextValue {
   const ctx = React.useContext(StatusLineContext);
@@ -159,7 +160,11 @@ function StatusLineItem({ itemKey, visible, children }: StatusLineItemProps) {
   );
 }
 
-/** @internal Middot separator between status items. */
+/**
+ * Middot separator between status items.
+ *
+ * @internal
+ */
 function StatusLineSeparator() {
   return (
     <span className="text-muted-foreground/30" aria-hidden="true">

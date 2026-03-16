@@ -41,7 +41,7 @@ const manifestWithInstructions: AdapterManifest = {
   setupInstructions: 'Go to slack.com/api to get your token.',
 };
 
-const manifestWithSteps: AdapterManifest = {
+const _manifestWithSteps: AdapterManifest = {
   ...baseManifest,
   setupSteps: [
     { stepId: 'auth', title: 'Authentication', fields: ['token'] },

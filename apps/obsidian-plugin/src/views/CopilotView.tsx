@@ -20,6 +20,9 @@ import '../styles/plugin.css';
 
 export const VIEW_TYPE_COPILOT = 'dorkos-copilot-view';
 
+/**
+ *
+ */
 export class CopilotView extends ItemView {
   root: Root | null = null;
   plugin: CopilotPlugin;

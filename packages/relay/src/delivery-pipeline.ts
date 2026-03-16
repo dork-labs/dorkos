@@ -208,12 +208,12 @@ export class DeliveryPipeline {
    *
    * @param endpoint - The endpoint that received the message
    * @param messageId - The Maildir-assigned message ID (ULID filename)
-   * @param envelope - The delivered envelope
+   * @param _envelope - The delivered envelope (unused; handlers receive claimed copy)
    */
   async dispatchToSubscribers(
     endpoint: EndpointInfo,
     messageId: string,
-    envelope: RelayEnvelope,
+    _envelope: RelayEnvelope,
   ): Promise<void> {
     const handlers = this.deps.subscriptionRegistry.getSubscribers(endpoint.subject);
     if (handlers.length === 0) return;

@@ -70,7 +70,7 @@ export class SessionBroadcaster {
    * @param res - Express Response object configured for SSE
    * @param clientId - Optional client identifier
    */
-  registerClient(sessionId: string, vaultRoot: string, res: Response, clientId?: string): void {
+  registerClient(sessionId: string, vaultRoot: string, res: Response, _clientId?: string): void {
     // Enforce global SSE connection limit
     if (this.totalClientCount >= SSE.MAX_TOTAL_CLIENTS) {
       res.status(503).json({ error: 'SSE connection limit reached', code: 'SSE_LIMIT' });

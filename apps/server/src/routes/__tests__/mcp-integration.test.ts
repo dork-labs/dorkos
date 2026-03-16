@@ -72,7 +72,7 @@ function createStatelessTestApp() {
         transport.close().catch(() => {});
         server.close().catch(() => {});
       });
-    } catch (err) {
+    } catch (_err) {
       if (!res.headersSent) {
         res.status(500).json({
           jsonrpc: '2.0',

@@ -29,7 +29,7 @@ interface UseCommandPaletteReturn {
 export function useCommandPalette({
   commands,
   input,
-  cursorPos,
+  cursorPos: _cursorPos,
 }: UseCommandPaletteOptions): UseCommandPaletteReturn {
   const [showCommands, setShowCommands] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');

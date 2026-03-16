@@ -3,6 +3,7 @@ import { useTransport } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
 import type { CommandRegistry } from '@dorkos/shared/types';
 
+/** Fetch the command registry for a given working directory. */
 export function useCommands(cwd?: string | null) {
   const transport = useTransport();
   return useQuery<CommandRegistry>({

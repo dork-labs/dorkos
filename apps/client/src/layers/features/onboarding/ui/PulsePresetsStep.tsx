@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   Button,
@@ -41,8 +41,10 @@ export function PulsePresetsStep({ onStepComplete, agents }: PulsePresetsStepPro
       : agents.find((a) => a.id === selectedAgentId) ?? null;
 
   // Initialize enabledPresets with all preset IDs once data loads
-  const resolvedEnabled =
-    enabledPresets ?? new Set(presets?.map((p) => p.id) ?? []);
+  const resolvedEnabled = useMemo(
+    () => enabledPresets ?? new Set(presets?.map((p) => p.id) ?? []),
+    [enabledPresets, presets],
+  );
 
   const handleToggle = useCallback(
     (id: string) => {

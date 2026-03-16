@@ -47,6 +47,7 @@ interface PermissionModeItemProps {
   disabled?: boolean;
 }
 
+/** Status bar item with a dropdown to view and change the permission mode. */
 export function PermissionModeItem({ mode, onChangeMode, disabled }: PermissionModeItemProps) {
   const current = PERMISSION_MODES.find((m) => m.value === mode) ?? PERMISSION_MODES[0];
   const Icon = current.icon;

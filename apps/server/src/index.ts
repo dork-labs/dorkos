@@ -113,6 +113,7 @@ async function start() {
   const relayConfig = configManager.get('relay');
   // Env var wins when explicitly set; fall back to config when not set.
   // boolFlag defaults to false even when unset, so check process.env directly.
+  // eslint-disable-next-line no-restricted-syntax -- checks key existence (not value); env.ts boolFlag can't distinguish "unset" from "set to false"
   const relayEnabled = 'DORKOS_RELAY_ENABLED' in process.env
     ? env.DORKOS_RELAY_ENABLED
     : (relayConfig?.enabled ?? false);
@@ -400,6 +401,6 @@ process.on('SIGTERM', shutdown);
 start().catch((err) => {
   const info = logError(err);
   logger.error('[DorkOS] Fatal error during startup', info);
-  // eslint-disable-next-line no-process-exit -- unrecoverable startup failure
+   
   process.exit(1);
 });

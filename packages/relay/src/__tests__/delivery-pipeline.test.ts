@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DeliveryPipeline } from '../delivery-pipeline.js';
-import type { DeliveryPipelineDeps, EndpointDeliveryResult } from '../delivery-pipeline.js';
+import type { DeliveryPipelineDeps } from '../delivery-pipeline.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { EndpointInfo, BackpressureConfig } from '../types.js';
 

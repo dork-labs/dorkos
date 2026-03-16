@@ -15,6 +15,7 @@ function applyDark(dark: boolean) {
   document.documentElement.classList.toggle('dark', dark);
 }
 
+/** Manage the light/dark/system theme preference, persisting to localStorage. */
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(getStored);
 

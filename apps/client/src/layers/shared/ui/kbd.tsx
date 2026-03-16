@@ -1,5 +1,6 @@
 import { cn } from '../lib/utils';
 
+/** Styled keyboard shortcut indicator, hidden on mobile. */
 function Kbd({ className, children, ...props }: React.ComponentProps<'kbd'>) {
   return (
     <kbd

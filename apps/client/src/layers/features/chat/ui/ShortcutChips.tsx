@@ -18,6 +18,7 @@ const chips: ChipDef[] = [
   { trigger: '@', label: 'Files', icon: FileText, ariaLabel: 'Insert file mention trigger' },
 ];
 
+/** Renders trigger chips for slash commands and file mentions below the chat input. */
 export function ShortcutChips({ onChipClick }: ShortcutChipsProps) {
   return (
     <motion.div

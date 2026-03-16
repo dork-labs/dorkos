@@ -107,7 +107,7 @@ beforeEach(() => {
 
 describe('DialogHost', () => {
   it('renders no dialogs when all states are false', () => {
-    const { container } = render(<DialogHost />);
+    render(<DialogHost />);
 
     expect(screen.queryByTestId('settings-dialog')).not.toBeInTheDocument();
     expect(screen.queryByTestId('directory-picker')).not.toBeInTheDocument();

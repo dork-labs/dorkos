@@ -90,7 +90,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   const { data: adapters = [] } = useRelayAdapters(relayEnabled);
   const { data: bindings = [] } = useBindings();
   const { data: agentsData } = useRegisteredAgents(undefined, meshEnabled);
-  const agents = agentsData?.agents ?? [];
+  const agents = useMemo(() => agentsData?.agents ?? [], [agentsData?.agents]);
   const { data: mcpConfig } = useMcpConfig(selectedCwd);
   const mcpServers = mcpConfig?.servers ?? [];
   const cappedMcpServers = mcpServers.slice(0, MCP_CAP);

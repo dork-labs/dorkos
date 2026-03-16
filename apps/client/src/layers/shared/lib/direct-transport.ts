@@ -1,6 +1,6 @@
 import type { Transport, AdapterListItem, AdapterEvent, UploadFile, McpConfigResponse } from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import type { TraceSpan, DeliveryMetrics, CatalogEntry, AdapterBinding, CreateBindingRequest, RelayConversation } from '@dorkos/shared/relay-schemas';
+import type { TraceSpan, DeliveryMetrics, CatalogEntry, AdapterBinding, CreateBindingRequest } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest, DiscoveryCandidate, DenialRecord, AgentHealth, MeshStatus, TopologyView, CrossNamespaceRule, UpdateAccessRuleRequest, TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import type {
   StreamEvent,
@@ -61,6 +61,9 @@ export interface DirectTransportServices {
   vaultRoot: string;
 }
 
+/**
+ *
+ */
 export class DirectTransport implements Transport {
   constructor(private services: DirectTransportServices) {}
 

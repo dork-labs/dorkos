@@ -4,6 +4,7 @@ interface ContextItemProps {
   percent: number;
 }
 
+/** Status bar item displaying the context window usage percentage. */
 export function ContextItem({ percent }: ContextItemProps) {
   const colorClass = percent >= 95 ? 'text-red-500' : percent >= 80 ? 'text-amber-500' : '';
 

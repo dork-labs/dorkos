@@ -19,6 +19,7 @@ interface ResetDialogProps {
   onResetComplete: () => void;
 }
 
+/** Confirmation dialog for resetting all DorkOS data. */
 export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialogProps) {
   const [confirmText, setConfirmText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);

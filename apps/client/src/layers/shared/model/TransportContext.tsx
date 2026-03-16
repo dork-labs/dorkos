@@ -3,6 +3,7 @@ import type { Transport } from '@dorkos/shared/transport';
 
 const TransportContext = createContext<Transport | null>(null);
 
+/** Provide a {@link Transport} instance to the component tree via React context. */
 export function TransportProvider({
   transport,
   children,
@@ -13,6 +14,7 @@ export function TransportProvider({
   return <TransportContext.Provider value={transport}>{children}</TransportContext.Provider>;
 }
 
+/** Retrieve the current {@link Transport} from context, throwing if none is provided. */
 export function useTransport(): Transport {
   const transport = useContext(TransportContext);
   if (!transport) {

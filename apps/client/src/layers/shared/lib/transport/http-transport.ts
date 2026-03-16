@@ -58,6 +58,9 @@ import { createPulseMethods } from './pulse-methods';
 import { createRelayMethods } from './relay-methods';
 import { createMeshMethods } from './mesh-methods';
 
+/**
+ *
+ */
 export class HttpTransport implements Transport {
   private readonly clientId: string;
   private readonly etagCache = new Map<string, string>();

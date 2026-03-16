@@ -13,10 +13,12 @@ const webAdapter: PlatformAdapter = {
 
 let currentAdapter: PlatformAdapter = webAdapter;
 
+/** Replace the active platform adapter (e.g., when running inside Obsidian). */
 export function setPlatformAdapter(adapter: PlatformAdapter) {
   currentAdapter = adapter;
 }
 
+/** Return the current platform adapter. */
 export function getPlatform(): PlatformAdapter {
   return currentAdapter;
 }

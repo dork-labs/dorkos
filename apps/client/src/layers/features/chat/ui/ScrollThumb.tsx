@@ -131,6 +131,7 @@ export function ScrollThumb({ scrollRef }: ScrollThumbProps) {
   return (
     <div
       ref={trackRef}
+      role="presentation"
       onClick={handleTrackClick}
       className="pointer-events-auto absolute top-12 right-0 bottom-0 z-10 w-2.5"
     >

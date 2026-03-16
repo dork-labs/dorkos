@@ -34,6 +34,7 @@ interface AppProps {
   embedded?: boolean;
 }
 
+/** Root application shell with sidebar, chat panel, and session routing. */
 export function App({ transformContent, embedded }: AppProps = {}) {
   const { sidebarOpen, setSidebarOpen, toggleSidebar } = useAppStore();
   const [activeSessionId] = useSessionId();

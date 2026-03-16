@@ -147,7 +147,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
       setScheduleTarget('agent');
       setStep('preset-picker');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- agents.length intentionally excluded to avoid resetting on re-fetch
+   
   }, [editSchedule, open, initialPreset, initialAgentId]);
 
   // Wire external trigger from usePulsePresetDialog (e.g. from SchedulesView sidebar)

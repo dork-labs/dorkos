@@ -50,6 +50,7 @@ interface ResponsiveDialogProps {
   defaultFullscreen?: boolean;
 }
 
+/** Renders a dialog on desktop or a drawer on mobile with shared context. */
 function ResponsiveDialog({
   children,
   defaultFullscreen = false,
@@ -93,6 +94,7 @@ function ResponsiveDialog({
 }
 ResponsiveDialog.displayName = 'ResponsiveDialog';
 
+/** Trigger element that opens the responsive dialog or drawer. */
 function ResponsiveDialogTrigger({
   className,
   children,
@@ -108,6 +110,7 @@ function ResponsiveDialogTrigger({
 }
 ResponsiveDialogTrigger.displayName = 'ResponsiveDialogTrigger';
 
+/** Content panel that renders as a centered dialog or bottom drawer based on viewport. */
 function ResponsiveDialogContent({
   className,
   children,
@@ -139,6 +142,7 @@ function ResponsiveDialogContent({
 }
 ResponsiveDialogContent.displayName = 'ResponsiveDialogContent';
 
+/** Header layout for the responsive dialog, with padding to avoid close button overlap on desktop. */
 function ResponsiveDialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   const { isDesktop } = useResponsiveDialog();
   const Comp = isDesktop ? DialogHeader : DrawerHeader;
@@ -147,6 +151,7 @@ function ResponsiveDialogHeader({ className, ...props }: React.HTMLAttributes<HT
 }
 ResponsiveDialogHeader.displayName = 'ResponsiveDialogHeader';
 
+/** Title heading for the responsive dialog or drawer. */
 function ResponsiveDialogTitle({
   className,
   ...props
@@ -157,6 +162,7 @@ function ResponsiveDialogTitle({
 }
 ResponsiveDialogTitle.displayName = 'ResponsiveDialogTitle';
 
+/** Description text for the responsive dialog or drawer. */
 function ResponsiveDialogDescription({
   className,
   ...props
@@ -167,6 +173,7 @@ function ResponsiveDialogDescription({
 }
 ResponsiveDialogDescription.displayName = 'ResponsiveDialogDescription';
 
+/** Footer layout for responsive dialog action buttons. */
 function ResponsiveDialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   const { isDesktop } = useResponsiveDialog();
   const Comp = isDesktop ? DialogFooter : DrawerFooter;
@@ -174,6 +181,7 @@ function ResponsiveDialogFooter({ className, ...props }: React.HTMLAttributes<HT
 }
 ResponsiveDialogFooter.displayName = 'ResponsiveDialogFooter';
 
+/** Close button for the responsive dialog or drawer. */
 function ResponsiveDialogClose({
   className,
   children,

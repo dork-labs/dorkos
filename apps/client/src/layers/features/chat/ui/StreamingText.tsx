@@ -83,6 +83,7 @@ const linkSafety = {
   renderModal: (props: LinkSafetyModalProps) => <LinkSafetyModal {...props} />,
 };
 
+/** Renders markdown content via Streamdown with link safety confirmation and a streaming cursor. */
 export function StreamingText({ content, isStreaming = false }: StreamingTextProps) {
   return (
     <div className={cn('relative', isStreaming && 'streaming-cursor')}>

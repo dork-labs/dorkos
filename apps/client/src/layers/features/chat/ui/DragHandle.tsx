@@ -3,6 +3,7 @@ interface DragHandleProps {
   onToggle: () => void;
 }
 
+/** Pill-shaped toggle bar for collapsing or expanding an adjacent panel section. */
 export function DragHandle({ collapsed, onToggle }: DragHandleProps) {
   return (
     <div

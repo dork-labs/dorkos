@@ -88,7 +88,7 @@ describe('QueuePanel', () => {
       <QueuePanel queue={queue} editingIndex={1} onEdit={vi.fn()} onRemove={vi.fn()} />
     );
     // The second card button should have border-l-2 class
-    const buttons = screen.getAllByRole('button', { name: /\d+\./ });
+    screen.getAllByRole('button', { name: /\d+\./ });
     // Find the second card button (index 1)
     const allButtons = document.querySelectorAll('button[type="button"]');
     const cardButtons = Array.from(allButtons).filter((b) =>

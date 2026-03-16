@@ -15,6 +15,7 @@ import { ChatPage } from '../pages/ChatPage.js';
  *   'error'        → session_status → error → done
  */
 
+// eslint-disable-next-line no-restricted-syntax -- E2E test config; no env.ts available
 const MOCK_PORT = process.env.DORKOS_MOCK_PORT || '4243';
 const API_URL = `http://localhost:${MOCK_PORT}`;
 

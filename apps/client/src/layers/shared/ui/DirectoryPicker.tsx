@@ -39,6 +39,7 @@ interface DirectoryPickerProps {
   resolvedAgents?: Record<string, AgentManifest | null>;
 }
 
+/** Modal dialog for browsing the filesystem and selecting a working directory. */
 export function DirectoryPicker({ open, onOpenChange, onSelect, initialPath, resolvedAgents }: DirectoryPickerProps) {
   const transport = useTransport();
   const { recentCwds } = useAppStore();

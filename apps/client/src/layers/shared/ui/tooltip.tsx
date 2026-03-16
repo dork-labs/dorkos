@@ -3,6 +3,7 @@ import { Tooltip as TooltipPrimitive } from "radix-ui"
 
 import { cn } from "@/layers/shared/lib/utils"
 
+/** Context provider that configures tooltip delay and behavior. */
 function TooltipProvider({
   delayDuration = 0,
   ...props
@@ -16,18 +17,21 @@ function TooltipProvider({
   )
 }
 
+/** Accessible tooltip root that manages hover and focus state. */
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
+/** Element that activates the tooltip on hover or focus. */
 function TooltipTrigger({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
 }
 
+/** Animated floating label displayed when the tooltip trigger is active. */
 function TooltipContent({
   className,
   sideOffset = 0,

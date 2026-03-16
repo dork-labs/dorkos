@@ -25,6 +25,7 @@ import { Plus } from 'lucide-react';
 import { ProgressCard, useOnboarding } from '@/layers/features/onboarding';
 import { useConnectionsStatus } from '../model/use-connections-status';
 
+/** Primary sidebar with session list, schedule tabs, and onboarding progress. */
 export function AgentSidebar() {
   const { sessions, activeSessionId, setActiveSession } = useSessions();
   const { setSidebarOpen, setPulseOpen, setOnboardingStep } =

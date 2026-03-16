@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useRef, useState } from 'react';
+import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Inbox, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useRelayConversations, useAggregatedDeadLetters } from '@/layers/entities/relay';
@@ -82,7 +82,7 @@ function applyFilters(
 export function ActivityFeed({
   enabled,
   deadLetterRef,
-  onSwitchToAdapters,
+  onSwitchToAdapters: _onSwitchToAdapters,
   autoShowFailures,
 }: ActivityFeedProps) {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
@@ -92,8 +92,8 @@ export function ActivityFeed({
   const [userToggled, setUserToggled] = useState(false);
   const { data, isLoading } = useRelayConversations(enabled);
   const { data: deadLetterGroups = [] } = useAggregatedDeadLetters(enabled);
-  const conversations = data?.conversations ?? [];
-  const hasDeadLetters = deadLetterGroups.length > 0;
+  const conversations = useMemo(() => data?.conversations ?? [], [data?.conversations]);
+  const _hasDeadLetters = deadLetterGroups.length > 0;
 
   // Track which conversation IDs were present on first render so history items
   // are not animated — only SSE-delivered items that arrive later get entrance animations.

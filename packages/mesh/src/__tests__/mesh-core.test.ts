@@ -159,7 +159,7 @@ describe('upsertAutoImported()', () => {
     const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     // First discover — auto-imports V1
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     await collectCandidates(mesh.discover([projects])); // drain
     let agents = mesh.list();
     expect(agents.some((a) => a.name === 'V1')).toBe(true);
@@ -169,7 +169,7 @@ describe('upsertAutoImported()', () => {
     await writeManifest(agentDir, manifestV2);
 
     // Second discover — should sync V2 into DB
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     await collectCandidates(mesh.discover([projects])); // drain
     agents = mesh.list();
     expect(agents.some((a) => a.name === 'V2')).toBe(true);
@@ -190,7 +190,7 @@ describe('upsertAutoImported()', () => {
     const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     // First discover — auto-imports at old path
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     await collectCandidates(mesh.discover([projects])); // drain
     expect(mesh.list()).toHaveLength(1);
 
@@ -202,7 +202,7 @@ describe('upsertAutoImported()', () => {
     await fs.rm(path.join(oldDir, '.dork'), { recursive: true, force: true });
 
     // Second discover — should update path via upsert
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     await collectCandidates(mesh.discover([projects])); // drain
     const agents = mesh.list();
     expect(agents).toHaveLength(1);

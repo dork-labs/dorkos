@@ -69,7 +69,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
   const { data: allBindings = [] } = useBindings();
   const { data: agentsData } = useRegisteredAgents();
 
-  const agents = agentsData?.agents ?? [];
+  const agents = useMemo(() => agentsData?.agents ?? [], [agentsData?.agents]);
   const totalAgentCount = agents.length;
 
   const adapterBindings = useMemo(

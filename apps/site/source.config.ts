@@ -9,7 +9,8 @@ export const docs = defineDocs({
 export const blogPosts = defineCollections({
   type: 'doc',
   dir: '../../blog',
-  schema: (ctx) =>
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ctx parameter required by fumadocs schema API
+  schema: (_ctx) =>
     z.object({
       title: z.string(),
       description: z.string().optional(),

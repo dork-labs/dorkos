@@ -31,6 +31,7 @@ export const EMOJI_SET = [
   '\u{1F47E}',
 ];
 
+/** Compute a 32-bit FNV-1a hash of the given string. */
 export function fnv1aHash(str: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
@@ -40,11 +41,13 @@ export function fnv1aHash(str: string): number {
   return hash;
 }
 
+/** Derive a deterministic HSL color string from a directory path. */
 export function hashToHslColor(cwd: string): string {
   const hue = fnv1aHash(cwd) % 360;
   return `hsl(${hue}, 70%, 55%)`;
 }
 
+/** Pick a deterministic emoji from {@link EMOJI_SET} based on a directory path. */
 export function hashToEmoji(cwd: string): string {
   return EMOJI_SET[fnv1aHash(cwd) % EMOJI_SET.length];
 }
@@ -53,6 +56,7 @@ const FAVICON_SIZE = 32;
 const FAVICON_CENTER = FAVICON_SIZE / 2;
 const FAVICON_RADIUS = FAVICON_SIZE / 2 - 1;
 
+/** Render a solid-color circle to a canvas and return it as a data URL for use as a favicon. */
 export function generateCircleFavicon(hslColor: string): string {
   const canvas = document.createElement('canvas');
   canvas.width = FAVICON_SIZE;
@@ -108,6 +112,7 @@ export function generatePulseFrames(
   });
 }
 
+/** Set or create the document's favicon link element with the given data URL. */
 export function setFavicon(dataUrl: string): void {
   let link = document.querySelector<HTMLLinkElement>("link[rel*='icon']");
   if (!link) {

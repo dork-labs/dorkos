@@ -1,6 +1,7 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+/** Create a TanStack QueryClient configured for tests (no retries, immediate GC). */
 export function createTestQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
@@ -15,6 +16,7 @@ export function createTestQueryClient(): QueryClient {
   });
 }
 
+/** Wrapper component providing a fresh QueryClient for test rendering. */
 export function TestProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = React.useState(() => createTestQueryClient());
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
