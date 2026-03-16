@@ -178,6 +178,9 @@ describe('WatcherManager', () => {
         JSON.stringify({ subject: 'test' }),
       );
 
+      // Let chokidar detect and process the first file before changing the guard
+      await wait(300);
+
       // Write a second file WITHOUT dedup to confirm the watcher is still active
       manager.setWasDispatched((id) => id === 'msg-dup-001');
       const sentinelPath = path.join(maildirPath, 'new', 'sentinel.json');

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Add delay in watcher-manager dedup test to avoid chokidar race
 - Add userToggled guard to dead letter auto-show and finalize implementation
 - Follow-up refinements to relay panel redesign
 - Discover root-level commands and improve SDK cache semantics
