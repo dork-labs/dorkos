@@ -22,6 +22,7 @@ function createMinimalDeps(overrides?: {
   const setIsTextStreaming = vi.fn();
   const setRateLimitRetryAfter = vi.fn();
   const setIsRateLimited = vi.fn();
+  const setSystemStatus = vi.fn();
   const rateLimitClearRef = { current: null };
   const onTaskEventRef = { current: undefined };
   const onSessionIdChangeFn = overrides?.onSessionIdChange ?? vi.fn();
@@ -47,6 +48,7 @@ function createMinimalDeps(overrides?: {
     setIsTextStreaming,
     setRateLimitRetryAfter,
     setIsRateLimited,
+    setSystemStatus,
     rateLimitClearRef,
     sessionId: overrides?.sessionId ?? 'test-session',
     onTaskEventRef,

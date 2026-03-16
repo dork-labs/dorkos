@@ -23,6 +23,7 @@ import { TaskListPanel } from './TaskListPanel';
 import { CelebrationOverlay } from './CelebrationOverlay';
 import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
+import { SystemStatusZone } from './SystemStatusZone';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 
 interface ChatPanelProps {
@@ -113,6 +114,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     markToolCallResponded,
     isRateLimited,
     rateLimitRetryAfter,
+    systemStatus,
   } = useChatSession(sessionId, {
     transformContent: fileTransformContent,
     onTaskEvent: handleTaskEventWithCelebrations,
@@ -331,6 +333,8 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
           )}
         </AnimatePresence>
       </div>
+
+      <SystemStatusZone message={systemStatus} />
 
       <CelebrationOverlay
         celebration={celebrations.activeCelebration}

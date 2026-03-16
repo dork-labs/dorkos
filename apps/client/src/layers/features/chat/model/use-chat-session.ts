@@ -80,6 +80,8 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const rateLimitClearRef = useRef<(() => void) | null>(null);
+  const [systemStatus, setSystemStatus] = useState<string | null>(null);
+  const systemStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedCwdRef = useRef(selectedCwd);
   const [isTabVisible, setIsTabVisible] = useState(!document.hidden);
@@ -119,6 +121,20 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     setRateLimitRetryAfter(null);
   };
 
+  const setSystemStatusWithClear = useCallback((message: string | null) => {
+    if (systemStatusTimerRef.current) {
+      clearTimeout(systemStatusTimerRef.current);
+      systemStatusTimerRef.current = null;
+    }
+    setSystemStatus(message);
+    if (message) {
+      systemStatusTimerRef.current = setTimeout(() => {
+        setSystemStatus(null);
+        systemStatusTimerRef.current = null;
+      }, TIMING.SYSTEM_STATUS_DISMISS_MS);
+    }
+  }, []);
+
   // Ref-stabilize callbacks to prevent streamEventHandler identity churn.
   // Synced on every render (refs are synchronous — no useEffect needed).
   const onTaskEventRef = useRef(options.onTaskEvent);
@@ -151,6 +167,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         setIsTextStreaming,
         setRateLimitRetryAfter,
         setIsRateLimited,
+        setSystemStatus: setSystemStatusWithClear,
         rateLimitClearRef,
         sessionId: sessionId ?? '',
         onTaskEventRef,
@@ -231,10 +248,11 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     };
   }, [sessionId, isStreaming, queryClient]);
 
-  // Cleanup sessionBusy timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
+      if (systemStatusTimerRef.current) clearTimeout(systemStatusTimerRef.current);
     };
   }, []);
 
@@ -438,5 +456,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     markToolCallResponded,
     isRateLimited,
     rateLimitRetryAfter,
+    systemStatus,
   };
 }

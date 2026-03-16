@@ -12,6 +12,7 @@ import type {
   SubagentProgressEvent,
   SubagentDoneEvent,
   ToolProgressEvent,
+  SystemStatusEvent,
 } from '@dorkos/shared/types';
 import { TIMING } from '@/layers/shared/lib';
 import type { ChatMessage, ToolCallState } from './chat-types';
@@ -39,6 +40,7 @@ interface StreamEventDeps {
   setRateLimitRetryAfter: (retryAfter: number | null) => void;
   setIsRateLimited: (limited: boolean) => void;
   rateLimitClearRef: React.MutableRefObject<(() => void) | null>;
+  setSystemStatus: (message: string | null) => void;
   thinkingStartRef: React.MutableRefObject<number | null>;
   sessionId: string;
   onTaskEventRef: React.MutableRefObject<((event: TaskUpdateEvent) => void) | undefined>;
@@ -91,6 +93,7 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
     setRateLimitRetryAfter,
     setIsRateLimited,
     rateLimitClearRef,
+    setSystemStatus,
     sessionId,
     onTaskEventRef,
     onSessionIdChangeRef,
@@ -345,8 +348,10 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         } else {
           // Transport-level errors (no category) use the banner
           setError(errorData.message);
-          setStatus('error');
         }
+        // Always update session status to 'error' — the subsequent done event
+        // will reset it to 'idle', but this ensures correct status between events.
+        setStatus('error');
         break;
       }
       case 'rate_limit': {
@@ -412,6 +417,25 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         updateAssistantMessage(assistantId);
         break;
       }
+      case 'system_status': {
+        const { message } = data as SystemStatusEvent;
+        setSystemStatus(message);
+        break;
+      }
+      case 'compact_boundary': {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `compaction-${Date.now()}`,
+            role: 'user' as const,
+            content: '',
+            parts: [],
+            timestamp: new Date().toISOString(),
+            messageType: 'compaction' as const,
+          },
+        ]);
+        break;
+      }
       case 'done': {
         const doneData = data as { sessionId?: string };
         if (doneData.sessionId && doneData.sessionId !== sessionId) {
@@ -447,6 +471,7 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         if (textStreamingTimerRef.current) clearTimeout(textStreamingTimerRef.current);
         isTextStreamingRef.current = false;
         setIsTextStreaming(false);
+        setSystemStatus(null);
         setStatus('idle');
         break;
       }

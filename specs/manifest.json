@@ -962,7 +962,28 @@
       "title": "Tool Result Truncation",
       "created": "2026-03-16",
       "status": "specification"
+    },
+    {
+      "number": 138,
+      "slug": "tool-approval-timeout-visibility",
+      "title": "Tool Approval Timeout Visibility",
+      "created": "2026-03-16",
+      "status": "ideation"
+    }
+    ,{
+      "number": 139,
+      "slug": "error-categorization-retry",
+      "title": "Error Categorization & Retry Affordance",
+      "created": "2026-03-16",
+      "status": "specification"
+    }
+    ,{
+      "number": 140,
+      "slug": "prompt-suggestion-chips",
+      "title": "Prompt Suggestion Chips",
+      "created": "2026-03-16",
+      "status": "ideation"
     }
   ],
-  "nextNumber": 138
+  "nextNumber": 141
 }

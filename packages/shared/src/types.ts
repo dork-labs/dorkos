@@ -72,6 +72,8 @@ export type {
   SubagentPart,
   ThinkingDelta,
   ThinkingPart,
+  SystemStatusEvent,
+  CompactBoundaryEvent,
 } from './schemas.js';
 
 export type {

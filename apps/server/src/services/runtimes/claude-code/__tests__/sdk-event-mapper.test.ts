@@ -119,6 +119,48 @@ describe('sdk-event-mapper subagent lifecycle', () => {
   it('yields nothing for unknown system subtypes', async () => {
     const msg = {
       type: 'system',
+      subtype: 'unknown_future_subtype',
+      session_id: 'test',
+      uuid: '00000000-0000-4000-8000-000000000001',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(0);
+  });
+
+  it('yields system_status event with message text from body field', async () => {
+    const msg = {
+      type: 'system',
+      subtype: 'status',
+      session_id: 'test',
+      uuid: '00000000-0000-4000-8000-000000000001',
+      body: 'Compacting context...',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('system_status');
+    expect(events[0].data).toEqual({ message: 'Compacting context...' });
+  });
+
+  it('yields system_status event with message text from message field', async () => {
+    const msg = {
+      type: 'system',
+      subtype: 'status',
+      session_id: 'test',
+      uuid: '00000000-0000-4000-8000-000000000001',
+      message: 'Permission mode changed',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('system_status');
+    expect(events[0].data).toEqual({ message: 'Permission mode changed' });
+  });
+
+  it('yields nothing for status messages with no text', async () => {
+    const msg = {
+      type: 'system',
       subtype: 'status',
       session_id: 'test',
       uuid: '00000000-0000-4000-8000-000000000001',
@@ -126,6 +168,20 @@ describe('sdk-event-mapper subagent lifecycle', () => {
     const events = await collectEvents(msg, session, sessionId, toolState);
 
     expect(events).toHaveLength(0);
+  });
+
+  it('yields compact_boundary event', async () => {
+    const msg = {
+      type: 'system',
+      subtype: 'compact_boundary',
+      session_id: 'test',
+      uuid: '00000000-0000-4000-8000-000000000001',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('compact_boundary');
+    expect(events[0].data).toEqual({});
   });
 });
 

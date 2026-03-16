@@ -91,6 +91,28 @@ export async function* mapSdkMessage(
       };
       return;
     }
+
+    // Handle system status messages ("Compacting context...", permission mode changes)
+    if (message.subtype === 'status') {
+      const msg = message as Record<string, unknown>;
+      const text = (msg.body as string) ?? (msg.message as string) ?? '';
+      if (text) {
+        yield {
+          type: 'system_status',
+          data: { message: text },
+        };
+      }
+      return;
+    }
+
+    // Handle compact boundary (context window compaction occurred)
+    if (message.subtype === 'compact_boundary') {
+      yield {
+        type: 'compact_boundary',
+        data: {},
+      };
+      return;
+    }
   }
 
   // Handle stream events (content blocks)

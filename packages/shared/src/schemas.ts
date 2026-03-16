@@ -50,6 +50,8 @@ export const StreamEventTypeSchema = z
     'subagent_started',
     'subagent_progress',
     'subagent_done',
+    'system_status',
+    'compact_boundary',
   ])
   .openapi('StreamEventType');
 
@@ -370,6 +372,20 @@ export const SubagentDoneEventSchema = z
 
 export type SubagentDoneEvent = z.infer<typeof SubagentDoneEventSchema>;
 
+export const SystemStatusEventSchema = z
+  .object({
+    message: z.string(),
+  })
+  .openapi('SystemStatusEvent');
+
+export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
+
+export const CompactBoundaryEventSchema = z
+  .object({})
+  .openapi('CompactBoundaryEvent');
+
+export type CompactBoundaryEvent = z.infer<typeof CompactBoundaryEventSchema>;
+
 export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
@@ -393,6 +409,8 @@ export const StreamEventSchema = z
       SubagentStartedEventSchema,
       SubagentProgressEventSchema,
       SubagentDoneEventSchema,
+      SystemStatusEventSchema,
+      CompactBoundaryEventSchema,
     ]),
   })
   .openapi('StreamEvent');

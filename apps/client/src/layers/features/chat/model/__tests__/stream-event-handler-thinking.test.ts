@@ -20,6 +20,7 @@ function createMinimalDeps() {
   const setIsTextStreaming = vi.fn();
   const setRateLimitRetryAfter = vi.fn();
   const setIsRateLimited = vi.fn();
+  const setSystemStatus = vi.fn();
   const rateLimitClearRef = { current: null };
   const onTaskEventRef = { current: undefined as ((event: TaskUpdateEvent) => void) | undefined };
   const onSessionIdChangeRef = { current: undefined as ((newSessionId: string) => void) | undefined };
@@ -43,6 +44,7 @@ function createMinimalDeps() {
     setIsTextStreaming,
     setRateLimitRetryAfter,
     setIsRateLimited,
+    setSystemStatus,
     rateLimitClearRef,
     sessionId: 'test-session',
     onTaskEventRef,

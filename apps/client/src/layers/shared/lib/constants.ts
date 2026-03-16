@@ -37,6 +37,8 @@ export const TIMING = {
   SESSION_BUSY_CLEAR_MS: 5000,
   /** Staleness timeout for relay streaming — if no SSE events arrive within this window, poll for completion (ms). */
   DONE_STALENESS_MS: 15_000,
+  /** Auto-dismiss duration for ephemeral system status messages. */
+  SYSTEM_STATUS_DISMISS_MS: 4_000,
 } as const;
 
 /** Time conversion constants (milliseconds). */
