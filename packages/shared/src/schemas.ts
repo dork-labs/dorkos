@@ -36,6 +36,7 @@ export const StreamEventTypeSchema = z
     'approval_required',
     'question_prompt',
     'error',
+    'rate_limit',
     'done',
     'session_status',
     'task_update',
@@ -44,6 +45,9 @@ export const StreamEventTypeSchema = z
     'relay_receipt',
     'message_delivered',
     'relay_message',
+    'subagent_started',
+    'subagent_progress',
+    'subagent_done',
   ])
   .openapi('StreamEventType');
 
@@ -204,6 +208,14 @@ export const ErrorEventSchema = z
 
 export type ErrorEvent = z.infer<typeof ErrorEventSchema>;
 
+export const RateLimitEventSchema = z
+  .object({
+    retryAfter: z.number().optional(),
+  })
+  .openapi('RateLimitEvent');
+
+export type RateLimitEvent = z.infer<typeof RateLimitEventSchema>;
+
 export const DoneEventSchema = z
   .object({
     sessionId: z.string(),
@@ -295,6 +307,42 @@ export const RelayMessageEventSchema = z
 
 export type RelayMessageEvent = z.infer<typeof RelayMessageEventSchema>;
 
+// === Subagent Lifecycle Events ===
+
+export const SubagentStartedEventSchema = z
+  .object({
+    taskId: z.string(),
+    subagentSessionId: z.string(),
+    toolUseId: z.string().optional(),
+    description: z.string(),
+  })
+  .openapi('SubagentStartedEvent');
+
+export type SubagentStartedEvent = z.infer<typeof SubagentStartedEventSchema>;
+
+export const SubagentProgressEventSchema = z
+  .object({
+    taskId: z.string(),
+    toolUses: z.number().int(),
+    lastToolName: z.string().optional(),
+    durationMs: z.number().int(),
+  })
+  .openapi('SubagentProgressEvent');
+
+export type SubagentProgressEvent = z.infer<typeof SubagentProgressEventSchema>;
+
+export const SubagentDoneEventSchema = z
+  .object({
+    taskId: z.string(),
+    status: z.enum(['completed', 'failed', 'stopped']),
+    summary: z.string().optional(),
+    toolUses: z.number().int().optional(),
+    durationMs: z.number().int().optional(),
+  })
+  .openapi('SubagentDoneEvent');
+
+export type SubagentDoneEvent = z.infer<typeof SubagentDoneEventSchema>;
+
 export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
@@ -304,6 +352,7 @@ export const StreamEventSchema = z
       ApprovalEventSchema,
       QuestionPromptEventSchema,
       ErrorEventSchema,
+      RateLimitEventSchema,
       DoneEventSchema,
       SessionStatusEventSchema,
       TaskUpdateEventSchema,
@@ -312,6 +361,9 @@ export const StreamEventSchema = z
       RelayReceiptEventSchema,
       MessageDeliveredEventSchema,
       RelayMessageEventSchema,
+      SubagentStartedEventSchema,
+      SubagentProgressEventSchema,
+      SubagentDoneEventSchema,
     ]),
   })
   .openapi('StreamEvent');
@@ -345,7 +397,28 @@ export const ToolCallPartSchema = z
 
 export type ToolCallPart = z.infer<typeof ToolCallPartSchema>;
 
-export const MessagePartSchema = z.discriminatedUnion('type', [TextPartSchema, ToolCallPartSchema]);
+const SubagentStatusSchema = z.enum(['running', 'complete', 'error']);
+
+export const SubagentPartSchema = z
+  .object({
+    type: z.literal('subagent'),
+    taskId: z.string(),
+    description: z.string(),
+    status: SubagentStatusSchema,
+    toolUses: z.number().int().optional(),
+    lastToolName: z.string().optional(),
+    durationMs: z.number().int().optional(),
+    summary: z.string().optional(),
+  })
+  .openapi('SubagentPart');
+
+export type SubagentPart = z.infer<typeof SubagentPartSchema>;
+
+export const MessagePartSchema = z.discriminatedUnion('type', [
+  TextPartSchema,
+  ToolCallPartSchema,
+  SubagentPartSchema,
+]);
 
 export type MessagePart = z.infer<typeof MessagePartSchema>;
 

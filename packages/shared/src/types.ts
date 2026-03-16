@@ -21,6 +21,7 @@ export type {
   QuestionItem,
   QuestionPromptEvent,
   ErrorEvent,
+  RateLimitEvent,
   DoneEvent,
   SessionStatusEvent,
   TextPart,
@@ -62,6 +63,10 @@ export type {
   ModelOption,
   UploadResult,
   UploadProgress,
+  SubagentStartedEvent,
+  SubagentProgressEvent,
+  SubagentDoneEvent,
+  SubagentPart,
 } from './schemas.js';
 
 export type {

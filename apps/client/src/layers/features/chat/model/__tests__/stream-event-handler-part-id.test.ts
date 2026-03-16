@@ -17,6 +17,9 @@ function createMinimalDeps() {
   const setEstimatedTokens = vi.fn();
   const setStreamStartTime = vi.fn();
   const setIsTextStreaming = vi.fn();
+  const setRateLimitRetryAfter = vi.fn();
+  const setIsRateLimited = vi.fn();
+  const rateLimitClearRef = { current: null };
   const onTaskEventRef = { current: undefined };
   const onSessionIdChangeRef = { current: undefined };
   const onStreamingDoneRef = { current: undefined };
@@ -36,6 +39,9 @@ function createMinimalDeps() {
     setEstimatedTokens,
     setStreamStartTime,
     setIsTextStreaming,
+    setRateLimitRetryAfter,
+    setIsRateLimited,
+    rateLimitClearRef,
     sessionId: 'test-session',
     onTaskEventRef,
     onSessionIdChangeRef,

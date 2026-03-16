@@ -207,3 +207,58 @@ export async function* sdkError(message: string): AsyncGenerator<SDKMessage> {
     uuid: BASE_UUID,
   } as SDKMessage;
 }
+
+// === Subagent Lifecycle Scenario Builders ===
+
+const SUBAGENT_UUID =
+  '00000000-0000-4000-8000-000000000099' as `${string}-${string}-${string}-${string}-${string}`;
+
+/** Yield a task_started system message for subagent lifecycle testing. */
+export function sdkTaskStarted(taskId: string, description: string): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_started',
+    task_id: taskId,
+    description,
+    session_id: `subagent-${taskId}`,
+    uuid: SUBAGENT_UUID,
+  } as SDKMessage;
+}
+
+/** Yield a task_progress system message for subagent lifecycle testing. */
+export function sdkTaskProgress(
+  taskId: string,
+  toolUses: number,
+  durationMs: number,
+  lastToolName?: string,
+): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_progress',
+    task_id: taskId,
+    description: 'test task',
+    usage: { total_tokens: 1000, tool_uses: toolUses, duration_ms: durationMs },
+    last_tool_name: lastToolName,
+    session_id: `subagent-${taskId}`,
+    uuid: SUBAGENT_UUID,
+  } as SDKMessage;
+}
+
+/** Yield a task_notification system message for subagent lifecycle testing. */
+export function sdkTaskNotification(
+  taskId: string,
+  status: 'completed' | 'failed' | 'stopped',
+  summary: string,
+): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_notification',
+    task_id: taskId,
+    status,
+    output_file: '/tmp/output.txt',
+    summary,
+    usage: { total_tokens: 2000, tool_uses: 5, duration_ms: 3000 },
+    session_id: `subagent-${taskId}`,
+    uuid: SUBAGENT_UUID,
+  } as SDKMessage;
+}

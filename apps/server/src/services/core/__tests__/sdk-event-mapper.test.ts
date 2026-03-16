@@ -305,6 +305,41 @@ describe('mapSdkMessage', () => {
     });
   });
 
+  describe('rate_limit_event messages', () => {
+    it('emits rate_limit with retryAfter when retry_after is present', async () => {
+      const events = await collectEvents(
+        mapSdkMessage(
+          {
+            type: 'rate_limit_event',
+            retry_after: 30,
+          } as unknown,
+          makeSession(),
+          'session-1',
+          makeToolState()
+        )
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('rate_limit');
+      expect((events[0].data as Record<string, unknown>).retryAfter).toBe(30);
+    });
+
+    it('emits rate_limit with undefined retryAfter when retry_after is absent', async () => {
+      const events = await collectEvents(
+        mapSdkMessage(
+          {
+            type: 'rate_limit_event',
+          } as unknown,
+          makeSession(),
+          'session-1',
+          makeToolState()
+        )
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('rate_limit');
+      expect((events[0].data as Record<string, unknown>).retryAfter).toBeUndefined();
+    });
+  });
+
   describe('unknown messages', () => {
     it('yields nothing and does not throw', async () => {
       const events = await collectEvents(

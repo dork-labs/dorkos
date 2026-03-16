@@ -7,6 +7,9 @@ import type {
   SessionStatusEvent,
   TaskUpdateEvent,
   MessagePart,
+  SubagentStartedEvent,
+  SubagentProgressEvent,
+  SubagentDoneEvent,
 } from '@dorkos/shared/types';
 import { TIMING } from '@/layers/shared/lib';
 import type { ChatMessage, ToolCallState } from './chat-types';
@@ -31,6 +34,9 @@ interface StreamEventDeps {
   setEstimatedTokens: (tokens: number) => void;
   setStreamStartTime: (time: number | null) => void;
   setIsTextStreaming: (streaming: boolean) => void;
+  setRateLimitRetryAfter: (retryAfter: number | null) => void;
+  setIsRateLimited: (limited: boolean) => void;
+  rateLimitClearRef: React.MutableRefObject<(() => void) | null>;
   sessionId: string;
   onTaskEventRef: React.MutableRefObject<((event: TaskUpdateEvent) => void) | undefined>;
   onSessionIdChangeRef: React.MutableRefObject<((newSessionId: string) => void) | undefined>;
@@ -44,7 +50,7 @@ export function deriveFromParts(parts: MessagePart[]): { content: string; toolCa
   for (const part of parts) {
     if (part.type === 'text') {
       textSegments.push(part.text);
-    } else {
+    } else if (part.type === 'tool_call') {
       toolCalls.push({
         toolCallId: part.toolCallId,
         toolName: part.toolName,
@@ -77,6 +83,9 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
     setEstimatedTokens,
     setStreamStartTime,
     setIsTextStreaming,
+    setRateLimitRetryAfter,
+    setIsRateLimited,
+    rateLimitClearRef,
     sessionId,
     onTaskEventRef,
     onSessionIdChangeRef,
@@ -87,6 +96,16 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
     for (let i = currentPartsRef.current.length - 1; i >= 0; i--) {
       const part = currentPartsRef.current[i];
       if (part.type === 'tool_call' && part.toolCallId === toolCallId) {
+        return part;
+      }
+    }
+    return undefined;
+  }
+
+  function findSubagentPart(taskId: string) {
+    for (let i = currentPartsRef.current.length - 1; i >= 0; i--) {
+      const part = currentPartsRef.current[i];
+      if (part.type === 'subagent' && part.taskId === taskId) {
         return part;
       }
     }
@@ -129,6 +148,11 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
   }
 
   return function handleStreamEvent(type: string, data: unknown, assistantId: string) {
+    // Auto-clear rate limit on any non-rate-limit event (SDK resumed)
+    if (type !== 'rate_limit') {
+      rateLimitClearRef.current?.();
+    }
+
     switch (type) {
       case 'text_delta': {
         const { text } = data as TextDelta;
@@ -265,6 +289,12 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         setStatus('error');
         break;
       }
+      case 'rate_limit': {
+        const { retryAfter } = data as { retryAfter?: number };
+        setRateLimitRetryAfter(retryAfter ?? null);
+        setIsRateLimited(true);
+        break;
+      }
       case 'session_status': {
         const incoming = data as SessionStatusEvent;
         const merged: SessionStatusEvent = {
@@ -282,6 +312,40 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
       case 'task_update': {
         const taskEvent = data as TaskUpdateEvent;
         onTaskEventRef.current?.(taskEvent);
+        break;
+      }
+      case 'subagent_started': {
+        const { taskId, description } = data as SubagentStartedEvent;
+        currentPartsRef.current.push({
+          type: 'subagent',
+          taskId,
+          description,
+          status: 'running',
+        });
+        updateAssistantMessage(assistantId);
+        break;
+      }
+      case 'subagent_progress': {
+        const progress = data as SubagentProgressEvent;
+        const subagentPart = findSubagentPart(progress.taskId);
+        if (subagentPart) {
+          subagentPart.toolUses = progress.toolUses;
+          subagentPart.lastToolName = progress.lastToolName;
+          subagentPart.durationMs = progress.durationMs;
+        }
+        updateAssistantMessage(assistantId);
+        break;
+      }
+      case 'subagent_done': {
+        const done = data as SubagentDoneEvent;
+        const subagentPartDone = findSubagentPart(done.taskId);
+        if (subagentPartDone) {
+          subagentPartDone.status = done.status === 'completed' ? 'complete' : 'error';
+          subagentPartDone.summary = done.summary;
+          if (done.toolUses !== undefined) subagentPartDone.toolUses = done.toolUses;
+          if (done.durationMs !== undefined) subagentPartDone.durationMs = done.durationMs;
+        }
+        updateAssistantMessage(assistantId);
         break;
       }
       case 'done': {

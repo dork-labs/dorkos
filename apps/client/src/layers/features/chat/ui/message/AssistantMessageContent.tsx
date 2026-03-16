@@ -10,6 +10,7 @@ import type { ToolApprovalHandle } from '../ToolApproval';
 import { QuestionPrompt } from '../QuestionPrompt';
 import type { QuestionPromptHandle } from '../QuestionPrompt';
 import { useMessageContext } from './MessageContext';
+import { SubagentBlock } from '../SubagentBlock';
 
 /**
  * Determines whether a tool call should be visible based on auto-hide settings.
@@ -125,6 +126,9 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
               />
             </div>
           );
+        }
+        if (part.type === 'subagent') {
+          return <SubagentBlock key={part.taskId} part={part} />;
         }
         if (part.interactiveType === 'approval') {
           const isActive = part.toolCallId === activeToolCallId;

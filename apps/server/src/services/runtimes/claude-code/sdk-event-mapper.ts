@@ -29,6 +29,54 @@ export async function* mapSdkMessage(
     return;
   }
 
+  // Handle subagent lifecycle messages (task_started, task_progress, task_notification)
+  if (message.type === 'system' && 'subtype' in message) {
+    if (message.subtype === 'task_started') {
+      const msg = message as Record<string, unknown>;
+      yield {
+        type: 'subagent_started',
+        data: {
+          taskId: msg.task_id as string,
+          subagentSessionId: message.session_id,
+          toolUseId: msg.tool_use_id as string | undefined,
+          description: msg.description as string,
+        },
+      };
+      return;
+    }
+
+    if (message.subtype === 'task_progress') {
+      const msg = message as Record<string, unknown>;
+      const usage = msg.usage as { tool_uses: number; duration_ms: number };
+      yield {
+        type: 'subagent_progress',
+        data: {
+          taskId: msg.task_id as string,
+          toolUses: usage.tool_uses,
+          lastToolName: msg.last_tool_name as string | undefined,
+          durationMs: usage.duration_ms,
+        },
+      };
+      return;
+    }
+
+    if (message.subtype === 'task_notification') {
+      const msg = message as Record<string, unknown>;
+      const usage = msg.usage as { tool_uses: number; duration_ms: number } | undefined;
+      yield {
+        type: 'subagent_done',
+        data: {
+          taskId: msg.task_id as string,
+          status: msg.status as 'completed' | 'failed' | 'stopped',
+          summary: msg.summary as string | undefined,
+          toolUses: usage?.tool_uses,
+          durationMs: usage?.duration_ms,
+        },
+      };
+      return;
+    }
+  }
+
   // Handle stream events (content blocks)
   if (message.type === 'stream_event') {
     const event = (message as { event: Record<string, unknown> }).event;
@@ -110,6 +158,16 @@ export async function* mapSdkMessage(
         },
       };
     }
+    return;
+  }
+
+  // Handle rate limit events
+  if (message.type === 'rate_limit_event') {
+    const retryAfter = (message as Record<string, unknown>).retry_after as number | undefined;
+    yield {
+      type: 'rate_limit',
+      data: { retryAfter },
+    };
     return;
   }
 

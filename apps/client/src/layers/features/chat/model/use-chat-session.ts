@@ -76,6 +76,9 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const textStreamingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTextStreamingRef = useRef(false);
   const [isTextStreaming, setIsTextStreaming] = useState(false);
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const rateLimitClearRef = useRef<(() => void) | null>(null);
   const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedCwdRef = useRef(selectedCwd);
   const [isTabVisible, setIsTabVisible] = useState(!document.hidden);
@@ -109,6 +112,12 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     statusRef.current = status;
   });
 
+  // Keep rateLimitClearRef in sync — avoids stale closures in the stream handler
+  rateLimitClearRef.current = () => {
+    setIsRateLimited(false);
+    setRateLimitRetryAfter(null);
+  };
+
   // Ref-stabilize callbacks to prevent streamEventHandler identity churn.
   // Synced on every render (refs are synchronous — no useEffect needed).
   const onTaskEventRef = useRef(options.onTaskEvent);
@@ -138,6 +147,9 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         setEstimatedTokens,
         setStreamStartTime,
         setIsTextStreaming,
+        setRateLimitRetryAfter,
+        setIsRateLimited,
+        rateLimitClearRef,
         sessionId: sessionId ?? '',
         onTaskEventRef,
         onSessionIdChangeRef,
@@ -330,6 +342,8 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       if (textStreamingTimerRef.current) clearTimeout(textStreamingTimerRef.current);
       isTextStreamingRef.current = false;
       setIsTextStreaming(false);
+      setIsRateLimited(false);
+      setRateLimitRetryAfter(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: stable refs for transport/options/cwd
   }, [sessionId, streamEventHandler, queryClient]);
@@ -357,6 +371,8 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     if (textStreamingTimerRef.current) clearTimeout(textStreamingTimerRef.current);
     isTextStreamingRef.current = false;
     setIsTextStreaming(false);
+    setIsRateLimited(false);
+    setRateLimitRetryAfter(null);
     setStatus('idle');
   }, []);
 
@@ -418,5 +434,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     waitingType,
     activeInteraction,
     markToolCallResponded,
+    isRateLimited,
+    rateLimitRetryAfter,
   };
 }

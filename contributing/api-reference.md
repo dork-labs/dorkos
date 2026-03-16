@@ -59,7 +59,7 @@ Event types are documented in the `StreamEventType` enum in the OpenAPI spec. Th
 
 **Responses:**
 
-- `200` - SSE stream. Event types: `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`
+- `200` - SSE stream. Event types: `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`, `subagent_started`, `subagent_progress`, `subagent_done`, `rate_limit`
 - `409` - Session locked by another client. Response body: `{ error: 'Session locked', code: 'SESSION_LOCKED', lockedBy: string, lockedAt: string }`
 
 ### GET /api/sessions/:id/stream
