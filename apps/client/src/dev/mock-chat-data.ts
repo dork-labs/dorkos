@@ -532,6 +532,16 @@ export const SAMPLE_QUESTIONS: QuestionItem[] = [
     ],
     multiSelect: true,
   },
+  {
+    header: 'Deploy',
+    question: 'Where should we deploy?',
+    options: [
+      { label: 'Vercel', description: 'Edge-first, zero-config deploys' },
+      { label: 'Fly.io', description: 'Run containers close to users' },
+      { label: 'Self-hosted', description: 'Docker on your own infra' },
+    ],
+    multiSelect: false,
+  },
 ];
 
 export const TOOL_CALL_MULTI_QUESTION: ToolCallState = createToolCall({
@@ -556,6 +566,46 @@ export const SAMPLE_MESSAGE_MULTI_QUESTION: ChatMessage = createAssistantMessage
       status: 'pending',
       interactiveType: 'question',
       questions: TOOL_CALL_MULTI_QUESTION.questions,
+    },
+  ],
+});
+
+const MULTI_SELECT_QUESTION: QuestionItem[] = [
+  {
+    header: 'Integrations',
+    question: 'Which integrations should we enable?',
+    options: [
+      { label: 'Slack', description: 'Team messaging and notifications' },
+      { label: 'GitHub', description: 'Issue tracking and PR automation' },
+      { label: 'Linear', description: 'Project management sync' },
+      { label: 'Discord', description: 'Community channel updates' },
+    ],
+    multiSelect: true,
+  },
+];
+
+export const TOOL_CALL_MULTI_SELECT_QUESTION: ToolCallState = createToolCall({
+  toolName: 'AskUserQuestion',
+  input: JSON.stringify({ questions: MULTI_SELECT_QUESTION }),
+  status: 'pending',
+  interactiveType: 'question',
+  questions: MULTI_SELECT_QUESTION,
+});
+
+/** Assistant message with a multi-select question for showcase use. */
+export const SAMPLE_MESSAGE_MULTI_SELECT: ChatMessage = createAssistantMessage({
+  content: 'Which integrations would you like?',
+  toolCalls: [TOOL_CALL_MULTI_SELECT_QUESTION],
+  parts: [
+    { type: 'text', text: 'Which integrations would you like?' },
+    {
+      type: 'tool_call',
+      toolCallId: TOOL_CALL_MULTI_SELECT_QUESTION.toolCallId,
+      toolName: TOOL_CALL_MULTI_SELECT_QUESTION.toolName,
+      input: TOOL_CALL_MULTI_SELECT_QUESTION.input,
+      status: 'pending',
+      interactiveType: 'question',
+      questions: TOOL_CALL_MULTI_SELECT_QUESTION.questions,
     },
   ],
 });

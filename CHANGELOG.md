@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add multi-select and 3-tab question showcases to design system
 - Add hook lifecycle showcase and refactor stream-event-handler
 - Add ClientsItem presence indicator showcase to design system
 - Add ClientsItem presence indicator showcase to design system
