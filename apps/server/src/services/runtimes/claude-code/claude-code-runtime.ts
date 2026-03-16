@@ -16,6 +16,7 @@ import type {
   Session,
   HistoryMessage,
   TaskItem,
+  CommandEntry,
   CommandRegistry,
 } from '@dorkos/shared/types';
 import type {
@@ -98,6 +99,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private mcpServerFactory: (() => Record<string, McpServerConfig>) | null = null;
   private cachedModels: ModelOption[] | null = null;
   private cachedMcpStatus = new Map<string, McpServerEntry[]>();
+  private cachedSdkCommands: Array<{
+    name: string;
+    description: string;
+    argumentHint: string;
+  }> | null = null;
   private meshCore: AgentRegistryPort | null = null;
 
   constructor(cwd?: string) {
@@ -277,6 +283,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         this.cachedMcpStatus.set(key, servers);
         logger.debug('[sendMessage] cached MCP server status', { cwd: key, count: servers.length });
       },
+      onCommandsReceived: !this.cachedSdkCommands
+        ? (commands) => {
+            this.cachedSdkCommands = commands;
+            logger.debug('[sendMessage] cached supported commands', {
+              count: commands.length,
+            });
+          }
+        : undefined,
       sdkSessionIndex: this.sdkSessionIndex,
       sessionMapKey: sessionId,
     }, opts);
@@ -405,15 +419,61 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   // ---------------------------------------------------------------------------
-  // Commands — delegated to CommandRegistryService
+  // Commands — SDK primary, filesystem enrichment
   // ---------------------------------------------------------------------------
 
-  /** Return the command registry for the given CWD (defaults to server CWD). */
+  /**
+   * Return commands for the given CWD (defaults to server CWD).
+   *
+   * When SDK commands are cached (populated after first SDK query), they are
+   * the authoritative source and get enriched with filesystem metadata
+   * (allowedTools, filePath, namespace, command). Before any SDK session,
+   * falls back to the filesystem scanner for immediate availability.
+   */
   async getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
     const root = cwd || this.cwd;
+    if (forceRefresh) {
+      this.cachedSdkCommands = null;
+    }
+
+    if (this.cachedSdkCommands) {
+      const sdkEntries: CommandEntry[] = this.cachedSdkCommands.map((c) => ({
+        fullCommand: c.name.startsWith('/') ? c.name : `/${c.name}`,
+        description: c.description,
+        argumentHint: c.argumentHint || undefined,
+      }));
+
+      // Enrich SDK commands with filesystem metadata where available
+      const registry = this.getOrCreateRegistry(root);
+      const fsCommands = await registry.getCommands(false);
+      const fsLookup = new Map(fsCommands.commands.map((c) => [c.fullCommand, c]));
+
+      const merged = sdkEntries.map((entry) => {
+        const fsMatch = fsLookup.get(entry.fullCommand);
+        if (fsMatch) {
+          return {
+            ...entry,
+            namespace: fsMatch.namespace,
+            command: fsMatch.command,
+            allowedTools: fsMatch.allowedTools,
+            filePath: fsMatch.filePath,
+          };
+        }
+        return entry;
+      });
+      merged.sort((a, b) => a.fullCommand.localeCompare(b.fullCommand));
+      return { commands: merged, lastScanned: new Date().toISOString() };
+    }
+
+    // No SDK commands yet — fall back to filesystem scanner
+    const registry = this.getOrCreateRegistry(root);
+    return registry.getCommands(forceRefresh);
+  }
+
+  /** Get or create a CommandRegistryService for the given root, with LRU eviction. */
+  private getOrCreateRegistry(root: string): CommandRegistryService {
     let registry = this.commandRegistries.get(root);
     if (!registry) {
-      // Evict oldest entry if cache is full
       if (this.commandRegistries.size >= ClaudeCodeRuntime.MAX_COMMAND_REGISTRIES) {
         const oldest = this.commandRegistries.keys().next().value!;
         this.commandRegistries.delete(oldest);
@@ -421,7 +481,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       registry = new CommandRegistryService(root);
       this.commandRegistries.set(root, registry);
     }
-    return registry.getCommands(forceRefresh);
+    return registry;
   }
 
   // ---------------------------------------------------------------------------

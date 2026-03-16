@@ -41,6 +41,9 @@ export interface MessageSenderOpts {
     models: Array<{ value: string; displayName: string; description: string }>
   ) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
+  onCommandsReceived?: (
+    commands: Array<{ name: string; description: string; argumentHint: string }>
+  ) => void;
   sdkSessionIndex: Map<string, string>;
   sessionMapKey: string;
 }
@@ -231,6 +234,24 @@ export async function* executeSdkQuery(
       })
       .catch((err) => {
         logger.debug('[sendMessage] failed to fetch MCP server status', { err });
+      });
+  }
+
+  // Non-blocking command discovery — fires on first query, caches on runtime
+  if (opts.onCommandsReceived) {
+    agentQuery
+      .supportedCommands()
+      .then((commands) => {
+        opts.onCommandsReceived!(
+          commands.map((c) => ({
+            name: c.name,
+            description: c.description,
+            argumentHint: c.argumentHint,
+          })),
+        );
+      })
+      .catch((err) => {
+        logger.debug('[sendMessage] failed to fetch supported commands', { err });
       });
   }
 

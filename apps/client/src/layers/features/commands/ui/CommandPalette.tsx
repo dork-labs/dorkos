@@ -16,10 +16,11 @@ export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: Co
     let idx = 0;
 
     for (const cmd of filteredCommands) {
-      if (!grouped.has(cmd.namespace)) {
-        grouped.set(cmd.namespace, []);
+      const ns = cmd.namespace ?? 'built-in';
+      if (!grouped.has(ns)) {
+        grouped.set(ns, []);
       }
-      grouped.get(cmd.namespace)!.push({ cmd, index: idx++ });
+      grouped.get(ns)!.push({ cmd, index: idx++ });
     }
 
     for (const [namespace, items] of grouped) {

@@ -118,7 +118,10 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
       if (enableNotificationSound) {
         playNotificationSound();
       }
-    }, [enableNotificationSound]),
+      // After first SDK query completes, commands cache is populated on server.
+      // Invalidate the client query so built-ins/skills/user-level commands appear.
+      void queryClient.invalidateQueries({ queryKey: ['commands'] });
+    }, [enableNotificationSound, queryClient]),
   });
   const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status === 'streaming');
 

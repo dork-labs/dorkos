@@ -391,13 +391,13 @@ export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
 
 export const CommandEntrySchema = z
   .object({
-    namespace: z.string(),
-    command: z.string(),
+    namespace: z.string().optional(),
+    command: z.string().optional(),
     fullCommand: z.string(),
     description: z.string(),
     argumentHint: z.string().optional(),
     allowedTools: z.array(z.string()).optional(),
-    filePath: z.string(),
+    filePath: z.string().optional(),
   })
   .openapi('CommandEntry');
 

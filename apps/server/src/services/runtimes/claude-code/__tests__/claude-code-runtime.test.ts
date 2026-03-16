@@ -679,7 +679,7 @@ describe('ClaudeCodeRuntime', () => {
       expect(callArgs.options.allowedTools).toBeUndefined();
     });
 
-    it('uses global defaults when no agent manifest exists', async () => {
+    it('uses global config defaults when no agent manifest exists', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       const { readManifest } = await import('@dorkos/shared/manifest');
       const { resolveToolConfig } = await import('../tool-filter.js');
@@ -704,6 +704,137 @@ describe('ClaudeCodeRuntime', () => {
       // Should still complete without errors
       expect(events.find((e) => e.type === 'done')).toBeDefined();
       expect(events.find((e) => e.type === 'error')).toBeUndefined();
+    });
+  });
+
+  describe('getCommands() SDK caching', () => {
+    /** SDK mock that yields init + result (minimal successful flow). */
+    function mockSuccessFlow() {
+      return wrapSdkQuery(sdkSimpleText(''));
+    }
+
+    it('returns filesystem-only commands before any sendMessage', async () => {
+      const result = await agentManager.getCommands();
+      // No SDK commands cached yet — should fall back to filesystem scanner
+      // (empty in test env since .claude/commands/ doesn't exist)
+      expect(result.commands).toEqual([]);
+      expect(result.lastScanned).toBeDefined();
+    });
+
+    it('caches SDK commands after first sendMessage', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const mockCommands = [
+        { name: '/compact', description: 'Compact conversation', argumentHint: '' },
+        { name: '/help', description: 'Show help', argumentHint: '[topic]' },
+      ];
+
+      const queryResult = mockSuccessFlow();
+      queryResult.supportedCommands.mockResolvedValue(mockCommands);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
+
+      agentManager.ensureSession('cmd-1', { permissionMode: 'default' });
+      for await (const _ of agentManager.sendMessage('cmd-1', 'hello')) {
+        // drain stream
+      }
+
+      // Wait for non-blocking supportedCommands() to resolve
+      await vi.waitFor(async () => {
+        const result = await agentManager.getCommands();
+        expect(result.commands).toHaveLength(2);
+      });
+
+      const result = await agentManager.getCommands();
+      expect(result.commands[0].fullCommand).toBe('/compact');
+      expect(result.commands[1].fullCommand).toBe('/help');
+      expect(result.commands[1].argumentHint).toBe('[topic]');
+    });
+
+    it('does not re-fetch commands on subsequent messages', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const mockCommands = [
+        { name: '/compact', description: 'Compact conversation', argumentHint: '' },
+      ];
+
+      // First message — populates cache
+      const queryResult1 = mockSuccessFlow();
+      queryResult1.supportedCommands.mockResolvedValue(mockCommands);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult1);
+
+      agentManager.ensureSession('cmd-2', { permissionMode: 'default' });
+      for await (const _ of agentManager.sendMessage('cmd-2', 'hello')) {
+        // drain
+      }
+
+      await vi.waitFor(async () => {
+        const result = await agentManager.getCommands();
+        expect(result.commands).toHaveLength(1);
+      });
+
+      // Second message — should NOT call supportedCommands again
+      const queryResult2 = mockSuccessFlow();
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult2);
+
+      for await (const _ of agentManager.sendMessage('cmd-2', 'world')) {
+        // drain
+      }
+
+      // supportedCommands on the second query should never be called
+      expect(queryResult2.supportedCommands).not.toHaveBeenCalled();
+    });
+
+    it('clears SDK cache on forceRefresh', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const mockCommands = [
+        { name: '/compact', description: 'Compact conversation', argumentHint: '' },
+      ];
+
+      const queryResult = mockSuccessFlow();
+      queryResult.supportedCommands.mockResolvedValue(mockCommands);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
+
+      agentManager.ensureSession('cmd-3', { permissionMode: 'default' });
+      for await (const _ of agentManager.sendMessage('cmd-3', 'hello')) {
+        // drain
+      }
+
+      await vi.waitFor(async () => {
+        const result = await agentManager.getCommands();
+        expect(result.commands).toHaveLength(1);
+      });
+
+      // forceRefresh should clear SDK cache and fall back to filesystem
+      const result = await agentManager.getCommands(true);
+      expect(result.commands).toEqual([]);
+    });
+
+    it('sorts SDK commands alphabetically by fullCommand', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const mockCommands = [
+        { name: '/zebra', description: 'Last', argumentHint: '' },
+        { name: '/alpha', description: 'First', argumentHint: '' },
+        { name: '/middle', description: 'Middle', argumentHint: '' },
+      ];
+
+      const queryResult = mockSuccessFlow();
+      queryResult.supportedCommands.mockResolvedValue(mockCommands);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
+
+      agentManager.ensureSession('cmd-4', { permissionMode: 'default' });
+      for await (const _ of agentManager.sendMessage('cmd-4', 'hello')) {
+        // drain
+      }
+
+      await vi.waitFor(async () => {
+        const result = await agentManager.getCommands();
+        expect(result.commands).toHaveLength(3);
+      });
+
+      const result = await agentManager.getCommands();
+      expect(result.commands.map((c) => c.fullCommand)).toEqual([
+        '/alpha',
+        '/middle',
+        '/zebra',
+      ]);
     });
   });
 });

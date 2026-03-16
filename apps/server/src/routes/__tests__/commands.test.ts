@@ -117,6 +117,51 @@ describe('Commands Routes', () => {
     });
   });
 
+  describe('schema validation for SDK-only commands', () => {
+    it('accepts commands with optional namespace, command, and filePath', async () => {
+      const registry = {
+        commands: [
+          { fullCommand: '/compact', description: 'Compact conversation history' },
+          { fullCommand: '/help', description: 'Show help', argumentHint: '[topic]' },
+        ],
+        lastScanned: '2024-01-01T00:00:00.000Z',
+      };
+      mockGetCommands.mockResolvedValue(registry);
+
+      const res = await request(app).get('/api/commands');
+      expect(res.status).toBe(200);
+      expect(res.body.commands).toHaveLength(2);
+      expect(res.body.commands[0]).toEqual({
+        fullCommand: '/compact',
+        description: 'Compact conversation history',
+      });
+    });
+
+    it('accepts mixed commands with and without filesystem metadata', async () => {
+      const registry = {
+        commands: [
+          { fullCommand: '/compact', description: 'Compact conversation history' },
+          {
+            namespace: 'daily',
+            command: 'plan',
+            fullCommand: '/daily:plan',
+            description: 'Plan day',
+            filePath: '.claude/commands/daily/plan.md',
+            allowedTools: ['Read', 'Write'],
+          },
+        ],
+        lastScanned: '2024-01-01T00:00:00.000Z',
+      };
+      mockGetCommands.mockResolvedValue(registry);
+
+      const res = await request(app).get('/api/commands');
+      expect(res.status).toBe(200);
+      expect(res.body.commands[0].namespace).toBeUndefined();
+      expect(res.body.commands[1].namespace).toBe('daily');
+      expect(res.body.commands[1].allowedTools).toEqual(['Read', 'Write']);
+    });
+  });
+
   describe('boundary enforcement', () => {
     it('GET /api/commands rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(

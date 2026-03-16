@@ -58,6 +58,7 @@ function makeResult(sessionId = SESSION_ID): SDKMessage {
 export function wrapSdkQuery(gen: AsyncGenerator<SDKMessage>) {
   return Object.assign(gen, {
     supportedModels: vi.fn().mockResolvedValue([]),
+    supportedCommands: vi.fn().mockResolvedValue([]),
     setPermissionMode: vi.fn().mockResolvedValue(undefined),
     mcpServerStatus: vi.fn().mockResolvedValue([]),
   });
