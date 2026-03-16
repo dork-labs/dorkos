@@ -13,6 +13,7 @@ import type {
   SubagentDoneEvent,
   ToolProgressEvent,
   SystemStatusEvent,
+  PromptSuggestionEvent,
 } from '@dorkos/shared/types';
 import { TIMING } from '@/layers/shared/lib';
 import type { ChatMessage, ToolCallState, TransportErrorInfo } from './chat-types';
@@ -41,6 +42,7 @@ interface StreamEventDeps {
   setIsRateLimited: (limited: boolean) => void;
   rateLimitClearRef: React.MutableRefObject<(() => void) | null>;
   setSystemStatus: (message: string | null) => void;
+  setPromptSuggestions: (suggestions: string[]) => void;
   thinkingStartRef: React.MutableRefObject<number | null>;
   sessionId: string;
   onTaskEventRef: React.MutableRefObject<((event: TaskUpdateEvent) => void) | undefined>;
@@ -428,6 +430,11 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
       case 'system_status': {
         const { message } = data as SystemStatusEvent;
         setSystemStatus(message);
+        break;
+      }
+      case 'prompt_suggestion': {
+        const { suggestions } = data as PromptSuggestionEvent;
+        deps.setPromptSuggestions(suggestions);
         break;
       }
       case 'compact_boundary': {

@@ -29,6 +29,7 @@ function makeToolState(): ToolState {
     currentToolName: '',
     currentToolId: '',
     taskToolInput: '',
+    toolNameById: new Map(),
     get inThinking() { return inThinking; },
     set inThinking(v: boolean) { inThinking = v; },
     get thinkingStartMs() { return thinkingStartMs; },

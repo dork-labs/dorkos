@@ -28,6 +28,7 @@ function makeToolState(): ToolState {
     currentToolName: '',
     currentToolId: '',
     taskToolInput: '',
+    toolNameById: new Map(),
     setToolState(inTool: boolean, name: string, id: string) {
       this.inTool = inTool;
       this.currentToolName = name;

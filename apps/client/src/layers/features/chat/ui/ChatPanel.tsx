@@ -25,6 +25,7 @@ import { CelebrationOverlay } from './CelebrationOverlay';
 import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
 import { SystemStatusZone } from './SystemStatusZone';
+import { PromptSuggestionChips } from './PromptSuggestionChips';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 
 interface ChatPanelProps {
@@ -116,6 +117,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     isRateLimited,
     rateLimitRetryAfter,
     systemStatus,
+    promptSuggestions,
   } = useChatSession(sessionId, {
     transformContent: fileTransformContent,
     onTaskEvent: handleTaskEventWithCelebrations,
@@ -202,6 +204,16 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
       submitContent(lastUserMsg.content);
     }
   }, [messages, submitContent]);
+
+  const showSuggestions = status === 'idle' && promptSuggestions.length > 0 && input.length === 0;
+
+  const handleSuggestionClick = useCallback(
+    (suggestion: string) => {
+      setInput(suggestion);
+      chatInputRef.current?.focus();
+    },
+    [setInput]
+  );
 
   const handleQueueRemove = useCallback(
     (index: number) => {
@@ -336,6 +348,15 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
       </div>
 
       <SystemStatusZone message={systemStatus} />
+
+      <AnimatePresence>
+        {showSuggestions && (
+          <PromptSuggestionChips
+            suggestions={promptSuggestions}
+            onChipClick={handleSuggestionClick}
+          />
+        )}
+      </AnimatePresence>
 
       <CelebrationOverlay
         celebration={celebrations.activeCelebration}

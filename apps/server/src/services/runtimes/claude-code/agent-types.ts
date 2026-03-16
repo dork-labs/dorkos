@@ -26,6 +26,8 @@ export interface ToolState {
   taskToolInput: string;
   inThinking: boolean;
   thinkingStartMs: number;
+  /** Lookup table mapping tool_use block IDs to tool names for result correlation. */
+  toolNameById: Map<string, string>;
   appendTaskInput: (chunk: string) => void;
   resetTaskInput: () => void;
   setToolState: (tool: boolean, name: string, id: string) => void;
@@ -39,6 +41,7 @@ export function createToolState(): ToolState {
   let taskToolInput = '';
   let inThinking = false;
   let thinkingStartMs = 0;
+  const toolNameById = new Map<string, string>();
   return {
     get inTool() { return inTool; },
     get currentToolName() { return currentToolName; },
@@ -48,6 +51,7 @@ export function createToolState(): ToolState {
     set inThinking(v: boolean) { inThinking = v; },
     get thinkingStartMs() { return thinkingStartMs; },
     set thinkingStartMs(v: number) { thinkingStartMs = v; },
+    toolNameById,
     appendTaskInput: (chunk: string) => { taskToolInput += chunk; },
     resetTaskInput: () => { taskToolInput = ''; },
     setToolState: (tool: boolean, name: string, id: string) => {

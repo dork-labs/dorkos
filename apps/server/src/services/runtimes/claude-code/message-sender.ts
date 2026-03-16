@@ -142,6 +142,7 @@ export async function* executeSdkQuery(
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
+    promptSuggestions: true,
     settingSources: ['project', 'user'],
     systemPrompt: {
       type: 'preset',

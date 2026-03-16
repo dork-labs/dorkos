@@ -52,6 +52,7 @@ export const StreamEventTypeSchema = z
     'subagent_done',
     'system_status',
     'compact_boundary',
+    'prompt_suggestion',
   ])
   .openapi('StreamEventType');
 
@@ -206,6 +207,7 @@ export const ApprovalEventSchema = z
     toolCallId: z.string(),
     toolName: z.string(),
     input: z.string(),
+    timeoutMs: z.number().describe('Server-side approval timeout in milliseconds'),
   })
   .openapi('ApprovalEvent');
 
@@ -260,6 +262,7 @@ export const SessionStatusEventSchema = z
     costUsd: z.number().optional(),
     contextTokens: z.number().int().optional(),
     contextMaxTokens: z.number().int().optional(),
+    outputTokens: z.number().int().optional(),
   })
   .openapi('SessionStatusEvent');
 
@@ -386,6 +389,14 @@ export const CompactBoundaryEventSchema = z
 
 export type CompactBoundaryEvent = z.infer<typeof CompactBoundaryEventSchema>;
 
+export const PromptSuggestionEventSchema = z
+  .object({
+    suggestions: z.array(z.string()),
+  })
+  .openapi('PromptSuggestionEvent');
+
+export type PromptSuggestionEvent = z.infer<typeof PromptSuggestionEventSchema>;
+
 export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
@@ -411,6 +422,7 @@ export const StreamEventSchema = z
       SubagentDoneEventSchema,
       SystemStatusEventSchema,
       CompactBoundaryEventSchema,
+      PromptSuggestionEventSchema,
     ]),
   })
   .openapi('StreamEvent');
@@ -440,6 +452,7 @@ export const ToolCallPartSchema = z
     interactiveType: z.enum(['approval', 'question']).optional(),
     questions: z.array(QuestionItemSchema).optional(),
     answers: z.record(z.string(), z.string()).optional(),
+    timeoutMs: z.number().optional().describe('Approval timeout duration in milliseconds'),
   })
   .openapi('ToolCallPart');
 

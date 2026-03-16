@@ -74,6 +74,7 @@ export type {
   ThinkingPart,
   SystemStatusEvent,
   CompactBoundaryEvent,
+  PromptSuggestionEvent,
 } from './schemas.js';
 
 export type {

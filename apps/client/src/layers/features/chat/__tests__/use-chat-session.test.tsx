@@ -305,7 +305,7 @@ describe('useChatSession', () => {
       await result.current.handleSubmit();
     });
 
-    expect(result.current.error).toBe('Something went wrong');
+    expect(result.current.error).toMatchObject({ message: 'Something went wrong' });
   });
 
   it('returns to idle on done events', async () => {
@@ -390,7 +390,7 @@ describe('useChatSession', () => {
     });
 
     expect(result.current.status).toBe('error');
-    expect(result.current.error).toBe('HTTP 404');
+    expect(result.current.error).toMatchObject({ message: 'HTTP 404' });
     // Optimistic user message removed on error
     expect(result.current.messages.filter((m) => m.role === 'user')).toHaveLength(0);
   });
@@ -416,7 +416,7 @@ describe('useChatSession', () => {
 
     expect(result.current.sessionBusy).toBe(true);
     expect(result.current.input).toBe('test message'); // Input preserved
-    expect(result.current.error).toBeNull(); // No error message set for busy state
+    expect(result.current.error).toMatchObject({ heading: 'Session in use' }); // Structured error for busy state
     expect(result.current.status).toBe('error');
   });
 

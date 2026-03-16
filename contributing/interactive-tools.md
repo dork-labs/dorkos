@@ -524,6 +524,23 @@ Every deferred promise includes a 10-minute timeout (`SESSIONS.INTERACTION_TIMEO
 
 The timeout is cleared whenever the interaction is resolved normally (user responds or interaction is cancelled).
 
+### Timeout Visibility
+
+The `ToolApproval` component makes the server-side timeout visible to users via a countdown timer. The server includes `timeoutMs` in the `approval_required` SSE event, which flows through the stream event handler to the component.
+
+**Visual indicators:**
+- A thin progress bar (4px) drains over the timeout duration via CSS `@keyframes drain` animation (GPU-composited, zero JS cost)
+- Bar color transitions: neutral → amber at 2 minutes remaining → red at 1 minute remaining
+- Text countdown (`M:SS remaining`) appears only in the final 2 minutes
+- On timeout: card transitions to denied state with explanation message
+
+**Accessibility:**
+- Progress bar has `role="progressbar"` with `aria-valuemin`, `aria-valuemax`, `aria-valuenow`, and `aria-valuetext`
+- Screen reader announcements via `aria-live="assertive"` fire only at threshold crossings (2 min, 1 min, timeout)
+- `prefers-reduced-motion` respected via `motion-safe:` Tailwind prefix — animation disabled, color transitions remain
+
+**Data flow:** Server `handleToolApproval()` → `approval_required` SSE event (includes `timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS`) → stream-event-handler passes to tool call part → `ToolApproval` renders countdown from `timeoutMs` prop.
+
 ### Transport Abstraction
 
 Both `HttpTransport` and `DirectTransport` implement the same `Transport` interface, so interactive tool components work identically in both environments:

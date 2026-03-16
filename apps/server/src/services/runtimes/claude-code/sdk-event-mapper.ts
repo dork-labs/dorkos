@@ -2,6 +2,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, ErrorCategory } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from './agent-types.js';
 import { buildTaskEvent, TASK_TOOL_NAMES } from './build-task-event.js';
+import { logger } from '../../../lib/logger.js';
 
 /** Map SDK result subtypes to user-facing error categories. */
 function mapErrorCategory(subtype: string): ErrorCategory {
@@ -128,6 +129,7 @@ export async function* mapSdkMessage(
       } else if (contentBlock?.type === 'tool_use') {
         toolState.resetTaskInput();
         toolState.setToolState(true, contentBlock.name as string, contentBlock.id as string);
+        toolState.toolNameById.set(contentBlock.id as string, contentBlock.name as string);
         yield {
           type: 'tool_call_start',
           data: {
@@ -155,6 +157,25 @@ export async function* mapSdkMessage(
             input: delta.partial_json as string,
             status: 'running',
           },
+        };
+      }
+    } else if (eventType === 'message_delta') {
+      const delta = event.delta as Record<string, unknown> | undefined;
+      const usage = event.usage as Record<string, unknown> | undefined;
+      const stopReason = delta?.stop_reason as string | undefined;
+      const outputTokens = usage?.output_tokens as number | undefined;
+
+      if (outputTokens !== undefined) {
+        yield {
+          type: 'session_status',
+          data: { sessionId, outputTokens },
+        };
+      }
+
+      if (stopReason === 'max_tokens') {
+        yield {
+          type: 'system_status',
+          data: { message: 'Response truncated — reached max output tokens.' },
         };
       }
     } else if (eventType === 'content_block_stop') {
@@ -197,7 +218,7 @@ export async function* mapSdkMessage(
         type: 'tool_result',
         data: {
           toolCallId: toolUseId,
-          toolName: '',
+          toolName: toolState.toolNameById.get(toolUseId) ?? '',
           result: summary.summary,
           status: 'complete',
         },
@@ -216,6 +237,18 @@ export async function* mapSdkMessage(
         content: progress.content,
       },
     };
+    return;
+  }
+
+  // Handle prompt suggestion messages
+  if (message.type === 'prompt_suggestion') {
+    const suggestions = (message as Record<string, unknown>).suggestions as string[];
+    if (Array.isArray(suggestions) && suggestions.length > 0) {
+      yield {
+        type: 'prompt_suggestion',
+        data: { suggestions },
+      };
+    }
     return;
   }
 
@@ -271,5 +304,13 @@ export async function* mapSdkMessage(
       type: 'done',
       data: { sessionId },
     };
+    return;
   }
+
+  // Catch-all: log unhandled message types for debugging
+  logger.debug(
+    'Unhandled SDK message type: %s (subtype: %s)',
+    message.type,
+    'subtype' in message ? (message as Record<string, unknown>).subtype : 'none'
+  );
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { createRef } from 'react';
 import { ToolApproval, type ToolApprovalHandle } from '../ui/ToolApproval';
 
@@ -137,6 +137,142 @@ describe('ToolApproval', () => {
       // After decided, deny should not fire
       ref.current!.deny();
       expect(mockDenyTool).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('countdown timer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Helper: render inside async act so React flushes effects with fake timers active.
+    async function renderAsync(props: React.ComponentProps<typeof ToolApproval>) {
+      let result!: ReturnType<typeof render>;
+      await act(async () => {
+        result = render(<ToolApproval {...props} />);
+      });
+      return result;
+    }
+
+    it('renders progress bar when timeoutMs is provided', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      const progressBar = screen.getByRole('progressbar');
+      expect(progressBar).toBeDefined();
+      expect(progressBar.getAttribute('aria-valuemax')).toBe('600');
+      expect(progressBar.getAttribute('aria-valuenow')).toBe('600');
+    });
+
+    it('does not render progress bar when timeoutMs is undefined', async () => {
+      await renderAsync(baseProps);
+      expect(screen.queryByRole('progressbar')).toBeNull();
+    });
+
+    it('does not show text countdown before warning threshold', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      // Advance to 5 minutes elapsed (5 minutes remaining — still in normal phase)
+      await act(async () => vi.advanceTimersByTime(300_000));
+      expect(screen.queryByText(/remaining/)).toBeNull();
+    });
+
+    it('shows text countdown at warning threshold (2 minutes remaining)', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      // Advance to 8 minutes elapsed (2 minutes remaining)
+      await act(async () => vi.advanceTimersByTime(480_000));
+      // Both the visible countdown span and the sr-only live region contain "remaining"
+      const elements = screen.getAllByText(/remaining/);
+      // The visible countdown element should be the non-sr-only span
+      const visibleCountdown = elements.find((el) => !el.className.includes('sr-only'));
+      expect(visibleCountdown).toBeDefined();
+    });
+
+    it('shows countdown with correct format at 1:30 remaining', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      // Advance to 8m30s elapsed (1:30 remaining)
+      await act(async () => vi.advanceTimersByTime(510_000));
+      expect(screen.getByText('1:30 remaining')).toBeDefined();
+    });
+
+    it('applies urgent styling at 1 minute remaining', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      // Advance to 9 minutes elapsed (1 minute remaining)
+      await act(async () => vi.advanceTimersByTime(540_000));
+      const elements = screen.getAllByText(/remaining/);
+      const countdownEl = elements.find((el) => !el.className.includes('sr-only'));
+      expect(countdownEl).toBeDefined();
+      expect(countdownEl!.className).toContain('text-status-error');
+    });
+
+    it('transitions to denied state when timeout expires', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      // Advance full 10 minutes
+      await act(async () => vi.advanceTimersByTime(600_000));
+      expect(screen.getByText(/Auto-denied/)).toBeDefined();
+      expect(screen.getByText(/timed out after 10 minutes/)).toBeDefined();
+      expect(screen.getByTestId('tool-approval-decided')).toBeDefined();
+      expect(screen.getByTestId('tool-approval-decided').getAttribute('data-decision')).toBe('denied');
+    });
+
+    it('does not show timeout message on manual deny', async () => {
+      const ref = createRef<ToolApprovalHandle>();
+      await act(async () => {
+        render(<ToolApproval {...baseProps} ref={ref} timeoutMs={600_000} />);
+      });
+
+      // Advance 5 minutes then deny manually; flush promises and microtasks via runAllTimersAsync
+      await act(async () => vi.advanceTimersByTime(300_000));
+      await act(async () => {
+        ref.current!.deny();
+        await vi.runAllTimersAsync();
+      });
+
+      expect(screen.getByText('Denied')).toBeDefined();
+      expect(screen.queryByText(/Auto-denied/)).toBeNull();
+      expect(screen.queryByText(/timed out/)).toBeNull();
+    });
+
+    it('approve works during countdown and stops timer display', async () => {
+      const ref = createRef<ToolApprovalHandle>();
+      await act(async () => {
+        render(<ToolApproval {...baseProps} ref={ref} timeoutMs={600_000} />);
+      });
+
+      // Advance 5 minutes then approve manually; flush promises and microtasks via runAllTimersAsync
+      await act(async () => vi.advanceTimersByTime(300_000));
+      await act(async () => {
+        ref.current!.approve();
+        await vi.runAllTimersAsync();
+      });
+
+      expect(screen.getByText('Approved')).toBeDefined();
+      // No progress bar in decided state
+      expect(screen.queryByRole('progressbar')).toBeNull();
+      // No timeout message
+      expect(screen.queryByText(/Auto-denied/)).toBeNull();
+    });
+
+    it('announces at warning threshold for screen readers', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      await act(async () => vi.advanceTimersByTime(480_000)); // 8 minutes elapsed, 2 minutes remaining
+      const liveRegion = screen.getByRole('status');
+      expect(liveRegion.textContent).toBe('Tool approval required. 2 minutes remaining.');
+    });
+
+    it('announces at urgent threshold for screen readers', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      await act(async () => vi.advanceTimersByTime(540_000)); // 9 minutes elapsed, 1 minute remaining
+      const liveRegion = screen.getByRole('status');
+      expect(liveRegion.textContent).toBe('Urgent: 1 minute to approve or deny.');
+    });
+
+    it('updates aria-valuenow as time passes', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      await act(async () => vi.advanceTimersByTime(60_000)); // 1 minute elapsed
+      const progressBar = screen.getByRole('progressbar');
+      expect(progressBar.getAttribute('aria-valuenow')).toBe('540');
     });
   });
 });

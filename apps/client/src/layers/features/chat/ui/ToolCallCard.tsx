@@ -5,17 +5,26 @@ import type { ToolCallState } from '../model/use-chat-session';
 import { getToolLabel, ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
 import { toolStatus } from './message/message-variants';
 
-/** Maximum bytes of progress output to show before truncation. */
-const PROGRESS_TRUNCATE_BYTES = 5120;
+/** Maximum characters to render before truncation (5KB). */
+const TRUNCATE_THRESHOLD = 5120;
 
-/** Renders streaming tool progress output with truncation. */
-function ProgressOutput({ content }: { content: string }) {
+interface TruncatedOutputProps {
+  /** Text content to display, truncated if over threshold. */
+  content: string;
+  /** Maximum characters before truncation. Defaults to TRUNCATE_THRESHOLD. */
+  threshold?: number;
+  /** Additional className for the wrapper div. */
+  className?: string;
+}
+
+/** Renders text content with character-based truncation and a one-way expand button. */
+function TruncatedOutput({ content, threshold = TRUNCATE_THRESHOLD, className }: TruncatedOutputProps) {
   const [showFull, setShowFull] = useState(false);
-  const isTruncated = content.length > PROGRESS_TRUNCATE_BYTES;
-  const displayContent = isTruncated && !showFull ? content.slice(0, PROGRESS_TRUNCATE_BYTES) : content;
+  const isTruncated = content.length > threshold;
+  const displayContent = isTruncated && !showFull ? content.slice(0, threshold) : content;
 
   return (
-    <div className="mt-2 border-t pt-2">
+    <div className={cn('mt-2 border-t pt-2', className)}>
       <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">{displayContent}</pre>
       {isTruncated && !showFull && (
         <button
@@ -95,13 +104,9 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
                 <ToolArgumentsDisplay toolName={toolCall.toolName} input={toolCall.input} />
               )}
               {toolCall.progressOutput && !toolCall.result && (
-                <ProgressOutput content={toolCall.progressOutput} />
+                <TruncatedOutput content={toolCall.progressOutput} />
               )}
-              {toolCall.result && (
-                <pre className="mt-2 overflow-x-auto border-t pt-2 text-xs whitespace-pre-wrap">
-                  {toolCall.result}
-                </pre>
-              )}
+              {toolCall.result && <TruncatedOutput content={toolCall.result} />}
             </div>
           </motion.div>
         )}

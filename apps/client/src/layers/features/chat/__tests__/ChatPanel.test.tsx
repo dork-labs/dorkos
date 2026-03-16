@@ -25,6 +25,7 @@ vi.mock('../model/use-chat-session', () => ({
     streamStartTime: null,
     estimatedTokens: null,
     isTextStreaming: false,
+    promptSuggestions: [],
   }),
 }));
 

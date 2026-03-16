@@ -136,6 +136,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const [isRateLimited, setIsRateLimited] = useState(false);
   const rateLimitClearRef = useRef<(() => void) | null>(null);
   const [systemStatus, setSystemStatus] = useState<string | null>(null);
+  const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
   const systemStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedCwdRef = useRef(selectedCwd);
@@ -223,6 +224,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         setRateLimitRetryAfter,
         setIsRateLimited,
         setSystemStatus: setSystemStatusWithClear,
+        setPromptSuggestions,
         rateLimitClearRef,
         sessionId: sessionId ?? '',
         onTaskEventRef,
@@ -355,6 +357,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       },
     ]);
     if (clearInput) setInput('');
+    setPromptSuggestions([]);
     setStatus('streaming');
     statusRef.current = 'streaming'; // Sync ref immediately — closes the timing window where sync_update could invalidate stale history
     setError(null);
@@ -514,5 +517,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     isRateLimited,
     rateLimitRetryAfter,
     systemStatus,
+    promptSuggestions,
   };
 }

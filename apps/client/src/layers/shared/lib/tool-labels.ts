@@ -72,6 +72,24 @@ export function getToolLabel(toolName: string, input: string): string {
       return `Search ${quote(truncate(str(parsed.query), 35))}`;
     case 'WebFetch':
       return `Fetch ${hostname(str(parsed.url))}`;
+    case 'TaskGet': {
+      const id = str(parsed.taskId);
+      return `Get task #${id}`;
+    }
+    case 'NotebookEdit':
+      return `Edit notebook ${basename(str(parsed.notebook_path))}`;
+    case 'EnterPlanMode':
+      return 'Enter plan mode';
+    case 'ExitPlanMode':
+      return 'Exit plan mode';
+    case 'ToolSearch':
+      return `Search tools ${quote(truncate(str(parsed.query), 30))}`;
+    case 'ListMcpResourcesTool': {
+      const server = str(parsed.server);
+      return server ? `List MCP resources (${server})` : 'List MCP resources';
+    }
+    case 'ReadMcpResourceTool':
+      return `Read MCP resource ${truncate(str(parsed.uri), 30)}`;
     default:
       return toolName;
   }

@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 136,
+  "nextNumber": 137,
   "decisions": [
+    {
+      "number": 136,
+      "slug": "hybrid-hook-event-routing",
+      "title": "Hybrid Hook Event Routing by hook_event Field",
+      "status": "draft",
+      "created": "2026-03-16",
+      "extractedFrom": "hook-lifecycle-events",
+      "specSlug": "hook-lifecycle-events"
+    },
     {
       "number": 135,
       "slug": "binding-level-permission-mode",

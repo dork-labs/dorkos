@@ -129,6 +129,7 @@ export function handleToolApproval(
       toolCallId: toolUseId,
       toolName,
       input: JSON.stringify(input),
+      timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
     },
   });
   session.eventQueueNotify?.();

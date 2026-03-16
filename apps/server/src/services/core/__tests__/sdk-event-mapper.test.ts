@@ -67,6 +67,7 @@ function makeToolState(): ToolState {
     get taskToolInput() {
       return taskToolInput;
     },
+    toolNameById: new Map<string, string>(),
     appendTaskInput: (chunk: string) => {
       taskToolInput += chunk;
     },

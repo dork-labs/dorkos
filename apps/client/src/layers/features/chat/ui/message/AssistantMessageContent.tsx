@@ -167,6 +167,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
               toolCallId={toolPart.toolCallId}
               toolName={toolPart.toolName}
               input={toolPart.input || ''}
+              timeoutMs={toolPart.timeoutMs}
               isActive={isActive}
               onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
             />

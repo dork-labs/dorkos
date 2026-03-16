@@ -49,6 +49,7 @@ function createMinimalDeps(overrides?: {
     setRateLimitRetryAfter,
     setIsRateLimited,
     setSystemStatus,
+    setPromptSuggestions: vi.fn(),
     rateLimitClearRef,
     sessionId: overrides?.sessionId ?? 'test-session',
     onTaskEventRef,

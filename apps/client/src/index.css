@@ -421,6 +421,19 @@ body {
   }
 }
 
+@keyframes drain {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+@utility animate-drain {
+  animation-name: drain;
+}
+
 /* Assistant message typography */
 .msg-assistant p + p {
   margin-top: 1em;

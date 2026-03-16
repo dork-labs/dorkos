@@ -45,6 +45,7 @@ function createMinimalDeps() {
     setRateLimitRetryAfter,
     setIsRateLimited,
     setSystemStatus,
+    setPromptSuggestions: vi.fn(),
     rateLimitClearRef,
     sessionId: 'test-session',
     onTaskEventRef,

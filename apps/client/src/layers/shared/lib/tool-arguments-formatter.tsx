@@ -79,11 +79,13 @@ export function ToolArgumentsDisplay({ toolName: _toolName, input }: ToolArgumen
   try {
     parsed = JSON.parse(input);
   } catch {
-    return <pre className="overflow-x-auto text-xs whitespace-pre-wrap">{input}</pre>;
+    const displayInput = input.length > 5120 ? input.slice(0, 5120) + '\u2026' : input;
+    return <pre className="overflow-x-auto text-xs whitespace-pre-wrap">{displayInput}</pre>;
   }
 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return <pre className="overflow-x-auto text-xs whitespace-pre-wrap">{input}</pre>;
+    const displayInput = input.length > 5120 ? input.slice(0, 5120) + '\u2026' : input;
+    return <pre className="overflow-x-auto text-xs whitespace-pre-wrap">{displayInput}</pre>;
   }
 
   const entries = Object.entries(parsed);
