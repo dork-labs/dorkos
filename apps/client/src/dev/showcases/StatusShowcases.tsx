@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { StreamingText } from '@/layers/features/chat/ui/StreamingText';
 import { InferenceIndicator } from '@/layers/features/chat/ui/InferenceIndicator';
+import { SystemStatusZone } from '@/layers/features/chat/ui/SystemStatusZone';
 import { TaskListPanel } from '@/layers/features/chat/ui/TaskListPanel';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -28,7 +29,7 @@ npm install jsonwebtoken @types/jsonwebtoken
 npm run test -- --watch
 \`\`\``;
 
-/** Status-related component showcases: StreamingText, InferenceIndicator, TaskListPanel. */
+/** Status-related component showcases: StreamingText, InferenceIndicator, SystemStatusZone, TaskListPanel. */
 export function StatusShowcases() {
   const [taskCollapsed, setTaskCollapsed] = useState(false);
   const [taskCollapsed2, setTaskCollapsed2] = useState(true);
@@ -117,6 +118,26 @@ export function StatusShowcases() {
             isRateLimited
             rateLimitRetryAfter={null}
           />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="SystemStatusZone"
+        description="Ephemeral status banner for SDK system messages (e.g. context compaction, permission changes)."
+      >
+        <ShowcaseLabel>Active message</ShowcaseLabel>
+        <ShowcaseDemo>
+          <SystemStatusZone message="Compacting context..." />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Permission mode change</ShowcaseLabel>
+        <ShowcaseDemo>
+          <SystemStatusZone message="Permission mode changed to plan" />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Null (renders nothing)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <SystemStatusZone message={null} />
         </ShowcaseDemo>
       </PlaygroundSection>
 
