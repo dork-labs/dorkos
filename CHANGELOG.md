@@ -9,21 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add binding-level permission mode for adapter-triggered sessions
-- Switch command discovery to SDK supportedCommands() API
-- Switch command discovery to SDK supportedCommands() API
-- Redesign relay panel — 2-tab IA, semantic health, permissions, dead letter aggregation
+- Configure permission modes per adapter-agent binding so headless sessions (Slack, Telegram) use the right tool approval level instead of stalling
+- Redesign the Relay panel with a 2-tab layout, semantic health indicators, inline permissions, and aggregated dead letter management
+- Discover slash commands via the SDK `supportedCommands()` API for more reliable command availability
 
 ### Changed
 
-- Derive binding CWD from agent registry instead of storing projectPath
+- Derive binding working directory from the agent registry instead of storing a separate path
 
 ### Fixed
 
-- Add delay in watcher-manager dedup test to avoid chokidar race
-- Add userToggled guard to dead letter auto-show and finalize implementation
-- Follow-up refinements to relay panel redesign
-- Discover root-level commands and improve SDK cache semantics
+- Prevent dead letter panel from re-opening after the user explicitly collapses it
+- Fix relay panel follow-up issues with health bar rendering, empty states, and label consistency
+- Discover root-level commands and fix SDK command cache returning stale results
+
 ---
 
 ## [0.13.1] - 2026-03-14
