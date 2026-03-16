@@ -174,8 +174,8 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         onSessionIdChangeRef,
         onStreamingDoneRef,
       }),
-     
-    [sessionId]
+
+    [sessionId, setSystemStatusWithClear]
   );
 
   // Load message history from SDK transcript via TanStack Query with adaptive polling
