@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add ErrorMessageBlock and ThinkingBlock showcases; add specs for system-status and tool-result-truncation
 - Implement result-error-distinction, extended-thinking-visibility, and tool-progress-streaming
-- Implement result-error-distinction, extended-thinking-visibility, and tool-progress-streaming
 - Add rate-limit states to InferenceIndicator showcase
 - Add rate-limit countdown UI and prop threading
 - Add SubagentBlock to design system showcase
@@ -19,7 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Improve playground UX with demo wells and DRY cleanup
 - Improve playground UX with demo wells and DRY cleanup
 
 ### Fixed
