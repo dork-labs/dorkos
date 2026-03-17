@@ -5,6 +5,49 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-03-17
+
+> Multi-client awareness, extended thinking visibility, and dev playground overhaul
+
+### Added
+
+- Add multi-client presence indicator, subagent/hook lifecycle visibility, and tool call enhancements
+- Implement tool-approval-timeout-visibility, prompt-suggestion-chips, multi-client-session-indicator
+- Add transport error categorization and retry affordance
+- Truncate tool results at 5KB with raw JSON fallback for large payloads
+- Surface SDK system status messages and compact boundary events in chat UI
+- Implement result-error-distinction, extended-thinking-visibility, and tool-progress-streaming
+- Add rate-limit countdown UI and prop threading
+- Add subagent lifecycle visibility to chat UI
+- Redesign QuestionPrompt and unify compact final states
+- Add scrollspy TOC, Cmd+K search, and overview landing page to Dev Playground
+- Implement navigation overhaul for Dev Playground with improved sidebar and routing
+- Add 14 missing component showcases to dev playground
+- Add slugify, copyable names, and responsive viewport toggle to dev playground
+- Add multi-select and 3-tab question showcases to design system
+- Add hook lifecycle showcase and refactor stream-event-handler
+- Add ClientsItem presence indicator showcase to design system
+- Add ToolApproval countdown timer showcases to design system
+- Add truncated tool result showcase to design system
+- Add SystemStatusZone to design system showcase
+- Add ErrorMessageBlock and ThinkingBlock showcases
+- Add rate-limit states to InferenceIndicator showcase
+- Add SubagentBlock to design system showcase
+
+### Changed
+
+- Unify ToolApproval and QuestionPrompt container styling
+- Extract shared primitives from duplicated chat UI components
+- Reconcile contributing guides with recent commits (37 commits since 2026-03-12)
+- Improve playground UX with demo wells and DRY cleanup
+
+### Fixed
+
+- Add setSystemStatusWithClear to useMemo deps
+- Stabilize ThinkingBlock tests — remove motion mock, add cleanup
+
+---
+
 ## [0.14.0] - 2026-03-16
 
 > Binding-level permissions, relay panel redesign, and SDK command discovery

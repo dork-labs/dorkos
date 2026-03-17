@@ -9,27 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add 14 missing component showcases to dev playground
-- Add slugify, copyable names, and responsive viewport toggle
+### Changed
+
+### Fixed
+
+---
+
+## [0.15.0] - 2026-03-17
+
+> Multi-client awareness, extended thinking visibility, and dev playground overhaul
+
+### Added
+
+- Add multi-client presence indicator, subagent/hook lifecycle visibility, and tool call enhancements
+- Implement tool-approval-timeout-visibility, prompt-suggestion-chips, multi-client-session-indicator
+- Add transport error categorization and retry affordance
+- Truncate tool results at 5KB with raw JSON fallback for large payloads
+- Surface SDK system status messages and compact boundary events in chat UI
+- Implement result-error-distinction, extended-thinking-visibility, and tool-progress-streaming
+- Add rate-limit countdown UI and prop threading
+- Add subagent lifecycle visibility to chat UI
 - Redesign QuestionPrompt and unify compact final states
-- Add scrollspy TOC, Cmd+K search, and overview landing page
+- Add scrollspy TOC, Cmd+K search, and overview landing page to Dev Playground
+- Implement navigation overhaul for Dev Playground with improved sidebar and routing
+- Add 14 missing component showcases to dev playground
+- Add slugify, copyable names, and responsive viewport toggle to dev playground
 - Add multi-select and 3-tab question showcases to design system
 - Add hook lifecycle showcase and refactor stream-event-handler
 - Add ClientsItem presence indicator showcase to design system
-- Add multi-client presence indicator, subagent/hook lifecycle visibility, and tool call enhancements
 - Add ToolApproval countdown timer showcases to design system
-- Implement tool-approval-timeout-visibility, prompt-suggestion-chips, multi-client-session-indicator; add specs and research
-- Add transport error categorization and retry affordance
-- Truncate tool results at 5KB with raw JSON fallback for large payloads
 - Add truncated tool result showcase to design system
 - Add SystemStatusZone to design system showcase
-- Surface SDK system status messages and compact boundary events in chat UI
-- Add ErrorMessageBlock and ThinkingBlock showcases; add specs for system-status and tool-result-truncation
-- Implement result-error-distinction, extended-thinking-visibility, and tool-progress-streaming
+- Add ErrorMessageBlock and ThinkingBlock showcases
 - Add rate-limit states to InferenceIndicator showcase
-- Add rate-limit countdown UI and prop threading
 - Add SubagentBlock to design system showcase
-- Add subagent lifecycle visibility to chat UI
 
 ### Changed
 
@@ -42,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add setSystemStatusWithClear to useMemo deps
 - Stabilize ThinkingBlock tests — remove motion mock, add cleanup
+
 ---
 
 ## [0.14.0] - 2026-03-16
@@ -545,7 +559,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/dork-labs/dorkos/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/dork-labs/dorkos/compare/v0.13.1...v0.14.0
+[0.13.1]: https://github.com/dork-labs/dorkos/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/dork-labs/dorkos/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/dork-labs/dorkos/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/dork-labs/dorkos/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/dork-labs/dorkos/compare/v0.9.1...v0.10.0
