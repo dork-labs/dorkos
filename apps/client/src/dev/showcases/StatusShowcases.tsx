@@ -55,16 +55,21 @@ npm run test -- --watch
 export function StatusShowcases() {
   const [taskCollapsed, setTaskCollapsed] = useState(false);
   const [taskCollapsed2, setTaskCollapsed2] = useState(true);
-  // Stable start times to avoid react-hooks/purity warnings from Date.now() in render
+
+  // Stable timestamps computed once on mount via useState initializer (useMemo triggers react-hooks/purity)
   const [streamStart] = useState(() => Date.now());
-  // Stable timestamps for ClientsItem showcase
-  const [now] = useState(() => new Date().toISOString());
-  const [fiveMinAgo] = useState(() => new Date(Date.now() - 5 * 60_000).toISOString());
-  const [twelveMinAgo] = useState(() => new Date(Date.now() - 12 * 60_000).toISOString());
-  const [fortyFiveMinAgo] = useState(() => new Date(Date.now() - 45 * 60_000).toISOString());
-  const [threeMinAgo] = useState(() => new Date(Date.now() - 3 * 60_000).toISOString());
-  const [tenSecAgo] = useState(() => new Date(Date.now() - 10_000).toISOString());
-  const [twoMinAgo] = useState(() => new Date(Date.now() - 2 * 60_000).toISOString());
+  const [ts] = useState(() => {
+    const base = Date.now();
+    return {
+      now: new Date(base).toISOString(),
+      fiveMinAgo: new Date(base - 5 * 60_000).toISOString(),
+      twelveMinAgo: new Date(base - 12 * 60_000).toISOString(),
+      fortyFiveMinAgo: new Date(base - 45 * 60_000).toISOString(),
+      threeMinAgo: new Date(base - 3 * 60_000).toISOString(),
+      tenSecAgo: new Date(base - 10_000).toISOString(),
+      twoMinAgo: new Date(base - 2 * 60_000).toISOString(),
+    };
+  });
 
   return (
     <>
@@ -181,7 +186,7 @@ export function StatusShowcases() {
         description="Structured error banner for transport-level failures (network, server, timeout, session lock). Shown outside the message stream."
       >
         <ShowcaseLabel>Connection failed (retryable)</ShowcaseLabel>
-        <ShowcaseDemo>
+        <ShowcaseDemo responsive>
           <TransportErrorBanner
             error={{
               heading: 'Connection failed',
@@ -193,7 +198,7 @@ export function StatusShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>Server error (retryable)</ShowcaseLabel>
-        <ShowcaseDemo>
+        <ShowcaseDemo responsive>
           <TransportErrorBanner
             error={{
               heading: 'Server error',
@@ -205,7 +210,7 @@ export function StatusShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>Request timed out (retryable)</ShowcaseLabel>
-        <ShowcaseDemo>
+        <ShowcaseDemo responsive>
           <TransportErrorBanner
             error={{
               heading: 'Request timed out',
@@ -217,7 +222,7 @@ export function StatusShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>Session in use (not retryable, auto-dismisses)</ShowcaseLabel>
-        <ShowcaseDemo>
+        <ShowcaseDemo responsive>
           <TransportErrorBanner
             error={{
               heading: 'Session in use',
@@ -229,7 +234,7 @@ export function StatusShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>Unknown error (not retryable)</ShowcaseLabel>
-        <ShowcaseDemo>
+        <ShowcaseDemo responsive>
           <TransportErrorBanner
             error={{
               heading: 'Error',
@@ -274,8 +279,8 @@ export function StatusShowcases() {
           <ClientsItem
             clientCount={2}
             clients={[
-              { type: 'web', connectedAt: now },
-              { type: 'web', connectedAt: fiveMinAgo },
+              { type: 'web', connectedAt: ts.now },
+              { type: 'web', connectedAt: ts.fiveMinAgo },
             ]}
             lockInfo={null}
             pulse={false}
@@ -287,9 +292,9 @@ export function StatusShowcases() {
           <ClientsItem
             clientCount={3}
             clients={[
-              { type: 'web', connectedAt: now },
-              { type: 'obsidian', connectedAt: twelveMinAgo },
-              { type: 'mcp', connectedAt: fortyFiveMinAgo },
+              { type: 'web', connectedAt: ts.now },
+              { type: 'obsidian', connectedAt: ts.twelveMinAgo },
+              { type: 'mcp', connectedAt: ts.fortyFiveMinAgo },
             ]}
             lockInfo={null}
             pulse={false}
@@ -301,12 +306,12 @@ export function StatusShowcases() {
           <ClientsItem
             clientCount={2}
             clients={[
-              { type: 'web', connectedAt: now },
-              { type: 'obsidian', connectedAt: threeMinAgo },
+              { type: 'web', connectedAt: ts.now },
+              { type: 'obsidian', connectedAt: ts.threeMinAgo },
             ]}
             lockInfo={{
               clientId: 'obsidian-abc123',
-              acquiredAt: tenSecAgo,
+              acquiredAt: ts.tenSecAgo,
             }}
             pulse={false}
           />
@@ -317,8 +322,8 @@ export function StatusShowcases() {
           <ClientsItem
             clientCount={2}
             clients={[
-              { type: 'web', connectedAt: now },
-              { type: 'web', connectedAt: twoMinAgo },
+              { type: 'web', connectedAt: ts.now },
+              { type: 'web', connectedAt: ts.twoMinAgo },
             ]}
             lockInfo={null}
             pulse={true}

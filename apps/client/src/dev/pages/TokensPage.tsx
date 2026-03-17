@@ -173,15 +173,15 @@ function StatusColorsSection() {
             <span className="text-foreground w-16 text-xs font-medium">{status.name}</span>
             <div className="flex gap-2">
               <div
-                className={`h-10 w-10 rounded-md ${status.base}`}
+                className={cn('h-10 w-10 rounded-md', status.base)}
                 title={`status-${status.name}`}
               />
               <div
-                className={`h-10 w-10 rounded-md border ${status.bg} ${status.borderCls}`}
+                className={cn('h-10 w-10 rounded-md border', status.bg, status.borderCls)}
                 title={`status-${status.name}-bg`}
               />
               <div
-                className={`flex h-10 items-center rounded-md px-2 text-xs font-medium ${status.fg} ${status.bg}`}
+                className={cn('flex h-10 items-center rounded-md px-2 text-xs font-medium', status.fg, status.bg)}
                 title={`status-${status.name}-fg`}
               >
                 Text
@@ -215,7 +215,7 @@ function TypographySection() {
           <div key={t.cls} className="flex items-baseline gap-4">
             <span className="text-muted-foreground w-20 shrink-0 font-mono text-3xs">{t.label}</span>
             <span className="text-muted-foreground w-10 shrink-0 font-mono text-3xs">{t.px}</span>
-            <span className={`text-foreground ${t.cls}`}>The quick brown fox</span>
+            <span className={cn('text-foreground', t.cls)}>The quick brown fox</span>
           </div>
         ))}
       </div>
@@ -263,7 +263,7 @@ function RadiiSection() {
       <div className="flex flex-wrap gap-4">
         {RADII.map((r) => (
           <div key={r.cls} className="space-y-1.5 text-center">
-            <div className={`border-border bg-muted h-16 w-16 border-2 ${r.cls}`} />
+            <div className={cn('border-border bg-muted h-16 w-16 border-2', r.cls)} />
             <p className="text-muted-foreground font-mono text-3xs">{r.label}</p>
           </div>
         ))}
@@ -294,7 +294,7 @@ function ShadowsSection() {
       <div className="flex flex-wrap gap-4">
         {SHADOWS.map((s) => (
           <div key={s.cls} className="space-y-1.5 text-center">
-            <div className={`bg-card h-16 w-24 rounded-lg border ${s.cls}`} />
+            <div className={cn('bg-card h-16 w-24 rounded-lg border', s.cls)} />
             <p className="text-muted-foreground font-mono text-3xs">{s.label}</p>
           </div>
         ))}
@@ -314,7 +314,7 @@ function SizesSection() {
           { label: 'icon-md', cls: 'size-[var(--size-icon-md)]' },
         ].map((icon) => (
           <div key={icon.label} className="space-y-1.5 text-center">
-            <Settings className={`text-foreground ${icon.cls}`} />
+            <Settings className={cn('text-foreground', icon.cls)} />
             <p className="text-muted-foreground font-mono text-3xs">{icon.label}</p>
           </div>
         ))}

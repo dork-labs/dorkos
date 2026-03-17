@@ -1,8 +1,21 @@
+import { Copy, Check } from 'lucide-react';
+import { useCopy } from './lib/use-copy';
+
 /** Shared sub-label for demo sections in the dev playground. */
-export function ShowcaseLabel({ children }: { children: React.ReactNode }) {
+export function ShowcaseLabel({ children }: { children: string }) {
+  const { copied, copy } = useCopy();
+
   return (
-    <div className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wider">
+    <div className="group/label mb-2 flex items-center text-xs font-medium uppercase tracking-wider text-muted-foreground">
       {children}
+      <button
+        type="button"
+        onClick={() => copy(children)}
+        className="ml-1.5 text-muted-foreground/0 transition-colors group-hover/label:text-muted-foreground"
+        aria-label={`Copy "${children}"`}
+      >
+        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      </button>
     </div>
   );
 }

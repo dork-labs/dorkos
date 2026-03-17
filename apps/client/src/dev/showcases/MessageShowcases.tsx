@@ -170,7 +170,7 @@ export function MessageShowcases() {
           ] satisfies MessageGrouping[]
         ).map((grouping) => (
           <div key={grouping.position}>
-            <ShowcaseLabel>User — position: {grouping.position}</ShowcaseLabel>
+            <ShowcaseLabel>{`User — position: ${grouping.position}`}</ShowcaseLabel>
             <ShowcaseDemo>
               <MessageItem
                 message={createUserMessage({

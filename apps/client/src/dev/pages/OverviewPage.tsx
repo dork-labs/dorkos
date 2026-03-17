@@ -1,6 +1,6 @@
 import { Palette, Component, MessageSquare } from 'lucide-react';
 import { TOKENS_SECTIONS, COMPONENTS_SECTIONS, CHAT_SECTIONS } from '../playground-registry';
-import type { Page } from '../playground-registry';
+import type { Page, PlaygroundSection } from '../playground-registry';
 
 interface OverviewPageProps {
   /** Called when the user clicks a category card to navigate to that page. */
@@ -12,7 +12,7 @@ interface CategoryCard {
   label: string;
   description: string;
   icon: React.ComponentType<{ className?: string }>;
-  sections: unknown[];
+  sections: PlaygroundSection[];
 }
 
 const CATEGORIES: CategoryCard[] = [

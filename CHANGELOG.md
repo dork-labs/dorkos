@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add slugify, copyable names, and responsive viewport toggle
 - Redesign QuestionPrompt and unify compact final states
 - Add scrollspy TOC, Cmd+K search, and overview landing page
 - Add multi-select and 3-tab question showcases to design system

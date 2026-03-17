@@ -5,6 +5,7 @@ import {
   COMPONENTS_SECTIONS,
   CHAT_SECTIONS,
 } from '../playground-registry';
+import { slugify } from '../lib/slugify';
 
 describe('playground-registry', () => {
   it('has no duplicate section IDs across the full registry', () => {
@@ -34,6 +35,12 @@ describe('playground-registry', () => {
   it('every section has at least one keyword', () => {
     for (const section of PLAYGROUND_REGISTRY) {
       expect(section.keywords.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('every section ID matches slugify(title)', () => {
+    for (const section of PLAYGROUND_REGISTRY) {
+      expect(section.id).toBe(slugify(section.title));
     }
   });
 });

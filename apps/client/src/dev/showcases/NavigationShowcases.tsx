@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
+import { ShowcaseDemo } from '../ShowcaseDemo';
 import {
   NavigationLayout,
   NavigationLayoutBody,
@@ -32,13 +33,19 @@ export function NavigationShowcases() {
         description="Vertical sidebar navigation for dialogs and settings panels. Renders a sidebar with animated active pill on desktop, list + drill-down on mobile."
       >
         <ShowcaseLabel>Settings-style (6 items)</ShowcaseLabel>
-        <SettingsDemo />
+        <ShowcaseDemo responsive>
+          <SettingsDemo />
+        </ShowcaseDemo>
 
         <ShowcaseLabel>Compact (4 items)</ShowcaseLabel>
-        <CompactDemo />
+        <ShowcaseDemo responsive>
+          <CompactDemo />
+        </ShowcaseDemo>
 
         <ShowcaseLabel>Minimal (2 items)</ShowcaseLabel>
-        <MinimalDemo />
+        <ShowcaseDemo responsive>
+          <MinimalDemo />
+        </ShowcaseDemo>
       </PlaygroundSection>
     </>
   );

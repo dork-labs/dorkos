@@ -1,3 +1,7 @@
+import { Copy, Check } from 'lucide-react';
+import { slugify } from './lib/slugify';
+import { useCopy } from './lib/use-copy';
+
 interface PlaygroundSectionProps {
   title: string;
   description?: string;
@@ -10,11 +14,12 @@ export function PlaygroundSection({
   description,
   children,
 }: PlaygroundSectionProps) {
-  const anchorId = title.toLowerCase().replace(/\s+/g, '-');
+  const anchorId = slugify(title);
+  const { copied, copy } = useCopy();
 
   return (
     <section id={anchorId} className="scroll-mt-14 rounded-xl border border-border bg-card p-6">
-      <h2 className="group mb-1 text-lg font-semibold text-foreground">
+      <h2 className="group mb-1 flex items-center text-lg font-semibold text-foreground">
         {title}
         <a
           href={`#${anchorId}`}
@@ -23,6 +28,14 @@ export function PlaygroundSection({
         >
           #
         </a>
+        <button
+          type="button"
+          onClick={() => copy(title)}
+          className="ml-1 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground"
+          aria-label={`Copy "${title}"`}
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        </button>
       </h2>
       {description && (
         <p className="mb-4 text-sm text-muted-foreground">{description}</p>
