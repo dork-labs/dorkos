@@ -83,7 +83,7 @@ export const TOKENS_SECTIONS: PlaygroundSection[] = [
  * Component sections from ComponentsPage.
  *
  * Sources: ButtonShowcases, FormShowcases, FeedbackShowcases,
- * NavigationShowcases, OverlayShowcases, DataDisplayShowcases.
+ * NavigationShowcases, SidebarShowcases, OverlayShowcases, DataDisplayShowcases.
  */
 export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
   // ButtonShowcases
@@ -229,6 +229,35 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     page: 'components',
     category: 'Navigation',
     keywords: ['nav', 'sidebar', 'settings', 'panel', 'layout', 'menu', 'item'],
+  },
+  // SidebarShowcases
+  {
+    id: 'sessionitem',
+    title: 'SessionItem',
+    page: 'components',
+    category: 'Sidebar',
+    keywords: ['session', 'item', 'row', 'active', 'permission', 'expand', 'entrance'],
+  },
+  {
+    id: 'sessionsview',
+    title: 'SessionsView',
+    page: 'components',
+    category: 'Sidebar',
+    keywords: ['session', 'list', 'group', 'today', 'yesterday', 'empty', 'scroll'],
+  },
+  {
+    id: 'sidebartabrow',
+    title: 'SidebarTabRow',
+    page: 'components',
+    category: 'Sidebar',
+    keywords: ['tab', 'sidebar', 'sessions', 'schedules', 'connections', 'badge', 'status', 'indicator'],
+  },
+  {
+    id: 'sidebarfooterbar',
+    title: 'SidebarFooterBar',
+    page: 'components',
+    category: 'Sidebar',
+    keywords: ['footer', 'sidebar', 'theme', 'settings', 'branding', 'logo', 'agent'],
   },
   // OverlayShowcases
   {

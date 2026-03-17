@@ -4,4 +4,7 @@
  * @module features/session-list
  */
 export { AgentSidebar } from './ui/AgentSidebar';
+export { SessionItem } from './ui/SessionItem';
+export { SessionsView } from './ui/SessionsView';
 export { SidebarFooterBar } from './ui/SidebarFooterBar';
+export { SidebarTabRow } from './ui/SidebarTabRow';

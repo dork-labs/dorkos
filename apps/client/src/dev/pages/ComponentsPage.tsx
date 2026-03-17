@@ -2,6 +2,7 @@ import { ButtonShowcases } from '../showcases/ButtonShowcases';
 import { FormShowcases } from '../showcases/FormShowcases';
 import { FeedbackShowcases } from '../showcases/FeedbackShowcases';
 import { NavigationShowcases } from '../showcases/NavigationShowcases';
+import { SidebarShowcases } from '../showcases/SidebarShowcases';
 import { OverlayShowcases } from '../showcases/OverlayShowcases';
 import { DataDisplayShowcases } from '../showcases/DataDisplayShowcases';
 import { TocSidebar } from '../TocSidebar';
@@ -24,6 +25,7 @@ export function ComponentsPage() {
           <FormShowcases />
           <FeedbackShowcases />
           <NavigationShowcases />
+          <SidebarShowcases />
           <OverlayShowcases />
           <DataDisplayShowcases />
         </main>
