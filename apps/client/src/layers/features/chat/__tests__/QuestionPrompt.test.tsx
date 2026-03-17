@@ -502,7 +502,7 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
       );
       const wrapper = container.firstElementChild as HTMLElement;
       expect(wrapper.className).toContain('ring-2');
-      expect(wrapper.className).toContain('ring-status-info/30');
+      expect(wrapper.className).toContain('ring-ring/30');
     });
 
     it('does not have ring-2 class when isActive is false', () => {

@@ -3,8 +3,7 @@ import { Check, X, Shield } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
 import { Kbd, Button } from '@/layers/shared/ui';
-import { approvalState } from './message/message-variants';
-import { CompactResultRow } from './primitives';
+import { CompactResultRow, InteractiveCard } from './primitives';
 
 const WARNING_THRESHOLD_S = 120; // 2 minutes — amber
 const URGENT_THRESHOLD_S = 60; // 1 minute — red
@@ -198,16 +197,9 @@ export function ToolApproval({
   }
 
   return (
-    <div
-      className={cn(
-        'my-1 rounded-msg-tool border p-3 text-sm transition-all duration-200',
-        approvalState({ state: 'pending' }),
-        isActive && 'ring-2 ring-status-warning/30'
-      )}
-      data-testid="tool-approval"
-    >
+    <InteractiveCard isActive={isActive} isResolved={!!decided} className="my-1" data-testid="tool-approval">
       <div className="mb-2 flex items-center gap-2">
-        <Shield className="size-(--size-icon-md) text-status-warning" />
+        <Shield className="size-(--size-icon-md) text-muted-foreground" />
         <span className="font-semibold">Tool approval required</span>
       </div>
 
@@ -264,14 +256,13 @@ export function ToolApproval({
           size="sm"
           onClick={handleApprove}
           disabled={responding}
-          className="bg-status-success text-white hover:bg-status-success/90"
         >
           <Check className="size-(--size-icon-xs)" /> Approve
           {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
         </Button>
         <Button
           size="sm"
-          variant="destructive"
+          variant="outline"
           onClick={handleDeny}
           disabled={responding}
         >
@@ -284,6 +275,6 @@ export function ToolApproval({
       <span role="status" aria-live="assertive" aria-atomic="true" className="sr-only">
         {announcement}
       </span>
-    </div>
+    </InteractiveCard>
   );
 }

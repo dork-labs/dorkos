@@ -7,3 +7,4 @@ export { getToolStatusIcon, type ToolIconStatus } from './tool-status-icon';
 export { OptionRow } from './OptionRow';
 export { CompactResultRow } from './CompactResultRow';
 export { CollapsibleCard } from './CollapsibleCard';
+export { InteractiveCard } from './InteractiveCard';

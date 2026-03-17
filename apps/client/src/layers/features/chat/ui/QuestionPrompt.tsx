@@ -1,7 +1,6 @@
 import { useState, useImperativeHandle, useCallback, forwardRef } from 'react';
 import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
 import {
   Tabs,
   TabsList,
@@ -13,8 +12,7 @@ import {
   RadioGroupItem,
   Checkbox,
 } from '@/layers/shared/ui';
-import { questionState } from './message/message-variants';
-import { OptionRow, CompactResultRow } from './primitives';
+import { OptionRow, CompactResultRow, InteractiveCard } from './primitives';
 import type { QuestionItem } from '@dorkos/shared/types';
 
 interface QuestionPromptProps {
@@ -389,14 +387,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
 
     // Pending state: render full question form
     return (
-      <div
-        className={cn(
-          'rounded-msg-tool p-3 text-sm transition-all duration-200',
-          questionState({ state: 'pending' }),
-          isActive && 'ring-2 ring-status-info/30',
-          !isActive && !submitted && 'opacity-60'
-        )}
-      >
+      <InteractiveCard isActive={isActive} isResolved={submitted}>
         {questions.length === 1 ? (
           // Single question — render directly without tabs
           renderQuestionContent(questions[0], 0)
@@ -435,7 +426,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             </>
           )}
         </Button>
-      </div>
+      </InteractiveCard>
     );
   }
 );

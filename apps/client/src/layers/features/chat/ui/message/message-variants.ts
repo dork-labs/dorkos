@@ -79,30 +79,3 @@ export const toolStatus = tv({
   },
 });
 
-/**
- * Variant for tool approval state styling.
- * Maps approval lifecycle state to semantic border/background/text classes.
- */
-export const approvalState = tv({
-  variants: {
-    state: {
-      pending: 'border-status-warning-border bg-status-warning-bg',
-      approved: 'border-status-success-border bg-status-success-bg text-status-success-fg',
-      denied: 'border-status-error-border bg-status-error-bg text-status-error-fg',
-    },
-  },
-});
-
-/**
- * Variant for question prompt state styling.
- * Maps question lifecycle state to semantic border/background/text classes.
- */
-export const questionState = tv({
-  variants: {
-    state: {
-      pending: 'border-l-2 border-status-info bg-muted/50',
-      // Note: submitted state uses inline neutral classes matching ToolCallCard pattern
-      answered: 'border-status-success-border bg-status-success-bg text-status-success-fg',
-    },
-  },
-});

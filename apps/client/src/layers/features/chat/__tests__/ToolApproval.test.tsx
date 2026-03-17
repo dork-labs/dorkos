@@ -54,13 +54,25 @@ describe('ToolApproval', () => {
       const { container } = render(<ToolApproval {...baseProps} isActive={true} />);
       const wrapper = container.firstElementChild as HTMLElement;
       expect(wrapper.className).toContain('ring-2');
-      expect(wrapper.className).toContain('ring-status-warning/30');
+      expect(wrapper.className).toContain('ring-ring/30');
     });
 
     it('does not have ring-2 class when isActive is false', () => {
       const { container } = render(<ToolApproval {...baseProps} isActive={false} />);
       const wrapper = container.firstElementChild as HTMLElement;
       expect(wrapper.className).not.toContain('ring-2');
+    });
+
+    it('applies opacity-60 when isActive is false and not decided', () => {
+      const { container } = render(<ToolApproval {...baseProps} isActive={false} />);
+      const wrapper = container.firstElementChild as HTMLElement;
+      expect(wrapper.className).toContain('opacity-60');
+    });
+
+    it('does not apply opacity-60 when isActive is true', () => {
+      const { container } = render(<ToolApproval {...baseProps} isActive={true} />);
+      const wrapper = container.firstElementChild as HTMLElement;
+      expect(wrapper.className).not.toContain('opacity-60');
     });
 
     it('shows Kbd hints when isActive is true', () => {
