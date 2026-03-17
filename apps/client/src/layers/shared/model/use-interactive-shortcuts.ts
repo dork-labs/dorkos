@@ -65,12 +65,24 @@ export function useInteractiveShortcuts({
       }
 
       if (activeInteraction!.type === 'question') {
-        // In text input, only Enter/Esc work
+        // In text input, allow arrows for option navigation + Enter for submit
         if (isTextInput) {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             onSubmit?.();
+            return;
           }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            onNavigateOption?.('up');
+            return;
+          }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            onNavigateOption?.('down');
+            return;
+          }
+          // Digits, space, other keys type normally in textarea
           return;
         }
 

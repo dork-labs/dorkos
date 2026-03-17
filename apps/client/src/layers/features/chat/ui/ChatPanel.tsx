@@ -312,6 +312,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
             focusedOptionIndex={focusedOptionIndex}
             onToolDecided={markToolCallResponded}
             onRetry={handleRetry}
+            inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
           />
         )}
 
@@ -411,6 +412,10 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         onQueueNavigateDown={handleQueueNavigateDown}
         presenceInfo={presenceInfo}
         presencePulse={presencePulse}
+        activeInteraction={activeInteraction}
+        focusedOptionIndex={focusedOptionIndex}
+        onToolRef={handleToolRef}
+        onToolDecided={markToolCallResponded}
       />
     </div>
   );

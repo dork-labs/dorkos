@@ -98,7 +98,10 @@ vi.mock('@radix-ui/react-checkbox', () => {
   return { Root, Indicator };
 });
 
-// Mock Radix Tabs with controlled state support for jsdom
+// Mock Radix Tabs with controlled state support for jsdom.
+// The mock components explicitly exclude `ref` from the props spread to avoid
+// React 19 warnings when `tabs.tsx` wraps them with `forwardRef` and passes
+// the forwarded ref down as a regular prop.
 vi.mock('@radix-ui/react-tabs', () => {
   const React = require('react');
   const TabsContext = React.createContext({ value: '', onValueChange: (_v: string) => {} });
@@ -113,20 +116,29 @@ vi.mock('@radix-ui/react-tabs', () => {
     value?: string;
     onValueChange?: (v: string) => void;
   }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { ref: _ref, ...rest } = props as Record<string, unknown> & { ref?: unknown };
     return React.createElement(
       TabsContext.Provider,
       { value: { value: value || '', onValueChange: onValueChange || (() => {}) } },
-      React.createElement('div', props, children)
+      React.createElement('div', rest, children)
     );
   }
-  function List({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) {
-    return React.createElement('div', { role: 'tablist', ...props }, children);
+  function List({
+    children,
+    ...props
+  }: Record<string, unknown> & { children?: React.ReactNode }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { ref: _ref, ...rest } = props as Record<string, unknown> & { ref?: unknown };
+    return React.createElement('div', { role: 'tablist', ...rest }, children);
   }
   function Trigger({
     children,
     value,
     ...props
   }: Record<string, unknown> & { children?: React.ReactNode; value?: string }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { ref: _ref, ...rest } = props as Record<string, unknown> & { ref?: unknown };
     const ctx = React.useContext(TabsContext);
     const isActive = ctx.value === value;
     return React.createElement(
@@ -136,7 +148,7 @@ vi.mock('@radix-ui/react-tabs', () => {
         'data-state': isActive ? 'active' : 'inactive',
         'data-value': value,
         onClick: () => ctx.onValueChange(value || ''),
-        ...props,
+        ...rest,
       },
       children
     );
@@ -146,11 +158,13 @@ vi.mock('@radix-ui/react-tabs', () => {
     value,
     ...props
   }: Record<string, unknown> & { children?: React.ReactNode; value?: string }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { ref: _ref, ...rest } = props as Record<string, unknown> & { ref?: unknown };
     const ctx = React.useContext(TabsContext);
     if (ctx.value !== value) return null;
     return React.createElement(
       'div',
-      { role: 'tabpanel', 'data-state': 'active', ...props },
+      { role: 'tabpanel', 'data-state': 'active', ...rest },
       children
     );
   }
@@ -386,68 +400,108 @@ describe('QuestionPrompt', () => {
   });
 });
 
-describe('Multi-question tabs', () => {
-  // Verifies tab bar renders with correct question headers
-  it('renders tab bar when multiple questions provided', () => {
+describe('Multi-question Back/Next navigation', () => {
+  // Verifies step indicator shows the current question header
+  it('renders step indicator with question header for multiple questions', () => {
     render(
       <QuestionPrompt {...baseProps} questions={[singleSelectQuestion, multiSelectQuestion]} />
     );
-    expect(screen.getByRole('tablist')).toBeDefined();
-    expect(screen.getByRole('tab', { name: /Approach/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /Features/i })).toBeDefined();
+    // Step indicator shows the header of the active question
+    expect(screen.getByText('Approach')).toBeDefined();
   });
 
-  // Verifies single question has no tab overhead
-  it('does not render tab bar for single question', () => {
+  // Verifies single question has no Back/Next overhead
+  it('does not render Back/Next buttons for single question', () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
-    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('button', { name: /back/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /next/i })).toBeNull();
   });
 
-  // Verifies only active tab's content is visible
-  it('shows only active tab content', () => {
+  // Verifies Back is disabled on first question
+  it('Back button is disabled on the first question', () => {
     render(
       <QuestionPrompt {...baseProps} questions={[singleSelectQuestion, multiSelectQuestion]} />
     );
-    // First tab active by default — its question text should be visible
+    const backBtn = screen.getByRole('button', { name: /back/i });
+    expect(backBtn.hasAttribute('disabled')).toBe(true);
+  });
+
+  // Verifies Next appears on non-last questions, Submit on last
+  it('renders Next button on non-last question and Submit on last', () => {
+    const ref = createRef<QuestionPromptHandle>();
+    render(
+      <QuestionPrompt
+        ref={ref}
+        {...baseProps}
+        questions={[singleSelectQuestion, multiSelectQuestion]}
+        isActive
+      />
+    );
+    // First question: Next visible, no Submit
+    expect(screen.getByRole('button', { name: /next/i })).toBeDefined();
+    expect(screen.queryByRole('button', { name: /submit/i })).toBeNull();
+
+    // Navigate to last question
+    act(() => {
+      ref.current!.navigateQuestion('next');
+    });
+    // Last question: Submit visible, no Next
+    expect(screen.queryByRole('button', { name: /next/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /submit/i })).toBeDefined();
+  });
+
+  // Verifies Next button navigates to next question
+  it('Next button navigates to next question and shows its content', () => {
+    render(
+      <QuestionPrompt {...baseProps} questions={[singleSelectQuestion, multiSelectQuestion]} />
+    );
+    // First question visible
     expect(screen.getByText(singleSelectQuestion.question)).toBeDefined();
-    // Second tab's question text should not be in the DOM (Radix lazy mounts)
     expect(screen.queryByText(multiSelectQuestion.question)).toBeNull();
-  });
 
-  // Verifies tab switching activates the clicked tab and shows its content
-  it('switches content when tab is clicked', () => {
-    render(
-      <QuestionPrompt {...baseProps} questions={[singleSelectQuestion, multiSelectQuestion]} />
-    );
-    const featuresTab = screen.getByRole('tab', { name: /Features/i });
-    expect(featuresTab.getAttribute('data-state')).toBe('inactive');
-    fireEvent.click(featuresTab);
-    expect(featuresTab.getAttribute('data-state')).toBe('active');
-    // Second tab's content should now be visible
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+
+    // Second question now visible
     expect(screen.getByText(multiSelectQuestion.question)).toBeDefined();
-    // First tab's content should be hidden
     expect(screen.queryByText(singleSelectQuestion.question)).toBeNull();
   });
 
-  // Verifies submit requires ALL questions answered across tabs
-  it('submit disabled until all questions answered across tabs', () => {
+  // Verifies submit requires ALL questions answered
+  it('submit disabled until all questions answered', () => {
+    const ref = createRef<QuestionPromptHandle>();
     render(
-      <QuestionPrompt {...baseProps} questions={[singleSelectQuestion, multiSelectQuestion]} />
+      <QuestionPrompt
+        ref={ref}
+        {...baseProps}
+        questions={[singleSelectQuestion, multiSelectQuestion]}
+        isActive
+      />
     );
     // Answer first question only
     fireEvent.click(screen.getAllByRole('radio')[0]);
+    // Navigate to last question
+    act(() => {
+      ref.current!.navigateQuestion('next');
+    });
     expect(screen.getByRole('button', { name: /submit/i }).hasAttribute('disabled')).toBe(true);
   });
 
-  // Verifies checkmark appears on answered tabs
-  it('shows checkmark on answered tabs', () => {
+  // Verifies step indicator updates on navigation
+  it('step indicator updates to show current question header', () => {
+    const ref = createRef<QuestionPromptHandle>();
     render(
-      <QuestionPrompt {...baseProps} questions={[singleSelectQuestion, multiSelectQuestion]} />
+      <QuestionPrompt
+        ref={ref}
+        {...baseProps}
+        questions={[singleSelectQuestion, multiSelectQuestion]}
+      />
     );
-    fireEvent.click(screen.getAllByRole('radio')[0]);
-    // First tab should now have a check icon (svg)
-    const firstTab = screen.getByRole('tab', { name: /Approach/i });
-    expect(firstTab.querySelector('svg')).not.toBeNull();
+    expect(screen.getByText('Approach')).toBeDefined();
+
+    act(() => {
+      ref.current!.navigateQuestion('next');
+    });
+    expect(screen.getByText('Features')).toBeDefined();
   });
 });
 
@@ -526,10 +580,11 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
       expect(kbds[2].textContent).toBe('3'); // Other option
     });
 
-    it('hides Kbd hints when isActive is false', () => {
+    it('shows Kbd hints even when isActive is false (always visible for right-aligned hints)', () => {
       render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} isActive={false} />);
       const kbds = document.querySelectorAll('kbd');
-      expect(kbds.length).toBe(0);
+      // Kbd number hints on options are always visible (no isActive conditional per Task 3.4)
+      expect(kbds.length).toBeGreaterThanOrEqual(3);
     });
 
     it('shows Enter Kbd on submit button when isActive is true', () => {

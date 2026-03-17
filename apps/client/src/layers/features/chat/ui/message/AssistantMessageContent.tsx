@@ -13,6 +13,7 @@ import { useMessageContext } from './MessageContext';
 import { SubagentBlock } from '../SubagentBlock';
 import { ThinkingBlock } from '../ThinkingBlock';
 import { ErrorMessageBlock } from '../ErrorMessageBlock';
+import { CompactPendingRow } from '../primitives';
 
 /**
  * Determines whether a tool call should be visible based on auto-hide settings.
@@ -99,7 +100,7 @@ function AutoHideToolCall({
  * Reads session/interaction state from MessageContext instead of props.
  */
 export function AssistantMessageContent({ message }: { message: ChatMessage }) {
-  const { sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry } =
+  const { sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry, inputZoneToolCallId } =
     useMessageContext();
   const { expandToolCalls, autoHideToolCalls } = useAppStore();
   const parts = message.parts ?? [];
@@ -167,6 +168,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         // At this point part.type === 'tool_call' — all other variants have been handled above.
         const toolPart = part;
         if (toolPart.interactiveType === 'approval') {
+          // When this tool call is being handled in the input zone, show a compact placeholder
+          if (toolPart.toolCallId === inputZoneToolCallId) {
+            return <CompactPendingRow key={toolPart.toolCallId} type="approval" />;
+          }
           const isActive = toolPart.toolCallId === activeToolCallId;
           return (
             <ToolApproval
@@ -183,6 +188,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           );
         }
         if (toolPart.interactiveType === 'question' && toolPart.questions) {
+          // When this tool call is being handled in the input zone, show a compact placeholder
+          if (toolPart.toolCallId === inputZoneToolCallId) {
+            return <CompactPendingRow key={toolPart.toolCallId} type="question" />;
+          }
           const isActive = toolPart.toolCallId === activeToolCallId;
           return (
             <QuestionPrompt

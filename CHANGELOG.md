@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add unified input zone for interactive cards
+- Add unified input zone for interactive cards
 - Add 4 sidebar component showcases to dev playground
 
 ### Changed

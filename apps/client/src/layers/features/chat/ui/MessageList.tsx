@@ -63,6 +63,8 @@ interface MessageListProps {
   focusedOptionIndex?: number;
   onToolDecided?: (toolCallId: string) => void;
   onRetry?: () => void;
+  /** Tool call ID being handled in the input zone, or null. */
+  inputZoneToolCallId?: string | null;
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
@@ -84,6 +86,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     focusedOptionIndex,
     onToolDecided,
     onRetry,
+    inputZoneToolCallId,
   },
   ref
 ) {
@@ -297,6 +300,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   focusedOptionIndex={focusedOptionIndex}
                   onToolDecided={onToolDecided}
                   onRetry={onRetry}
+                  inputZoneToolCallId={inputZoneToolCallId}
                 />
               </div>
             );

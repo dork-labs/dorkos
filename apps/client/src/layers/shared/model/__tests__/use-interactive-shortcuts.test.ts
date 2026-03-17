@@ -284,7 +284,7 @@ describe('useInteractiveShortcuts', () => {
   describe('text input filtering in question mode', () => {
     const questionInteraction = { type: 'question' as const, toolCallId: 'tc-q1' };
 
-    it('disables digit, arrow, and space shortcuts when typing in a textarea', () => {
+    it('disables digit, space, and lateral arrow shortcuts when typing in a textarea', () => {
       renderHook(() =>
         useInteractiveShortcuts({
           activeInteraction: questionInteraction,
@@ -301,13 +301,32 @@ describe('useInteractiveShortcuts', () => {
       document.body.appendChild(textarea);
 
       fireKeyOnElement(textarea, '1');
-      fireKeyOnElement(textarea, 'ArrowUp');
       fireKeyOnElement(textarea, ' ');
       fireKeyOnElement(textarea, 'ArrowLeft');
 
       expect(onToggleOption).not.toHaveBeenCalled();
-      expect(onNavigateOption).not.toHaveBeenCalled();
       expect(onNavigateQuestion).not.toHaveBeenCalled();
+    });
+
+    it('allows ArrowUp/ArrowDown to navigate options even when textarea is focused', () => {
+      renderHook(() =>
+        useInteractiveShortcuts({
+          activeInteraction: questionInteraction,
+          onNavigateOption,
+          optionCount: 5,
+          focusedIndex: 2,
+        })
+      );
+
+      const textarea = document.createElement('textarea');
+      document.body.appendChild(textarea);
+
+      fireKeyOnElement(textarea, 'ArrowUp');
+      fireKeyOnElement(textarea, 'ArrowDown');
+
+      expect(onNavigateOption).toHaveBeenCalledTimes(2);
+      expect(onNavigateOption).toHaveBeenCalledWith('up');
+      expect(onNavigateOption).toHaveBeenCalledWith('down');
     });
 
     it('allows Enter for submit when typing in a textarea', () => {

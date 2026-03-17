@@ -3,8 +3,6 @@ import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import {
   Tabs,
-  TabsList,
-  TabsTrigger,
   TabsContent,
   Kbd,
   Button,
@@ -14,6 +12,8 @@ import {
 } from '@/layers/shared/ui';
 import { OptionRow, CompactResultRow, InteractiveCard } from './primitives';
 import type { QuestionItem } from '@dorkos/shared/types';
+
+// TabsList and TabsTrigger are not used — Back/Next buttons replace the tab strip.
 
 interface QuestionPromptProps {
   sessionId: string;
@@ -192,6 +192,12 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           }
         },
         submit() {
+          const currentIdx = Number(activeTab);
+          if (currentIdx < questions.length - 1) {
+            // Advance to next question — actual submission only on the last
+            setActiveTab(String(currentIdx + 1));
+            return;
+          }
           handleSubmit();
         },
         getOptionCount() {
@@ -213,6 +219,16 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
         questions.length,
       ]
     );
+
+    // Navigate to a specific question index by direction
+    function navigateToQuestion(direction: 'prev' | 'next') {
+      const current = Number(activeTab);
+      if (direction === 'next' && current < questions.length - 1) {
+        setActiveTab(String(current + 1));
+      } else if (direction === 'prev' && current > 0) {
+        setActiveTab(String(current - 1));
+      }
+    }
 
     // Render the "Other" free-text option using the appropriate primitive
     function renderOtherOption(q: QuestionItem, qIdx: number) {
@@ -241,10 +257,10 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           }
         >
           <div className="flex-1">
-            <label htmlFor={optionId} className="cursor-pointer">
+            <label htmlFor={optionId} className="flex cursor-pointer items-center">
               <span className="text-sm font-medium">Other</span>
-              {isActive && oIdx < 9 && (
-                <Kbd className="ml-1.5 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+              {oIdx < 9 && (
+                <Kbd className="ml-auto shrink-0 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
               )}
             </label>
             {isOtherSelected && (
@@ -275,7 +291,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
               value={(selections[qIdx] as string) ?? ''}
               onValueChange={(value) => handleSingleSelect(qIdx, value)}
               aria-label={q.question}
-              className="ml-1 space-y-0.5"
+              className="ml-1 space-y-1"
             >
               {q.options.map((opt, oIdx) => {
                 const isSelected = selections[qIdx] === opt.label;
@@ -288,16 +304,16 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     data-selected={isSelected}
                     control={<RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />}
                   >
-                    <label htmlFor={optionId} className="flex-1 cursor-pointer">
+                    <label htmlFor={optionId} className="flex flex-1 cursor-pointer items-center">
                       <span className="text-sm font-medium">{opt.label}</span>
-                      {isActive && oIdx < 9 && (
-                        <Kbd className="ml-1.5 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
-                      )}
                       {opt.description && (
                         <span className="text-muted-foreground ml-1.5 text-xs">
                           {' '}
                           — {opt.description}
                         </span>
+                      )}
+                      {oIdx < 9 && (
+                        <Kbd className="ml-auto shrink-0 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
                       )}
                     </label>
                   </OptionRow>
@@ -308,7 +324,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
               {renderOtherOption(q, qIdx)}
             </RadioGroup>
           ) : (
-            <div role="group" aria-label={q.question} className="ml-1 space-y-0.5">
+            <div role="group" aria-label={q.question} className="ml-1 space-y-1">
               {q.options.map((opt, oIdx) => {
                 const isSelected = ((selections[qIdx] as string[]) || []).includes(opt.label);
                 const optionId = `q-${qIdx}-opt-${oIdx}`;
@@ -329,16 +345,16 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                       />
                     }
                   >
-                    <label htmlFor={optionId} className="flex-1 cursor-pointer">
+                    <label htmlFor={optionId} className="flex flex-1 cursor-pointer items-center">
                       <span className="text-sm font-medium">{opt.label}</span>
-                      {isActive && oIdx < 9 && (
-                        <Kbd className="ml-1.5 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
-                      )}
                       {opt.description && (
                         <span className="text-muted-foreground ml-1.5 text-xs">
                           {' '}
                           — {opt.description}
                         </span>
+                      )}
+                      {oIdx < 9 && (
+                        <Kbd className="ml-auto shrink-0 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
                       )}
                     </label>
                   </OptionRow>
@@ -389,23 +405,49 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
     return (
       <InteractiveCard isActive={isActive} isResolved={submitted}>
         {questions.length === 1 ? (
-          // Single question — render directly without tabs
+          // Single question — render directly without navigation
           renderQuestionContent(questions[0], 0)
         ) : (
-          // Multiple questions — wrap in Tabs
+          // Multiple questions — sequential Back/Next navigation
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-3 h-auto flex-wrap gap-1.5 bg-transparent p-0">
-              {questions.map((q, idx) => (
-                <TabsTrigger
-                  key={idx}
-                  value={String(idx)}
-                  className="data-[state=inactive]:bg-muted/50 h-auto rounded-full px-2.5 py-1 text-xs font-medium data-[state=active]:bg-foreground/10 data-[state=active]:shadow-none"
+            {/* Step indicator + Back/Next buttons (replaces tab strip) */}
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-muted-foreground text-xs">
+                {questions[Number(activeTab)].header ?? `Question ${Number(activeTab) + 1} of ${questions.length}`}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => navigateToQuestion('prev')}
+                  disabled={Number(activeTab) === 0}
+                  className="h-7 px-2 text-xs"
                 >
-                  {hasAnswer(idx) && <Check className="mr-1 size-3" />}
-                  <span className="max-w-[120px] truncate">{q.header}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
+                  Back {isActive && <Kbd className="ml-1">&larr;</Kbd>}
+                </Button>
+                {Number(activeTab) < questions.length - 1 ? (
+                  <Button
+                    size="sm"
+                    onClick={() => navigateToQuestion('next')}
+                    className="h-7 px-2 text-xs"
+                  >
+                    Next {isActive && <Kbd className="ml-1">&rarr;</Kbd>}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={handleSubmit}
+                    disabled={!isComplete() || submitting}
+                    className="h-7 px-2 text-xs"
+                  >
+                    <Check className="size-(--size-icon-xs)" />
+                    {submitting ? 'Submitting...' : 'Submit'}
+                    {isActive && <Kbd className="ml-1">Enter</Kbd>}
+                  </Button>
+                )}
+              </div>
+            </div>
+
             {questions.map((q, idx) => (
               <TabsContent key={idx} value={String(idx)} className="mt-0">
                 {renderQuestionContent(q, idx)}
@@ -416,16 +458,19 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
 
         {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
 
-        <Button size="sm" onClick={handleSubmit} disabled={!isComplete() || submitting} className="mt-2">
-          {submitting ? (
-            'Submitting...'
-          ) : (
-            <>
-              <Check className="size-(--size-icon-xs)" /> Submit
-              {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
-            </>
-          )}
-        </Button>
+        {/* Submit button for single-question flows */}
+        {questions.length === 1 && (
+          <Button size="sm" onClick={handleSubmit} disabled={!isComplete() || submitting} className="mt-2">
+            {submitting ? (
+              'Submitting...'
+            ) : (
+              <>
+                <Check className="size-(--size-icon-xs)" /> Submit
+                {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
+              </>
+            )}
+          </Button>
+        )}
       </InteractiveCard>
     );
   }

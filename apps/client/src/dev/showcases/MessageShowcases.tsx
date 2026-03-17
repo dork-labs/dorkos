@@ -27,6 +27,7 @@ const STANDALONE_CTX = {
   onToolRef: undefined,
   focusedOptionIndex: -1,
   onToolDecided: undefined,
+  inputZoneToolCallId: null,
 };
 
 /** Message-related component showcases: UserMessageContent, AssistantMessageContent, MessageItem. */
