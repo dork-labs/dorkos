@@ -14,6 +14,7 @@ import {
   Checkbox,
 } from '@/layers/shared/ui';
 import { questionState } from './message/message-variants';
+import { OptionRow, CompactResultRow } from './primitives';
 import type { QuestionItem } from '@dorkos/shared/types';
 
 interface QuestionPromptProps {
@@ -224,24 +225,23 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       const oIdx = q.options.length;
 
       return (
-        <div
-          className={cn(
-            'flex items-center gap-2 rounded px-2 py-1 transition-all duration-150',
-            isOtherSelected ? 'bg-muted' : 'hover:bg-muted/80',
-            isActive && focusedOptionIndex === oIdx && 'ring-1 ring-status-info/50'
-          )}
+        <OptionRow
+          isSelected={isOtherSelected}
+          isFocused={isActive && focusedOptionIndex === oIdx}
           data-selected={isOtherSelected}
+          control={
+            q.multiSelect ? (
+              <Checkbox
+                checked={isOtherSelected}
+                id={optionId}
+                disabled={submitting}
+                onCheckedChange={(checked) => handleMultiSelect(qIdx, '__other__', !!checked)}
+              />
+            ) : (
+              <RadioGroupItem value="__other__" id={optionId} disabled={submitting} />
+            )
+          }
         >
-          {q.multiSelect ? (
-            <Checkbox
-              checked={isOtherSelected}
-              id={optionId}
-              disabled={submitting}
-              onCheckedChange={(checked) => handleMultiSelect(qIdx, '__other__', !!checked)}
-            />
-          ) : (
-            <RadioGroupItem value="__other__" id={optionId} disabled={submitting} />
-          )}
           <div className="flex-1">
             <label htmlFor={optionId} className="cursor-pointer">
               <span className="text-sm font-medium">Other</span>
@@ -262,7 +262,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
               />
             )}
           </div>
-        </div>
+        </OptionRow>
       );
     }
 
@@ -283,16 +283,13 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                 const isSelected = selections[qIdx] === opt.label;
                 const optionId = `q-${qIdx}-opt-${oIdx}`;
                 return (
-                  <div
+                  <OptionRow
                     key={oIdx}
-                    className={cn(
-                      'flex items-center gap-2 rounded px-2 py-1 transition-all duration-150',
-                      isSelected ? 'bg-muted' : 'hover:bg-muted/80',
-                      isActive && focusedOptionIndex === oIdx && 'ring-1 ring-status-info/50'
-                    )}
+                    isSelected={isSelected}
+                    isFocused={isActive && focusedOptionIndex === oIdx}
                     data-selected={isSelected}
+                    control={<RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />}
                   >
-                    <RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />
                     <label htmlFor={optionId} className="flex-1 cursor-pointer">
                       <span className="text-sm font-medium">{opt.label}</span>
                       {isActive && oIdx < 9 && (
@@ -305,7 +302,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                         </span>
                       )}
                     </label>
-                  </div>
+                  </OptionRow>
                 );
               })}
 
@@ -318,23 +315,22 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                 const isSelected = ((selections[qIdx] as string[]) || []).includes(opt.label);
                 const optionId = `q-${qIdx}-opt-${oIdx}`;
                 return (
-                  <div
+                  <OptionRow
                     key={oIdx}
-                    className={cn(
-                      'flex items-center gap-2 rounded px-2 py-1 transition-all duration-150',
-                      isSelected ? 'bg-muted' : 'hover:bg-muted/80',
-                      isActive && focusedOptionIndex === oIdx && 'ring-1 ring-status-info/50'
-                    )}
+                    isSelected={isSelected}
+                    isFocused={isActive && focusedOptionIndex === oIdx}
                     data-selected={isSelected}
+                    control={
+                      <Checkbox
+                        checked={isSelected}
+                        id={optionId}
+                        disabled={submitting}
+                        onCheckedChange={(checked) =>
+                          handleMultiSelect(qIdx, opt.label, !!checked)
+                        }
+                      />
+                    }
                   >
-                    <Checkbox
-                      checked={isSelected}
-                      id={optionId}
-                      disabled={submitting}
-                      onCheckedChange={(checked) =>
-                        handleMultiSelect(qIdx, opt.label, !!checked)
-                      }
-                    />
                     <label htmlFor={optionId} className="flex-1 cursor-pointer">
                       <span className="text-sm font-medium">{opt.label}</span>
                       {isActive && oIdx < 9 && (
@@ -347,7 +343,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                         </span>
                       )}
                     </label>
-                  </div>
+                  </OptionRow>
                 );
               })}
 
@@ -383,15 +379,11 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       }
 
       return (
-        <div
-          className="bg-muted/50 rounded-msg-tool border px-3 py-1 text-sm shadow-msg-tool transition-all duration-150"
+        <CompactResultRow
           data-testid="question-prompt-submitted"
-        >
-          <div className="flex items-center gap-2">
-            <Check className="size-(--size-icon-sm) shrink-0 text-status-success" />
-            <span className="truncate">{summaryParts[0]}</span>
-          </div>
-        </div>
+          icon={<Check className="size-(--size-icon-sm) shrink-0 text-status-success" />}
+          label={<span className="truncate">{summaryParts[0]}</span>}
+        />
       );
     }
 

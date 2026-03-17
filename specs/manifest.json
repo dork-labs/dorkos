@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 115,
+  "nextNumber": 145,
   "specs": [
     {
       "number": 1,
@@ -1004,7 +1004,14 @@
       "title": "Dev Playground Navigation Overhaul",
       "created": "2026-03-16",
       "status": "specified"
+    },
+    {
+      "number": 144,
+      "slug": "question-prompt-redesign",
+      "title": "QuestionPrompt Component Redesign",
+      "created": "2026-03-16",
+      "status": "specified"
     }
   ],
-  "nextNumber": 144
+  "nextNumber": 145
 }

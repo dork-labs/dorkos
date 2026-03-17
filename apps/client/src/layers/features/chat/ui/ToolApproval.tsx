@@ -4,6 +4,7 @@ import { useTransport } from '@/layers/shared/model';
 import { ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
 import { Kbd, Button } from '@/layers/shared/ui';
 import { approvalState } from './message/message-variants';
+import { CompactResultRow } from './primitives';
 
 const WARNING_THRESHOLD_S = 120; // 2 minutes — amber
 const URGENT_THRESHOLD_S = 60; // 1 minute — red
@@ -162,18 +163,18 @@ export function ToolApproval({
   if (decided) {
     const isApproved = decided === 'approved';
     return (
-      <div
-        className="bg-muted/50 rounded-msg-tool border px-3 py-1 text-sm shadow-msg-tool transition-all duration-150"
+      <CompactResultRow
         data-testid="tool-approval-decided"
         data-decision={decided}
-      >
-        <div className="flex items-center gap-2">
-          {isApproved ? (
+        icon={
+          isApproved ? (
             <Check className="size-(--size-icon-sm) shrink-0 text-status-success" />
           ) : (
             <X className="size-(--size-icon-sm) shrink-0 text-status-error" />
-          )}
-          <span className="font-mono text-3xs">{toolName}</span>
+          )
+        }
+        label={<span className="font-mono text-3xs">{toolName}</span>}
+        trailing={
           <span
             className={cn(
               'rounded-full px-1.5 py-0.5 text-2xs font-medium',
@@ -184,14 +185,15 @@ export function ToolApproval({
           >
             {isApproved ? 'Approved' : 'Denied'}
           </span>
-        </div>
+        }
+      >
         {decided === 'denied' && timedOut.current && (
           <p className="text-2xs text-muted-foreground mt-1">
             Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes. The agent continued
             without this tool.
           </p>
         )}
-      </div>
+      </CompactResultRow>
     );
   }
 

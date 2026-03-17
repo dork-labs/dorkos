@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Brain, ChevronDown } from 'lucide-react';
+import { Brain } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { CollapsibleCard } from './primitives';
 
 interface ThinkingBlockProps {
   text: string;
@@ -51,65 +51,41 @@ export function ThinkingBlock({ text, isStreaming, elapsedMs }: ThinkingBlockPro
     : 'Thinking...';
 
   return (
-    <div
-      className="bg-muted/50 mt-px rounded-msg-tool border-l-2 border-muted-foreground/20 text-sm first:mt-1"
+    <CollapsibleCard
+      expanded={expanded}
+      onToggle={() => setExpanded(!expanded)}
+      variant="thinking"
+      disabled={isStreaming}
+      ariaLabel={durationLabel}
       data-testid="thinking-block"
-      data-streaming={isStreaming || undefined}
+      data-streaming={isStreaming ? 'true' : undefined}
+      header={
+        <>
+          <Brain
+            className={cn(
+              'size-(--size-icon-xs) text-muted-foreground',
+              isStreaming && 'animate-pulse'
+            )}
+          />
+          <span
+            className={cn(
+              'text-3xs font-mono text-muted-foreground',
+              isStreaming && 'animate-pulse'
+            )}
+          >
+            {durationLabel}
+          </span>
+        </>
+      }
     >
-      <button
-        onClick={() => !isStreaming && setExpanded(!expanded)}
-        disabled={isStreaming}
-        className={cn(
-          'flex w-full items-center gap-2 px-3 py-1',
-          isStreaming && 'cursor-default'
-        )}
-        aria-expanded={expanded}
-        aria-label={durationLabel}
+      <div
+        ref={contentRef}
+        className="max-h-64 overflow-y-auto"
       >
-        <Brain
-          className={cn(
-            'size-(--size-icon-xs) text-muted-foreground',
-            isStreaming && 'animate-pulse'
-          )}
-        />
-        <span
-          className={cn(
-            'text-3xs font-mono text-muted-foreground',
-            isStreaming && 'animate-pulse'
-          )}
-        >
-          {durationLabel}
-        </span>
-        {!isStreaming && (
-          <motion.div
-            animate={{ rotate: expanded ? 180 : 0 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="ml-auto"
-          >
-            <ChevronDown className="size-(--size-icon-xs) text-muted-foreground" />
-          </motion.div>
-        )}
-      </button>
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-            className="overflow-hidden"
-          >
-            <div
-              ref={contentRef}
-              className="max-h-64 overflow-y-auto border-t px-3 pt-1 pb-3"
-            >
-              <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
-                {text}
-              </pre>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+        <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+          {text}
+        </pre>
+      </div>
+    </CollapsibleCard>
   );
 }

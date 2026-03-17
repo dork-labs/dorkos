@@ -1,7 +1,6 @@
 import { useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowDown, AlertTriangle } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { ArrowDown } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChatSession } from '../model/use-chat-session';
 import { useMessageQueue } from '../model/use-message-queue';
@@ -24,6 +23,7 @@ import { TaskListPanel } from './TaskListPanel';
 import { CelebrationOverlay } from './CelebrationOverlay';
 import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
+import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { SystemStatusZone } from './SystemStatusZone';
 import { PromptSuggestionChips } from './PromptSuggestionChips';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
@@ -375,22 +375,13 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
       />
 
       {error && (
-        <div className="mx-4 mb-2 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-destructive">{error.heading}</p>
-            <p className="text-sm text-muted-foreground">{error.message}</p>
-          </div>
-          {error.retryable && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRetry}
-              className="shrink-0"
-            >
-              Retry
-            </Button>
-          )}
+        <div className="mx-4 mb-2">
+          <ErrorMessageBlock
+            message={error.message}
+            heading={error.heading}
+            subtext={error.message}
+            onRetry={error.retryable ? handleRetry : undefined}
+          />
         </div>
       )}
 

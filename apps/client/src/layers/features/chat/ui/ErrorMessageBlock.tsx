@@ -35,6 +35,10 @@ interface ErrorMessageBlockProps {
   category?: ErrorCategory;
   details?: string;
   onRetry?: () => void;
+  /** Override the category-derived heading. */
+  heading?: string;
+  /** Override the category-derived subtext. */
+  subtext?: string;
 }
 
 /**
@@ -42,12 +46,21 @@ interface ErrorMessageBlockProps {
  * Shows category-specific heading/sub-text, optional retry button,
  * and collapsible raw error details.
  */
-export function ErrorMessageBlock({ message, category, details, onRetry }: ErrorMessageBlockProps) {
+export function ErrorMessageBlock({
+  message,
+  category,
+  details,
+  onRetry,
+  heading: headingOverride,
+  subtext: subtextOverride,
+}: ErrorMessageBlockProps) {
   const [showDetails, setShowDetails] = useState(false);
   const copy = category ? ERROR_COPY[category] : null;
-  const heading = copy?.heading ?? 'Error';
-  const subtext = copy?.subtext ?? message;
-  const retryable = copy?.retryable ?? false;
+  const heading = headingOverride ?? copy?.heading ?? 'Error';
+  const subtext = subtextOverride ?? copy?.subtext ?? message;
+  // When a category is provided, use its retryable flag. When no category,
+  // trust the caller — if they passed onRetry, they want the button.
+  const retryable = copy?.retryable ?? !!onRetry;
 
   return (
     <div

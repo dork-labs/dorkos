@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Check, X, ChevronDown } from 'lucide-react';
+import { Loader2, Check, X } from 'lucide-react';
 import type { ToolCallState, HookState } from '../model/use-chat-session';
 import { getToolLabel, ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
-import { toolStatus } from './message/message-variants';
+import { getToolStatusIcon, CollapsibleCard } from './primitives';
 
 /** Maximum characters to render before truncation (5KB). */
 const TRUNCATE_THRESHOLD = 5120;
@@ -118,69 +118,39 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
     }
   }, [hasProgress]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const statusIcon = {
-    pending: (
-      <Loader2 className={cn('size-(--size-icon-xs) animate-spin', toolStatus({ status: 'pending' }))} />
-    ),
-    running: (
-      <Loader2 className={cn('size-(--size-icon-xs) animate-spin', toolStatus({ status: 'running' }))} />
-    ),
-    complete: <Check className={cn('size-(--size-icon-xs)', toolStatus({ status: 'complete' }))} />,
-    error: <X className={cn('size-(--size-icon-xs)', toolStatus({ status: 'error' }))} />,
-  }[toolCall.status];
+  const hooksSection =
+    toolCall.hooks && toolCall.hooks.length > 0 ? (
+      <div className="border-t border-border/50 px-3 py-1 space-y-0.5">
+        {toolCall.hooks.map((hook) => (
+          <HookRow key={hook.hookId} hook={hook} />
+        ))}
+      </div>
+    ) : undefined;
 
   return (
-    <div
-      className="bg-muted/50 hover:border-border mt-px rounded-msg-tool border text-sm shadow-msg-tool transition-all duration-150 first:mt-1 hover:shadow-msg-tool-hover"
+    <CollapsibleCard
+      expanded={expanded}
+      onToggle={() => setExpanded(!expanded)}
+      extraContent={hooksSection}
       data-testid="tool-call-card"
       data-tool-name={toolCall.toolName}
       data-status={toolCall.status}
+      header={
+        <>
+          {getToolStatusIcon(toolCall.status)}
+          <span className="text-3xs font-mono">
+            {getToolLabel(toolCall.toolName, toolCall.input)}
+          </span>
+        </>
+      }
     >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-3 py-1"
-        aria-expanded={expanded}
-      >
-        {statusIcon}
-        <span className="text-3xs font-mono">
-          {getToolLabel(toolCall.toolName, toolCall.input)}
-        </span>
-        <motion.div
-          animate={{ rotate: expanded ? 180 : 0 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          className="ml-auto"
-        >
-          <ChevronDown className="size-(--size-icon-xs)" />
-        </motion.div>
-      </button>
-      {toolCall.hooks && toolCall.hooks.length > 0 && (
-        <div className="border-t border-border/50 px-3 py-1 space-y-0.5">
-          {toolCall.hooks.map((hook) => (
-            <HookRow key={hook.hookId} hook={hook} />
-          ))}
-        </div>
+      {toolCall.input && (
+        <ToolArgumentsDisplay toolName={toolCall.toolName} input={toolCall.input} />
       )}
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="border-t px-3 pt-1 pb-3">
-              {toolCall.input && (
-                <ToolArgumentsDisplay toolName={toolCall.toolName} input={toolCall.input} />
-              )}
-              {toolCall.progressOutput && !toolCall.result && (
-                <TruncatedOutput content={toolCall.progressOutput} />
-              )}
-              {toolCall.result && <TruncatedOutput content={toolCall.result} />}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+      {toolCall.progressOutput && !toolCall.result && (
+        <TruncatedOutput content={toolCall.progressOutput} />
+      )}
+      {toolCall.result && <TruncatedOutput content={toolCall.result} />}
+    </CollapsibleCard>
   );
 }
