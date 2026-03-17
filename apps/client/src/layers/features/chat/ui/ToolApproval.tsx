@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useImperativeHandle, useCallback 
 import { Check, X, Shield } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
-import { Kbd } from '@/layers/shared/ui';
+import { Kbd, Button } from '@/layers/shared/ui';
 import { approvalState } from './message/message-variants';
 
 const WARNING_THRESHOLD_S = 120; // 2 minutes — amber
@@ -160,17 +160,31 @@ export function ToolApproval({
   );
 
   if (decided) {
+    const isApproved = decided === 'approved';
     return (
       <div
-        className={cn(
-          'my-1 rounded-msg-tool border px-3 py-2 text-sm transition-colors duration-200',
-          approvalState({ state: decided === 'approved' ? 'approved' : 'denied' })
-        )}
+        className="bg-muted/50 rounded-msg-tool border px-3 py-1 text-sm shadow-msg-tool transition-all duration-150"
         data-testid="tool-approval-decided"
         data-decision={decided}
       >
-        <span className="font-mono">{toolName}</span>
-        <span className="ml-2 text-xs">{decided === 'approved' ? 'Approved' : 'Denied'}</span>
+        <div className="flex items-center gap-2">
+          {isApproved ? (
+            <Check className="size-(--size-icon-sm) shrink-0 text-status-success" />
+          ) : (
+            <X className="size-(--size-icon-sm) shrink-0 text-status-error" />
+          )}
+          <span className="font-mono text-3xs">{toolName}</span>
+          <span
+            className={cn(
+              'rounded-full px-1.5 py-0.5 text-2xs font-medium',
+              isApproved
+                ? 'bg-status-success-bg text-status-success-fg'
+                : 'bg-status-error-bg text-status-error-fg'
+            )}
+          >
+            {isApproved ? 'Approved' : 'Denied'}
+          </span>
+        </div>
         {decided === 'denied' && timedOut.current && (
           <p className="text-2xs text-muted-foreground mt-1">
             Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes. The agent continued
@@ -244,22 +258,24 @@ export function ToolApproval({
         </div>
       )}
       <div className="flex gap-2">
-        <button
+        <Button
+          size="sm"
           onClick={handleApprove}
           disabled={responding}
-          className="flex items-center gap-1 rounded bg-status-success px-3 py-1 text-xs text-white transition-colors hover:opacity-90 disabled:opacity-50 max-md:py-2"
+          className="bg-status-success text-white hover:bg-status-success/90"
         >
           <Check className="size-(--size-icon-xs)" /> Approve
           {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
           onClick={handleDeny}
           disabled={responding}
-          className="flex items-center gap-1 rounded bg-status-error px-3 py-1 text-xs text-white transition-colors hover:opacity-90 disabled:opacity-50 max-md:py-2"
         >
           <X className="size-(--size-icon-xs)" /> Deny
           {isActive && <Kbd className="ml-1.5">Esc</Kbd>}
-        </button>
+        </Button>
       </div>
 
       {/* Screen reader announcements — only at threshold crossings */}

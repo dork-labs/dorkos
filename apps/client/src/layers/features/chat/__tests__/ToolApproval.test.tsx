@@ -102,7 +102,7 @@ describe('ToolApproval', () => {
       });
     });
 
-    it('shows "Approved" after approve', async () => {
+    it('shows "Approved" with check icon and badge after approve', async () => {
       const ref = createRef<ToolApprovalHandle>();
       render(<ToolApproval {...baseProps} ref={ref} />);
 
@@ -110,10 +110,18 @@ describe('ToolApproval', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Approved')).toBeDefined();
+        // Check icon should be present with success color
+        const container = screen.getByTestId('tool-approval-decided');
+        const svg = container.querySelector('svg');
+        expect(svg).not.toBeNull();
+        expect(svg!.classList.toString()).toContain('text-status-success');
+        // Container should have neutral background with shadow
+        expect(container.className).toContain('bg-muted/50');
+        expect(container.className).toContain('shadow-msg-tool');
       });
     });
 
-    it('shows "Denied" after deny', async () => {
+    it('shows "Denied" with X icon and badge after deny', async () => {
       const ref = createRef<ToolApprovalHandle>();
       render(<ToolApproval {...baseProps} ref={ref} />);
 
@@ -121,6 +129,56 @@ describe('ToolApproval', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Denied')).toBeDefined();
+        // X icon should be present with error color
+        const container = screen.getByTestId('tool-approval-decided');
+        const svg = container.querySelector('svg');
+        expect(svg).not.toBeNull();
+        expect(svg!.classList.toString()).toContain('text-status-error');
+        // Container should have neutral background with shadow
+        expect(container.className).toContain('bg-muted/50');
+        expect(container.className).toContain('shadow-msg-tool');
+      });
+    });
+
+    it('renders tool name in mono font in decided state', async () => {
+      const ref = createRef<ToolApprovalHandle>();
+      render(<ToolApproval {...baseProps} ref={ref} />);
+
+      ref.current!.approve();
+
+      await waitFor(() => {
+        const toolNameEl = screen.getByTestId('tool-approval-decided').querySelector('.font-mono');
+        expect(toolNameEl).not.toBeNull();
+        expect(toolNameEl!.textContent).toBe('Write');
+        expect(toolNameEl!.className).toContain('text-3xs');
+      });
+    });
+
+    it('renders Approved badge with success styling', async () => {
+      const ref = createRef<ToolApprovalHandle>();
+      render(<ToolApproval {...baseProps} ref={ref} />);
+
+      ref.current!.approve();
+
+      await waitFor(() => {
+        const badge = screen.getByText('Approved');
+        expect(badge.className).toContain('rounded-full');
+        expect(badge.className).toContain('bg-status-success-bg');
+        expect(badge.className).toContain('text-status-success-fg');
+      });
+    });
+
+    it('renders Denied badge with error styling', async () => {
+      const ref = createRef<ToolApprovalHandle>();
+      render(<ToolApproval {...baseProps} ref={ref} />);
+
+      ref.current!.deny();
+
+      await waitFor(() => {
+        const badge = screen.getByText('Denied');
+        expect(badge.className).toContain('rounded-full');
+        expect(badge.className).toContain('bg-status-error-bg');
+        expect(badge.className).toContain('text-status-error-fg');
       });
     });
 

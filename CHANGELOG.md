@@ -9,14 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Redesign QuestionPrompt and unify compact final states
 - Add scrollspy TOC, Cmd+K search, and overview landing page
 - Add multi-select and 3-tab question showcases to design system
 - Add hook lifecycle showcase and refactor stream-event-handler
 - Add ClientsItem presence indicator showcase to design system
-- Add ClientsItem presence indicator showcase to design system
 - Add multi-client presence indicator, subagent/hook lifecycle visibility, and tool call enhancements
+- Add ToolApproval countdown timer showcases to design system
 - Implement tool-approval-timeout-visibility, prompt-suggestion-chips, multi-client-session-indicator; add specs and research
 - Add transport error categorization and retry affordance
+- Truncate tool results at 5KB with raw JSON fallback for large payloads
 - Add truncated tool result showcase to design system
 - Add SystemStatusZone to design system showcase
 - Surface SDK system status messages and compact boundary events in chat UI

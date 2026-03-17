@@ -1,8 +1,19 @@
 import { useState, useImperativeHandle, useCallback, forwardRef } from 'react';
-import { Check, MessageSquare } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import { Tabs, TabsList, TabsTrigger, TabsContent, Kbd } from '@/layers/shared/ui';
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  Kbd,
+  Button,
+  RadioGroup,
+  RadioGroupItem,
+  Checkbox,
+} from '@/layers/shared/ui';
+import { questionState } from './message/message-variants';
 import type { QuestionItem } from '@dorkos/shared/types';
 
 interface QuestionPromptProps {
@@ -204,40 +215,53 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       ]
     );
 
-    // Collapsed submitted state
-    if (submitted) {
-      const hasSpecificAnswers = preAnswers
-        ? Object.values(preAnswers).some((v) => v !== '')
-        : Object.keys(selections).length > 0;
+    // Render the "Other" free-text option using the appropriate primitive
+    function renderOtherOption(q: QuestionItem, qIdx: number) {
+      const isOtherSelected = q.multiSelect
+        ? ((selections[qIdx] as string[]) || []).includes('__other__')
+        : selections[qIdx] === '__other__';
+      const optionId = `q-${qIdx}-other`;
+      const oIdx = q.options.length;
 
       return (
-        <div className="my-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm transition-colors duration-200">
-          {hasSpecificAnswers ? (
-            <div className="flex items-start gap-2">
-              <Check className="mt-0.5 size-(--size-icon-md) shrink-0 text-emerald-500" />
-              <div className="min-w-0 space-y-1.5">
-                {questions.map((q, idx) => {
-                  const displayValue = getDisplayValue(q, idx);
-                  if (!displayValue) return null;
-                  return (
-                    <div key={idx}>
-                      <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                        {q.header}
-                      </span>
-                      <p className="text-sm break-words text-emerald-600 dark:text-emerald-400">
-                        {displayValue}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Check className="size-(--size-icon-md) text-emerald-500" />
-              <span className="text-emerald-600 dark:text-emerald-400">Questions answered</span>
-            </div>
+        <div
+          className={cn(
+            'flex items-center gap-2 rounded px-2 py-1 transition-all duration-150',
+            isOtherSelected ? 'bg-muted' : 'hover:bg-muted/80',
+            isActive && focusedOptionIndex === oIdx && 'ring-1 ring-status-info/50'
           )}
+          data-selected={isOtherSelected}
+        >
+          {q.multiSelect ? (
+            <Checkbox
+              checked={isOtherSelected}
+              id={optionId}
+              disabled={submitting}
+              onCheckedChange={(checked) => handleMultiSelect(qIdx, '__other__', !!checked)}
+            />
+          ) : (
+            <RadioGroupItem value="__other__" id={optionId} disabled={submitting} />
+          )}
+          <div className="flex-1">
+            <label htmlFor={optionId} className="cursor-pointer">
+              <span className="text-sm font-medium">Other</span>
+              {isActive && oIdx < 9 && (
+                <Kbd className="ml-1.5 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+              )}
+            </label>
+            {isOtherSelected && (
+              <textarea
+                placeholder="Type your answer..."
+                rows={2}
+                value={otherText[qIdx] || ''}
+                disabled={submitting}
+                onChange={(e) => handleOtherText(qIdx, e.target.value)}
+                className="bg-background mt-1 w-full resize-y rounded border border-border px-2 py-1 text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- Intentional: focus the answer input when "Other" is selected
+                autoFocus
+              />
+            )}
+          </div>
         </div>
       );
     }
@@ -246,109 +270,126 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
     function renderQuestionContent(q: QuestionItem, qIdx: number) {
       return (
         <div>
-          <div className="mb-1 flex items-center gap-2">
-            <MessageSquare className="size-(--size-icon-sm) text-amber-500" />
-            <span className="text-sm font-semibold">{q.header}</span>
-          </div>
-          <p className="text-foreground mb-2">{q.question}</p>
+          <p className="text-foreground mb-1.5">{q.question}</p>
 
-          <div className="ml-1 space-y-1.5">
-            {q.options.map((opt, oIdx) => {
-              const isSelected = q.multiSelect
-                ? ((selections[qIdx] as string[]) || []).includes(opt.label)
-                : selections[qIdx] === opt.label;
-
-              return (
-                <label
-                  key={oIdx}
-                  className={cn(
-                    'flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 transition-all duration-150',
-                    isSelected ? 'bg-amber-500/15' : 'hover:bg-amber-500/5',
-                    isActive && focusedOptionIndex === oIdx && 'ring-1 ring-amber-500/50'
-                  )}
-                >
-                  <input
-                    type={q.multiSelect ? 'checkbox' : 'radio'}
-                    name={`q-${qIdx}`}
-                    checked={isSelected}
-                    disabled={submitting}
-                    onChange={(e) => {
-                      if (q.multiSelect) {
-                        handleMultiSelect(qIdx, opt.label, e.target.checked);
-                      } else {
-                        handleSingleSelect(qIdx, opt.label);
-                      }
-                    }}
-                    className="mt-0.5 accent-amber-500"
-                  />
-                  <div>
-                    <span className="font-medium">
-                      {opt.label}
-                      {isActive && oIdx < 9 && <Kbd className="ml-1.5">{oIdx + 1}</Kbd>}
-                    </span>
-                    {opt.description && (
-                      <p className="text-muted-foreground mt-0.5 text-xs">{opt.description}</p>
-                    )}
-                  </div>
-                </label>
-              );
-            })}
-
-            {/* "Other" free-text option */}
-            <label
-              className={cn(
-                'flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 transition-all duration-150',
-                q.multiSelect
-                  ? ((selections[qIdx] as string[]) || []).includes('__other__')
-                    ? 'bg-amber-500/15'
-                    : 'hover:bg-amber-500/5'
-                  : selections[qIdx] === '__other__'
-                    ? 'bg-amber-500/15'
-                    : 'hover:bg-amber-500/5',
-                isActive && focusedOptionIndex === q.options.length && 'ring-1 ring-amber-500/50'
-              )}
+          {!q.multiSelect ? (
+            <RadioGroup
+              value={(selections[qIdx] as string) ?? ''}
+              onValueChange={(value) => handleSingleSelect(qIdx, value)}
+              aria-label={q.question}
+              className="ml-1 space-y-0.5"
             >
-              <input
-                type={q.multiSelect ? 'checkbox' : 'radio'}
-                name={`q-${qIdx}`}
-                checked={
-                  q.multiSelect
-                    ? ((selections[qIdx] as string[]) || []).includes('__other__')
-                    : selections[qIdx] === '__other__'
-                }
-                disabled={submitting}
-                onChange={(e) => {
-                  if (q.multiSelect) {
-                    handleMultiSelect(qIdx, '__other__', e.target.checked);
-                  } else {
-                    handleSingleSelect(qIdx, '__other__');
-                  }
-                }}
-                className="mt-0.5 accent-amber-500"
-              />
-              <div className="flex-1">
-                <span className="font-medium">
-                  Other
-                  {isActive && q.options.length < 9 && (
-                    <Kbd className="ml-1.5">{q.options.length + 1}</Kbd>
-                  )}
-                </span>
-                {(q.multiSelect
-                  ? ((selections[qIdx] as string[]) || []).includes('__other__')
-                  : selections[qIdx] === '__other__') && (
-                  <textarea
-                    placeholder="Type your answer..."
-                    rows={2}
-                    value={otherText[qIdx] || ''}
-                    disabled={submitting}
-                    onChange={(e) => handleOtherText(qIdx, e.target.value)}
-                    className="bg-background mt-1 w-full resize-y rounded border border-amber-500/30 px-2 py-1 text-sm focus:ring-1 focus:ring-amber-500/50 focus:outline-none"
-                    // eslint-disable-next-line jsx-a11y/no-autofocus -- Intentional: focus the answer input when "Other" is selected
-                    autoFocus
-                  />
-                )}
-              </div>
-            </label>
+              {q.options.map((opt, oIdx) => {
+                const isSelected = selections[qIdx] === opt.label;
+                const optionId = `q-${qIdx}-opt-${oIdx}`;
+                return (
+                  <div
+                    key={oIdx}
+                    className={cn(
+                      'flex items-center gap-2 rounded px-2 py-1 transition-all duration-150',
+                      isSelected ? 'bg-muted' : 'hover:bg-muted/80',
+                      isActive && focusedOptionIndex === oIdx && 'ring-1 ring-status-info/50'
+                    )}
+                    data-selected={isSelected}
+                  >
+                    <RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />
+                    <label htmlFor={optionId} className="flex-1 cursor-pointer">
+                      <span className="text-sm font-medium">{opt.label}</span>
+                      {isActive && oIdx < 9 && (
+                        <Kbd className="ml-1.5 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+                      )}
+                      {opt.description && (
+                        <span className="text-muted-foreground ml-1.5 text-xs">
+                          {' '}
+                          — {opt.description}
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                );
+              })}
+
+              {/* "Other" free-text option */}
+              {renderOtherOption(q, qIdx)}
+            </RadioGroup>
+          ) : (
+            <div role="group" aria-label={q.question} className="ml-1 space-y-0.5">
+              {q.options.map((opt, oIdx) => {
+                const isSelected = ((selections[qIdx] as string[]) || []).includes(opt.label);
+                const optionId = `q-${qIdx}-opt-${oIdx}`;
+                return (
+                  <div
+                    key={oIdx}
+                    className={cn(
+                      'flex items-center gap-2 rounded px-2 py-1 transition-all duration-150',
+                      isSelected ? 'bg-muted' : 'hover:bg-muted/80',
+                      isActive && focusedOptionIndex === oIdx && 'ring-1 ring-status-info/50'
+                    )}
+                    data-selected={isSelected}
+                  >
+                    <Checkbox
+                      checked={isSelected}
+                      id={optionId}
+                      disabled={submitting}
+                      onCheckedChange={(checked) =>
+                        handleMultiSelect(qIdx, opt.label, !!checked)
+                      }
+                    />
+                    <label htmlFor={optionId} className="flex-1 cursor-pointer">
+                      <span className="text-sm font-medium">{opt.label}</span>
+                      {isActive && oIdx < 9 && (
+                        <Kbd className="ml-1.5 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+                      )}
+                      {opt.description && (
+                        <span className="text-muted-foreground ml-1.5 text-xs">
+                          {' '}
+                          — {opt.description}
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                );
+              })}
+
+              {/* "Other" free-text option */}
+              {renderOtherOption(q, qIdx)}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Collapsed submitted state — compact single-row matching ToolCallCard pattern
+    if (submitted) {
+      const hasSpecificAnswers = preAnswers
+        ? Object.values(preAnswers).some((v) => v !== '')
+        : Object.keys(selections).length > 0;
+
+      // Build a compact summary string
+      const summaryParts: string[] = [];
+      if (hasSpecificAnswers) {
+        if (questions.length === 1) {
+          // Single question: show "header: value"
+          const displayValue = getDisplayValue(questions[0], 0);
+          if (displayValue) {
+            summaryParts.push(`${questions[0].header}: ${displayValue}`);
+          }
+        } else {
+          // Multi-question: show "N questions answered"
+          summaryParts.push(`${questions.length} questions answered`);
+        }
+      } else {
+        summaryParts.push('Questions answered');
+      }
+
+      return (
+        <div
+          className="bg-muted/50 rounded-msg-tool border px-3 py-1 text-sm shadow-msg-tool transition-all duration-150"
+          data-testid="question-prompt-submitted"
+        >
+          <div className="flex items-center gap-2">
+            <Check className="size-(--size-icon-sm) shrink-0 text-status-success" />
+            <span className="truncate">{summaryParts[0]}</span>
           </div>
         </div>
       );
@@ -358,8 +399,10 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
     return (
       <div
         className={cn(
-          'my-1 rounded border border-amber-500/20 bg-amber-500/10 p-3 text-sm transition-all duration-200',
-          isActive && 'ring-2 ring-amber-500/30'
+          'rounded-msg-tool p-3 text-sm transition-all duration-200',
+          questionState({ state: 'pending' }),
+          isActive && 'ring-2 ring-status-info/30',
+          !isActive && !submitted && 'opacity-60'
         )}
       >
         {questions.length === 1 ? (
@@ -373,20 +416,13 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                 <TabsTrigger
                   key={idx}
                   value={String(idx)}
-                  className="data-[state=inactive]:bg-muted/50 h-auto rounded-full px-2.5 py-1 text-xs font-medium data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-700 data-[state=active]:shadow-none dark:data-[state=active]:text-amber-300"
+                  className="data-[state=inactive]:bg-muted/50 h-auto rounded-full px-2.5 py-1 text-xs font-medium data-[state=active]:bg-foreground/10 data-[state=active]:shadow-none"
                 >
                   {hasAnswer(idx) && <Check className="mr-1 size-3" />}
                   <span className="max-w-[120px] truncate">{q.header}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
-            {isActive && questions.length > 1 && (
-              <div className="text-2xs text-muted-foreground mb-2 flex items-center gap-1">
-                <Kbd>&larr;</Kbd>
-                <Kbd>&rarr;</Kbd>
-                <span>navigate questions</span>
-              </div>
-            )}
             {questions.map((q, idx) => (
               <TabsContent key={idx} value={String(idx)} className="mt-0">
                 {renderQuestionContent(q, idx)}
@@ -397,20 +433,16 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
 
         {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
 
-        <button
-          onClick={handleSubmit}
-          disabled={!isComplete() || submitting}
-          className="mt-3 flex items-center gap-1 rounded bg-amber-600 px-3 py-1.5 text-xs text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
-        >
+        <Button size="sm" onClick={handleSubmit} disabled={!isComplete() || submitting} className="mt-2">
           {submitting ? (
-            <>Submitting...</>
+            'Submitting...'
           ) : (
             <>
               <Check className="size-(--size-icon-xs)" /> Submit
               {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
             </>
           )}
-        </button>
+        </Button>
       </div>
     );
   }

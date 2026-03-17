@@ -92,3 +92,17 @@ export const approvalState = tv({
     },
   },
 });
+
+/**
+ * Variant for question prompt state styling.
+ * Maps question lifecycle state to semantic border/background/text classes.
+ */
+export const questionState = tv({
+  variants: {
+    state: {
+      pending: 'border-l-2 border-status-info bg-muted/50',
+      // Note: submitted state uses inline neutral classes matching ToolCallCard pattern
+      answered: 'border-status-success-border bg-status-success-bg text-status-success-fg',
+    },
+  },
+});
