@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { checkClaude } from './check-claude.js';
 import { checkForUpdate } from './update-check.js';
+import { link } from './terminal-link.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
 import { env } from './env.js';
@@ -14,21 +15,38 @@ declare const __CLI_VERSION__: string;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const { values, positionals } = parseArgs({
-  options: {
-    port: { type: 'string', short: 'p' },
-    tunnel: { type: 'boolean', short: 't', default: false },
-    dir: { type: 'string', short: 'd' },
-    boundary: { type: 'string', short: 'b' },
-    pulse: { type: 'boolean' },
-    'log-level': { type: 'string', short: 'l' },
-    help: { type: 'boolean', short: 'h' },
-    version: { type: 'boolean', short: 'v' },
-    'post-install-check': { type: 'boolean', default: false },
-    yes: { type: 'boolean', short: 'y', default: false },
-  },
-  allowPositionals: true,
-});
+let values: ReturnType<typeof parseArgs>['values'];
+let positionals: ReturnType<typeof parseArgs>['positionals'];
+
+try {
+  ({ values, positionals } = parseArgs({
+    options: {
+      port: { type: 'string', short: 'p' },
+      tunnel: { type: 'boolean', short: 't', default: false },
+      dir: { type: 'string', short: 'd' },
+      boundary: { type: 'string', short: 'b' },
+      pulse: { type: 'boolean' },
+      'log-level': { type: 'string', short: 'l' },
+      help: { type: 'boolean', short: 'h' },
+      version: { type: 'boolean', short: 'v' },
+      'post-install-check': { type: 'boolean', default: false },
+      yes: { type: 'boolean', short: 'y', default: false },
+    },
+    allowPositionals: true,
+  }));
+} catch (err) {
+  if (
+    err instanceof TypeError &&
+    (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
+  ) {
+    const match = err.message.match(/Unknown option '([^']+)'/);
+    const option = match?.[1] ?? 'unknown';
+    console.error(`Unknown option: ${option}`);
+    console.error(`Run 'dorkos --help' for usage information.`);
+    process.exit(1);
+  }
+  throw err;
+}
 
 if (values.help) {
   console.log(`
@@ -237,9 +255,10 @@ await import('../server/index.js');
 
 // Print startup banner
 const port = process.env.DORKOS_PORT || String(DEFAULT_PORT);
+const localUrl = `http://localhost:${port}`;
 console.log('');
 console.log(`  DorkOS v${__CLI_VERSION__}`);
-console.log(`  Local:   http://localhost:${port}`);
+console.log(`  Local:   ${link(localUrl, localUrl)}`);
 
 // Find first non-internal IPv4 address
 const nets = networkInterfaces();
@@ -254,7 +273,7 @@ for (const name of Object.keys(nets)) {
   if (networkUrl) break;
 }
 if (networkUrl) {
-  console.log(`  Network: ${networkUrl}`);
+  console.log(`  Network: ${link(networkUrl, networkUrl)}`);
 }
 
 // Print tunnel URL if tunnel started during server init
@@ -262,7 +281,7 @@ if (process.env.TUNNEL_ENABLED) {
   const { tunnelManager } = await import('../server/services/core/tunnel-manager.js');
   const status = tunnelManager.status;
   if (status.connected && status.url) {
-    console.log(`  Tunnel:  ${status.url}`);
+    console.log(`  Tunnel:  ${link(status.url, status.url)}`);
 
     // Print QR code for mobile access
     try {
@@ -282,13 +301,34 @@ if (process.env.TUNNEL_ENABLED) {
 }
 console.log('');
 
+// Prompt to open in browser (non-blocking, skipped in non-TTY)
+if (process.stdin.isTTY) {
+  const { confirm } = await import('@inquirer/prompts');
+  try {
+    const shouldOpen = await confirm({
+      message: 'Open DorkOS in your browser?',
+      default: true,
+    });
+    if (shouldOpen) {
+      const { exec } = await import('node:child_process');
+      const openCmd =
+        process.platform === 'darwin' ? 'open'
+        : process.platform === 'win32' ? 'start'
+        : 'xdg-open';
+      exec(`${openCmd} ${localUrl}`);
+    }
+  } catch {
+    // User cancelled (Ctrl+C) — continue running the server
+  }
+}
+
 // Listen for runtime tunnel activation (toggled on via UI after startup)
 {
   const { tunnelManager } = await import('../server/services/core/tunnel-manager.js');
   tunnelManager.on('status_change', async (status: { connected: boolean; url: string | null }) => {
     if (status.connected && status.url) {
       console.log('');
-      console.log(`  Tunnel:  ${status.url}`);
+      console.log(`  Tunnel:  ${link(status.url, status.url)}`);
       try {
         const qrcode = await import('qrcode-terminal');
         const generate = qrcode.default?.generate ?? qrcode.generate;

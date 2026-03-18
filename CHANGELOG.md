@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Improve UX with clickable URLs, unknown option handling, and browser open prompt
 - Add FieldCard primitives and apply Apple-style field grouping
 
 ### Changed
