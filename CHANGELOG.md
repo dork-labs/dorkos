@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Extract binding permissionMode in CCA agent handler
 - Clear pending approval timeouts on SlackAdapter stop
 ---
 

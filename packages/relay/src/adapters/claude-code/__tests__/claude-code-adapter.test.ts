@@ -285,8 +285,37 @@ describe('ClaudeCodeAdapter', () => {
     expect(ensureCall[1]).not.toHaveProperty('cwd');
 
     const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
-    expect(sendCall[2]).toEqual({});
+    expect(sendCall[2]).toEqual({ permissionMode: 'default' });
     expect(sendCall[2]).not.toHaveProperty('cwd');
+  });
+
+  it('extracts permissionMode from __bindingPermissions payload enrichment', async () => {
+    // Purpose: Validates the fix for hardcoded permissionMode: 'default'. When BindingRouter
+    // enriches the payload with __bindingPermissions, the CCA must extract permissionMode
+    // and pass it to both ensureSession() and sendMessage().
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({
+      payload: {
+        content: 'Run the report',
+        __bindingPermissions: {
+          canReply: true,
+          canInitiate: true,
+          permissionMode: 'bypassPermissions',
+        },
+      },
+    });
+
+    await adapter.deliver(envelope.subject, envelope);
+
+    const ensureCall = vi.mocked(agentManager.ensureSession).mock.calls[0];
+    expect(ensureCall[1]).toEqual(
+      expect.objectContaining({ permissionMode: 'bypassPermissions' }),
+    );
+
+    const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
+    expect(sendCall[2]).toEqual(
+      expect.objectContaining({ permissionMode: 'bypassPermissions' }),
+    );
   });
 
   it('uses context.agent.directory when Mesh context is provided', async () => {

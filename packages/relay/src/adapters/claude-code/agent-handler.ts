@@ -70,15 +70,20 @@ export async function handleAgentMessage(
     sentAt: Date.now(), deliveredAt: null, processedAt: null, error: null,
   });
 
+  // Extract binding-enriched fields from payload
+  const payloadObj = typeof envelope.payload === 'object' && envelope.payload !== null
+    ? (envelope.payload as Record<string, unknown>) : null;
+  const bindingPerms = payloadObj?.__bindingPermissions as
+    { permissionMode?: string } | undefined;
+
   // Resolve CWD: payload cwd > Mesh agent context directory > deferred
-  const payloadCwd = typeof envelope.payload === 'object' && envelope.payload !== null
-    ? ((envelope.payload as Record<string, unknown>).cwd as string | undefined)
-    : undefined;
+  const payloadCwd = payloadObj?.cwd as string | undefined;
   const effectiveCwd = payloadCwd ?? context?.agent?.directory;
+  const effectivePermissionMode = bindingPerms?.permissionMode ?? 'default';
   log.debug?.(
     `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
     `payloadCwd=${payloadCwd ?? '(none)'}, context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
-    `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}`,
+    `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}, permissionMode=${effectivePermissionMode}`,
   );
 
   // Only mark hasStarted when we have a real SDK session ID from the persistent
@@ -86,7 +91,7 @@ export async function handleAgentMessage(
   // generated UUID (which the SDK never assigned), causing a "No conversation
   // found" error before the self-healing retry creates a fresh session.
   deps.agentManager.ensureSession(ccaSessionKey, {
-    permissionMode: 'default',
+    permissionMode: effectivePermissionMode,
     hasStarted: !!persistedSdkSessionId,
     ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
   });
@@ -97,8 +102,6 @@ export async function handleAgentMessage(
   }
 
   // Skip StreamEvent payloads to prevent infinite loops
-  const payloadObj = typeof envelope.payload === 'object' && envelope.payload !== null
-    ? (envelope.payload as Record<string, unknown>) : null;
   if (payloadObj?.type && STREAM_EVENT_TYPES.has(payloadObj.type as string)) {
     log.debug?.(`[CCA] skipping sendMessage for StreamEvent payload type=${String(payloadObj.type)}`);
     deps.traceStore.updateSpan(envelope.id, { status: 'processed', processedAt: Date.now() });
@@ -114,6 +117,7 @@ export async function handleAgentMessage(
   const timeout = setTimeout(() => controller.abort(), ttlRemaining > 0 ? ttlRemaining : config.defaultTimeoutMs);
   const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
   const eventStream = deps.agentManager.sendMessage(ccaSessionKey, prompt, {
+    permissionMode: effectivePermissionMode,
     ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
   });
 
