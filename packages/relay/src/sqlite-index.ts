@@ -28,6 +28,8 @@ export interface IndexedMessage {
   status: MessageStatus;
   createdAt: string;
   expiresAt: string | null;
+  /** The sender identity (e.g. `relay.human.slack.bot`). Nullable for legacy rows. */
+  sender?: string | null;
 }
 
 /** @deprecated Use `Db` from `@dorkos/db` instead. */
@@ -84,6 +86,7 @@ export class SqliteIndex {
         status: message.status,
         createdAt: message.createdAt,
         expiresAt: message.expiresAt,
+        sender: message.sender ?? null,
       })
       .onConflictDoUpdate({
         target: relayIndex.id,
@@ -93,6 +96,7 @@ export class SqliteIndex {
           status: message.status,
           createdAt: message.createdAt,
           expiresAt: message.expiresAt,
+          sender: message.sender ?? null,
         },
       })
       .run();
@@ -164,19 +168,23 @@ export class SqliteIndex {
   }
 
   /**
-   * Count messages sent within a time window by filtering on createdAt.
-   * Used by the rate limiter for sliding window log checks.
+   * Count messages from a specific sender within a time window.
+   * Used by the rate limiter for per-sender sliding window log checks.
    *
-   * @param sender - Unused (retained for API compatibility). Rate limiting
-   *        is now done at the RelayCore level before indexing.
+   * @param sender - The sender identity to filter by (e.g. `relay.human.slack.bot`).
    * @param windowStartIso - ISO 8601 timestamp marking the start of the window.
-   * @returns The number of messages after the window start.
+   * @returns The number of messages from this sender after the window start.
    */
-  countSenderInWindow(_sender: string, windowStartIso: string): number {
+  countSenderInWindow(sender: string, windowStartIso: string): number {
     const rows = this.db
       .select({ cnt: count() })
       .from(relayIndex)
-      .where(sql`${relayIndex.createdAt} > ${windowStartIso}`)
+      .where(
+        and(
+          sql`${relayIndex.createdAt} > ${windowStartIso}`,
+          eq(relayIndex.sender, sender),
+        ),
+      )
       .all();
     return rows[0]?.cnt ?? 0;
   }
@@ -230,6 +238,9 @@ export class SqliteIndex {
       conditions.push(
         eq(relayIndex.status, filters.status as 'pending' | 'delivered' | 'failed'),
       );
+    }
+    if (filters?.sender) {
+      conditions.push(eq(relayIndex.sender, filters.sender));
     }
     if (filters?.endpointHash) {
       conditions.push(eq(relayIndex.endpointHash, filters.endpointHash));
@@ -437,6 +448,7 @@ function mapRow(row: typeof relayIndex.$inferSelect): IndexedMessage {
     status: row.status as MessageStatus,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
+    sender: row.sender,
   };
 }
 

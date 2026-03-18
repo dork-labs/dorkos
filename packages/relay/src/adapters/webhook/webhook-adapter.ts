@@ -238,9 +238,16 @@ export class WebhookAdapter extends BaseRelayAdapter {
         responseContext: { platform: 'webhook' },
       };
 
-      await this.relay.publish(this.config.inbound.subject, payload, {
+      const result = await this.relay.publish(this.config.inbound.subject, payload, {
         from: `relay.webhook.${this.id}`,
       });
+
+      // Check for rejected publishes (e.g. rate-limited)
+      if (result.deliveredTo === 0 && result.rejected?.length) {
+        const reason = result.rejected[0]?.reason ?? 'unknown';
+        this.recordError(new Error(`Publish rejected: ${reason}`));
+        return { ok: false, error: `Publish rejected: ${reason}` };
+      }
 
       this.trackInbound();
       return { ok: true };

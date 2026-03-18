@@ -29,6 +29,7 @@ import type {
   AdapterContext,
   DeliveryResult,
   TraceStoreLike,
+  RelayLogger,
 } from './types.js';
 
 // === Types ===
@@ -73,6 +74,7 @@ export interface PublishDeps {
   adapterDelivery: AdapterDelivery;
   adapterRegistry?: AdapterRegistryLike;
   traceStore?: TraceStoreLike;
+  logger?: RelayLogger;
 }
 
 // === Private Helpers ===
@@ -182,6 +184,11 @@ export class RelayPublishPipeline {
       );
       const rateLimitResult = checkRateLimit(options.from, countInWindow, this.rateLimitConfig);
       if (!rateLimitResult.allowed) {
+        this.deps.logger?.warn?.(
+          `publish rate-limited: sender=${options.from}, ` +
+            `count=${rateLimitResult.currentCount}/${rateLimitResult.limit} ` +
+            `in ${this.rateLimitConfig.windowSecs}s window, subject=${subject}`,
+        );
         return {
           messageId: '',
           deliveredTo: 0,
@@ -208,7 +215,21 @@ export class RelayPublishPipeline {
       payload,
     };
 
-    // 5-9. Deliver, dead-letter, and trace
+    // 5. Index for rate-limit counting (before fan-out so every published
+    //    message is tracked regardless of delivery path)
+    this.deps.sqliteIndex.insertMessage({
+      id: messageId,
+      subject,
+      endpointHash: '*', // placeholder — not a Maildir endpoint
+      status: 'delivered',
+      createdAt: envelope.createdAt,
+      expiresAt: envelope.budget.ttl
+        ? new Date(envelope.budget.ttl).toISOString()
+        : null,
+      sender: options.from,
+    });
+
+    // 6-10. Deliver, dead-letter, and trace
     return this.deliverAndFinalize(envelope, subject, options, messageId);
   }
 

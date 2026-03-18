@@ -30,6 +30,7 @@ function makeMessage(overrides: Partial<IndexedMessage> = {}): IndexedMessage {
     status: 'pending',
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    sender: null,
     ...overrides,
   };
 }
@@ -446,34 +447,63 @@ describe('getMetrics', () => {
 // ---------------------------------------------------------------------------
 
 describe('countSenderInWindow', () => {
+  const SENDER_A = 'relay.human.slack.bot';
+  const SENDER_B = 'agent:myproject.backend';
+
   it('returns 0 for no matching messages', () => {
-    const count = index.countSenderInWindow('unused', '2020-01-01T00:00:00.000Z');
+    const count = index.countSenderInWindow(SENDER_A, '2020-01-01T00:00:00.000Z');
     expect(count).toBe(0);
   });
 
-  it('counts messages after the window start', () => {
+  it('counts messages from a specific sender after the window start', () => {
     index.insertMessage(
-      makeMessage({ id: 'a1', createdAt: '2026-01-15T10:00:00.000Z' }),
+      makeMessage({ id: 'a1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A }),
     );
     index.insertMessage(
-      makeMessage({ id: 'a2', createdAt: '2026-01-15T10:01:00.000Z' }),
+      makeMessage({ id: 'a2', createdAt: '2026-01-15T10:01:00.000Z', sender: SENDER_A }),
     );
 
-    const count = index.countSenderInWindow('unused', '2026-01-01T00:00:00.000Z');
+    const count = index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z');
     expect(count).toBe(2);
+  });
+
+  it('filters by sender — does not count messages from other senders', () => {
+    index.insertMessage(
+      makeMessage({ id: 'a1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A }),
+    );
+    index.insertMessage(
+      makeMessage({ id: 'b1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_B }),
+    );
+    index.insertMessage(
+      makeMessage({ id: 'b2', createdAt: '2026-01-15T10:01:00.000Z', sender: SENDER_B }),
+    );
+
+    expect(index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z')).toBe(1);
+    expect(index.countSenderInWindow(SENDER_B, '2026-01-01T00:00:00.000Z')).toBe(2);
   });
 
   it('filters by window start time', () => {
     index.insertMessage(
-      makeMessage({ id: 'old', createdAt: '2026-01-10T00:00:00.000Z' }),
+      makeMessage({ id: 'old', createdAt: '2026-01-10T00:00:00.000Z', sender: SENDER_A }),
     );
     index.insertMessage(
-      makeMessage({ id: 'recent', createdAt: '2026-01-15T12:00:00.000Z' }),
+      makeMessage({ id: 'recent', createdAt: '2026-01-15T12:00:00.000Z', sender: SENDER_A }),
     );
 
     // Window starts after the old message
-    const count = index.countSenderInWindow('unused', '2026-01-12T00:00:00.000Z');
+    const count = index.countSenderInWindow(SENDER_A, '2026-01-12T00:00:00.000Z');
     expect(count).toBe(1);
+  });
+
+  it('ignores messages with null sender', () => {
+    index.insertMessage(
+      makeMessage({ id: 'no-sender', createdAt: '2026-01-15T10:00:00.000Z' }),
+    );
+    index.insertMessage(
+      makeMessage({ id: 'has-sender', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A }),
+    );
+
+    expect(index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z')).toBe(1);
   });
 });
 

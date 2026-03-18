@@ -173,10 +173,19 @@ export async function handleInboundMessage(
   };
 
   try {
-    await relay.publish(subject, payload, {
+    const result = await relay.publish(subject, payload, {
       from: `${SUBJECT_PREFIX}.bot`,
       replyTo: subject,
     });
+
+    // Check for rejected publishes (e.g. rate-limited) before tracking
+    if (result.deliveredTo === 0 && result.rejected?.length) {
+      const reason = result.rejected[0]?.reason ?? 'unknown';
+      callbacks.recordError(new Error(`Publish rejected: ${reason}`));
+      logger.warn(`inbound publish rejected for chat ${chat.id}: ${reason}`);
+      return;
+    }
+
     callbacks.trackInbound();
     logger.debug(`inbound from ${senderName} in chat ${chat.id}: "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}" (${text.length} chars) → ${subject}`);
   } catch (err) {

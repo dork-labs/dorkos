@@ -15,6 +15,7 @@ export const relayIndex = sqliteTable('relay_index', {
     .notNull()
     .default('pending'),
   expiresAt: text('expires_at'), // was: ttl INTEGER (Unix ms)
+  sender: text('sender'),
   payload: text('payload'),
   metadata: text('metadata'),
   createdAt: text('created_at').notNull(),

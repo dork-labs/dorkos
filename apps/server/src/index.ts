@@ -131,7 +131,7 @@ async function start() {
       traceStore = new TraceStore(db);
       logger.info('[Relay] TraceStore initialized');
 
-      relayCore = new RelayCore({ dataDir: relayDataDir, adapterRegistry, db, traceStore });
+      relayCore = new RelayCore({ dataDir: relayDataDir, adapterRegistry, db, traceStore, logger });
       await relayCore.registerEndpoint('relay.system.console');
       logger.info(`[Relay] RelayCore initialized (dataDir: ${relayDataDir})`);
     } catch (err) {

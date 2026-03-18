@@ -185,6 +185,7 @@ export class RelayCore {
         adapterDelivery,
         adapterRegistry: options?.adapterRegistry,
         traceStore: options?.traceStore,
+        logger: options?.logger,
       },
       {
         maxHops: options?.maxHops ?? DEFAULT_MAX_HOPS,

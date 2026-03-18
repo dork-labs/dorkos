@@ -174,6 +174,11 @@ export interface RelayOptions {
    */
   adapterContextBuilder?: (subject: string) => AdapterContext | undefined;
   /**
+   * Optional logger for the relay subsystem.
+   * When provided, the publish pipeline logs rate-limit rejections and other diagnostics.
+   */
+  logger?: RelayLogger;
+  /**
    * TTL for dispatch inboxes in milliseconds.
    * Dispatch inboxes older than this are swept automatically.
    * Default: 30 * 60 * 1000 (30 minutes)
