@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Move platform formatting rules into adapters
 - Eliminate DRY violations, enforce file size limits, and instance-scope mutable state
 
 ### Fixed

@@ -888,4 +888,129 @@ describe('ClaudeCodeAdapter', () => {
       expect(warnCalls).toHaveLength(0);
     });
   });
+
+  // === Platform formatting awareness (responseContext → systemPromptAppend) ===
+
+  describe('platform formatting awareness', () => {
+    it('passes systemPromptAppend with Slack formatting rules when responseContext includes formattingInstructions', async () => {
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({
+        payload: {
+          content: 'List programming languages',
+          responseContext: {
+            platform: 'slack',
+            maxLength: 4000,
+            supportedFormats: ['text', 'mrkdwn'],
+            formattingInstructions: 'FORMATTING RULES (you MUST follow these):\n- Do NOT use Markdown tables',
+          },
+        },
+      });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
+      const opts = sendArgs[2] as { systemPromptAppend?: string };
+      expect(opts.systemPromptAppend).toBeDefined();
+      expect(opts.systemPromptAppend).toContain('<response_format>');
+      expect(opts.systemPromptAppend).toContain('Platform: slack');
+      expect(opts.systemPromptAppend).toContain('Do NOT use Markdown tables');
+      expect(opts.systemPromptAppend).toContain('4000');
+    });
+
+    it('passes systemPromptAppend with Telegram formatting rules from formattingInstructions', async () => {
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({
+        payload: {
+          content: 'List programming languages',
+          responseContext: {
+            platform: 'telegram',
+            maxLength: 4096,
+            supportedFormats: ['text', 'markdown'],
+            formattingInstructions: 'FORMATTING RULES (you MUST follow these):\n- Do NOT use Markdown tables',
+          },
+        },
+      });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
+      const opts = sendArgs[2] as { systemPromptAppend?: string };
+      expect(opts.systemPromptAppend).toBeDefined();
+      expect(opts.systemPromptAppend).toContain('Platform: telegram');
+      expect(opts.systemPromptAppend).toContain('Do NOT use Markdown tables');
+      expect(opts.systemPromptAppend).toContain('4096');
+    });
+
+    it('passes through third-party platform formattingInstructions without modification', async () => {
+      await adapter.start(relay);
+      const customRules = 'Use Discord-flavored markdown.\n- Spoiler tags: ||text||';
+      const envelope = createTestEnvelope({
+        payload: {
+          content: 'Hello',
+          responseContext: {
+            platform: 'discord',
+            maxLength: 2000,
+            formattingInstructions: customRules,
+          },
+        },
+      });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
+      const opts = sendArgs[2] as { systemPromptAppend?: string };
+      expect(opts.systemPromptAppend).toBeDefined();
+      expect(opts.systemPromptAppend).toContain('Platform: discord');
+      expect(opts.systemPromptAppend).toContain(customRules);
+      expect(opts.systemPromptAppend).toContain('2000');
+    });
+
+    it('falls back to generic hint when supportedFormats lacks markdown and no formattingInstructions', async () => {
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({
+        payload: {
+          content: 'Hello',
+          responseContext: {
+            platform: 'sms',
+            supportedFormats: ['text'],
+          },
+        },
+      });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
+      const opts = sendArgs[2] as { systemPromptAppend?: string };
+      expect(opts.systemPromptAppend).toBeDefined();
+      expect(opts.systemPromptAppend).toContain('Platform: sms');
+      expect(opts.systemPromptAppend).toContain('Avoid complex Markdown formatting');
+    });
+
+    it('does not include systemPromptAppend when no responseContext is present', async () => {
+      await adapter.start(relay);
+      const envelope = createTestEnvelope(); // no responseContext
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
+      const opts = sendArgs[2] as Record<string, unknown>;
+      expect(opts).not.toHaveProperty('systemPromptAppend');
+    });
+
+    it('does not include systemPromptAppend when responseContext has no platform', async () => {
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({
+        payload: {
+          content: 'Hello',
+          responseContext: { maxLength: 4000 },
+        },
+      });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
+      const opts = sendArgs[2] as Record<string, unknown>;
+      expect(opts).not.toHaveProperty('systemPromptAppend');
+    });
+  });
 });

@@ -28,6 +28,14 @@ export interface AgentHandlerConfig {
   defaultTimeoutMs: number;
 }
 
+/** Platform response context set by inbound chat adapters (Slack, Telegram, third-party). */
+interface ResponseContext {
+  platform?: string;
+  maxLength?: number;
+  supportedFormats?: string[];
+  formattingInstructions?: string;
+}
+
 /** StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard). */
 const STREAM_EVENT_TYPES = new Set([
   'text_delta', 'tool_call_start', 'tool_call_end', 'tool_call_delta',
@@ -81,6 +89,8 @@ export async function handleAgentMessage(
     ? (envelope.payload as Record<string, unknown>) : null;
   const bindingPerms = payloadObj?.__bindingPermissions as
     { permissionMode?: string } | undefined;
+  const responseContext = payloadObj?.responseContext as
+    ResponseContext | undefined;
 
   // Resolve CWD: payload cwd > Mesh agent context directory > deferred
   const payloadCwd = payloadObj?.cwd as string | undefined;
@@ -116,6 +126,7 @@ export async function handleAgentMessage(
 
   const correlationId = payloadObj?.correlationId as string | undefined;
   const prompt = formatPromptWithContext(extractPayloadContent(envelope.payload), envelope, agentId, ccaSessionKey);
+  const formatBlock = buildResponseFormatBlock(responseContext);
 
   // Set up timeout from TTL budget
   const ttlRemaining = envelope.budget.ttl - Date.now();
@@ -125,6 +136,7 @@ export async function handleAgentMessage(
   const eventStream = deps.agentManager.sendMessage(ccaSessionKey, prompt, {
     permissionMode: effectivePermissionMode,
     ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+    ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
   });
 
   let eventCount = 0, collectedText = '', stepCounter = 0, messageBuffer = '';
@@ -220,6 +232,37 @@ function extractAgentId(subject: string): string | null {
   const segments = subject.split('.');
   if (segments.length < 3 || segments[0] !== 'relay' || segments[1] !== 'agent') return null;
   return segments[2] || null;
+}
+
+/**
+ * Build a `<response_format>` system prompt block from platform response context.
+ *
+ * The function is a thin wrapper: it adds a platform header and passes through
+ * whatever formatting instructions the adapter provided. When no adapter-supplied
+ * `formattingInstructions` are present, a generic fallback is used for platforms
+ * that don't support Markdown.
+ *
+ * Returns an empty string when no platform context is available, so the agent
+ * behaves identically to today for non-adapter message sources.
+ *
+ * @internal Exported for testing only.
+ */
+export function buildResponseFormatBlock(ctx: ResponseContext | undefined): string {
+  if (!ctx?.platform) return '';
+
+  const lines = [
+    `Platform: ${ctx.platform}`,
+    ctx.maxLength ? `Maximum response length: ${ctx.maxLength} characters` : '',
+  ];
+
+  if (ctx.formattingInstructions) {
+    lines.push('', ctx.formattingInstructions);
+  } else if (ctx.supportedFormats && !ctx.supportedFormats.includes('markdown')) {
+    lines.push('', 'FORMATTING RULES (you MUST follow these):');
+    lines.push('- Avoid complex Markdown formatting (tables, headings) — use plain text with bullet points.');
+  }
+
+  return `<response_format>\n${lines.filter(Boolean).join('\n')}\n</response_format>`;
 }
 
 /** Format the user prompt with a <relay_context> XML block. */

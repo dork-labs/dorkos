@@ -30,7 +30,7 @@ export interface AgentRuntimeLike {
   sendMessage(
     sessionId: string,
     content: string,
-    opts?: { permissionMode?: string; cwd?: string },
+    opts?: { permissionMode?: string; cwd?: string; systemPromptAppend?: string },
   ): AsyncGenerator<StreamEvent>;
   /**
    * Get the SDK-assigned session UUID for a given session key.

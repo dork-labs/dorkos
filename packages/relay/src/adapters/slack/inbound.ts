@@ -27,6 +27,17 @@ export const MAX_MESSAGE_LENGTH = 4000;
 /** Maximum inbound message content length (32 KB). */
 export const MAX_CONTENT_LENGTH = 32_768;
 
+/** Slack-specific formatting rules injected into agent system prompts via responseContext. */
+const SLACK_FORMATTING_RULES = [
+  'FORMATTING RULES (you MUST follow these):',
+  '- Do NOT use Markdown tables (| col | col |). Slack cannot render them.',
+  '- For structured data: use bullet points, numbered lists, or bold key-value pairs.',
+  '- Example: instead of a table, write "*Name*: Alice\\n*Role*: Engineer"',
+  '- Use *bold* (single asterisk), _italic_ (underscore), `code`, ```code blocks```.',
+  '- Do NOT use ## headings — Slack ignores them. Use *bold text* for section titles.',
+  `- Keep responses concise. Slack messages over ${MAX_MESSAGE_LENGTH} characters are truncated.`,
+].join('\n');
+
 /** Message subtypes to skip (non-user-generated events). */
 const SKIP_SUBTYPES = new Set([
   'channel_join',
@@ -284,6 +295,7 @@ export async function handleInboundMessage(
       maxLength: MAX_MESSAGE_LENGTH,
       supportedFormats: ['text', 'mrkdwn'],
       instructions: `Reply to subject ${subject} to respond to this Slack message.`,
+      formattingInstructions: SLACK_FORMATTING_RULES,
     },
     platformData: {
       channelId: event.channel,

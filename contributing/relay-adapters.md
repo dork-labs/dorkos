@@ -345,6 +345,7 @@ interface StandardPayload {
     maxLength: number;                   // 4096 for Telegram
     supportedFormats: string[];
     instructions: string;
+    formattingInstructions: string;      // Telegram-specific formatting rules for agent system prompts
   };
   platformData: {
     chatId: number;
@@ -407,6 +408,7 @@ interface StandardPayload {
     maxLength: number;                // 4000 for Slack
     supportedFormats: string[];       // ['text', 'mrkdwn']
     instructions: string;
+    formattingInstructions: string;   // Slack-specific formatting rules for agent system prompts
   };
   platformData: {
     channelId: string;
@@ -1264,6 +1266,28 @@ export class DiscordAdapter extends BaseRelayAdapter {
 4. **`deliver()`**: Extract recipient from subject, send message, return `DeliveryResult`
 5. **`trackInbound()` / `trackOutbound()`**: Call base class helpers to increment message counts
 6. **Error handling**: Call `this.recordError(err)` to update status; never throw during `_stop()`
+
+### Platform Formatting Instructions
+
+When publishing inbound messages, adapters should include `formattingInstructions` in the `responseContext` to tell agents how to format their responses for the target platform. The Claude Code adapter passes these instructions through to the agent's system prompt without modification — it has no knowledge of specific platforms.
+
+```typescript
+responseContext: {
+  platform: 'discord',
+  maxLength: 2000,
+  supportedFormats: ['text', 'markdown'],
+  instructions: `Reply to subject ${subject} to respond.`,
+  formattingInstructions: [
+    'FORMATTING RULES (you MUST follow these):',
+    '- Use Discord-flavored markdown: **bold**, *italic*, `code`, ```code blocks```.',
+    '- Spoiler tags: ||text||. Block quotes: > text.',
+    '- Do NOT use tables or headings — Discord ignores them.',
+    '- Keep responses under 2000 characters.',
+  ].join('\n'),
+},
+```
+
+If `formattingInstructions` is omitted, the agent handler falls back to a generic hint when `supportedFormats` does not include `'markdown'`. For platforms that support standard Markdown, no fallback is applied.
 
 ## Instance-Scoped State
 

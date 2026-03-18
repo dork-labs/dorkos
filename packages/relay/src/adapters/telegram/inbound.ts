@@ -30,6 +30,16 @@ const UNKNOWN_SENDER = 'unknown';
 /** Maximum inbound message content length (32 KB). */
 export const MAX_CONTENT_LENGTH = 32_768;
 
+/** Telegram-specific formatting rules injected into agent system prompts via responseContext. */
+const TELEGRAM_FORMATTING_RULES = [
+  'FORMATTING RULES (you MUST follow these):',
+  '- Do NOT use Markdown tables. Telegram cannot render them.',
+  '- For structured data: use bullet points or bold key-value pairs.',
+  '- Use **bold**, _italic_, `code`, ```code blocks```, and [links](url).',
+  '- Telegram supports HTML subset: headings are not supported, use bold instead.',
+  `- Keep responses concise. Messages over ${MAX_MESSAGE_LENGTH} characters are split.`,
+].join('\n');
+
 // === Helpers ===
 
 /**
@@ -151,6 +161,7 @@ export async function handleInboundMessage(
       maxLength: MAX_MESSAGE_LENGTH,
       supportedFormats: ['text', 'markdown'],
       instructions: `Reply to subject ${subject} to respond to this Telegram message.`,
+      formattingInstructions: TELEGRAM_FORMATTING_RULES,
     },
     platformData: {
       chatId: chat.id,

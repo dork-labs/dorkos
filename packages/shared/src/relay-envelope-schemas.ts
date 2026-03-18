@@ -78,6 +78,7 @@ export const ResponseContextSchema = z
     maxLength: z.number().int().optional(),
     supportedFormats: z.array(z.string()).optional(),
     instructions: z.string().optional(),
+    formattingInstructions: z.string().optional(),
   })
   .openapi('ResponseContext');
 
