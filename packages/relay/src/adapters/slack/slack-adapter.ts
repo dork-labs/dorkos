@@ -303,6 +303,7 @@ export class SlackAdapter extends BaseRelayAdapter {
     }
     this.botUserId = '';
     this.streamState.clear();
+    clearAllApprovalTimeouts(this.outboundState);
     clearCaches();
   }
 
