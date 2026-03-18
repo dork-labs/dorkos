@@ -42,6 +42,19 @@ export interface AgentRuntimeLike {
    * @returns The SDK session UUID, or undefined if the session does not exist
    */
   getSdkSessionId(sessionId: string): string | undefined;
+
+  /**
+   * Resolve a pending tool approval interaction.
+   *
+   * Called by the CCA adapter's approval handler when a chat adapter user
+   * clicks Approve or Deny on a tool approval card.
+   *
+   * @param sessionId - The session key (ccaSessionKey)
+   * @param toolCallId - The tool call to approve/deny
+   * @param approved - Whether to approve (true) or deny (false)
+   * @returns false if the session or pending interaction was not found
+   */
+  approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean;
 }
 
 /**

@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 145,
+  "nextNumber": 146,
   "specs": [
+    {
+      "number": 145,
+      "slug": "slack-tool-approval",
+      "title": "Interactive Tool Approval via Chat Adapter Buttons",
+      "created": "2026-03-18",
+      "status": "ideation"
+    },
     {
       "number": 1,
       "slug": "claude-code-webui-api",
@@ -1025,7 +1032,14 @@
       "title": "Data Path Debug Toggles",
       "created": "2026-03-17",
       "status": "specified"
+    },
+    {
+      "number": 147,
+      "slug": "relay-adapter-event-whitelist",
+      "title": "Relay Adapter Event Whitelist Overhaul",
+      "created": "2026-03-17",
+      "status": "specification"
     }
   ],
-  "nextNumber": 147
+  "nextNumber": 148
 }

@@ -10,7 +10,8 @@
  */
 import type { WebClient } from '@slack/web-api';
 import type { StandardPayload } from '@dorkos/shared/relay-schemas';
-import type { RelayPublisher, AdapterInboundCallbacks } from '../../types.js';
+import type { RelayPublisher, AdapterInboundCallbacks, RelayLogger } from '../../types.js';
+import { noopLogger } from '../../types.js';
 
 // === Constants ===
 
@@ -227,6 +228,7 @@ export function clearCaches(): void {
  * @param relay - The relay publisher
  * @param botUserId - The bot's own user ID for echo prevention
  * @param callbacks - Callbacks to mutate adapter state
+ * @param logger - Optional relay logger for debug/warn output (defaults to silent)
  */
 export async function handleInboundMessage(
   event: SlackMessageEvent,
@@ -234,16 +236,29 @@ export async function handleInboundMessage(
   relay: RelayPublisher,
   botUserId: string,
   callbacks: AdapterInboundCallbacks,
+  logger: RelayLogger = noopLogger,
 ): Promise<void> {
   // Skip bot's own messages (echo prevention)
-  if (event.user === botUserId) return;
+  if (event.user === botUserId) {
+    logger.debug(`inbound skipped: echo (own user ${botUserId})`);
+    return;
+  }
 
   // Skip bot messages and non-user subtypes
-  if (event.bot_id) return;
-  if (event.subtype && SKIP_SUBTYPES.has(event.subtype)) return;
+  if (event.bot_id) {
+    logger.debug(`inbound skipped: bot message (bot_id=${event.bot_id})`);
+    return;
+  }
+  if (event.subtype && SKIP_SUBTYPES.has(event.subtype)) {
+    logger.debug(`inbound skipped: subtype '${event.subtype}'`);
+    return;
+  }
 
   // Skip messages without text content
-  if (!event.text) return;
+  if (!event.text) {
+    logger.debug(`inbound skipped: no text content in ${event.channel}`);
+    return;
+  }
 
   const isGroup = isGroupChannel(event.channel);
   const subject = buildSubject(event.channel, isGroup);
@@ -285,7 +300,9 @@ export async function handleInboundMessage(
       replyTo: subject,
     });
     callbacks.trackInbound();
+    logger.debug(`inbound from ${senderName} in ${event.channel}: "${content.slice(0, 80)}${content.length > 80 ? '\u2026' : ''}" (${content.length} chars) \u2192 ${subject}`);
   } catch (err) {
     callbacks.recordError(err);
+    logger.warn(`inbound publish failed for ${event.channel}:`, err instanceof Error ? err.message : String(err));
   }
 }

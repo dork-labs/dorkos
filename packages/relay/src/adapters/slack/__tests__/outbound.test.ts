@@ -57,23 +57,42 @@ vi.mock('../../../lib/payload-utils.js', () => {
       const data = obj.data as Record<string, unknown> | undefined;
       return typeof data?.message === 'string' ? data.message : null;
     },
+    extractApprovalData: (payload: unknown) => {
+      if (payload === null || typeof payload !== 'object') return null;
+      const obj = payload as Record<string, unknown>;
+      if (obj.type !== 'approval_required') return null;
+      const data = obj.data as Record<string, unknown> | undefined;
+      if (!data?.toolCallId || !data?.toolName) return null;
+      return {
+        toolCallId: data.toolCallId as string,
+        toolName: data.toolName as string,
+        input: (data.input as string) ?? '',
+        timeoutMs: (data.timeoutMs as number) ?? 600_000,
+      };
+    },
+    formatToolDescription: (toolName: string, input: string) => {
+      try {
+        const parsed = JSON.parse(input) as Record<string, unknown>;
+        if (toolName === 'Write' && typeof parsed.path === 'string') {
+          return `wants to write to \`${parsed.path}\``;
+        }
+        if (toolName === 'Edit' && typeof parsed.file_path === 'string') {
+          return `wants to edit \`${parsed.file_path}\``;
+        }
+        if (toolName === 'Bash' && typeof parsed.command === 'string') {
+          const cmd = parsed.command as string;
+          const preview = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
+          return `wants to run \`${preview}\``;
+        }
+      } catch {
+        // not JSON
+      }
+      return `wants to use tool \`${toolName}\``;
+    },
     truncateText: (text: string, maxLen: number) => {
       if (text.length <= maxLen) return text;
       return `${text.slice(0, maxLen - 3)}...`;
     },
-    SILENT_EVENT_TYPES: new Set([
-      'session_status',
-      'tool_call_start',
-      'tool_call_delta',
-      'tool_call_end',
-      'tool_result',
-      'approval_required',
-      'question_prompt',
-      'task_update',
-      'relay_receipt',
-      'message_delivered',
-      'relay_message',
-    ]),
     // Passthrough — no mrkdwn conversion applied in tests
     formatForPlatform: (content: string, _platform: string) => content,
   };
@@ -81,6 +100,9 @@ vi.mock('../../../lib/payload-utils.js', () => {
 
 const mockPostMessage = vi.fn().mockResolvedValue({ ts: 'msg-ts-1' });
 const mockChatUpdate = vi.fn().mockResolvedValue({ ts: 'msg-ts-1' });
+const mockStartStream = vi.fn().mockResolvedValue({ stream_id: 'stream-123' });
+const mockAppendStream = vi.fn().mockResolvedValue({ ok: true });
+const mockStopStream = vi.fn().mockResolvedValue({ ok: true });
 const mockReactionsAdd = vi.fn().mockResolvedValue({ ok: true });
 const mockReactionsRemove = vi.fn().mockResolvedValue({ ok: true });
 
@@ -92,7 +114,13 @@ const mockReactionsRemove = vi.fn().mockResolvedValue({ ok: true });
  */
 function buildMockClient(): WebClient {
   const stub = {
-    chat: { postMessage: mockPostMessage, update: mockChatUpdate },
+    chat: {
+      postMessage: mockPostMessage,
+      update: mockChatUpdate,
+      startStream: mockStartStream,
+      appendStream: mockAppendStream,
+      stopStream: mockStopStream,
+    },
     reactions: { add: mockReactionsAdd, remove: mockReactionsRemove },
   };
   return stub as unknown as WebClient;
@@ -132,6 +160,7 @@ function deliver(
   botUserId = 'UBOTID',
   streaming = true,
   typingIndicator: 'none' | 'reaction' = 'none',
+  nativeStreaming = false,
 ) {
   return deliverMessage({
     adapterId: 'slack',
@@ -142,6 +171,7 @@ function deliver(
     botUserId,
     callbacks,
     streaming,
+    nativeStreaming,
     typingIndicator,
   });
 }
@@ -719,6 +749,232 @@ describe('deliverMessage', () => {
 
       // Should post immediately (streaming mode)
       expect(mockPostMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('native streaming — chat.startStream/appendStream/stopStream', () => {
+    it('starts stream on first text_delta', async () => {
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Hello' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks, 'UBOTID', true, 'none', true);
+      expect(mockStartStream).toHaveBeenCalledWith(
+        expect.objectContaining({ channel: 'D123', thread_ts: '1234.0001' }),
+      );
+      expect(mockAppendStream).toHaveBeenCalledWith(
+        expect.objectContaining({ stream_id: 'stream-123', text: 'Hello' }),
+      );
+      expect(mockPostMessage).not.toHaveBeenCalled();
+    });
+
+    it('appends text on subsequent text_delta', async () => {
+      const delta1 = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Hello' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks, 'UBOTID', true, 'none', true);
+
+      const delta2 = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: ' world' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver('relay.human.slack.D123', delta2, client, streamState, callbacks, 'UBOTID', true, 'none', true);
+
+      expect(mockAppendStream).toHaveBeenCalledTimes(2);
+      expect(mockChatUpdate).not.toHaveBeenCalled();
+    });
+
+    it('stops stream on done', async () => {
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Hello' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks, 'UBOTID', true, 'none', true);
+
+      const done = createEnvelope('relay.human.slack.D123', {
+        type: 'done',
+        data: {},
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver('relay.human.slack.D123', done, client, streamState, callbacks, 'UBOTID', true, 'none', true);
+
+      expect(mockStopStream).toHaveBeenCalledWith(
+        expect.objectContaining({ stream_id: 'stream-123' }),
+      );
+    });
+
+    it('appends error and stops stream on error', async () => {
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Partial' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks, 'UBOTID', true, 'none', true);
+
+      const error = createEnvelope('relay.human.slack.D123', {
+        type: 'error',
+        data: { message: 'timeout' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver('relay.human.slack.D123', error, client, streamState, callbacks, 'UBOTID', true, 'none', true);
+
+      expect(mockAppendStream).toHaveBeenLastCalledWith(
+        expect.objectContaining({ stream_id: 'stream-123' }),
+      );
+      expect(mockStopStream).toHaveBeenCalled();
+    });
+
+    it('falls back to chat.postMessage when startStream fails', async () => {
+      mockStartStream.mockRejectedValueOnce(new Error('missing_scope'));
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Hello' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks, 'UBOTID', true, 'none', true);
+
+      // Should fall back to chat.postMessage
+      expect(mockPostMessage).toHaveBeenCalled();
+      expect(callbacks.recordError).toHaveBeenCalled();
+    });
+  });
+
+  describe('approval_required handling', () => {
+    it('renders Block Kit card with Approve and Deny buttons', async () => {
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_123',
+          toolName: 'Write',
+          input: '{"path":"src/index.ts","content":"hello"}',
+          timeoutMs: 600000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      const result = await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      expect(result.success).toBe(true);
+      const call = mockPostMessage.mock.calls[0][0];
+      expect(call.blocks).toHaveLength(3);
+      expect(call.blocks[2].elements).toHaveLength(2);
+      expect(call.blocks[2].elements[0].action_id).toBe('tool_approve');
+      expect(call.blocks[2].elements[1].action_id).toBe('tool_deny');
+      expect(call.blocks[2].block_id).toBe('tool_approval');
+    });
+
+    it('encodes only IDs in button value (no sensitive input)', async () => {
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_123',
+          toolName: 'Write',
+          input: '{"path":"src/index.ts","content":"top secret"}',
+          timeoutMs: 600000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      const call = mockPostMessage.mock.calls[0][0];
+      const value = JSON.parse(call.blocks[2].elements[0].value) as Record<string, unknown>;
+      expect(value).toEqual({
+        toolCallId: 'toolu_123',
+        sessionId: 'sess-abc',
+        agentId: 'agent-1',
+      });
+      // Tool input must NOT appear in button value
+      expect(JSON.stringify(value)).not.toContain('top secret');
+    });
+
+    it('truncates tool input preview to 500 chars in section block', async () => {
+      const longInput = 'a'.repeat(1000);
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_123',
+          toolName: 'Write',
+          input: longInput,
+          timeoutMs: 600000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      const call = mockPostMessage.mock.calls[0][0];
+      // Second block contains the input preview
+      const previewBlock = call.blocks[1] as { text: { text: string } };
+      // 500 chars + ``` fences — should be well within 600 chars
+      expect(previewBlock.text.text.length).toBeLessThanOrEqual(510);
+    });
+
+    it('threads the approval card when threadTs is present', async () => {
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_123',
+          toolName: 'Bash',
+          input: '{"command":"ls"}',
+          timeoutMs: 600000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+        platformData: { ts: '9999.0001' },
+      });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      const call = mockPostMessage.mock.calls[0][0];
+      expect(call.thread_ts).toBe('9999.0001');
+    });
+
+    it('falls through to whitelist drop when approval data is invalid (missing toolCallId)', async () => {
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: { toolName: 'Write' }, // missing toolCallId
+      });
+      const result = await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      expect(result.success).toBe(true); // silently dropped
+      expect(mockPostMessage).not.toHaveBeenCalled();
+    });
+
+    it('sets fallback text field for notification accessibility', async () => {
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_xyz',
+          toolName: 'Edit',
+          input: '{"file_path":"src/app.ts"}',
+          timeoutMs: 600000,
+          agentId: 'agent-2',
+          ccaSessionKey: 'sess-def',
+        },
+      });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      const call = mockPostMessage.mock.calls[0][0];
+      expect(typeof call.text).toBe('string');
+      expect(call.text).toContain('Edit');
+    });
+
+    it('first section block describes the tool action', async () => {
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_abc',
+          toolName: 'Write',
+          input: '{"path":"src/index.ts","content":"x"}',
+          timeoutMs: 600000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      const call = mockPostMessage.mock.calls[0][0];
+      const firstBlock = call.blocks[0] as { text: { text: string } };
+      expect(firstBlock.text.text).toContain('Write');
+      expect(firstBlock.text.text).toContain('wants to write to');
     });
   });
 });

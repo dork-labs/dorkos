@@ -85,6 +85,7 @@ export async function publishDispatchProgress(
  * @param relay - The relay publisher
  * @param log - Logger instance for diagnostics
  * @param correlationId - Optional correlation ID to echo for client-side event filtering
+ * @param enrichment - Optional enrichment data for approval events
  */
 export async function publishResponseWithCorrelation(
   originalEnvelope: RelayEnvelope,
@@ -93,6 +94,7 @@ export async function publishResponseWithCorrelation(
   relay: RelayPublisher,
   log: Pick<Console, 'warn'>,
   correlationId?: string,
+  enrichment?: { agentId?: string },
 ): Promise<void> {
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
@@ -101,8 +103,26 @@ export async function publishResponseWithCorrelation(
       hopCount: originalEnvelope.budget.hopCount + 1,
     },
   };
-  // Wrap event with correlationId so client can filter stale events
-  const payload = correlationId ? { ...event, correlationId } : event;
+
+  let payload: unknown;
+
+  // Enrich approval_required events with agent/session IDs so outbound
+  // adapters can encode them in interactive button values for the round-trip.
+  if (event.type === 'approval_required' && enrichment?.agentId) {
+    payload = {
+      ...event,
+      ...(correlationId ? { correlationId } : {}),
+      data: {
+        ...(event.data as Record<string, unknown>),
+        agentId: enrichment.agentId,
+        ccaSessionKey: fromId,
+      },
+    };
+  } else {
+    // Wrap event with correlationId so client can filter stale events
+    payload = correlationId ? { ...event, correlationId } : event;
+  }
+
   const result = await relay.publish(originalEnvelope.replyTo, payload, opts);
   if (result.deliveredTo === 0 && event.type !== 'done') {
     log.warn(

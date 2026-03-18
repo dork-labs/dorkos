@@ -1221,6 +1221,68 @@ export class DiscordAdapter extends BaseRelayAdapter {
 5. **`trackInbound()` / `trackOutbound()`**: Call base class helpers to increment message counts
 6. **Error handling**: Call `this.recordError(err)` to update status; never throw during `_stop()`
 
+## Tool Approval Events
+
+When an agent encounters a tool call requiring human approval (e.g., writing a file or running a command), the relay publishes an `approval_required` event. Chat adapters render platform-native approval UI -- Slack Block Kit buttons, Telegram inline keyboards -- and route user decisions back through the relay bus to the Claude Code adapter.
+
+### Event Flow
+
+1. The agent runtime emits an `approval_required` StreamEvent on the adapter's outbound subject (e.g., `relay.human.telegram.{chatId}`)
+2. The adapter's outbound module detects the event via `extractApprovalData()` from `payload-utils.ts`
+3. The adapter renders a platform-native approval prompt with Approve/Deny controls
+4. The user clicks Approve or Deny
+5. The adapter publishes an `approval_response` payload to `relay.system.approval.{agentId}`
+6. The CCA adapter's `approval-handler.ts` receives the response and calls `agentManager.approveTool(sessionId, toolCallId, approved)`
+
+### Key Utilities
+
+Three shared helpers in `packages/relay/src/lib/payload-utils.ts` handle the common parsing and formatting:
+
+```typescript
+import { extractApprovalData, formatToolDescription, type ApprovalData } from '../../lib/payload-utils.js';
+```
+
+| Utility | Purpose |
+|---|---|
+| `extractApprovalData(payload)` | Parses an `approval_required` StreamEvent payload and returns `ApprovalData` (with `toolCallId`, `toolName`, `input`, `timeoutMs`) or `null` if the payload is not an approval event. |
+| `formatToolDescription(toolName, input)` | Returns a human-readable summary of the tool action (e.g., ``wants to write to `src/index.ts` ``). Extracts context from common tool input patterns. |
+| `clearApprovalTimeout(id)` | Cancels a pending auto-deny timeout when the user responds before it fires. Each adapter's outbound module exports this. |
+
+### Approval Response Payload
+
+When the user clicks Approve or Deny, the adapter publishes this payload to `relay.system.approval.{agentId}`:
+
+```typescript
+{
+  type: 'approval_response',
+  toolCallId: string,    // From the original approval_required event
+  sessionId: string,     // The CCA session key
+  approved: boolean,     // true = Approve, false = Deny
+  respondedBy?: string,  // Platform user ID (e.g., Slack user ID)
+  platform?: string,     // 'slack', 'telegram', etc.
+}
+```
+
+### Platform Implementations
+
+**Slack** registers Bolt action handlers for `tool_approve` and `tool_deny` action IDs. Button clicks are acknowledged via `ack()`, the approval response is published, and the original message is updated to show the decision result with `chat.update`.
+
+**Telegram** registers a `callback_query:data` handler on the grammy bot. Inline keyboard button presses carry a compact JSON payload with a callback key that maps to the stored approval metadata via `callbackIdMap`. After publishing the response, the message is edited to show the result.
+
+### Implementing in a New Adapter
+
+To support tool approvals in a custom adapter:
+
+1. **Detect the event**: In your outbound delivery logic, use `extractApprovalData(envelope.payload)` to check if a message is an approval request. If it returns non-null, render approval UI instead of a plain text message.
+
+2. **Render approval controls**: Display the tool description (via `formatToolDescription`) and platform-native Approve/Deny buttons or controls. Store the `toolCallId`, `sessionId`, and `agentId` so you can reference them when the user responds.
+
+3. **Set a timeout**: Start a timer using `timeoutMs` from the `ApprovalData`. If the user does not respond before the timeout, the agent runtime auto-denies. You may want to update the UI to reflect expiry.
+
+4. **Handle the user response**: When the user clicks Approve or Deny, publish an `approval_response` payload (see schema above) to `relay.system.approval.{agentId}` and cancel the timeout. Update the approval UI to reflect the decision.
+
+5. **Clean up**: Remove any stored state for the approval (callback mappings, timers) after the response is published.
+
 ## Adapter Documentation
 
 Each built-in adapter can ship a `docs/setup.md` file containing a full setup guide rendered in the client's side-panel Sheet. Plugin adapters can provide equivalent content inline via their `getManifest()` return value.

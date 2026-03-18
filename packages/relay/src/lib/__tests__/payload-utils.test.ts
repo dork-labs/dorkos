@@ -5,7 +5,8 @@ import {
   extractTextDelta,
   extractErrorMessage,
   formatForPlatform,
-  SILENT_EVENT_TYPES,
+  extractApprovalData,
+  formatToolDescription,
 } from '../payload-utils.js';
 
 describe('extractPayloadContent', () => {
@@ -172,20 +173,95 @@ describe('extractErrorMessage', () => {
   });
 });
 
-describe('SILENT_EVENT_TYPES', () => {
-  it('contains expected event types', () => {
-    expect(SILENT_EVENT_TYPES.has('session_status')).toBe(true);
-    expect(SILENT_EVENT_TYPES.has('tool_call_start')).toBe(true);
-    expect(SILENT_EVENT_TYPES.has('tool_call_delta')).toBe(true);
-    expect(SILENT_EVENT_TYPES.has('tool_call_end')).toBe(true);
-    expect(SILENT_EVENT_TYPES.has('tool_result')).toBe(true);
-    expect(SILENT_EVENT_TYPES.has('task_update')).toBe(true);
+describe('extractApprovalData', () => {
+  it('returns approval data from valid approval_required payload', () => {
+    const payload = {
+      type: 'approval_required',
+      data: {
+        toolCallId: 'toolu_123',
+        toolName: 'Write',
+        input: '{"path":"src/index.ts","content":"hello"}',
+        timeoutMs: 600000,
+      },
+    };
+    const result = extractApprovalData(payload);
+    expect(result).toEqual({
+      toolCallId: 'toolu_123',
+      toolName: 'Write',
+      input: '{"path":"src/index.ts","content":"hello"}',
+      timeoutMs: 600000,
+    });
   });
 
-  it('does not contain content event types', () => {
-    expect(SILENT_EVENT_TYPES.has('text_delta')).toBe(false);
-    expect(SILENT_EVENT_TYPES.has('done')).toBe(false);
-    expect(SILENT_EVENT_TYPES.has('error')).toBe(false);
+  it('returns null for non-approval_required payload', () => {
+    expect(extractApprovalData({ type: 'text_delta', data: { text: 'hi' } })).toBeNull();
+  });
+
+  it('returns null for missing toolCallId', () => {
+    expect(extractApprovalData({ type: 'approval_required', data: { toolName: 'Write' } })).toBeNull();
+  });
+
+  it('returns null for missing toolName', () => {
+    expect(extractApprovalData({ type: 'approval_required', data: { toolCallId: 'x' } })).toBeNull();
+  });
+
+  it('returns null for null payload', () => {
+    expect(extractApprovalData(null)).toBeNull();
+  });
+
+  it('returns null for string payload', () => {
+    expect(extractApprovalData('hello')).toBeNull();
+  });
+
+  it('defaults input to empty string when missing', () => {
+    const result = extractApprovalData({
+      type: 'approval_required',
+      data: { toolCallId: 'x', toolName: 'Write' },
+    });
+    expect(result?.input).toBe('');
+  });
+
+  it('defaults timeoutMs to 600000 when missing', () => {
+    const result = extractApprovalData({
+      type: 'approval_required',
+      data: { toolCallId: 'x', toolName: 'Write' },
+    });
+    expect(result?.timeoutMs).toBe(600_000);
+  });
+});
+
+describe('formatToolDescription', () => {
+  it('describes Write tool with file path', () => {
+    expect(formatToolDescription('Write', '{"path":"src/index.ts","content":"x"}')).toBe(
+      'wants to write to `src/index.ts`',
+    );
+  });
+
+  it('describes Edit tool with file_path', () => {
+    expect(formatToolDescription('Edit', '{"file_path":"src/app.ts"}')).toBe(
+      'wants to edit `src/app.ts`',
+    );
+  });
+
+  it('describes Bash tool with short command', () => {
+    expect(formatToolDescription('Bash', '{"command":"ls -la"}')).toBe(
+      'wants to run `ls -la`',
+    );
+  });
+
+  it('truncates long Bash commands', () => {
+    const longCmd = 'a'.repeat(100);
+    const result = formatToolDescription('Bash', JSON.stringify({ command: longCmd }));
+    expect(result.length).toBeLessThan(80);
+    expect(result).toContain('...');
+  });
+
+  it('falls back to generic description for unknown tools', () => {
+    expect(formatToolDescription('CustomTool', '{}')).toBe('wants to use tool `CustomTool`');
+  });
+
+  it('falls back to generic description for non-JSON input', () => {
+    expect(formatToolDescription('Write', 'not json')).toBe('wants to use tool `Write`');
   });
 });
 

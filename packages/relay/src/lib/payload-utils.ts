@@ -49,21 +49,6 @@ export function truncateText(text: string, maxLen: number): string {
 
 // === StreamEvent helpers ===
 
-/** Known StreamEvent types that carry no user-visible text. */
-export const SILENT_EVENT_TYPES = new Set([
-  'session_status',
-  'tool_call_start',
-  'tool_call_delta',
-  'tool_call_end',
-  'tool_result',
-  'approval_required',
-  'question_prompt',
-  'task_update',
-  'relay_receipt',
-  'message_delivered',
-  'relay_message',
-]);
-
 /**
  * Check whether a payload looks like a StreamEvent from the agent SDK pipeline.
  *
@@ -106,6 +91,65 @@ export function extractErrorMessage(payload: unknown): string | null {
   if (obj.type !== 'error') return null;
   const data = obj.data as Record<string, unknown> | undefined;
   return typeof data?.message === 'string' ? data.message : null;
+}
+
+// === Tool approval helpers ===
+
+/** Parsed tool approval data from an approval_required StreamEvent. */
+export interface ApprovalData {
+  toolCallId: string;
+  toolName: string;
+  input: string;
+  timeoutMs: number;
+}
+
+/**
+ * Extract tool approval data from an approval_required StreamEvent payload.
+ *
+ * @param payload - The unknown payload to inspect
+ * @returns Parsed approval data, or null if the payload is not a valid approval_required event
+ */
+export function extractApprovalData(payload: unknown): ApprovalData | null {
+  if (payload === null || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  if (obj.type !== 'approval_required') return null;
+  const data = obj.data as Record<string, unknown> | undefined;
+  if (!data?.toolCallId || !data?.toolName) return null;
+  return {
+    toolCallId: data.toolCallId as string,
+    toolName: data.toolName as string,
+    input: (data.input as string) ?? '',
+    timeoutMs: (data.timeoutMs as number) ?? 600_000,
+  };
+}
+
+/**
+ * Format a human-readable description of a tool action.
+ *
+ * Extracts context from common tool input patterns (e.g., file paths for Write,
+ * commands for Bash) to produce a concise summary.
+ *
+ * @param toolName - The tool name (e.g., 'Write', 'Bash', 'Edit')
+ * @param input - The raw tool input string (often JSON)
+ */
+export function formatToolDescription(toolName: string, input: string): string {
+  try {
+    const parsed = JSON.parse(input) as Record<string, unknown>;
+    if (toolName === 'Write' && typeof parsed.path === 'string') {
+      return `wants to write to \`${parsed.path}\``;
+    }
+    if (toolName === 'Edit' && typeof parsed.file_path === 'string') {
+      return `wants to edit \`${parsed.file_path}\``;
+    }
+    if (toolName === 'Bash' && typeof parsed.command === 'string') {
+      const cmd = parsed.command as string;
+      const preview = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
+      return `wants to run \`${preview}\``;
+    }
+  } catch {
+    // input is not JSON — fall through to default
+  }
+  return `wants to use tool \`${toolName}\``;
 }
 
 // === Format conversion ===

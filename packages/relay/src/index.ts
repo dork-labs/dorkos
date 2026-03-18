@@ -92,6 +92,7 @@ export type { EndpointType } from './types.js';
 export type {
   RelayPublisher,
   RelayAdapter,
+  RelayLogger,
   AdapterStatus,
   AdapterConfig,
   AdapterContext,
@@ -104,6 +105,8 @@ export type {
   AdapterInboundCallbacks,
   AdapterOutboundCallbacks,
 } from './types.js';
+
+export { noopLogger } from './types.js';
 
 // Base class (optional convenience for adapter authors)
 export { BaseRelayAdapter } from './base-adapter.js';

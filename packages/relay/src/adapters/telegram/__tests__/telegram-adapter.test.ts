@@ -71,6 +71,8 @@ const mockBotCatch = vi.fn();
 
 /** Captured message handler registered via bot.on('message', handler) */
 let capturedMessageHandler: ((ctx: unknown) => Promise<void>) | null = null;
+/** Captured callback query handler registered via bot.on('callback_query:data', handler) */
+let capturedCallbackQueryHandler: ((ctx: unknown) => Promise<void>) | null = null;
 /** Captured error handler registered via bot.catch(handler) */
 let _capturedErrorHandler: ((err: unknown) => void) | null = null;
 /** Captured onStart callback from bot.start({ onStart }) */
@@ -90,8 +92,12 @@ vi.mock('grammy', () => {
 
     botInfo = { username: 'test_bot' };
 
-    on(_event: string, handler: (ctx: unknown) => Promise<void>) {
-      capturedMessageHandler = handler;
+    on(event: string, handler: (ctx: unknown) => Promise<void>) {
+      if (event === 'callback_query:data') {
+        capturedCallbackQueryHandler = handler;
+      } else {
+        capturedMessageHandler = handler;
+      }
     }
 
     catch(handler: (err: unknown) => void) {
@@ -217,6 +223,7 @@ describe('TelegramAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedMessageHandler = null;
+    capturedCallbackQueryHandler = null;
     _capturedErrorHandler = null;
     _capturedOnStart = null;
     lastMockServer = null;

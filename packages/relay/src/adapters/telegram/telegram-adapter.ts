@@ -13,11 +13,12 @@ import type { Server } from 'node:http';
 import type { Signal, AdapterManifest, RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
 import type {
-  RelayPublisher, AdapterContext,
+  RelayPublisher, AdapterContext, PublishOptions,
   DeliveryResult, TelegramAdapterConfig, Unsubscribe,
 } from '../../types.js';
 import { SUBJECT_PREFIX, handleInboundMessage } from './inbound.js';
-import { deliverMessage, handleTypingSignal, clearAllTypingIntervals } from './outbound.js';
+import { deliverMessage, handleTypingSignal, clearAllTypingIntervals, callbackIdMap, clearApprovalTimeout } from './outbound.js';
+import type { ResponseBuffer } from './outbound.js';
 import { startWebhookMode, stopWebhookServer } from './webhook.js';
 
 /** Static adapter manifest for the Telegram built-in adapter. */
@@ -83,6 +84,14 @@ For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).` }
       placeholder: 'Auto-generated if empty',
       description: 'Secret token for validating incoming webhook requests from Telegram.',
       showWhen: { field: 'mode', equals: 'webhook' } },
+    { key: 'streaming', label: 'Streaming', type: 'boolean', required: false,
+      description:
+        "Stream responses in real-time using Telegram's sendMessageDraft API (DMs only). Groups always use buffer-and-flush.",
+      visibleByDefault: true,
+      helpMarkdown:
+        'When enabled, recipients in DMs see text appearing in real-time (ChatGPT-style). ' +
+        'Group chats always use buffer-and-flush regardless of this setting. ' +
+        'Requires Telegram Bot API 9.5+.' },
   ],
   setupInstructions:
     'Open Telegram and search for @BotFather. Send /newbot, choose a name and username. Copy the token provided.',
@@ -105,7 +114,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
   private signalUnsub: Unsubscribe | null = null;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private responseBuffers = new Map<number, string>();
+  private responseBuffers = new Map<number, ResponseBuffer>();
 
   constructor(id: string, config: TelegramAdapterConfig, displayName = 'Telegram') {
     super(id, SUBJECT_PREFIX, displayName);
@@ -128,8 +137,49 @@ export class TelegramAdapter extends BaseRelayAdapter {
     const bot = new Bot(this.config.token);
     bot.api.config.use(autoRetry());
     bot.on('message', (ctx) =>
-      handleInboundMessage(ctx, relay, this.makeInboundCallbacks()),
+      handleInboundMessage(ctx, relay, this.makeInboundCallbacks(), this.logger),
     );
+
+    // Register callback query handler for tool approval inline keyboard buttons
+    bot.on('callback_query:data', async (ctx) => {
+      try {
+        const data = JSON.parse(ctx.callbackQuery.data) as { k: string; a: number };
+        const entry = callbackIdMap.get(data.k);
+
+        if (!entry) {
+          await ctx.answerCallbackQuery({ text: 'This approval has expired.' });
+          return;
+        }
+
+        const approved = data.a === 1;
+        callbackIdMap.delete(data.k);
+        clearApprovalTimeout(data.k);
+
+        // Publish approval response to relay bus
+        const opts: PublishOptions = { from: `telegram:${ctx.from.id}` };
+        await relay.publish(`relay.system.approval.${entry.agentId}`, {
+          type: 'approval_response',
+          toolCallId: entry.toolCallId,
+          sessionId: entry.sessionId,
+          approved,
+          respondedBy: String(ctx.from.id),
+          platform: 'telegram',
+        }, opts);
+
+        // Edit message to show decision result
+        const decision = approved ? 'Approved' : 'Denied';
+        const emoji = approved ? '\u2705' : '\u274C';
+        await ctx.editMessageText(`${emoji} *Tool ${decision}*`, { parse_mode: 'Markdown' });
+        await ctx.answerCallbackQuery({ text: `Tool ${decision}` });
+
+        this.logger.debug?.(`[Telegram] tool ${approved ? 'approved' : 'denied'}: toolCallId=${entry.toolCallId}`);
+      } catch (err) {
+        this.logger.error('[Telegram] callback query handler error:', err);
+        this.recordError(err);
+        await ctx.answerCallbackQuery({ text: 'Error processing approval.' }).catch(() => {});
+      }
+    });
+
     bot.catch((err) => this.recordError(err));
     this.bot = bot;
 
@@ -178,6 +228,8 @@ export class TelegramAdapter extends BaseRelayAdapter {
       bot: this.bot,
       responseBuffers: this.responseBuffers,
       callbacks: this.makeOutboundCallbacks(),
+      streaming: this.config.streaming ?? true,
+      logger: this.logger,
     });
   }
 
@@ -226,7 +278,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
       const newBot = new Bot(this.config.token);
       newBot.api.config.use(autoRetry());
       newBot.on('message', (ctx) =>
-        handleInboundMessage(ctx, this.relay!, this.makeInboundCallbacks()),
+        handleInboundMessage(ctx, this.relay!, this.makeInboundCallbacks(), this.logger),
       );
       newBot.catch((e) => this.recordError(e));
       this.bot = newBot;

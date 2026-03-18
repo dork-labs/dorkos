@@ -41,6 +41,7 @@ export const TelegramAdapterConfigSchema = z
     webhookUrl: z.string().url().optional(),
     webhookPort: z.number().int().positive().optional(),
     webhookSecret: z.string().min(1).optional(),
+    streaming: z.boolean().default(true),
   })
   .openapi('TelegramAdapterConfig');
 
@@ -85,6 +86,7 @@ export const SlackAdapterConfigSchema = z
     appToken: z.string().min(1),
     signingSecret: z.string().min(1),
     streaming: z.boolean().default(true),
+    nativeStreaming: z.boolean().default(true),
     typingIndicator: z.enum(['none', 'reaction']).default('none'),
   })
   .openapi('SlackAdapterConfig');

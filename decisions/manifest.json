@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "nextNumber": 138,
+  "nextNumber": 141,
   "decisions": [
+    {
+      "number": 140,
+      "slug": "telegram-callback-id-lookup-map",
+      "title": "Use Ephemeral Lookup Map for Telegram Callback Data",
+      "status": "draft",
+      "created": "2026-03-18",
+      "extractedFrom": "slack-tool-approval",
+      "specSlug": "slack-tool-approval"
+    },
+    {
+      "number": 139,
+      "slug": "relay-bus-approval-routing",
+      "title": "Route Chat Adapter Approvals via Relay Message Bus",
+      "status": "draft",
+      "created": "2026-03-18",
+      "extractedFrom": "slack-tool-approval",
+      "specSlug": "slack-tool-approval"
+    },
+    {
+      "number": 138,
+      "slug": "whitelist-relay-adapter-event-filtering",
+      "title": "Whitelist Relay Adapter Event Filtering",
+      "status": "draft",
+      "created": "2026-03-17",
+      "extractedFrom": "relay-adapter-event-whitelist",
+      "specSlug": "relay-adapter-event-whitelist"
+    },
     {
       "number": 137,
       "slug": "unified-input-zone-for-interactive-cards",

@@ -27,6 +27,10 @@ vi.mock('@slack/bolt', () => {
       if (eventName === 'app_mention') capturedMentionHandler = handler;
     }
 
+    action(_actionId: string, _handler: (args: Record<string, unknown>) => Promise<void>) {
+      // no-op for tests — action handlers tested via integration tests
+    }
+
     error(handler: (error: Error) => Promise<void>) {
       capturedErrorHandler = handler;
     }
@@ -52,6 +56,7 @@ function createMockRelay(): RelayPublisher {
   return {
     publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
     onSignal: vi.fn().mockReturnValue(() => {}),
+    subscribe: vi.fn().mockReturnValue(() => {}),
   };
 }
 

@@ -16,5 +16,6 @@ export function createMockRelayPublisher(): RelayPublisher {
   return {
     publish: vi.fn().mockResolvedValue({ messageId: 'test-msg-001', deliveredTo: 1 }),
     onSignal: vi.fn().mockReturnValue(() => {}),
+    subscribe: vi.fn().mockReturnValue(() => {}),
   };
 }

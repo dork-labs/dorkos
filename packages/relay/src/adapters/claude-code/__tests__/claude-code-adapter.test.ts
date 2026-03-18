@@ -44,6 +44,7 @@ function createMockRelay(): RelayPublisher {
   return {
     publish: vi.fn().mockResolvedValue({ messageId: 'resp-1', deliveredTo: 1 }),
     onSignal: vi.fn().mockReturnValue(() => {}),
+    subscribe: vi.fn().mockReturnValue(() => {}),
   };
 }
 
@@ -278,7 +279,9 @@ describe('ClaudeCodeAdapter', () => {
     // takes precedence via AgentManager's fallback chain.
     const ensureCall = vi.mocked(agentManager.ensureSession).mock.calls[0];
     expect(ensureCall[0]).toBe('session-abc');
-    expect(ensureCall[1]).toEqual({ permissionMode: 'default', hasStarted: true });
+    // hasStarted is false because no agentSessionStore is provided, so there's
+    // no persisted SDK session ID to resume — avoids broken resume attempts.
+    expect(ensureCall[1]).toEqual({ permissionMode: 'default', hasStarted: false });
     expect(ensureCall[1]).not.toHaveProperty('cwd');
 
     const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
@@ -547,10 +550,11 @@ describe('ClaudeCodeAdapter', () => {
       const envelope = createTestEnvelope({ subject: 'relay.agent.agent-ulid-002' });
       await adapterWithStore.deliver(envelope.subject, envelope);
 
-      // ensureSession and sendMessage must use the persisted SDK UUID, not 'agent-ulid-002'
+      // ensureSession and sendMessage must use the persisted SDK UUID, not 'agent-ulid-002'.
+      // hasStarted is true because the store has a real SDK session ID to resume.
       expect(agentManager.ensureSession).toHaveBeenCalledWith(
         sdkUUID,
-        expect.objectContaining({ permissionMode: 'default' }),
+        expect.objectContaining({ permissionMode: 'default', hasStarted: true }),
       );
       expect(agentManager.sendMessage).toHaveBeenCalledWith(
         sdkUUID,

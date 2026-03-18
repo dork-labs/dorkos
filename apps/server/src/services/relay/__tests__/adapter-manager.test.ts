@@ -42,6 +42,12 @@ vi.mock('../../../lib/logger.js', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   },
+  createTaggedLogger: vi.fn(() => ({
+    warn: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  })),
 }));
 
 // Mock TelegramAdapter, WebhookAdapter, and ClaudeCodeAdapter
@@ -62,6 +68,7 @@ vi.mock('@dorkos/relay', async () => {
         errorCount: 0,
       }),
       testConnection: vi.fn().mockResolvedValue({ ok: true }),
+      setLogger: vi.fn(),
     })),
     WebhookAdapter: vi.fn().mockImplementation((id: string) => ({
       id,
@@ -619,6 +626,7 @@ describe('AdapterManager', () => {
           errorCount: 0,
         }),
         testConnection: testFn,
+        setLogger: vi.fn(),
       }));
 
       await manager.testConnection('telegram', { token: 't', mode: 'polling' });
@@ -645,6 +653,7 @@ describe('AdapterManager', () => {
           errorCount: 0,
         }),
         testConnection: vi.fn().mockResolvedValue({ ok: false, error: 'Unauthorized' }),
+        setLogger: vi.fn(),
       }));
 
       const result = await manager.testConnection('telegram', {
@@ -674,6 +683,7 @@ describe('AdapterManager', () => {
           messageCount: { inbound: 0, outbound: 0 },
           errorCount: 0,
         }),
+        setLogger: vi.fn(),
         // No testConnection — forces fallback to start/stop
       }));
 
@@ -711,6 +721,7 @@ describe('AdapterManager', () => {
           messageCount: { inbound: 0, outbound: 0 },
           errorCount: 0,
         }),
+        setLogger: vi.fn(),
         // No testConnection — forces fallback
       }));
 
@@ -749,6 +760,7 @@ describe('AdapterManager', () => {
           errorCount: 0,
         }),
         testConnection: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves
+        setLogger: vi.fn(),
       }));
 
       const resultPromise = manager.testConnection('telegram', {
@@ -799,6 +811,7 @@ describe('AdapterManager', () => {
           messageCount: { inbound: 0, outbound: 0 },
           errorCount: 0,
         }),
+        setLogger: vi.fn(),
         // No testConnection — forces fallback
       }));
 
@@ -1042,6 +1055,7 @@ describe('AdapterManager', () => {
             errorCount: 0,
           }),
           testConnection: vi.fn().mockResolvedValue({ ok: true }),
+          setLogger: vi.fn(),
         };
       });
 

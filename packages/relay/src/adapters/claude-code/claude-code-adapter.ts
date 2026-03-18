@@ -35,6 +35,7 @@ import type {
 import { handleAgentMessage } from './agent-handler.js';
 import { handlePulseMessage } from './pulse-handler.js';
 import { AgentQueue } from './queue.js';
+import { subscribeApprovalHandler } from './approval-handler.js';
 import type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,
@@ -111,6 +112,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   private relay: RelayPublisher | null = null;
   private activeCount = 0;
   private readonly agentQueue = new AgentQueue();
+  /** Unsubscribe function for the `relay.system.approval.>` subscription. */
+  private approvalUnsub: (() => void) | null = null;
   private status: AdapterStatus = {
     state: 'disconnected',
     messageCount: { inbound: 0, outbound: 0 },
@@ -141,6 +144,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    */
   async start(relay: RelayPublisher): Promise<void> {
     this.relay = relay;
+    this.approvalUnsub = subscribeApprovalHandler(
+      relay,
+      this.deps.agentManager,
+      this.deps.logger ?? console,
+    );
     this.status = {
       state: 'connected',
       messageCount: { inbound: 0, outbound: 0 },
@@ -153,6 +161,9 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * Stop the adapter — clear relay reference, drain in-flight queue entries, and mark as disconnected.
    */
   async stop(): Promise<void> {
+    // Unsubscribe from approval responses before clearing relay reference
+    this.approvalUnsub?.();
+    this.approvalUnsub = null;
     this.relay = null;
     this.agentQueue.clear();
     this.status = { ...this.status, state: 'disconnected' };

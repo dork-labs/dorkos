@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add interactive tool approval for Slack and Telegram adapters
 - Add dedicated Forms page and split registry into per-page section files
 - Add data path debug toggles for cross-client sync and message polling
 - Add unified input zone for interactive cards

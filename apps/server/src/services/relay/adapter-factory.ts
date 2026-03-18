@@ -29,7 +29,7 @@ import type {
   AgentSessionStoreLike,
 } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
-import { logger } from '../../lib/logger.js';
+import { logger, createTaggedLogger } from '../../lib/logger.js';
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterFactoryDeps {
@@ -68,21 +68,27 @@ export async function createAdapter(
   onPluginManifest?: (type: string, manifest: AdapterManifest) => void,
 ): Promise<RelayAdapter | null> {
   switch (config.type) {
-    case 'telegram':
-      return new TelegramAdapter(
+    case 'telegram': {
+      const adapter = new TelegramAdapter(
         config.id,
         config.config as TelegramAdapterConfig,
       );
+      adapter.setLogger(createTaggedLogger(`telegram:${config.id}`));
+      return adapter;
+    }
     case 'webhook':
       return new WebhookAdapter(
         config.id,
         config.config as WebhookAdapterConfig,
       );
-    case 'slack':
-      return new SlackAdapter(
+    case 'slack': {
+      const adapter = new SlackAdapter(
         config.id,
         config.config as SlackAdapterConfig,
       );
+      adapter.setLogger(createTaggedLogger(`slack:${config.id}`));
+      return adapter;
+    }
     case 'claude-code':
       return new ClaudeCodeAdapter(
         config.id,
@@ -143,6 +149,7 @@ export async function testAdapterConnection(
     const noopRelay = {
       publish: async () => ({ messageId: '', deliveredTo: 0 }),
       onSignal: () => () => {},
+      subscribe: () => () => {},
     };
 
     let fallbackTimer: NodeJS.Timeout;

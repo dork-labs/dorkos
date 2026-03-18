@@ -10,16 +10,19 @@
 import { randomUUID } from 'node:crypto';
 import type { WebClient } from '@slack/web-api';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { AdapterOutboundCallbacks, DeliveryResult } from '../../types.js';
+import type { AdapterOutboundCallbacks, DeliveryResult, RelayLogger } from '../../types.js';
+import { noopLogger } from '../../types.js';
 import {
   extractPayloadContent,
   detectStreamEventType,
   extractTextDelta,
   extractErrorMessage,
+  extractApprovalData,
+  formatToolDescription,
   truncateText,
-  SILENT_EVENT_TYPES,
   formatForPlatform,
 } from '../../lib/payload-utils.js';
+import type { ApprovalData } from '../../lib/payload-utils.js';
 import { extractChannelId, SUBJECT_PREFIX, MAX_MESSAGE_LENGTH } from './inbound.js';
 
 // === Types ===
@@ -29,6 +32,28 @@ const STREAM_UPDATE_INTERVAL_MS = 1_000;
 
 /** Maximum age (ms) before an orphaned stream entry is reaped. */
 const STREAM_TTL_MS = 5 * 60 * 1_000;
+
+/**
+ * Pending approval timeouts keyed by toolCallId.
+ *
+ * When a timeout fires, the Slack message is updated to show "Timed out".
+ * Cleared when a button click resolves the approval.
+ */
+export const pendingApprovalTimeouts = new Map<string, {
+  timer: ReturnType<typeof setTimeout>;
+  channelId: string;
+  messageTs: string;
+  client: WebClient;
+}>();
+
+/** Clear an approval timeout after a button click. */
+export function clearApprovalTimeout(toolCallId: string): void {
+  const entry = pendingApprovalTimeouts.get(toolCallId);
+  if (entry) {
+    clearTimeout(entry.timer);
+    pendingApprovalTimeouts.delete(toolCallId);
+  }
+}
 
 /** Active stream state for a channel (keyed by channelId:threadTs). */
 export interface ActiveStream {
@@ -46,6 +71,8 @@ export interface ActiveStream {
   startedAt: number;
   /** Unique ID for this stream — used to detect async race conditions in handleDone. */
   streamId: string;
+  /** Slack streaming API stream_id (only set when nativeStreaming is true). */
+  nativeStreamId?: string;
 }
 
 /** Options for delivering a Relay message to Slack. */
@@ -58,7 +85,9 @@ export interface SlackDeliverOptions {
   botUserId: string;
   callbacks: AdapterOutboundCallbacks;
   streaming: boolean;
+  nativeStreaming: boolean;
   typingIndicator: 'none' | 'reaction';
+  logger?: RelayLogger;
 }
 
 // === Helpers ===
@@ -191,10 +220,11 @@ function removeTypingReaction(
 /**
  * Handle a text_delta StreamEvent — start or append to a streaming message.
  *
- * On the first delta for a channel+thread, posts a new message via chat.postMessage
- * and stores the returned ts in streamState. On subsequent deltas, appends
- * the mrkdwn chunk to the accumulated text and updates the message via
- * chat.update (live editing effect).
+ * On the first delta for a channel+thread, either:
+ * - (nativeStreaming) calls chat.startStream + chat.appendStream, or
+ * - (legacy) posts a new message via chat.postMessage and updates it via chat.update.
+ *
+ * Falls back to the legacy approach if chat.startStream fails (e.g. missing scope).
  *
  * @param channelId - The Slack channel ID
  * @param textChunk - The raw text chunk to append
@@ -204,6 +234,7 @@ function removeTypingReaction(
  * @param callbacks - Callbacks to track delivery metrics
  * @param startTime - Timestamp (ms) for delivery duration calculation
  * @param streaming - Whether to post/update in real time or buffer silently
+ * @param nativeStreaming - Whether to use Slack's native streaming API
  * @param typingIndicator - Typing indicator mode for reaction add/remove
  * @param streamKeyTs - Correlation ID for stream key (may be synthetic envelope ID)
  */
@@ -216,6 +247,7 @@ async function handleTextDelta(
   callbacks: AdapterOutboundCallbacks,
   startTime: number,
   streaming: boolean,
+  nativeStreaming: boolean,
   typingIndicator: 'none' | 'reaction',
   streamKeyTs: string,
 ): Promise<DeliveryResult> {
@@ -247,6 +279,18 @@ async function handleTextDelta(
     // Accumulate raw Markdown — converted to mrkdwn at send time
     existing.accumulatedText += textChunk;
 
+    // Native streaming: append each chunk directly — no throttling needed
+    if (existing.nativeStreamId) {
+      return wrapSlackCall(
+        () => (client as unknown as Record<string, Record<string, (args: unknown) => Promise<unknown>>>).chat.appendStream({
+          stream_id: existing.nativeStreamId,
+          text: formatForPlatform(textChunk, 'slack'),
+        }),
+        callbacks,
+        startTime,
+      );
+    }
+
     // Throttle: skip chat.update if called less than STREAM_UPDATE_INTERVAL_MS ago.
     // The done handler always sends a final update, so no text is lost.
     const now = Date.now();
@@ -273,7 +317,46 @@ async function handleTextDelta(
     );
   }
 
-  // Start new stream — post initial message
+  // Start new stream via native API when enabled and a thread is available
+  if (nativeStreaming && threadTs) {
+    try {
+      const slackClient = client as unknown as Record<string, Record<string, (args: unknown) => Promise<unknown>>>;
+      const result = await slackClient.chat.startStream({
+        channel: channelId,
+        thread_ts: threadTs,
+      });
+      const nativeStreamId = (result as { stream_id?: string }).stream_id ?? '';
+      const now = Date.now();
+
+      streamState.set(key, {
+        channelId,
+        threadTs: threadTs ?? '',
+        messageTs: '', // Not used in native streaming
+        accumulatedText: textChunk,
+        lastUpdateAt: now,
+        startedAt: now,
+        streamId: randomUUID(),
+        nativeStreamId,
+      });
+
+      await slackClient.chat.appendStream({
+        stream_id: nativeStreamId,
+        text: formatForPlatform(textChunk, 'slack'),
+      });
+
+      // Add typing indicator reaction on stream start (fire-and-forget)
+      addTypingReaction(client, channelId, threadTs, typingIndicator);
+
+      return { success: true, durationMs: Date.now() - startTime };
+    } catch (err) {
+      // Fallback to chat.update approach for this stream
+      // (e.g., missing scope, API not available)
+      callbacks.recordError(err);
+      // Fall through to existing chat.postMessage logic below
+    }
+  }
+
+  // Start new stream — post initial message (legacy approach)
   try {
     const mrkdwn = formatForPlatform(textChunk, 'slack');
     const now = Date.now();
@@ -344,6 +427,17 @@ async function handleDone(
   if (!existing) {
     // No active stream — nothing to finalize
     return { success: true, durationMs: Date.now() - startTime };
+  }
+
+  // Native streaming mode: stop the stream
+  if (existing.nativeStreamId) {
+    const slackClient = client as unknown as Record<string, Record<string, (args: unknown) => Promise<unknown>>>;
+    return wrapSlackCall(
+      () => slackClient.chat.stopStream({ stream_id: existing.nativeStreamId }),
+      callbacks,
+      startTime,
+      true,
+    );
   }
 
   // Buffered mode: post accumulated text as a new message
@@ -418,6 +512,26 @@ async function handleError(
   }
 
   if (existing) {
+    // Native streaming mode: append error and stop
+    if (existing.nativeStreamId) {
+      const slackClient = client as unknown as Record<string, Record<string, (args: unknown) => Promise<unknown>>>;
+      const errorSuffix = formatForPlatform(`\n\n[Error: ${errorMsg}]`, 'slack');
+      try {
+        await slackClient.chat.appendStream({
+          stream_id: existing.nativeStreamId,
+          text: errorSuffix,
+        });
+      } catch {
+        /* best-effort append */
+      }
+      return wrapSlackCall(
+        () => slackClient.chat.stopStream({ stream_id: existing.nativeStreamId }),
+        callbacks,
+        startTime,
+        true,
+      );
+    }
+
     const finalText = truncateText(
       `${formatForPlatform(existing.accumulatedText, 'slack')}\n\n[Error: ${errorMsg}]`,
       MAX_MESSAGE_LENGTH,
@@ -489,18 +603,20 @@ async function handleError(
  * @param opts - Delivery options
  */
 export async function deliverMessage(opts: SlackDeliverOptions): Promise<DeliveryResult> {
-  const { adapterId, subject, envelope, client, streamState, callbacks } = opts;
+  const { adapterId, subject, envelope, client, streamState, callbacks, logger = noopLogger } = opts;
   const startTime = Date.now();
 
   // Reap orphaned streams that never received a done/error event
   for (const [key, stream] of streamState) {
     if (startTime - stream.startedAt > STREAM_TTL_MS) {
       streamState.delete(key);
+      logger.warn(`stream: reaped orphaned stream for ${key} (age: ${Math.round((startTime - stream.startedAt) / 1000)}s)`);
     }
   }
 
   // Echo prevention: skip messages originating from this adapter.
   if (envelope.from.startsWith(SUBJECT_PREFIX)) {
+    logger.debug('deliver: echo prevention — skipping self-originated message');
     return { success: true, durationMs: Date.now() - startTime };
   }
 
@@ -546,6 +662,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     // text_delta: start or update streaming message
     const textChunk = extractTextDelta(envelope.payload);
     if (textChunk) {
+      logger.debug(`deliver: text_delta to ${channelId} (${textChunk.length} chars, streaming=${opts.streaming ? (opts.nativeStreaming ? 'native' : 'legacy') : 'buffered'})`);
       return handleTextDelta(
         channelId,
         textChunk,
@@ -555,6 +672,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
         callbacks,
         startTime,
         opts.streaming,
+        opts.nativeStreaming,
         opts.typingIndicator,
         streamKeyTs,
       );
@@ -563,6 +681,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     // error: append error text and finalize
     const errorMsg = extractErrorMessage(envelope.payload);
     if (errorMsg) {
+      logger.debug(`deliver: error to ${channelId}: "${errorMsg.slice(0, 100)}"`);
       return handleError(
         channelId,
         errorMsg,
@@ -578,6 +697,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
 
     // done: finalize the stream
     if (eventType === 'done') {
+      logger.debug(`deliver: done for ${channelId}`);
       return handleDone(
         channelId,
         threadTs,
@@ -590,16 +710,34 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
       );
     }
 
-    // Silent events: skip without sending anything
-    if (SILENT_EVENT_TYPES.has(eventType)) {
-      return { success: true, durationMs: Date.now() - startTime };
+    // approval_required: render interactive Block Kit card with Approve/Deny buttons
+    if (eventType === 'approval_required') {
+      const approvalData = extractApprovalData(envelope.payload);
+      if (approvalData) {
+        logger.debug(`deliver: approval_required for tool '${approvalData.toolName}' to ${channelId}`);
+        return handleApprovalRequired(
+          channelId,
+          threadTs,
+          approvalData,
+          envelope,
+          client,
+          callbacks,
+          startTime,
+        );
+      }
     }
+
+    // All other StreamEvent types: silently drop (whitelist model).
+    // Only text_delta, error, done, and approval_required warrant delivery actions.
+    logger.debug(`deliver: dropping stream event '${eventType}' (whitelist)`);
+    return { success: true, durationMs: Date.now() - startTime };
   }
 
   // --- Standard payload (non-StreamEvent) ---
   const content = extractPayloadContent(envelope.payload);
   const mrkdwn = formatForPlatform(content, 'slack');
   const text = truncateText(mrkdwn, MAX_MESSAGE_LENGTH);
+  logger.debug(`deliver: standard payload to ${channelId} (${text.length} chars)`);
 
   return wrapSlackCall(
     () =>
@@ -612,4 +750,144 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     startTime,
     true,
   );
+}
+
+// === Approval handling ===
+
+/**
+ * Extract agentId from the enriched approval_required event payload.
+ *
+ * @param envelope - The relay envelope containing the approval_required event
+ */
+function extractAgentIdFromEnvelope(envelope: RelayEnvelope): string {
+  const payload = envelope.payload as Record<string, unknown> | null;
+  const data = payload?.data as Record<string, unknown> | undefined;
+  return (data?.agentId as string) ?? 'unknown';
+}
+
+/**
+ * Extract ccaSessionKey from the enriched approval_required event payload.
+ *
+ * @param envelope - The relay envelope containing the approval_required event
+ */
+function extractSessionIdFromEnvelope(envelope: RelayEnvelope): string {
+  const payload = envelope.payload as Record<string, unknown> | null;
+  const data = payload?.data as Record<string, unknown> | undefined;
+  return (data?.ccaSessionKey as string) ?? 'unknown';
+}
+
+/**
+ * Render a Block Kit approval card and post it to Slack.
+ *
+ * Posts an interactive message with Approve and Deny buttons. The button
+ * value field encodes only the IDs needed for the round-trip — not the
+ * full tool input — to keep payloads small and avoid sensitive data leakage.
+ *
+ * @param channelId - Slack channel ID to post to
+ * @param threadTs - Optional thread timestamp for threading
+ * @param data - Parsed approval data (toolCallId, toolName, input, timeoutMs)
+ * @param envelope - The original relay envelope
+ * @param client - Slack WebClient
+ * @param callbacks - Outbound tracking callbacks
+ * @param startTime - Delivery start timestamp for duration tracking
+ */
+async function handleApprovalRequired(
+  channelId: string,
+  threadTs: string | undefined,
+  data: ApprovalData,
+  envelope: RelayEnvelope,
+  client: WebClient,
+  callbacks: AdapterOutboundCallbacks,
+  startTime: number,
+): Promise<DeliveryResult> {
+  const agentId = extractAgentIdFromEnvelope(envelope);
+  const sessionId = extractSessionIdFromEnvelope(envelope);
+  const inputPreview = truncateText(data.input, 500);
+  const toolDescription = formatToolDescription(data.toolName, data.input);
+
+  const buttonValue = JSON.stringify({
+    toolCallId: data.toolCallId,
+    sessionId,
+    agentId,
+  });
+
+  let postedTs: string | undefined;
+  const result = await wrapSlackCall(
+    async () => {
+      const res = await client.chat.postMessage({
+        channel: channelId,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+        text: `Tool approval required: ${data.toolName} (fallback)`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*Tool Approval Required*\n\`${data.toolName}\` ${toolDescription}`,
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `\`\`\`\n${inputPreview}\n\`\`\``,
+            },
+          },
+          {
+            type: 'actions',
+            block_id: 'tool_approval',
+            elements: [
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: 'Approve' },
+                style: 'primary',
+                action_id: 'tool_approve',
+                value: buttonValue,
+              },
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: 'Deny' },
+                style: 'danger',
+                action_id: 'tool_deny',
+                value: buttonValue,
+              },
+            ],
+          },
+        ],
+      });
+      postedTs = res.ts;
+    },
+    callbacks,
+    startTime,
+    true,
+  );
+
+  // Register timeout to update message when approval expires
+  if (result.success && postedTs && data.timeoutMs > 0) {
+    const msgTs = postedTs;
+    const timer = setTimeout(async () => {
+      pendingApprovalTimeouts.delete(data.toolCallId);
+      try {
+        await client.chat.update({
+          channel: channelId,
+          ts: msgTs,
+          text: ':hourglass: Tool approval timed out',
+          blocks: [
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: ':hourglass: *Tool Approval Timed Out*\n~`' + data.toolName + '`~' },
+            },
+          ],
+        });
+      } catch { /* best-effort — message may have been deleted */ }
+    }, data.timeoutMs);
+    pendingApprovalTimeouts.set(data.toolCallId, {
+      timer,
+      channelId,
+      messageTs: msgTs,
+      client,
+    });
+  }
+
+  return result;
 }

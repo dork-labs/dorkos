@@ -192,6 +192,27 @@ export interface PublishOptions {
   budget?: Partial<RelayBudget>;
 }
 
+// === Adapter Logger ===
+
+/**
+ * Minimal logger interface for relay adapters.
+ *
+ * Compatible with consola's tagged logger, Node's console, and custom
+ * implementations. The relay package uses this instead of importing
+ * the server logger directly to stay standalone.
+ */
+export interface RelayLogger {
+  debug: (...args: unknown[]) => void;
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+}
+
+const noop = () => {};
+
+/** Silent logger — used when no logger is injected. */
+export const noopLogger: RelayLogger = { debug: noop, info: noop, warn: noop, error: noop };
+
 // === Adapter Callbacks ===
 
 /** Callbacks for inbound message handling (used by adapter sub-modules). */
@@ -234,6 +255,16 @@ export interface PublishResultLike {
 export interface RelayPublisher {
   publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResultLike>;
   onSignal(pattern: string, handler: SignalHandler): Unsubscribe;
+  /**
+   * Subscribe to messages matching a subject pattern.
+   *
+   * Uses NATS-style wildcards: `*` for single token, `>` for multi-token suffix.
+   * Returns an unsubscribe function.
+   *
+   * @param pattern - Subject pattern to match (e.g., 'relay.system.approval.>')
+   * @param handler - Callback invoked for each matching message
+   */
+  subscribe(pattern: string, handler: MessageHandler): Unsubscribe;
 }
 
 /**

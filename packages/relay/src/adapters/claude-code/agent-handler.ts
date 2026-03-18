@@ -81,8 +81,14 @@ export async function handleAgentMessage(
     `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}`,
   );
 
+  // Only mark hasStarted when we have a real SDK session ID from the persistent
+  // store.  Without one, the runtime would attempt to resume using the DorkOS-
+  // generated UUID (which the SDK never assigned), causing a "No conversation
+  // found" error before the self-healing retry creates a fresh session.
   deps.agentManager.ensureSession(ccaSessionKey, {
-    permissionMode: 'default', hasStarted: true, ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+    permissionMode: 'default',
+    hasStarted: !!persistedSdkSessionId,
+    ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
   });
   deps.traceStore.updateSpan(envelope.id, { status: 'delivered', deliveredAt: Date.now() });
 
@@ -139,7 +145,7 @@ export async function handleAgentMessage(
               typeof data.content === 'string' ? data.content : JSON.stringify(data), ccaSessionKey, relay);
           }
         } else {
-          await publishResponseWithCorrelation(envelope, event, ccaSessionKey, relay, log, correlationId);
+          await publishResponseWithCorrelation(envelope, event, ccaSessionKey, relay, log, correlationId, { agentId });
         }
       }
     }
@@ -172,6 +178,9 @@ export async function handleAgentMessage(
     if (actualSdkId && actualSdkId !== agentId) {
       deps.agentSessionStore.set(agentId, actualSdkId);
       log.debug?.(`[CCA] persisted session mapping: ${agentId} → ${actualSdkId}`);
+    } else {
+      log.debug?.(`[CCA] no session mapping to persist: agentId=${agentId}, ` +
+        `ccaSessionKey=${ccaSessionKey}, actualSdkId=${actualSdkId ?? '(none)'}`);
     }
   }
 
