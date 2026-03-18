@@ -16,7 +16,8 @@
  */
 import crypto from 'node:crypto';
 import type { RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
-import type { RelayAdapter, AdapterStatus, AdapterContext, DeliveryResult, WebhookAdapterConfig, RelayPublisher } from '../../types.js';
+import type { AdapterContext, DeliveryResult, WebhookAdapterConfig, RelayPublisher } from '../../types.js';
+import { BaseRelayAdapter } from '../../base-adapter.js';
 
 /** Stripe-standard timestamp window for replay attack prevention (±5 minutes). */
 const TIMESTAMP_WINDOW_SECS = 300;
@@ -129,21 +130,11 @@ Leave empty if no custom headers are needed.`,
  * if (!result.ok) res.status(401).json({ error: result.error });
  * ```
  */
-export class WebhookAdapter implements RelayAdapter {
-  readonly id: string;
-  readonly subjectPrefix: string;
-  readonly displayName: string;
-
+export class WebhookAdapter extends BaseRelayAdapter {
   private readonly config: WebhookAdapterConfig;
-  private relay: RelayPublisher | null = null;
   /** Tracks nonces to prevent replay attacks. Maps `{adapterId}:{nonce}` -> expiresAt timestamp. */
   private readonly nonceMap = new Map<string, number>();
   private nonceInterval: ReturnType<typeof setInterval> | null = null;
-  private status: AdapterStatus = {
-    state: 'disconnected',
-    messageCount: { inbound: 0, outbound: 0 },
-    errorCount: 0,
-  };
 
   /**
    * Create a new WebhookAdapter instance.
@@ -153,34 +144,22 @@ export class WebhookAdapter implements RelayAdapter {
    * @param displayName - Human-readable name (defaults to `Webhook ({id})`)
    */
   constructor(id: string, config: WebhookAdapterConfig, displayName?: string) {
-    this.id = id;
-    this.config = config;
     // subjectPrefix is derived from the inbound subject so RelayCore can route to this adapter
-    this.subjectPrefix = config.inbound.subject;
-    this.displayName = displayName ?? `Webhook (${id})`;
+    super(id, config.inbound.subject, displayName ?? `Webhook (${id})`);
+    this.config = config;
   }
 
   /**
-   * Start the adapter — store the relay publisher and begin nonce pruning.
+   * Connect hook — begin nonce pruning interval.
    *
    * This adapter has no external connection to establish; it relies on the
    * Express route calling `handleInbound()` for inbound messages. The nonce
    * pruning interval is started here to prevent unbounded memory growth.
+   * The relay publisher reference is stored by {@link BaseRelayAdapter.start}.
    *
-   * Idempotent: safe to call multiple times.
-   *
-   * @param relay - The RelayPublisher to publish inbound messages to
+   * @param _relay - The RelayPublisher (stored by base class; unused here)
    */
-  async start(relay: RelayPublisher): Promise<void> {
-    if (this.status.state === 'connected') return;
-
-    this.relay = relay;
-    this.status = {
-      ...this.status,
-      state: 'connected',
-      startedAt: new Date().toISOString(),
-    };
-
+  protected async _start(_relay: RelayPublisher): Promise<void> {
     // Prune expired nonces on a fixed interval to prevent memory growth
     this.nonceInterval = setInterval(() => {
       this.pruneExpiredNonces();
@@ -188,21 +167,14 @@ export class WebhookAdapter implements RelayAdapter {
   }
 
   /**
-   * Stop the adapter — clear nonce state and pruning interval.
-   *
-   * Idempotent: safe to call multiple times.
+   * Disconnect hook — clear nonce state and pruning interval.
    */
-  async stop(): Promise<void> {
-    if (this.status.state === 'disconnected') return;
-
+  protected async _stop(): Promise<void> {
     if (this.nonceInterval !== null) {
       clearInterval(this.nonceInterval);
       this.nonceInterval = null;
     }
-
     this.nonceMap.clear();
-    this.relay = null;
-    this.status = { ...this.status, state: 'disconnected' };
   }
 
   /**
@@ -270,21 +242,10 @@ export class WebhookAdapter implements RelayAdapter {
         from: `relay.webhook.${this.id}`,
       });
 
-      this.status = {
-        ...this.status,
-        messageCount: {
-          ...this.status.messageCount,
-          inbound: this.status.messageCount.inbound + 1,
-        },
-      };
+      this.trackInbound();
       return { ok: true };
     } catch (err) {
-      this.status = {
-        ...this.status,
-        errorCount: this.status.errorCount + 1,
-        lastError: err instanceof Error ? err.message : String(err),
-        lastErrorAt: new Date().toISOString(),
-      };
+      this.recordError(err);
       return { ok: false, error: 'Publish failed' };
     }
   }
@@ -330,42 +291,17 @@ export class WebhookAdapter implements RelayAdapter {
 
       if (!response.ok) {
         const error = `Outbound delivery failed: HTTP ${response.status}`;
-        this.status = {
-          ...this.status,
-          errorCount: this.status.errorCount + 1,
-          lastError: error,
-          lastErrorAt: new Date().toISOString(),
-        };
+        this.recordError(error);
         return { success: false, error, durationMs: Date.now() - startTime };
       }
 
-      this.status = {
-        ...this.status,
-        messageCount: {
-          ...this.status.messageCount,
-          outbound: this.status.messageCount.outbound + 1,
-        },
-      };
+      this.trackOutbound();
       return { success: true, durationMs: Date.now() - startTime };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      this.status = {
-        ...this.status,
-        errorCount: this.status.errorCount + 1,
-        lastError: error,
-        lastErrorAt: new Date().toISOString(),
-      };
+      this.recordError(err);
       return { success: false, error, durationMs: Date.now() - startTime };
     }
-  }
-
-  /**
-   * Get the current adapter status.
-   *
-   * Returns a shallow copy to prevent external mutation of internal state.
-   */
-  getStatus(): AdapterStatus {
-    return { ...this.status };
   }
 
   /** Remove expired nonces from the in-memory map. */

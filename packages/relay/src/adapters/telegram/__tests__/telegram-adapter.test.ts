@@ -475,7 +475,7 @@ describe('TelegramAdapter', () => {
     // from is 'relay.agent.backend' — should NOT be filtered
     const result = await adapter.deliver('relay.human.telegram.12345', envelope);
     expect(result.success).toBe(true);
-    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Agent reply');
+    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Agent reply', { parse_mode: 'HTML' });
   });
 
   // --- Outbound delivery ---
@@ -486,7 +486,7 @@ describe('TelegramAdapter', () => {
     const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Hello from agent!' });
     await adapter.deliver('relay.human.telegram.12345', envelope);
 
-    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!');
+    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!', { parse_mode: 'HTML' });
   });
 
   it('deliver() sends to group chat ID (negative)', async () => {
@@ -495,7 +495,7 @@ describe('TelegramAdapter', () => {
     const envelope = createEnvelope('relay.human.telegram.group.-100111222', 'Group reply');
     await adapter.deliver('relay.human.telegram.group.-100111222', envelope);
 
-    expect(mockSendMessage).toHaveBeenCalledWith(-100111222, 'Group reply');
+    expect(mockSendMessage).toHaveBeenCalledWith(-100111222, 'Group reply', { parse_mode: 'HTML' });
   });
 
   it('deliver() increments outbound message count', async () => {
@@ -557,7 +557,7 @@ describe('TelegramAdapter', () => {
       const envelope = createEnvelope('relay.human.telegram.12345', 'plain text message');
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'plain text message');
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'plain text message', { parse_mode: 'HTML' });
     });
 
     it('handles object payload with content field', async () => {
@@ -569,7 +569,7 @@ describe('TelegramAdapter', () => {
       });
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'structured message');
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'structured message', { parse_mode: 'HTML' });
     });
 
     it('handles object payload with text field', async () => {
@@ -581,7 +581,7 @@ describe('TelegramAdapter', () => {
       });
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'text field message');
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'text field message', { parse_mode: 'HTML' });
     });
 
     it('handles object payload without content or text — falls back to JSON', async () => {
@@ -591,7 +591,7 @@ describe('TelegramAdapter', () => {
       const envelope = createEnvelope('relay.human.telegram.12345', payload);
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, JSON.stringify(payload));
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, JSON.stringify(payload), { parse_mode: 'HTML' });
     });
 
     it('handles null payload', async () => {
@@ -600,7 +600,7 @@ describe('TelegramAdapter', () => {
       const envelope = createEnvelope('relay.human.telegram.12345', null);
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'null');
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'null', { parse_mode: 'HTML' });
     });
 
     it('handles numeric payload', async () => {
@@ -609,7 +609,7 @@ describe('TelegramAdapter', () => {
       const envelope = createEnvelope('relay.human.telegram.12345', 42);
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, '42');
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, '42', { parse_mode: 'HTML' });
     });
   });
 
@@ -1123,7 +1123,7 @@ describe('TelegramAdapter', () => {
     const envelope = createEnvelope('relay.human.telegram.group.12345', { content: 'hi' });
     const result = await adapter.deliver('relay.human.telegram.group.12345', envelope);
     expect(result.success).toBe(true);
-    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'hi');
+    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'hi', { parse_mode: 'HTML' });
   });
 
   it('deliver() accepts valid DM chat IDs', async () => {
@@ -1132,7 +1132,7 @@ describe('TelegramAdapter', () => {
     const envelope = createEnvelope('relay.human.telegram.67890', { content: 'hi' });
     const result = await adapter.deliver('relay.human.telegram.67890', envelope);
     expect(result.success).toBe(true);
-    expect(mockSendMessage).toHaveBeenCalledWith(67890, 'hi');
+    expect(mockSendMessage).toHaveBeenCalledWith(67890, 'hi', { parse_mode: 'HTML' });
   });
 
   it('deliver() rejects non-integer chat IDs', async () => {
@@ -1170,7 +1170,7 @@ describe('TelegramAdapter', () => {
       const doneResult = await adapter.deliver('relay.human.telegram.12345', doneEnvelope);
       expect(doneResult.success).toBe(true);
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!');
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!', { parse_mode: 'HTML' });
     });
 
     it('sends error with buffered text on error event', async () => {
@@ -1194,6 +1194,7 @@ describe('TelegramAdapter', () => {
       expect(mockSendMessage).toHaveBeenCalledWith(
         12345,
         'Partial response\n\n[Error: Context limit exceeded]',
+        { parse_mode: 'HTML' },
       );
     });
 
@@ -1206,7 +1207,7 @@ describe('TelegramAdapter', () => {
       });
       const result = await adapter.deliver('relay.human.telegram.12345', errorEnvelope);
       expect(result.success).toBe(true);
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, '[Error: Session failed]');
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, '[Error: Session failed]', { parse_mode: 'HTML' });
     });
 
     it('silently skips session_status events', async () => {
@@ -1251,7 +1252,7 @@ describe('TelegramAdapter', () => {
       const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Direct message' });
       const result = await adapter.deliver('relay.human.telegram.12345', envelope);
       expect(result.success).toBe(true);
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Direct message');
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Direct message', { parse_mode: 'HTML' });
     });
 
     it('done with empty buffer does not send a message', async () => {
@@ -1288,7 +1289,7 @@ describe('TelegramAdapter', () => {
       }));
 
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
-      expect(mockSendMessage).toHaveBeenCalledWith(111, 'Chat A');
+      expect(mockSendMessage).toHaveBeenCalledWith(111, 'Chat A', { parse_mode: 'HTML' });
 
       // Flush chat 222
       await adapter.deliver('relay.human.telegram.222', createEnvelope('relay.human.telegram.222', {
@@ -1297,7 +1298,7 @@ describe('TelegramAdapter', () => {
       }));
 
       expect(mockSendMessage).toHaveBeenCalledTimes(2);
-      expect(mockSendMessage).toHaveBeenCalledWith(222, 'Chat B');
+      expect(mockSendMessage).toHaveBeenCalledWith(222, 'Chat B', { parse_mode: 'HTML' });
     });
 
     it('increments outbound count when flushing buffer on done', async () => {

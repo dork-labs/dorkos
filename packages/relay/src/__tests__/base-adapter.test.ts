@@ -41,6 +41,8 @@ class TestAdapter extends BaseRelayAdapter {
   callMarkConnected(): void { this.markConnected(); }
   callIsStopped(): boolean { return this.isStopped; }
   getRelayRef(): RelayPublisher | null { return this.relay; }
+  callMakeInboundCallbacks() { return this.makeInboundCallbacks(); }
+  callMakeOutboundCallbacks() { return this.makeOutboundCallbacks(); }
 }
 
 function createMockRelay(): RelayPublisher {
@@ -315,5 +317,64 @@ describe('BaseRelayAdapter', () => {
 
     await adapter.stop();
     expect(adapter.getStatus().startedAt).toBeUndefined();
+  });
+
+  // --- makeInboundCallbacks() ---
+
+  it('makeInboundCallbacks() returns object with trackInbound and recordError functions', () => {
+    const callbacks = adapter.callMakeInboundCallbacks();
+    expect(typeof callbacks.trackInbound).toBe('function');
+    expect(typeof callbacks.recordError).toBe('function');
+  });
+
+  it('makeInboundCallbacks().trackInbound() increments inbound message count', () => {
+    const callbacks = adapter.callMakeInboundCallbacks();
+    callbacks.trackInbound();
+    callbacks.trackInbound();
+    expect(adapter.getStatus().messageCount.inbound).toBe(2);
+  });
+
+  it('makeInboundCallbacks().recordError() updates error state', () => {
+    const callbacks = adapter.callMakeInboundCallbacks();
+    callbacks.recordError(new Error('inbound error'));
+    const status = adapter.getStatus();
+    expect(status.state).toBe('error');
+    expect(status.errorCount).toBe(1);
+    expect(status.lastError).toBe('inbound error');
+  });
+
+  // --- makeOutboundCallbacks() ---
+
+  it('makeOutboundCallbacks() returns object with trackOutbound and recordError functions', () => {
+    const callbacks = adapter.callMakeOutboundCallbacks();
+    expect(typeof callbacks.trackOutbound).toBe('function');
+    expect(typeof callbacks.recordError).toBe('function');
+  });
+
+  it('makeOutboundCallbacks().trackOutbound() increments outbound message count', () => {
+    const callbacks = adapter.callMakeOutboundCallbacks();
+    callbacks.trackOutbound();
+    callbacks.trackOutbound();
+    callbacks.trackOutbound();
+    expect(adapter.getStatus().messageCount.outbound).toBe(3);
+  });
+
+  it('makeOutboundCallbacks().recordError() updates error state', () => {
+    const callbacks = adapter.callMakeOutboundCallbacks();
+    callbacks.recordError('outbound failure');
+    const status = adapter.getStatus();
+    expect(status.state).toBe('error');
+    expect(status.errorCount).toBe(1);
+    expect(status.lastError).toBe('outbound failure');
+  });
+
+  it('makeInboundCallbacks() and makeOutboundCallbacks() share the same adapter state', () => {
+    const inbound = adapter.callMakeInboundCallbacks();
+    const outbound = adapter.callMakeOutboundCallbacks();
+    inbound.trackInbound();
+    outbound.trackOutbound();
+    const status = adapter.getStatus();
+    expect(status.messageCount.inbound).toBe(1);
+    expect(status.messageCount.outbound).toBe(1);
   });
 });

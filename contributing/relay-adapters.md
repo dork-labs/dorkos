@@ -1012,6 +1012,50 @@ class SlackAdapter extends BaseRelayAdapter {
 | `trackInbound()` | Increment inbound message count. Call when receiving from external channel. |
 | `recordError(err)` | Set state to `'error'`, increment `errorCount`, set `lastError` and `lastErrorAt`. Does not catch/swallow -- the host handles isolation. |
 | `this.relay` | Reference to the `RelayPublisher`, set by `start()`, cleared by `stop()`. |
+| `makeInboundCallbacks()` | Returns an `AdapterInboundCallbacks` object with `trackInbound` and `recordError` bound to this adapter's state. Pass this to standalone inbound handler functions. |
+| `makeOutboundCallbacks()` | Returns an `AdapterOutboundCallbacks` object with `trackOutbound` and `recordError` bound to this adapter's state. Pass this to standalone outbound delivery functions. |
+
+### Callback factories
+
+When splitting inbound and outbound logic into standalone functions (recommended for testability), those functions need a way to update the adapter's status counters and error state. Rather than passing the entire adapter instance, `BaseRelayAdapter` provides two callback factory methods:
+
+```typescript
+// In your adapter's _start():
+protected async _start(relay: RelayPublisher): Promise<void> {
+  this.bot.on('message', (ctx) =>
+    handleInboundMessage(ctx, relay, this.makeInboundCallbacks(), this.logger),
+  );
+}
+
+// In your adapter's deliver():
+const result = await deliverMessage(subject, envelope, {
+  callbacks: this.makeOutboundCallbacks(),
+  // ... other options
+});
+```
+
+The returned callback objects contain only the methods that each direction needs -- `trackInbound` + `recordError` for inbound, `trackOutbound` + `recordError` for outbound. This keeps standalone handler functions decoupled from the adapter class while maintaining accurate status tracking.
+
+### Shared utilities
+
+Common envelope-parsing logic lives in `packages/relay/src/lib/payload-utils.ts` and is exported from the `@dorkos/relay` barrel. Adapters should import these shared helpers rather than duplicating the logic:
+
+| Utility | Purpose |
+|---|---|
+| `extractAgentIdFromEnvelope(envelope)` | Extracts the agent ID from `envelope.metadata.agentId`. Returns `undefined` if absent. |
+| `extractSessionIdFromEnvelope(envelope)` | Extracts the session ID from `envelope.metadata.sessionId`. Returns `undefined` if absent. |
+| `extractApprovalData(payload)` | Parses an `approval_required` StreamEvent payload. Returns `ApprovalData` or `null`. |
+| `formatToolDescription(toolName, input)` | Returns a human-readable summary of a tool action for approval prompts. |
+
+```typescript
+import {
+  extractAgentIdFromEnvelope,
+  extractSessionIdFromEnvelope,
+} from '../../lib/payload-utils.js';
+
+const agentId = extractAgentIdFromEnvelope(envelope) ?? 'unknown';
+const sessionId = extractSessionIdFromEnvelope(envelope) ?? 'unknown';
+```
 
 ### Design notes
 
@@ -1220,6 +1264,107 @@ export class DiscordAdapter extends BaseRelayAdapter {
 4. **`deliver()`**: Extract recipient from subject, send message, return `DeliveryResult`
 5. **`trackInbound()` / `trackOutbound()`**: Call base class helpers to increment message counts
 6. **Error handling**: Call `this.recordError(err)` to update status; never throw during `_stop()`
+
+## Instance-Scoped State
+
+Adapters with `multiInstance: true` (where multiple instances of the same type can coexist) **must not** use module-level mutable state such as `Map`s, `Set`s, or plain objects at the top of a file. Module-level state is shared across all instances of the adapter, leading to cross-contamination when multiple instances run simultaneously.
+
+Instead, define a typed state container and create one per adapter instance:
+
+```typescript
+// outbound.ts
+export interface MyAdapterOutboundState {
+  activeStreams: Map<string, ActiveStream>;
+  approvalTimeouts: Map<string, ReturnType<typeof setTimeout>>;
+}
+
+export function createMyAdapterOutboundState(): MyAdapterOutboundState {
+  return {
+    activeStreams: new Map(),
+    approvalTimeouts: new Map(),
+  };
+}
+```
+
+The adapter class owns the state instance and passes it to standalone functions via an options object:
+
+```typescript
+// my-adapter.ts
+class MyAdapter extends BaseRelayAdapter {
+  private readonly outboundState = createMyAdapterOutboundState();
+
+  async deliver(subject: string, envelope: RelayEnvelope): Promise<DeliveryResult> {
+    return deliverMessage(subject, envelope, {
+      state: this.outboundState,
+      callbacks: this.makeOutboundCallbacks(),
+    });
+  }
+}
+```
+
+The built-in adapters demonstrate this pattern: `TelegramOutboundState` in `packages/relay/src/adapters/telegram/outbound.ts` and `SlackOutboundState` in `packages/relay/src/adapters/slack/approval.ts`.
+
+## Streaming API Wrappers
+
+When an external platform provides unofficial or untyped streaming APIs, isolate the type-unsafe code in a dedicated `stream-api.ts` file. This keeps `as unknown` casts and type assertions out of the main adapter logic, making it clear where the type boundary lies and limiting the blast radius of API changes.
+
+```
+adapters/slack/
+├── stream-api.ts       # Wraps Slack's streaming chat.update with typed interface
+├── stream.ts           # Streaming logic using the typed wrapper
+├── outbound.ts         # Delivery router (delegates to stream.ts or buffered path)
+└── ...
+```
+
+The wrapper exports a typed function that internally handles the cast:
+
+```typescript
+// stream-api.ts
+import type { WebClient } from '@slack/web-api';
+
+export async function streamingChatUpdate(
+  client: WebClient,
+  channel: string,
+  ts: string,
+  text: string,
+): Promise<void> {
+  // Slack's chat.update typing doesn't expose streaming params
+  await (client as unknown as StreamCapableClient).chat.update({
+    channel, ts, text,
+  });
+}
+```
+
+Both `packages/relay/src/adapters/telegram/stream-api.ts` and `packages/relay/src/adapters/slack/stream-api.ts` follow this pattern.
+
+## File Organization for Large Adapters
+
+As adapters grow to support streaming, tool approvals, and other features, a single file becomes unwieldy. Split by concern:
+
+| File | Responsibility |
+|---|---|
+| `{adapter}-adapter.ts` | Main adapter class, lifecycle (`_start` / `_stop`), wiring |
+| `inbound.ts` | Inbound message handling and normalization |
+| `outbound.ts` | Outbound delivery router, delegates to `stream.ts` or buffered delivery |
+| `stream.ts` | Streaming response handling (throttled updates, final flush) |
+| `stream-api.ts` | Typed wrappers for untyped streaming APIs (isolates `as unknown` casts) |
+| `approval.ts` | Tool approval state, timeout management, platform-native approval UI |
+| `index.ts` | Barrel export |
+
+The Slack adapter demonstrates the full split:
+
+```
+packages/relay/src/adapters/slack/
+├── index.ts              # Barrel
+├── slack-adapter.ts      # Main class, lifecycle
+├── inbound.ts            # Socket Mode message handling
+├── outbound.ts           # Delivery router
+├── stream.ts             # Streaming chat.update logic
+├── stream-api.ts         # Typed wrapper for Slack streaming API
+└── approval.ts           # Approval state, Block Kit buttons, timeouts
+```
+
+Each file receives its dependencies (state, callbacks, client) via function parameters rather than importing module-level singletons. This makes every function independently testable.
 
 ## Tool Approval Events
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { WebClient } from '@slack/web-api';
-import { deliverMessage } from '../outbound.js';
+import { deliverMessage, createSlackOutboundState } from '../outbound.js';
 import type { ActiveStream } from '../outbound.js';
 import type { AdapterOutboundCallbacks } from '../../../types.js';
 
@@ -95,6 +95,26 @@ vi.mock('../../../lib/payload-utils.js', () => {
     },
     // Passthrough — no mrkdwn conversion applied in tests
     formatForPlatform: (content: string, _platform: string) => content,
+    extractAgentIdFromEnvelope: (envelope: { payload?: unknown }) => {
+      const payload = envelope.payload;
+      if (payload && typeof payload === 'object' && 'data' in payload) {
+        const data = (payload as Record<string, unknown>).data;
+        if (data && typeof data === 'object' && 'agentId' in data) {
+          return (data as Record<string, unknown>).agentId as string | undefined;
+        }
+      }
+      return undefined;
+    },
+    extractSessionIdFromEnvelope: (envelope: { payload?: unknown }) => {
+      const payload = envelope.payload;
+      if (payload && typeof payload === 'object' && 'data' in payload) {
+        const data = (payload as Record<string, unknown>).data;
+        if (data && typeof data === 'object' && 'ccaSessionKey' in data) {
+          return (data as Record<string, unknown>).ccaSessionKey as string | undefined;
+        }
+      }
+      return undefined;
+    },
   };
 });
 
@@ -173,6 +193,7 @@ function deliver(
     streaming,
     nativeStreaming,
     typingIndicator,
+    approvalState: createSlackOutboundState(),
   });
 }
 

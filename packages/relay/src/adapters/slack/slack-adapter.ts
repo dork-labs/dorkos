@@ -13,15 +13,17 @@ import type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
 import type {
   RelayPublisher, AdapterContext, DeliveryResult, PublishOptions,
-  AdapterInboundCallbacks, AdapterOutboundCallbacks,
 } from '../../types.js';
 import {
   SUBJECT_PREFIX,
   handleInboundMessage,
   clearCaches,
 } from './inbound.js';
-import { deliverMessage, clearApprovalTimeout } from './outbound.js';
-import type { ActiveStream } from './outbound.js';
+import {
+  deliverMessage, clearApprovalTimeout,
+  createSlackOutboundState, clearAllApprovalTimeouts,
+} from './outbound.js';
+import type { ActiveStream, SlackOutboundState } from './outbound.js';
 
 /**
  * Slack App Manifest YAML for one-click app creation.
@@ -207,6 +209,7 @@ export class SlackAdapter extends BaseRelayAdapter {
   /** Bot's own user ID — cached after auth.test for echo prevention. */
   private botUserId = '';
   private streamState = new Map<string, ActiveStream>();
+  private readonly outboundState: SlackOutboundState = createSlackOutboundState();
 
   constructor(id: string, config: SlackAdapterConfig, displayName = 'Slack') {
     super(id, SUBJECT_PREFIX, displayName);
@@ -328,24 +331,9 @@ export class SlackAdapter extends BaseRelayAdapter {
       streaming: this.config.streaming ?? true,
       nativeStreaming: this.config.nativeStreaming ?? true,
       typingIndicator: this.config.typingIndicator ?? 'none',
+      approvalState: this.outboundState,
       logger: this.logger,
     });
-  }
-
-  /** Build callbacks for inbound message handling. */
-  private makeInboundCallbacks(): AdapterInboundCallbacks {
-    return {
-      trackInbound: () => this.trackInbound(),
-      recordError: (err: unknown) => this.recordError(err),
-    };
-  }
-
-  /** Build callbacks for outbound message delivery. */
-  private makeOutboundCallbacks(): AdapterOutboundCallbacks {
-    return {
-      trackOutbound: () => this.trackOutbound(),
-      recordError: (err: unknown) => this.recordError(err),
-    };
   }
 
   /**
@@ -385,7 +373,7 @@ export class SlackAdapter extends BaseRelayAdapter {
       };
 
       // Clear any pending timeout for this approval
-      clearApprovalTimeout(toolCallId);
+      clearApprovalTimeout(this.outboundState, toolCallId);
 
       // Publish approval response to relay bus
       const opts: PublishOptions = { from: `slack:${btnBody.user?.id ?? 'unknown'}` };

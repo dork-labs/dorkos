@@ -7,7 +7,10 @@ import {
   formatForPlatform,
   extractApprovalData,
   formatToolDescription,
+  extractAgentIdFromEnvelope,
+  extractSessionIdFromEnvelope,
 } from '../payload-utils.js';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
 describe('extractPayloadContent', () => {
   it('returns string payload directly', () => {
@@ -292,8 +295,62 @@ describe('formatForPlatform', () => {
   });
 
   describe('telegram', () => {
-    it('passes through unchanged', () => {
-      expect(formatForPlatform('**bold**', 'telegram')).toBe('**bold**');
+    it('converts bold text', () => {
+      expect(formatForPlatform('**bold**', 'telegram')).toBe('<b>bold</b>');
+    });
+
+    it('converts italic text', () => {
+      expect(formatForPlatform('*italic*', 'telegram')).toBe('<i>italic</i>');
+    });
+
+    it('converts strikethrough text', () => {
+      expect(formatForPlatform('~~struck~~', 'telegram')).toBe('<s>struck</s>');
+    });
+
+    it('converts inline code', () => {
+      expect(formatForPlatform('use `npm install`', 'telegram')).toBe('use <code>npm install</code>');
+    });
+
+    it('converts code blocks with language hint', () => {
+      const input = '```typescript\nconst x = 1;\n```';
+      expect(formatForPlatform(input, 'telegram')).toBe(
+        '<pre><code class="language-typescript">const x = 1;</code></pre>',
+      );
+    });
+
+    it('converts code blocks without language hint', () => {
+      const input = '```\nplain code\n```';
+      expect(formatForPlatform(input, 'telegram')).toBe('<pre><code>plain code</code></pre>');
+    });
+
+    it('converts links', () => {
+      expect(formatForPlatform('[Google](https://google.com)', 'telegram')).toBe(
+        '<a href="https://google.com">Google</a>',
+      );
+    });
+
+    it('converts headings to bold', () => {
+      expect(formatForPlatform('# Title', 'telegram')).toBe('<b>Title</b>');
+      expect(formatForPlatform('### Subtitle', 'telegram')).toBe('<b>Subtitle</b>');
+    });
+
+    it('escapes HTML entities before tag insertion', () => {
+      expect(formatForPlatform('a < b & c > d', 'telegram')).toBe('a &lt; b &amp; c &gt; d');
+    });
+
+    it('handles mixed formatting', () => {
+      const input = '**bold** and *italic* with `code`';
+      expect(formatForPlatform(input, 'telegram')).toBe(
+        '<b>bold</b> and <i>italic</i> with <code>code</code>',
+      );
+    });
+
+    it('returns empty string for empty input', () => {
+      expect(formatForPlatform('', 'telegram')).toBe('');
+    });
+
+    it('returns plain text unchanged when no markdown', () => {
+      expect(formatForPlatform('hello world', 'telegram')).toBe('hello world');
     });
   });
 
@@ -317,5 +374,69 @@ describe('formatForPlatform', () => {
     it('strips heading markers', () => {
       expect(formatForPlatform('## Heading', 'plain')).toBe('Heading');
     });
+  });
+});
+
+// Helper to build a minimal RelayEnvelope for tests
+function makeEnvelope(payload: unknown): RelayEnvelope {
+  return {
+    id: 'test-id',
+    subject: 'relay.test',
+    payload,
+    ts: Date.now(),
+  } as RelayEnvelope;
+}
+
+describe('extractAgentIdFromEnvelope', () => {
+  it('returns the agentId when payload.data.agentId is present', () => {
+    const envelope = makeEnvelope({ type: 'approval_required', data: { agentId: 'agent-abc', ccaSessionKey: 'sess-1' } });
+    expect(extractAgentIdFromEnvelope(envelope)).toBe('agent-abc');
+  });
+
+  it('returns undefined when payload has no data field', () => {
+    const envelope = makeEnvelope({ type: 'text_delta' });
+    expect(extractAgentIdFromEnvelope(envelope)).toBeUndefined();
+  });
+
+  it('returns undefined when data has no agentId field', () => {
+    const envelope = makeEnvelope({ type: 'approval_required', data: { ccaSessionKey: 'sess-1' } });
+    expect(extractAgentIdFromEnvelope(envelope)).toBeUndefined();
+  });
+
+  it('returns undefined when payload is a string', () => {
+    const envelope = makeEnvelope('plain text');
+    expect(extractAgentIdFromEnvelope(envelope)).toBeUndefined();
+  });
+
+  it('returns undefined when payload is null', () => {
+    const envelope = makeEnvelope(null);
+    expect(extractAgentIdFromEnvelope(envelope)).toBeUndefined();
+  });
+});
+
+describe('extractSessionIdFromEnvelope', () => {
+  it('returns the ccaSessionKey when payload.data.ccaSessionKey is present', () => {
+    const envelope = makeEnvelope({ type: 'approval_required', data: { agentId: 'agent-abc', ccaSessionKey: 'sess-xyz' } });
+    expect(extractSessionIdFromEnvelope(envelope)).toBe('sess-xyz');
+  });
+
+  it('returns undefined when payload has no data field', () => {
+    const envelope = makeEnvelope({ type: 'text_delta' });
+    expect(extractSessionIdFromEnvelope(envelope)).toBeUndefined();
+  });
+
+  it('returns undefined when data has no ccaSessionKey field', () => {
+    const envelope = makeEnvelope({ type: 'approval_required', data: { agentId: 'agent-abc' } });
+    expect(extractSessionIdFromEnvelope(envelope)).toBeUndefined();
+  });
+
+  it('returns undefined when payload is a string', () => {
+    const envelope = makeEnvelope('plain text');
+    expect(extractSessionIdFromEnvelope(envelope)).toBeUndefined();
+  });
+
+  it('returns undefined when payload is null', () => {
+    const envelope = makeEnvelope(null);
+    expect(extractSessionIdFromEnvelope(envelope)).toBeUndefined();
   });
 });

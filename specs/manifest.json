@@ -1053,7 +1053,14 @@
       "title": "SDK Error Observability — Break Infinite Retry Loop, Surface Errors to Adapters",
       "created": "2026-03-18",
       "status": "specification"
+    },
+    {
+      "number": 149,
+      "slug": "relay-adapter-code-quality",
+      "title": "Relay Adapter System Code Quality & DRY Remediation",
+      "created": "2026-03-18",
+      "status": "specification"
     }
   ],
-  "nextNumber": 149
+  "nextNumber": 150
 }

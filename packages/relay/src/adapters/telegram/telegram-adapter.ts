@@ -17,8 +17,14 @@ import type {
   DeliveryResult, TelegramAdapterConfig, Unsubscribe,
 } from '../../types.js';
 import { SUBJECT_PREFIX, handleInboundMessage } from './inbound.js';
-import { deliverMessage, handleTypingSignal, clearAllTypingIntervals, callbackIdMap, clearApprovalTimeout } from './outbound.js';
-import type { ResponseBuffer } from './outbound.js';
+import {
+  deliverMessage,
+  handleTypingSignal,
+  clearAllTypingIntervals,
+  clearApprovalTimeout,
+  createTelegramOutboundState,
+} from './outbound.js';
+import type { ResponseBuffer, TelegramOutboundState } from './outbound.js';
 import { startWebhookMode, stopWebhookServer } from './webhook.js';
 
 /** Static adapter manifest for the Telegram built-in adapter. */
@@ -115,6 +121,8 @@ export class TelegramAdapter extends BaseRelayAdapter {
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private responseBuffers = new Map<number, ResponseBuffer>();
+  /** Instance-scoped outbound state — prevents cross-adapter leakage when multiInstance: true. */
+  private readonly outboundState: TelegramOutboundState = createTelegramOutboundState();
 
   constructor(id: string, config: TelegramAdapterConfig, displayName = 'Telegram') {
     super(id, SUBJECT_PREFIX, displayName);
@@ -144,7 +152,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
     bot.on('callback_query:data', async (ctx) => {
       try {
         const data = JSON.parse(ctx.callbackQuery.data) as { k: string; a: number };
-        const entry = callbackIdMap.get(data.k);
+        const entry = this.outboundState.callbackIdMap.get(data.k);
 
         if (!entry) {
           await ctx.answerCallbackQuery({ text: 'This approval has expired.' });
@@ -152,8 +160,8 @@ export class TelegramAdapter extends BaseRelayAdapter {
         }
 
         const approved = data.a === 1;
-        callbackIdMap.delete(data.k);
-        clearApprovalTimeout(data.k);
+        this.outboundState.callbackIdMap.delete(data.k);
+        clearApprovalTimeout(this.outboundState, data.k);
 
         // Publish approval response to relay bus
         const opts: PublishOptions = { from: `telegram:${ctx.from.id}` };
@@ -184,7 +192,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
     this.bot = bot;
 
     this.signalUnsub = relay.onSignal(`${SUBJECT_PREFIX}.>`, (subject: string, signal: Signal) => {
-      if (signal.type === 'typing') void handleTypingSignal(this.bot, subject, signal.state);
+      if (signal.type === 'typing') void handleTypingSignal(this.bot, subject, this.outboundState, signal.state);
     });
 
     if (this.config.mode === 'webhook') {
@@ -200,7 +208,12 @@ export class TelegramAdapter extends BaseRelayAdapter {
   protected async _stop(): Promise<void> {
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.signalUnsub) { this.signalUnsub(); this.signalUnsub = null; }
-    clearAllTypingIntervals();
+    clearAllTypingIntervals(this.outboundState);
+
+    // Clear all pending approval timeouts to prevent dangling timers
+    for (const timer of this.outboundState.pendingApprovalTimeouts.values()) clearTimeout(timer);
+    this.outboundState.pendingApprovalTimeouts.clear();
+    this.outboundState.callbackIdMap.clear();
 
     if (this.bot) {
       if (this.config.mode === 'webhook') {
@@ -227,6 +240,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
       envelope,
       bot: this.bot,
       responseBuffers: this.responseBuffers,
+      state: this.outboundState,
       callbacks: this.makeOutboundCallbacks(),
       streaming: this.config.streaming ?? true,
       logger: this.logger,
@@ -234,22 +248,6 @@ export class TelegramAdapter extends BaseRelayAdapter {
   }
 
   // --- Private helpers ---
-
-  /** Build callbacks for inbound message handling. */
-  private makeInboundCallbacks() {
-    return {
-      trackInbound: () => this.trackInbound(),
-      recordError: (err: unknown) => this.recordError(err),
-    };
-  }
-
-  /** Build callbacks for outbound message delivery. */
-  private makeOutboundCallbacks() {
-    return {
-      trackOutbound: () => this.trackOutbound(),
-      recordError: (err: unknown) => this.recordError(err),
-    };
-  }
 
   /** Start grammy bot in long-polling mode with eager token validation. */
   private async startPollingMode(bot: Bot): Promise<void> {

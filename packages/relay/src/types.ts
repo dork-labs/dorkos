@@ -230,18 +230,27 @@ export interface AdapterOutboundCallbacks {
 // === External Adapters ===
 
 /**
- * Minimal publish result shape for adapter → relay communication.
+ * Result of a publish operation.
  *
- * Mirrors PublishResult from relay-core.ts without creating a circular import.
+ * Defined here (not relay-publish.ts) so adapter interfaces can reference it
+ * without introducing a circular import through relay-core.ts.
  */
-export interface PublishResultLike {
+export interface PublishResult {
+  /** The ULID message ID assigned to the published envelope. */
   messageId: string;
+
+  /** Number of endpoints the message was delivered to. */
   deliveredTo: number;
+
+  /** Endpoints that rejected the message, with structured reasons. */
   rejected?: Array<{
     endpointHash: string;
     reason: 'backpressure' | 'circuit_open' | 'rate_limited' | 'budget_exceeded';
   }>;
+
+  /** Per-endpoint pressure ratios for proactive signaling (0.0-1.0). */
   mailboxPressure?: Record<string, number>;
+
   /** Result from adapter delivery, if attempted. */
   adapterResult?: DeliveryResult;
 }
@@ -249,11 +258,10 @@ export interface PublishResultLike {
 /**
  * Minimal interface for adapter → relay communication.
  *
- * Avoids circular dependency between types.ts and relay-core.ts.
  * RelayCore implements this interface.
  */
 export interface RelayPublisher {
-  publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResultLike>;
+  publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResult>;
   onSignal(pattern: string, handler: SignalHandler): Unsubscribe;
   /**
    * Subscribe to messages matching a subject pattern.

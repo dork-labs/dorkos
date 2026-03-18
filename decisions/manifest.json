@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 144,
+  "nextNumber": 145,
   "decisions": [
+    {
+      "number": 144,
+      "slug": "use-html-parse-mode-for-telegram-formatting",
+      "title": "Use HTML Parse Mode for Telegram Formatting",
+      "status": "draft",
+      "created": "2026-03-18",
+      "extractedFrom": "relay-adapter-code-quality",
+      "specSlug": "relay-adapter-code-quality"
+    },
     {
       "number": 143,
       "slug": "use-retry-depth-over-circuit-breaker-for-sdk-errors",

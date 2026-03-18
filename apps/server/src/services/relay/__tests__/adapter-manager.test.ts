@@ -1188,7 +1188,7 @@ describe('AdapterManager', () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
       await manager.initialize();
 
-      // Inject a mock BindingStore with bindings for multiple adapters
+      // Inject a mock bindingSubsystem whose getBindingStore() returns a mock store
       const mockBindingStore = {
         getAll: vi.fn().mockReturnValue([
           { id: 'b1', adapterId: 'tg-main', agentId: 'agent-1' },
@@ -1197,8 +1197,7 @@ describe('AdapterManager', () => {
         ]),
         delete: vi.fn().mockResolvedValue(true),
       };
-       
-      (manager as any).bindingStore = mockBindingStore;
+      (manager as any).bindingSubsystem = { getBindingStore: () => mockBindingStore };
 
       await manager.removeAdapter('tg-main');
 
@@ -1220,8 +1219,7 @@ describe('AdapterManager', () => {
         ]),
         delete: vi.fn().mockResolvedValue(true),
       };
-       
-      (manager as any).bindingStore = mockBindingStore;
+      (manager as any).bindingSubsystem = { getBindingStore: () => mockBindingStore };
 
       await manager.removeAdapter('tg-main');
 

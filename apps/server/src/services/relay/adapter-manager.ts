@@ -3,6 +3,7 @@
  *
  * Config I/O and validation are in adapter-config.ts.
  * Adapter instantiation and connection testing are in adapter-factory.ts.
+ * Binding subsystem (BindingStore, AgentSessionStore, BindingRouter) is in binding-subsystem.ts.
  * Error class is in adapter-error.ts.
  *
  * @module services/relay/adapter-manager
@@ -29,12 +30,8 @@ import type {
   PulseStoreLike,
 } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
-import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
-import { BindingStore } from './binding-store.js';
-import { AgentSessionStore } from './agent-session-store.js';
-import { BindingRouter, type RelayCoreLike, type AgentSessionCreator } from './binding-router.js';
 import { AdapterError } from './adapter-error.js';
 import {
   loadAdapterConfig,
@@ -45,6 +42,8 @@ import {
   mergeWithPasswordPreservation,
 } from './adapter-config.js';
 import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './adapter-factory.js';
+import { BindingSubsystem } from './binding-subsystem.js';
+import type { RelayCoreLike } from './binding-router.js';
 
 // Re-export for consumers that import AdapterError from this module
 export { AdapterError } from './adapter-error.js';
@@ -80,9 +79,7 @@ export class AdapterManager {
   private configs: AdapterConfig[] = [];
   private readonly deps: AdapterManagerDeps;
   private manifests = new Map<string, AdapterManifest>();
-  private bindingStore?: BindingStore;
-  private agentSessionStore?: AgentSessionStore;
-  private bindingRouter?: BindingRouter;
+  private bindingSubsystem?: BindingSubsystem;
 
   constructor(
     registry: AdapterRegistry,
@@ -109,54 +106,23 @@ export class AdapterManager {
     await this.initBindingSubsystem();
   }
 
-  /** Initialize the binding store and router subsystem. Non-fatal on failure. */
+  /** Initialize the binding subsystem. Non-fatal on failure — logs and continues. */
   private async initBindingSubsystem(): Promise<void> {
-    if (!this.deps.relayCore) {
-      logger.info('[AdapterManager] relayCore not provided, skipping binding subsystem');
+    if (!this.deps.relayCore || !this.deps.meshCore) {
+      logger.info('[AdapterManager] relayCore or meshCore not provided, skipping binding subsystem');
       return;
     }
 
-    const relayDir = dirname(this.configPath);
-    try {
-      this.bindingStore = new BindingStore(relayDir);
-      await this.bindingStore.init();
-      logger.info('[AdapterManager] BindingStore initialized');
-
-      this.agentSessionStore = new AgentSessionStore(relayDir);
-      await this.agentSessionStore.init();
-      logger.info('[AdapterManager] AgentSessionStore initialized');
-
-      const agentManager = this.deps.agentManager;
-      const sessionCreator: AgentSessionCreator = {
-        async createSession(cwd: string, permissionMode?: PermissionMode) {
-          const id = crypto.randomUUID();
-          agentManager.ensureSession(id, { permissionMode: permissionMode ?? 'acceptEdits', cwd });
-          return { id };
-        },
-      };
-
-      if (!this.deps.meshCore) {
-        logger.info('[AdapterManager] meshCore not provided, skipping binding subsystem');
-        return;
-      }
-
-      this.bindingRouter = new BindingRouter({
-        bindingStore: this.bindingStore,
-        relayCore: this.deps.relayCore,
-        agentManager: sessionCreator,
-        meshCore: this.deps.meshCore,
-        relayDir,
-        resolveAdapterInstanceId: (platformType: string) => {
-          const match = this.configs.find((c) => c.type === platformType && c.enabled);
-          return match?.id;
-        },
-      });
-      await this.bindingRouter.init();
-      logger.info('[AdapterManager] BindingRouter initialized');
-    } catch (err) {
-      logger.warn('[AdapterManager] Failed to initialize binding subsystem:', err);
-      // Non-fatal: adapters still work, just no binding-based routing
-    }
+    this.bindingSubsystem = await BindingSubsystem.init({
+      relayCore: this.deps.relayCore,
+      meshCore: this.deps.meshCore,
+      agentManager: this.deps.agentManager,
+      configPath: this.configPath,
+      resolveAdapterInstanceId: (platformType: string) => {
+        const match = this.configs.find((c) => c.type === platformType && c.enabled);
+        return match?.id;
+      },
+    });
   }
 
   /** Reload config from disk and reconcile adapter state. */
@@ -257,18 +223,18 @@ export class AdapterManager {
   }
 
   /** Get the BindingStore, or undefined if binding subsystem was not initialized. */
-  getBindingStore(): BindingStore | undefined {
-    return this.bindingStore;
+  getBindingStore(): import('./binding-store.js').BindingStore | undefined {
+    return this.bindingSubsystem?.getBindingStore();
   }
 
   /** Get the AgentSessionStore, or undefined if binding subsystem was not initialized. */
-  getAgentSessionStore(): AgentSessionStore | undefined {
-    return this.agentSessionStore;
+  getAgentSessionStore(): import('./agent-session-store.js').AgentSessionStore | undefined {
+    return this.bindingSubsystem?.getAgentSessionStore();
   }
 
   /** Get the BindingRouter, or undefined if binding subsystem was not initialized. */
-  getBindingRouter(): BindingRouter | undefined {
-    return this.bindingRouter;
+  getBindingRouter(): import('./binding-router.js').BindingRouter | undefined {
+    return this.bindingSubsystem?.getBindingRouter();
   }
 
   /** Enrich AdapterContext with Mesh agent info if meshCore is available. */
@@ -408,10 +374,11 @@ export class AdapterManager {
     await saveAdapterConfig(this.configPath, this.configs);
 
     // Auto-delete bindings that belonged to the removed adapter
-    if (this.bindingStore) {
-      const orphanBindings = this.bindingStore.getAll().filter((b) => b.adapterId === id);
+    const bindingStore = this.bindingSubsystem?.getBindingStore();
+    if (bindingStore) {
+      const orphanBindings = bindingStore.getAll().filter((b: { adapterId: string; id: string }) => b.adapterId === id);
       for (const binding of orphanBindings) {
-        await this.bindingStore.delete(binding.id);
+        await bindingStore.delete(binding.id);
       }
       if (orphanBindings.length > 0) {
         logger.info(
@@ -459,13 +426,9 @@ export class AdapterManager {
 
   /** Stop all adapters and the config file watcher. */
   async shutdown(): Promise<void> {
-    if (this.bindingRouter) {
-      await this.bindingRouter.shutdown();
-      this.bindingRouter = undefined;
-    }
-    if (this.bindingStore) {
-      await this.bindingStore.shutdown();
-      this.bindingStore = undefined;
+    if (this.bindingSubsystem) {
+      await this.bindingSubsystem.shutdown();
+      this.bindingSubsystem = undefined;
     }
     if (this.configWatcher) {
       await this.configWatcher.close();
@@ -502,7 +465,7 @@ export class AdapterManager {
   private async buildAdapter(config: AdapterConfig): Promise<RelayAdapter | null> {
     return createAdapter(
       config,
-      { ...this.deps, agentSessionStore: this.agentSessionStore },
+      { ...this.deps, agentSessionStore: this.bindingSubsystem?.getAgentSessionStore() },
       this.configPath,
       (type, manifest) => this.registerPluginManifest(type, manifest),
     );

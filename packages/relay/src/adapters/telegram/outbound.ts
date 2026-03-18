@@ -20,15 +20,16 @@ import {
   truncateText,
   extractApprovalData,
   formatToolDescription,
+  formatForPlatform,
+  extractAgentIdFromEnvelope,
+  extractSessionIdFromEnvelope,
 } from '../../lib/payload-utils.js';
 import type { ApprovalData } from '../../lib/payload-utils.js';
 import { extractChatId, SUBJECT_PREFIX, MAX_MESSAGE_LENGTH } from './inbound.js';
+import { sendMessageDraft } from './stream-api.js';
 
 /** Telegram sendChatAction type for typing indicator. */
 const TELEGRAM_TYPING_ACTION = 'typing' as const;
-
-/** Active typing intervals keyed by chatId. */
-const typingIntervals = new Map<number, ReturnType<typeof setInterval>>();
 
 /** Refresh interval for Telegram typing indicator (expires after 5s). */
 const TYPING_REFRESH_MS = 4_000;
@@ -39,29 +40,53 @@ const DRAFT_UPDATE_INTERVAL_MS = 200;
 /** TTL for response buffers (ms). Buffers older than this are reaped to prevent memory leaks. */
 export const BUFFER_TTL_MS = 5 * 60 * 1_000;
 
-/** Last draft update timestamp per chat (for throttling sendMessageDraft). */
-const lastDraftUpdate = new Map<number, number>();
-
-/**
- * In-memory map from short callback key to full approval IDs.
- *
- * Telegram's callback_data field is limited to 64 bytes. We store the full
- * IDs here and encode only a 12-character short key in the button payload.
- */
-export const callbackIdMap = new Map<string, { toolCallId: string; sessionId: string; agentId: string }>();
-
 /** Maximum age (ms) for callbackIdMap entries before auto-eviction. */
 const CALLBACK_ID_TTL_MS = 15 * 60 * 1_000;
 
-/** Pending approval timeouts keyed by callback short key. */
-export const pendingApprovalTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+/**
+ * Mutable state for Telegram outbound delivery, scoped to a single adapter instance.
+ *
+ * Isolating state per-instance prevents cross-adapter information leakage when
+ * `multiInstance: true` is set on the adapter manifest, and ensures state is
+ * fully reset on adapter stop/start cycles.
+ */
+export interface TelegramOutboundState {
+  /** Active typing intervals keyed by chatId. */
+  typingIntervals: Map<number, ReturnType<typeof setInterval>>;
+  /** Last sendMessageDraft timestamp per chat (for throttling). */
+  lastDraftUpdate: Map<number, number>;
+  /**
+   * In-memory map from short callback key to full approval IDs.
+   *
+   * Telegram's callback_data field is limited to 64 bytes. We store the full
+   * IDs here and encode only a 12-character short key in the button payload.
+   */
+  callbackIdMap: Map<string, { toolCallId: string; sessionId: string; agentId: string }>;
+  /** Pending approval timeouts keyed by callback short key. */
+  pendingApprovalTimeouts: Map<string, ReturnType<typeof setTimeout>>;
+}
 
-/** Clear a pending approval timeout when the user clicks Approve/Deny. */
-export function clearApprovalTimeout(shortKey: string): void {
-  const timer = pendingApprovalTimeouts.get(shortKey);
+/** Create a fresh outbound state container for a new adapter instance. */
+export function createTelegramOutboundState(): TelegramOutboundState {
+  return {
+    typingIntervals: new Map(),
+    lastDraftUpdate: new Map(),
+    callbackIdMap: new Map(),
+    pendingApprovalTimeouts: new Map(),
+  };
+}
+
+/**
+ * Clear a pending approval timeout when the user clicks Approve/Deny.
+ *
+ * @param state - The adapter's outbound state container
+ * @param shortKey - The short callback key to clear
+ */
+export function clearApprovalTimeout(state: TelegramOutboundState, shortKey: string): void {
+  const timer = state.pendingApprovalTimeouts.get(shortKey);
   if (timer) {
     clearTimeout(timer);
-    pendingApprovalTimeouts.delete(shortKey);
+    state.pendingApprovalTimeouts.delete(shortKey);
   }
 }
 
@@ -85,6 +110,8 @@ export interface TelegramDeliverOptions {
   envelope: RelayEnvelope;
   bot: Bot | null;
   responseBuffers: Map<number, ResponseBuffer>;
+  /** Instance-scoped mutable state for this adapter. */
+  state: TelegramOutboundState;
   callbacks: AdapterOutboundCallbacks;
   streaming: boolean;
   logger?: RelayLogger;
@@ -107,7 +134,8 @@ async function sendAndTrack(
   callbacks: AdapterOutboundCallbacks,
 ): Promise<DeliveryResult> {
   try {
-    await bot.api.sendMessage(chatId, text);
+    const html = formatForPlatform(text, 'telegram');
+    await bot.api.sendMessage(chatId, html, { parse_mode: 'HTML' } as Parameters<typeof bot.api.sendMessage>[2]);
     callbacks.trackOutbound();
     return { success: true, durationMs: Date.now() - startTime };
   } catch (err) {
@@ -131,7 +159,7 @@ async function sendAndTrack(
  * @param opts - Delivery options
  */
 export async function deliverMessage(opts: TelegramDeliverOptions): Promise<DeliveryResult> {
-  const { adapterId, subject, envelope, bot, responseBuffers, callbacks, streaming, logger = noopLogger } = opts;
+  const { adapterId, subject, envelope, bot, responseBuffers, state, callbacks, streaming, logger = noopLogger } = opts;
   const startTime = Date.now();
 
   // Guard: skip messages that originated from this adapter to prevent echo.
@@ -167,7 +195,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
   for (const [id, buf] of responseBuffers) {
     if (now - buf.startedAt > BUFFER_TTL_MS) {
       responseBuffers.delete(id);
-      lastDraftUpdate.delete(id);
+      state.lastDraftUpdate.delete(id);
       logger.warn(`buffer: reaped stale buffer for chat ${id} (age: ${Math.round((now - buf.startedAt) / 1000)}s)`);
     }
   }
@@ -188,13 +216,12 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
 
       // Native draft streaming: DMs only (chatId > 0), streaming enabled
       if (streaming && chatId > 0) {
-        const lastUpdate = lastDraftUpdate.get(chatId) ?? 0;
+        const lastUpdate = state.lastDraftUpdate.get(chatId) ?? 0;
         if (Date.now() - lastUpdate >= DRAFT_UPDATE_INTERVAL_MS) {
-          lastDraftUpdate.set(chatId, Date.now());
+          state.lastDraftUpdate.set(chatId, Date.now());
           logger.debug(`stream: sendMessageDraft to chat ${chatId} (${responseBuffers.get(chatId)!.text.length} chars)`);
           try {
-            await (bot.api as unknown as Record<string, (chatId: number, text: string) => Promise<void>>)
-              .sendMessageDraft(chatId, responseBuffers.get(chatId)!.text);
+            await sendMessageDraft(bot, chatId, responseBuffers.get(chatId)!.text);
           } catch {
             // sendMessageDraft not available or failed — fall back to buffer-and-flush.
             // Don't disable streaming globally; failure may be transient.
@@ -212,7 +239,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
 
       const buffered = responseBuffers.get(chatId)?.text ?? '';
       responseBuffers.delete(chatId);
-      lastDraftUpdate.delete(chatId);
+      state.lastDraftUpdate.delete(chatId);
       const text = buffered
         ? truncateText(`${buffered}\n\n[Error: ${errorMsg}]`, MAX_MESSAGE_LENGTH)
         : truncateText(`[Error: ${errorMsg}]`, MAX_MESSAGE_LENGTH);
@@ -224,7 +251,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
       const buffered = responseBuffers.get(chatId);
       logger.debug(`deliver: done for chat ${chatId} (buffered: ${buffered ? `${buffered.text.length} chars` : 'empty'})`);
       responseBuffers.delete(chatId);
-      lastDraftUpdate.delete(chatId);
+      state.lastDraftUpdate.delete(chatId);
       if (buffered) {
         return sendAndTrack(bot, chatId, truncateText(buffered.text, MAX_MESSAGE_LENGTH), startTime, callbacks);
       }
@@ -242,11 +269,11 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
         const buffered = responseBuffers.get(chatId);
         if (buffered?.text) {
           responseBuffers.delete(chatId);
-          lastDraftUpdate.delete(chatId);
+          state.lastDraftUpdate.delete(chatId);
           await sendAndTrack(bot, chatId, truncateText(buffered.text, MAX_MESSAGE_LENGTH), startTime, callbacks);
         }
 
-        return handleApprovalRequired(bot, chatId, data, envelope, callbacks, startTime);
+        return handleApprovalRequired(bot, chatId, data, envelope, state, callbacks, startTime);
       }
     }
 
@@ -272,21 +299,23 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
  *
  * @param bot - The grammy Bot instance, or null if not started
  * @param subject - The Relay subject the typing signal was emitted on
- * @param state - The signal state ('active' | 'stopped' or other values)
+ * @param outboundState - The adapter's instance-scoped outbound state
+ * @param signalState - The signal state ('active' | 'stopped' or other values)
  */
 export async function handleTypingSignal(
   bot: Bot | null,
   subject: string,
-  state: string,
+  outboundState: TelegramOutboundState,
+  signalState: string,
 ): Promise<void> {
   if (!bot) return;
 
   const chatId = extractChatId(subject);
   if (chatId === null) return;
 
-  if (state === 'active') {
+  if (signalState === 'active') {
     // Clear any existing interval (idempotent)
-    clearTypingInterval(chatId);
+    clearTypingInterval(outboundState, chatId);
     // Send immediately
     try {
       await bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION);
@@ -298,25 +327,26 @@ export async function handleTypingSignal(
       try {
         await bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION);
       } catch {
-        clearTypingInterval(chatId);
+        clearTypingInterval(outboundState, chatId);
       }
     }, TYPING_REFRESH_MS);
-    typingIntervals.set(chatId, intervalId);
+    outboundState.typingIntervals.set(chatId, intervalId);
   } else {
-    clearTypingInterval(chatId);
+    clearTypingInterval(outboundState, chatId);
   }
 }
 
 /**
  * Clear the typing refresh interval for a specific chat.
  *
+ * @param state - The adapter's outbound state container
  * @param chatId - The Telegram chat ID to clear the interval for
  */
-function clearTypingInterval(chatId: number): void {
-  const existing = typingIntervals.get(chatId);
+function clearTypingInterval(state: TelegramOutboundState, chatId: number): void {
+  const existing = state.typingIntervals.get(chatId);
   if (existing !== undefined) {
     clearInterval(existing);
-    typingIntervals.delete(chatId);
+    state.typingIntervals.delete(chatId);
   }
 }
 
@@ -324,48 +354,29 @@ function clearTypingInterval(chatId: number): void {
  * Clear all active typing intervals and draft update state.
  *
  * Call on adapter stop to prevent leaked intervals and stale throttle state.
+ *
+ * @param state - The adapter's outbound state container
  */
-export function clearAllTypingIntervals(): void {
-  for (const interval of typingIntervals.values()) clearInterval(interval);
-  typingIntervals.clear();
-  lastDraftUpdate.clear();
+export function clearAllTypingIntervals(state: TelegramOutboundState): void {
+  for (const interval of state.typingIntervals.values()) clearInterval(interval);
+  state.typingIntervals.clear();
+  state.lastDraftUpdate.clear();
 }
 
 // === Approval handling ===
 
 /**
- * Extract agentId from the enriched approval_required event payload.
- *
- * @param envelope - The relay envelope containing the approval_required event
- */
-function extractAgentIdFromEnvelope(envelope: RelayEnvelope): string {
-  const payload = envelope.payload as Record<string, unknown> | null;
-  const data = payload?.data as Record<string, unknown> | undefined;
-  return (data?.agentId as string) ?? 'unknown';
-}
-
-/**
- * Extract ccaSessionKey from the enriched approval_required event payload.
- *
- * @param envelope - The relay envelope containing the approval_required event
- */
-function extractSessionIdFromEnvelope(envelope: RelayEnvelope): string {
-  const payload = envelope.payload as Record<string, unknown> | null;
-  const data = payload?.data as Record<string, unknown> | undefined;
-  return (data?.ccaSessionKey as string) ?? 'unknown';
-}
-
-/**
  * Render a Telegram inline keyboard with Approve/Deny buttons.
  *
- * Uses a 12-character random short key stored in {@link callbackIdMap} to work
- * around Telegram's 64-byte `callback_data` limit. The short key is evicted
- * from the map after {@link CALLBACK_ID_TTL_MS} to prevent unbounded growth.
+ * Uses a 12-character random short key stored in {@link TelegramOutboundState.callbackIdMap}
+ * to work around Telegram's 64-byte `callback_data` limit. The short key is
+ * evicted from the map after {@link CALLBACK_ID_TTL_MS} to prevent unbounded growth.
  *
  * @param bot - Grammy Bot instance
  * @param chatId - Telegram chat ID
  * @param data - Parsed approval data from the approval_required event
  * @param envelope - The relay envelope (used to extract agentId/sessionId)
+ * @param state - The adapter's instance-scoped outbound state
  * @param callbacks - Outbound tracking callbacks
  * @param startTime - Delivery start timestamp for duration tracking
  */
@@ -374,17 +385,18 @@ async function handleApprovalRequired(
   chatId: number,
   data: ApprovalData,
   envelope: RelayEnvelope,
+  state: TelegramOutboundState,
   callbacks: AdapterOutboundCallbacks,
   startTime: number,
 ): Promise<DeliveryResult> {
-  const agentId = extractAgentIdFromEnvelope(envelope);
-  const sessionId = extractSessionIdFromEnvelope(envelope);
+  const agentId = extractAgentIdFromEnvelope(envelope) ?? 'unknown';
+  const sessionId = extractSessionIdFromEnvelope(envelope) ?? 'unknown';
 
   // Generate a short lookup key (12 hex chars = 6 bytes) for the 64-byte callback_data limit.
-  // The full IDs are stored in callbackIdMap and evicted after CALLBACK_ID_TTL_MS.
+  // The full IDs are stored in state.callbackIdMap and evicted after CALLBACK_ID_TTL_MS.
   const shortKey = randomBytes(6).toString('hex');
-  callbackIdMap.set(shortKey, { toolCallId: data.toolCallId, sessionId, agentId });
-  setTimeout(() => callbackIdMap.delete(shortKey), CALLBACK_ID_TTL_MS);
+  state.callbackIdMap.set(shortKey, { toolCallId: data.toolCallId, sessionId, agentId });
+  setTimeout(() => state.callbackIdMap.delete(shortKey), CALLBACK_ID_TTL_MS);
 
   const toolDescription = formatToolDescription(data.toolName, data.input);
   const inputPreview = truncateText(data.input, 400);
@@ -409,8 +421,8 @@ async function handleApprovalRequired(
     // Register timeout to auto-expire the approval card
     if (data.timeoutMs && data.timeoutMs > 0) {
       const timer = setTimeout(async () => {
-        pendingApprovalTimeouts.delete(shortKey);
-        callbackIdMap.delete(shortKey);
+        state.pendingApprovalTimeouts.delete(shortKey);
+        state.callbackIdMap.delete(shortKey);
         try {
           await bot.api.editMessageText(
             chatId,
@@ -422,7 +434,7 @@ async function handleApprovalRequired(
           // best-effort — message may have been deleted
         }
       }, data.timeoutMs);
-      pendingApprovalTimeouts.set(shortKey, timer);
+      state.pendingApprovalTimeouts.set(shortKey, timer);
     }
 
     callbacks.trackOutbound();

@@ -10,6 +10,8 @@ import type {
   AdapterStatus,
   AdapterContext,
   DeliveryResult,
+  AdapterInboundCallbacks,
+  AdapterOutboundCallbacks,
 } from './types.js';
 import { noopLogger } from './types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -213,6 +215,34 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
   protected markConnected(): void {
     if (this._status.state !== 'reconnecting' && this._status.state !== 'starting') return;
     this._status = { ...this._status, state: 'connected' };
+  }
+
+  /**
+   * Build a callbacks object for inbound message handling sub-modules.
+   *
+   * Returns bound wrappers around `trackInbound()` and `recordError()` so
+   * sub-modules can update adapter status without holding a reference to the
+   * adapter itself.
+   */
+  protected makeInboundCallbacks(): AdapterInboundCallbacks {
+    return {
+      trackInbound: () => this.trackInbound(),
+      recordError: (err: unknown) => this.recordError(err),
+    };
+  }
+
+  /**
+   * Build a callbacks object for outbound message delivery sub-modules.
+   *
+   * Returns bound wrappers around `trackOutbound()` and `recordError()` so
+   * sub-modules can update adapter status without holding a reference to the
+   * adapter itself.
+   */
+  protected makeOutboundCallbacks(): AdapterOutboundCallbacks {
+    return {
+      trackOutbound: () => this.trackOutbound(),
+      recordError: (err: unknown) => this.recordError(err),
+    };
   }
 
   /** Whether the adapter has been stopped or is stopping. */

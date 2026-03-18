@@ -6,11 +6,13 @@
  * adapters to avoid duplicated extraction logic.
  *
  * Also provides StreamEvent detection helpers for adapters that need to
- * aggregate streaming events (e.g. TelegramAdapter buffers text_delta chunks).
+ * aggregate streaming events (e.g. TelegramAdapter buffers text_delta chunks),
+ * and envelope field extractors shared across outbound delivery modules.
  *
  * @module relay/lib/payload-utils
  */
 import { slackifyMarkdown } from 'slackify-markdown';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
 /**
  * Extract text content from an unknown Relay envelope payload.
@@ -152,7 +154,89 @@ export function formatToolDescription(toolName: string, input: string): string {
   return `wants to use tool \`${toolName}\``;
 }
 
+// === Envelope field extraction ===
+
+/**
+ * Extract the agent ID from a RelayEnvelope's nested payload data.
+ *
+ * Used by outbound delivery to correlate messages with agent sessions.
+ *
+ * @param envelope - The relay envelope to inspect
+ * @returns The agent ID, or undefined if not present
+ */
+export function extractAgentIdFromEnvelope(envelope: RelayEnvelope): string | undefined {
+  const payload = envelope.payload;
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    const data = (payload as Record<string, unknown>).data;
+    if (data && typeof data === 'object' && 'agentId' in data) {
+      return (data as Record<string, unknown>).agentId as string | undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extract the CCA session key from a RelayEnvelope's nested payload data.
+ *
+ * Used by outbound delivery to route approval responses to the correct session.
+ *
+ * @param envelope - The relay envelope to inspect
+ * @returns The session key, or undefined if not present
+ */
+export function extractSessionIdFromEnvelope(envelope: RelayEnvelope): string | undefined {
+  const payload = envelope.payload;
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    const data = (payload as Record<string, unknown>).data;
+    if (data && typeof data === 'object' && 'ccaSessionKey' in data) {
+      return (data as Record<string, unknown>).ccaSessionKey as string | undefined;
+    }
+  }
+  return undefined;
+}
+
 // === Format conversion ===
+
+/**
+ * Convert standard Markdown to Telegram's supported HTML subset.
+ *
+ * Telegram supports: `<b>`, `<i>`, `<s>`, `<code>`, `<pre>`, `<a href="">`.
+ * HTML parse mode avoids MarkdownV2's painful escaping requirements.
+ *
+ * @param md - Standard Markdown text
+ * @returns HTML suitable for Telegram's `parse_mode: 'HTML'`
+ */
+function markdownToTelegramHtml(md: string): string {
+  let html = md;
+
+  // Escape HTML entities first (before adding our own tags)
+  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Code blocks (```lang\n...\n```) -> <pre><code class="language-lang">...</code></pre>
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+    const cls = (lang as string) ? ` class="language-${lang as string}"` : '';
+    return `<pre><code${cls}>${(code as string).trimEnd()}</code></pre>`;
+  });
+
+  // Inline code (`...`) -> <code>...</code>
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Bold (**...**) -> <b>...</b>
+  html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+
+  // Italic (*...*) -> <i>...</i>
+  html = html.replace(/\*(.+?)\*/g, '<i>$1</i>');
+
+  // Strikethrough (~~...~~) -> <s>...</s>
+  html = html.replace(/~~(.+?)~~/g, '<s>$1</s>');
+
+  // Links [text](url) -> <a href="url">text</a>
+  html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
+
+  // Headings (# ...) -> bold (Telegram has no heading tag)
+  html = html.replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>');
+
+  return html;
+}
 
 /**
  * Convert standard Markdown to a platform-specific format.
@@ -169,9 +253,7 @@ export function formatForPlatform(
     case 'slack':
       return slackifyMarkdown(content);
     case 'telegram':
-      // Telegram accepts standard Markdown via parse_mode: 'MarkdownV2'
-      // but our current implementation sends plain text. Pass through for now.
-      return content;
+      return markdownToTelegramHtml(content);
     case 'plain':
       // Strip Markdown formatting for webhook adapter and similar
       return content
