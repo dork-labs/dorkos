@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Improve ConfigFieldInput layout, error UX, and password toggle
 - Persist session map across restarts for Slack DM continuity
 - Extract binding permissionMode in CCA agent handler
 - Clear pending approval timeouts on SlackAdapter stop

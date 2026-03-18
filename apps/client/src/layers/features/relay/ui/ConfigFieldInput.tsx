@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Input } from '@/layers/shared/ui/input';
 import { Switch } from '@/layers/shared/ui/switch';
 import { Textarea } from '@/layers/shared/ui/textarea';
@@ -14,7 +15,7 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/layers/shared/ui/collapsible';
-import { Field, FieldLabel, FieldDescription, FieldError } from '@/layers/shared/ui/field';
+import { Field, FieldContent, FieldLabel, FieldDescription, FieldError } from '@/layers/shared/ui/field';
 import { PasswordInput } from '@/layers/shared/ui/password-input';
 import { ChevronDown, HelpCircle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
@@ -73,6 +74,64 @@ export function ConfigFieldInput({
     }
     setPatternError('');
   };
+
+  const displayError = error ?? patternError;
+
+  // Boolean fields render horizontally: label+description left, switch right.
+  if (field.type === 'boolean') {
+    return (
+      <div>
+        <Field orientation="horizontal" className="items-center justify-between gap-4">
+          <FieldContent className="min-w-0">
+            <FieldLabel
+              htmlFor={fieldId}
+              className={cn(
+                'text-sm font-medium',
+                field.required && 'after:ml-0.5 after:text-destructive after:content-["*"]',
+              )}
+            >
+              {field.label}
+            </FieldLabel>
+            {field.description && (
+              <FieldDescription className="text-xs">{field.description}</FieldDescription>
+            )}
+          </FieldContent>
+          <Switch
+            id={fieldId}
+            checked={Boolean(value)}
+            onCheckedChange={(checked) => onChange(field.key, checked)}
+          />
+        </Field>
+        {field.helpMarkdown && (
+          <Collapsible>
+            <CollapsibleTrigger className="mt-1 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+              <HelpCircle className="size-3" />
+              Where do I find this?
+              <ChevronDown className="size-3 transition-transform [[data-state=open]_&]:rotate-180" />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-2 rounded-md border bg-muted/50 p-3">
+                <MarkdownContent content={field.helpMarkdown} className="text-xs" />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+        <AnimatePresence>
+          {displayError && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15 }}
+              className="overflow-hidden"
+            >
+              <FieldError className="mt-1.5">{displayError}</FieldError>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
 
   const renderControl = () => {
     switch (field.type) {
@@ -133,15 +192,6 @@ export function ConfigFieldInput({
               onChange(field.key, e.target.value ? Number(e.target.value) : undefined)
             }
             placeholder={field.placeholder}
-          />
-        );
-
-      case 'boolean':
-        return (
-          <Switch
-            id={fieldId}
-            checked={Boolean(value)}
-            onCheckedChange={(checked) => onChange(field.key, checked)}
           />
         );
 
@@ -206,7 +256,7 @@ export function ConfigFieldInput({
       <FieldLabel
         htmlFor={fieldId}
         className={cn(
-          field.required && !isSentinel && 'after:ml-0.5 after:text-red-500 after:content-["*"]',
+          field.required && !isSentinel && 'after:ml-0.5 after:text-destructive after:content-["*"]',
         )}
       >
         {field.label}
@@ -229,9 +279,19 @@ export function ConfigFieldInput({
           </CollapsibleContent>
         </Collapsible>
       )}
-      {(error ?? patternError) && (
-        <FieldError>{error ?? patternError}</FieldError>
-      )}
+      <AnimatePresence>
+        {displayError && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.15 }}
+            className="overflow-hidden"
+          >
+            <FieldError>{displayError}</FieldError>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Field>
   );
 }

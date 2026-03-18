@@ -208,7 +208,7 @@ describe('ConfigFieldInput', () => {
   it('does not apply required asterisk class when field.required is false', () => {
     renderField(textField);
     const label = screen.getByText('Name');
-    expect(label.className).not.toMatch(/after:text-red-500/);
+    expect(label.className).not.toMatch(/after:text-destructive/);
   });
 
   // --- showWhen conditional visibility ----------------------------------------

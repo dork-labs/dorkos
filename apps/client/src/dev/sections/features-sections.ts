@@ -51,6 +51,13 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     keywords: ['config', 'field', 'input', 'form', 'password', 'select', 'boolean', 'relay'],
   },
   {
+    id: 'configfieldinput-error-states',
+    title: 'ConfigFieldInput — Error States',
+    page: 'features',
+    category: 'Relay',
+    keywords: ['config', 'field', 'input', 'error', 'validation', 'form', 'relay'],
+  },
+  {
     id: 'teststep',
     title: 'TestStep',
     page: 'features',

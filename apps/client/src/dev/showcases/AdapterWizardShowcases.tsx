@@ -175,6 +175,24 @@ const ALL_FIELD_TYPES: ConfigField[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// ConfigFieldInput error state showcase data
+// ---------------------------------------------------------------------------
+
+const ERROR_FIELDS: ConfigField[] = [
+  { key: 'api-key', label: 'API Key', type: 'text', required: true, placeholder: 'Enter your API key...', description: 'Required text field with validation error.' },
+  { key: 'secret', label: 'Secret Token', type: 'password', required: true, placeholder: 'xoxb-...', description: 'Password field with pattern error.', pattern: '^xoxb-', patternMessage: 'Must start with xoxb-' },
+  { key: 'auto-reconnect', label: 'Auto Reconnect', type: 'boolean', required: false, description: 'Boolean field with error state.' },
+  { key: 'region', label: 'Region', type: 'select', required: true, description: 'Select field with required error.', options: [{ label: 'US East', value: 'us-east' }, { label: 'EU West', value: 'eu-west' }] },
+];
+
+const ERROR_MAP: Record<string, string> = {
+  'api-key': 'API Key is required.',
+  'secret': 'Must start with xoxb-',
+  'auto-reconnect': 'Auto reconnect requires a valid connection.',
+  'region': 'Region is required.',
+};
+
+// ---------------------------------------------------------------------------
 // Showcase sub-components
 // ---------------------------------------------------------------------------
 
@@ -263,6 +281,32 @@ function ConfigFieldInputShowcase() {
             values={values}
             onChange={handleChange}
             errors={errors}
+          />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+function ConfigFieldInputErrorShowcase() {
+  const [values, setValues] = React.useState<Record<string, unknown>>({});
+
+  const handleChange = React.useCallback((key: string, value: unknown) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  return (
+    <PlaygroundSection
+      title="ConfigFieldInput — Error States"
+      description="Demonstrates error message rendering across text, password, boolean, and select field types."
+    >
+      <ShowcaseDemo>
+        <div className="mx-auto max-w-md">
+          <ConfigFieldGroup
+            fields={ERROR_FIELDS}
+            values={values}
+            onChange={handleChange}
+            errors={ERROR_MAP}
           />
         </div>
       </ShowcaseDemo>
@@ -463,6 +507,7 @@ export function AdapterWizardShowcases() {
       <StepIndicatorShowcase />
       <ConfigureStepShowcase />
       <ConfigFieldInputShowcase />
+      <ConfigFieldInputErrorShowcase />
       <TestStepShowcase />
       <ConfirmStepShowcase />
       <BindStepShowcase />
