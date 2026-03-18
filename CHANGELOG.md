@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Populate sender on index rebuild and fix stale TSDoc
 - Fix second hasStarted bug in updateSession and add resume diagnostics
 - Fix second hasStarted bug in updateSession and add resume diagnostics
 - Fix second hasStarted bug in updateSession and add resume diagnostics

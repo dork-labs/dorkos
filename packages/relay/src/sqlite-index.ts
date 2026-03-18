@@ -215,7 +215,7 @@ export class SqliteIndex {
   /**
    * Query messages with optional filters and cursor-based pagination.
    *
-   * Supports filtering by subject, status, sender (no-op), and endpoint hash.
+   * Supports filtering by subject, status, sender, and endpoint hash.
    * Uses ULID cursor for pagination (messages are sorted by id DESC).
    *
    * @param filters - Optional query filters
@@ -347,6 +347,7 @@ export class SqliteIndex {
             expiresAt: envelope.budget.ttl
               ? new Date(envelope.budget.ttl).toISOString()
               : null,
+            sender: envelope.from,
           });
           rebuildCount++;
         }
