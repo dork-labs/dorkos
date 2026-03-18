@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix second hasStarted bug in updateSession and add resume diagnostics
+- Fix second hasStarted bug in updateSession and add resume diagnostics
+- Fix second hasStarted bug in updateSession and add resume diagnostics
 - Fix per-sender rate limiting, add publish rejection logging and inbound result checks
 - Prevent new sessions from crashing with invalid SDK resume ID
 - Enhance Slack inbound message handling with improved reaction management

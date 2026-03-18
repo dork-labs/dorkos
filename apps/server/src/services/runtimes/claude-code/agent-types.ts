@@ -11,6 +11,8 @@ export interface AgentSession {
   cwd?: string;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
+  /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
+  needsTranscriptCheck?: boolean;
   /** Active SDK query object — used for mid-stream control (setPermissionMode, setModel) */
   activeQuery?: Query;
   pendingInteractions: Map<string, PendingInteraction>;

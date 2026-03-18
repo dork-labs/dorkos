@@ -157,6 +157,11 @@ export async function* executeSdkQuery(
 
   if (session.hasStarted) {
     sdkOptions.resume = session.sdkSessionId;
+    if (session.sdkSessionId === sessionId) {
+      logger.debug('[sendMessage] resuming with sdkSessionId === sessionId (expected after server restart)', {
+        session: sessionId,
+      });
+    }
   }
 
   // CWD resolution chain: opts.cwd (from caller) -> session.cwd (from creation) -> this.cwd (default)
