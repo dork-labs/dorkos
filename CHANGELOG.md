@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Enhance Slack inbound message handling with improved reaction management
 - Add inbound typing reaction with FIFO cleanup on stream completion
 - Improve ConfigFieldInput layout, error UX, and password toggle
 - Persist session map across restarts for Slack DM continuity

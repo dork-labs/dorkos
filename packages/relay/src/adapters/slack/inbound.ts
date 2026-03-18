@@ -319,19 +319,30 @@ export async function handleInboundMessage(
 
     // Add immediate hourglass reaction so the user knows the message was received,
     // even if the agent is queued behind another in-flight request.
+    // Queue is populated synchronously so the outbound handler can find it
+    // when done/error arrives — even if the Slack API call is still in-flight.
     if (typingIndicator === 'reaction') {
+      if (pendingReactions) {
+        const queue = pendingReactions.get(event.channel) ?? [];
+        queue.push(event.ts);
+        pendingReactions.set(event.channel, queue);
+      }
+
       client.reactions
         .add({ channel: event.channel, name: 'hourglass_flowing_sand', timestamp: event.ts })
         .then(() => {
-          // Track the reaction so the outbound handler can remove it on done/error.
-          if (pendingReactions) {
-            const queue = pendingReactions.get(event.channel) ?? [];
-            queue.push(event.ts);
-            pendingReactions.set(event.channel, queue);
-          }
           logger.debug(`inbound: added typing reaction to ${event.channel}:${event.ts}`);
         })
         .catch((err) => {
+          // Remove from queue since the reaction was never actually added.
+          if (pendingReactions) {
+            const queue = pendingReactions.get(event.channel);
+            if (queue) {
+              const idx = queue.indexOf(event.ts);
+              if (idx !== -1) queue.splice(idx, 1);
+              if (queue.length === 0) pendingReactions.delete(event.channel);
+            }
+          }
           logger.warn(`inbound: failed to add typing reaction to ${event.channel}:${event.ts}: ${err instanceof Error ? err.message : String(err)}`);
         });
     }

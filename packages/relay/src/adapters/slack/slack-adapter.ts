@@ -37,21 +37,18 @@ import type { ActiveStream, SlackOutboundState } from './outbound.js';
  */
 const SLACK_APP_MANIFEST_YAML = `display_information:
   name: DorkOS Relay
-settings:
-  socket_mode_enabled: true
-  event_subscriptions:
-    bot_events:
-      - message.channels
-      - message.groups
-      - message.im
-      - app_mention
 features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
   bot_user:
     display_name: DorkOS Relay
     always_online: false
 oauth_config:
   scopes:
     bot:
+      - app_mentions:read
       - channels:history
       - channels:read
       - chat:write
@@ -61,9 +58,22 @@ oauth_config:
       - im:read
       - im:write
       - mpim:history
-      - app_mentions:read
+      - reactions:read
+      - reactions:write
       - users:read
-      - reactions:write`;
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false`;
 
 /** Slack's app creation URL with pre-filled manifest for one-click setup. */
 const SLACK_CREATE_APP_URL = `https://api.slack.com/apps?new_app=1&manifest_yaml=${encodeURIComponent(SLACK_APP_MANIFEST_YAML)}`;
@@ -89,8 +99,8 @@ export const SLACK_MANIFEST: AdapterManifest = {
       description:
         'Go to api.slack.com/apps \u2192 Create New App \u2192 From Scratch.\n\n' +
         '1. **Socket Mode** \u2014 Enable it (Settings \u2192 Socket Mode).\n' +
-        '2. **Event Subscriptions** \u2014 Turn on Enable Events, then subscribe to bot events: message.channels, message.groups, message.im, app_mention.\n' +
-        '3. **OAuth & Permissions** \u2014 Add bot token scopes: channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, app_mentions:read, users:read, reactions:write. Then install the app to your workspace.\n' +
+        '2. **Event Subscriptions** \u2014 Turn on Enable Events, then subscribe to bot events: app_mention, message.channels, message.groups, message.im, message.mpim.\n' +
+        '3. **OAuth & Permissions** \u2014 Add bot token scopes: app_mentions:read, channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, reactions:read, reactions:write, users:read. Then install the app to your workspace.\n' +
         '4. **App-Level Token** \u2014 In Basic Information \u2192 App-Level Tokens, generate a token with the connections:write scope.\n\n' +
         '\u26a0\ufe0f Do NOT enable "Agents & AI Apps" \u2014 it adds user scopes that cause install failures on most workspaces.',
       fields: ['botToken', 'appToken', 'signingSecret', 'streaming', 'nativeStreaming', 'typingIndicator'],
@@ -181,14 +191,14 @@ export const SLACK_MANIFEST: AdapterManifest = {
       visibleByDefault: true,
       helpMarkdown:
         'When set to "Emoji reaction", adds an :hourglass_flowing_sand: reaction to your message ' +
-        'while the agent is processing. Requires the `reactions:write` scope.',
+        'while the agent is processing. Requires the `reactions:write` and `reactions:read` scopes.',
     },
   ],
   setupInstructions:
     '1. Create a Slack app at api.slack.com/apps (From Scratch, not From Manifest).\n' +
     '2. Enable Socket Mode (Settings \u2192 Socket Mode).\n' +
-    '3. Enable Event Subscriptions and subscribe to bot events: message.channels, message.groups, message.im, app_mention.\n' +
-    '4. Add bot token scopes under OAuth & Permissions: channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, app_mentions:read, users:read, reactions:write.\n' +
+    '3. Enable Event Subscriptions and subscribe to bot events: app_mention, message.channels, message.groups, message.im, message.mpim.\n' +
+    '4. Add bot token scopes under OAuth & Permissions: app_mentions:read, channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, reactions:read, reactions:write, users:read.\n' +
     '5. Install the app to your workspace (OAuth & Permissions \u2192 Install).\n' +
     '6. Copy the Bot User OAuth Token (starts with xoxb-).\n' +
     '7. Generate an App-Level Token with connections:write scope (Basic Information \u2192 App-Level Tokens).\n' +

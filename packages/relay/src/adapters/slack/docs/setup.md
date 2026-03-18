@@ -16,6 +16,54 @@ The fastest way to get started is with the **one-click app creation** flow:
 
 That's it. The adapter connects via Socket Mode, so no public URL is required.
 
+## App Manifest
+
+If you have an existing Slack app and want to verify or update its configuration, compare it against the full manifest below. You can also paste this into **Your Apps > Create New App > From an app manifest** to create a correctly configured app.
+
+> **Note:** The App-Level Token and Signing Secret are not part of the manifest. You'll still need to generate those manually after creating the app (see Quick Start step 4).
+
+```yaml
+display_information:
+  name: DorkOS Relay
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: DorkOS Relay
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:read
+      - chat:write
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - im:write
+      - mpim:history
+      - reactions:read
+      - reactions:write
+      - users:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
+```
+
 ## Manual Setup
 
 If you prefer to configure each setting yourself, or need a custom scope set:
@@ -32,10 +80,11 @@ Navigate to **Settings > Socket Mode** in the left sidebar and toggle it on. Soc
 
 Go to **Features > Event Subscriptions** and toggle **Enable Events** on. Under **Subscribe to bot events**, add the following:
 
+- `app_mention` -- when someone @mentions the bot
 - `message.channels` -- messages in public channels the bot is in
 - `message.groups` -- messages in private channels the bot is in
 - `message.im` -- direct messages to the bot
-- `app_mention` -- when someone @mentions the bot
+- `message.mpim` -- messages in group DMs the bot is in
 
 Click **Save Changes**.
 
@@ -54,6 +103,8 @@ Navigate to **Features > OAuth & Permissions** and scroll to **Scopes > Bot Toke
 | `im:read` | List and get info about DM conversations |
 | `im:write` | Open and manage DM conversations |
 | `mpim:history` | Read group DM history |
+| `reactions:read` | Remove typing indicator reactions |
+| `reactions:write` | Add typing indicator reactions |
 | `app_mentions:read` | Read @mention events |
 | `users:read` | Resolve user display names |
 
@@ -97,7 +148,7 @@ The wrong token type is being used. DorkOS requires the **Bot User OAuth Token**
 
 A required bot scope is missing.
 
-**Fix:** Go to **Features > OAuth & Permissions > Bot Token Scopes** and verify all 11 scopes from Step 4 above are listed. After adding any missing scopes, reinstall the app.
+**Fix:** Go to **Features > OAuth & Permissions > Bot Token Scopes** and verify all 13 scopes from Step 4 above are listed. After adding any missing scopes, reinstall the app.
 
 ### Socket Mode Connection Failures
 
