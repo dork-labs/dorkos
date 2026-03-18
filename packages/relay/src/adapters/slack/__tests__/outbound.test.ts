@@ -976,5 +976,85 @@ describe('deliverMessage', () => {
       expect(firstBlock.text.text).toContain('Write');
       expect(firstBlock.text.text).toContain('wants to write to');
     });
+
+    it('flushes buffered text before posting approval card (buffered mode)', async () => {
+      // Simulate text_delta accumulation in buffered mode (streaming=false)
+      const deltaEnv = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Let me search for Art Blocks projects' },
+      }, 'agent:sess-1');
+      await deliver('relay.human.slack.D123', deltaEnv, client, streamState, callbacks, 'UBOTID', false);
+      expect(mockPostMessage).not.toHaveBeenCalled(); // buffered, not posted yet
+
+      // Now send approval_required — should flush buffered text first
+      const approvalEnv = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_flush',
+          toolName: 'WebSearch',
+          input: '{"query":"art blocks"}',
+          timeoutMs: 600000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-1',
+        },
+      }, 'agent:sess-1');
+      await deliver('relay.human.slack.D123', approvalEnv, client, streamState, callbacks, 'UBOTID', false);
+
+      // First postMessage: the flushed text buffer
+      expect(mockPostMessage).toHaveBeenCalledTimes(2);
+      const flushCall = mockPostMessage.mock.calls[0][0];
+      expect(flushCall.text).toContain('Let me search for Art Blocks projects');
+
+      // Second postMessage: the approval card
+      const approvalCall = mockPostMessage.mock.calls[1][0];
+      expect(approvalCall.blocks).toBeDefined();
+      expect(approvalCall.blocks[2].block_id).toBe('tool_approval');
+    });
+
+    it('flushes streaming text before posting approval card (streaming mode)', async () => {
+      // Simulate text_delta in streaming mode — first delta posts the message
+      const deltaEnv = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Let me look' },
+        platformData: { ts: '1234.0001' },
+      }, 'agent:sess-2');
+      await deliver('relay.human.slack.D123', deltaEnv, client, streamState, callbacks, 'UBOTID', true);
+      expect(mockPostMessage).toHaveBeenCalledTimes(1); // initial post
+
+      // Accumulate more text (within throttle window — no update sent)
+      const delta2 = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: ' into that for you' },
+        platformData: { ts: '1234.0001' },
+      }, 'agent:sess-2');
+      await deliver('relay.human.slack.D123', delta2, client, streamState, callbacks, 'UBOTID', true);
+
+      // Now send approval — should flush via chat.update then post card
+      mockPostMessage.mockClear();
+      mockChatUpdate.mockClear();
+      const approvalEnv = createEnvelope('relay.human.slack.D123', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_flush2',
+          toolName: 'Bash',
+          input: '{"command":"ls"}',
+          timeoutMs: 600000,
+          agentId: 'agent-2',
+          ccaSessionKey: 'sess-2',
+        },
+        platformData: { ts: '1234.0001' },
+      }, 'agent:sess-2');
+      await deliver('relay.human.slack.D123', approvalEnv, client, streamState, callbacks, 'UBOTID', true);
+
+      // Flush should update the existing message with full accumulated text
+      expect(mockChatUpdate).toHaveBeenCalledTimes(1);
+      const updateCall = mockChatUpdate.mock.calls[0][0];
+      expect(updateCall.text).toContain('Let me look into that for you');
+
+      // Approval card should be posted
+      expect(mockPostMessage).toHaveBeenCalledTimes(1);
+      const approvalCall = mockPostMessage.mock.calls[0][0];
+      expect(approvalCall.blocks[2].block_id).toBe('tool_approval');
+    });
   });
 });

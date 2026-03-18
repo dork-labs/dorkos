@@ -231,11 +231,21 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
       return { success: true, durationMs: Date.now() - startTime };
     }
 
-    // approval_required: render inline keyboard with Approve/Deny buttons
+    // approval_required: flush buffered text, then render inline keyboard
     if (eventType === 'approval_required') {
       const data = extractApprovalData(envelope.payload);
       if (data) {
         logger.debug(`deliver: approval_required for tool '${data.toolName}' to chat ${chatId}`);
+
+        // Flush accumulated text before posting the approval card so that
+        // partial responses aren't lost when the stream pauses for approval.
+        const buffered = responseBuffers.get(chatId);
+        if (buffered?.text) {
+          responseBuffers.delete(chatId);
+          lastDraftUpdate.delete(chatId);
+          await sendAndTrack(bot, chatId, truncateText(buffered.text, MAX_MESSAGE_LENGTH), startTime, callbacks);
+        }
+
         return handleApprovalRequired(bot, chatId, data, envelope, callbacks, startTime);
       }
     }

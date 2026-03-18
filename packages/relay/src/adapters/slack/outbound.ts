@@ -391,6 +391,83 @@ async function handleTextDelta(
 }
 
 /**
+ * Flush any accumulated text in the stream buffer to Slack without
+ * finalizing the stream. Used before posting interrupting events
+ * (e.g. approval cards) so buffered text isn't lost.
+ *
+ * Does nothing if no active stream exists or the buffer is empty.
+ * Does NOT delete the stream state — the stream continues after the interrupt.
+ *
+ * @param channelId - The Slack channel ID
+ * @param threadTs - Optional thread_ts for Slack API calls
+ * @param client - Slack WebClient instance
+ * @param streamState - Per-channel active stream state map
+ * @param callbacks - Callbacks to track delivery metrics
+ * @param streamKeyTs - Correlation ID for stream key
+ */
+async function flushStreamBuffer(
+  channelId: string,
+  threadTs: string | undefined,
+  client: WebClient,
+  streamState: Map<string, ActiveStream>,
+  callbacks: AdapterOutboundCallbacks,
+  streamKeyTs: string,
+): Promise<void> {
+  const key = streamKey(channelId, streamKeyTs);
+  const existing = streamState.get(key);
+  if (!existing || !existing.accumulatedText) return;
+
+  // Native streaming: stop the current stream so the text is finalized.
+  // A new stream will be started when text_delta events resume after approval.
+  if (existing.nativeStreamId) {
+    const slackClient = client as unknown as Record<string, Record<string, (args: unknown) => Promise<unknown>>>;
+    try {
+      await slackClient.chat.stopStream({ stream_id: existing.nativeStreamId });
+    } catch {
+      /* best-effort */
+    }
+    // Clear native stream ID so the next text_delta starts a new stream
+    existing.nativeStreamId = undefined;
+    return;
+  }
+
+  // Buffered mode (no messageTs): post the accumulated text as a new message
+  if (!existing.messageTs) {
+    try {
+      const result = await client.chat.postMessage({
+        channel: channelId,
+        text: truncateText(
+          formatForPlatform(existing.accumulatedText, 'slack'),
+          MAX_MESSAGE_LENGTH,
+        ),
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      });
+      // Record the messageTs so subsequent text_deltas update this message
+      existing.messageTs = (result as { ts?: string }).ts ?? '';
+      existing.lastUpdateAt = Date.now();
+    } catch (err) {
+      callbacks.recordError(err);
+    }
+    return;
+  }
+
+  // Streaming mode (has messageTs): update the existing message
+  try {
+    await client.chat.update({
+      channel: channelId,
+      ts: existing.messageTs,
+      text: truncateText(
+        formatForPlatform(existing.accumulatedText, 'slack'),
+        MAX_MESSAGE_LENGTH,
+      ),
+    });
+    existing.lastUpdateAt = Date.now();
+  } catch (err) {
+    callbacks.recordError(err);
+  }
+}
+
+/**
  * Handle a done StreamEvent — finalize the streaming message.
  *
  * Performs a final chat.update to ensure the message has the complete
@@ -710,11 +787,16 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
       );
     }
 
-    // approval_required: render interactive Block Kit card with Approve/Deny buttons
+    // approval_required: flush any buffered text, then render Block Kit card
     if (eventType === 'approval_required') {
       const approvalData = extractApprovalData(envelope.payload);
       if (approvalData) {
         logger.debug(`deliver: approval_required for tool '${approvalData.toolName}' to ${channelId}`);
+
+        // Flush accumulated text before posting the approval card so that
+        // partial responses aren't lost when the stream pauses for approval.
+        await flushStreamBuffer(channelId, threadTs, client, streamState, callbacks, streamKeyTs);
+
         return handleApprovalRequired(
           channelId,
           threadTs,

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Flush stream buffer before posting tool approval cards
 - Move empty-stream and retry-depth tests into sendMessage() describe block
 - Break infinite SDK retry loop and surface errors to adapters
 - Prevent tool_call_end from overwriting pending status on interactive tool calls

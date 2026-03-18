@@ -823,5 +823,55 @@ describe('deliverMessage', () => {
       expect(mockSendMessage).not.toHaveBeenCalled();
       expect(callbackIdMap.size).toBe(0);
     });
+
+    it('flushes buffered text before posting approval card', async () => {
+      const responseBuffers = new Map<number, ResponseBuffer>();
+      const bot = buildMockBot();
+      const callbacks = createCallbacks();
+
+      // Simulate text_delta buffering
+      const deltaEnv = createEnvelope('relay.human.telegram.12345', {
+        type: 'text_delta',
+        data: { text: 'Let me search for projects' },
+      }, 'agent:sess-1');
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: deltaEnv,
+        bot,
+        responseBuffers,
+        callbacks,
+        streaming: false,
+      });
+      expect(mockSendMessage).not.toHaveBeenCalled(); // buffered only
+
+      // Send approval_required — should flush text first
+      const approvalEnv = createEnvelope('relay.human.telegram.12345', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_flush',
+          toolName: 'WebSearch',
+          input: '{"query":"art blocks"}',
+          timeoutMs: 600_000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-1',
+        },
+      }, 'agent:sess-1');
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: approvalEnv,
+        bot,
+        responseBuffers,
+        callbacks,
+        streaming: false,
+      });
+
+      // First call: flushed buffer text; second call: approval card
+      expect(mockSendMessage).toHaveBeenCalledTimes(2);
+      const flushCall = mockSendMessage.mock.calls[0];
+      expect(flushCall[0]).toBe(12345);
+      expect(flushCall[1]).toContain('Let me search for projects');
+    });
   });
 });
