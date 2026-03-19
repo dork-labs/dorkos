@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as nodefs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { createTestDb } from '@dorkos/test-utils';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { DenialList } from '../denial-list.js';
 

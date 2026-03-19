@@ -4,7 +4,7 @@ import request from 'supertest';
 import { createPulseRouter } from '../pulse.js';
 import { PulseStore } from '../../services/pulse/pulse-store.js';
 import type { SchedulerService } from '../../services/pulse/scheduler-service.js';
-import { createTestDb } from '@dorkos/test-utils';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
 vi.mock('../../lib/boundary.js', () => ({

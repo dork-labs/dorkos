@@ -11,9 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Update dev port convention from 4xxx to 6xxx
+### Fixed
+
+---
+
+## [0.17.2] - 2026-03-19
+
+> Dev port convention update and test reliability fixes
+
+### Changed
+
+- Update dev port convention from 4xxx to 6xxx for simultaneous dev/production operation
+- Move tunnel port resolution to call time so tests can override VITE_PORT
+- Move `createTestDb` to `@dorkos/test-utils/db` subpath to avoid pulling Node.js-only db into jsdom tests
 
 ### Fixed
+
+- Fix 153 client test failures caused by NODE_ENV=production leaking into jsdom environment
+- Fix error handler and tunnel tests failing when shell has NODE_ENV=production
+- Fix getCommands test finding real `.claude/commands/` from repo root
 
 ---
 

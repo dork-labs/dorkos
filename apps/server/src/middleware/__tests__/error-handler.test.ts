@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { errorHandler } from '../error-handler.js';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -18,9 +18,16 @@ vi.mock('../../lib/logger.js', () => ({
 describe('errorHandler', () => {
   const mockReq = {} as Request;
   const mockNext = vi.fn() as NextFunction;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Ensure non-production so error messages are revealed (not masked)
+    process.env.NODE_ENV = 'test';
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
   });
 
   function createMockRes() {

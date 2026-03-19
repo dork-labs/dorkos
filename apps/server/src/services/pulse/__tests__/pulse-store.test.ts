@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PulseStore } from '../pulse-store.js';
-import { createTestDb } from '@dorkos/test-utils';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { pulseSchedules } from '@dorkos/db';
 

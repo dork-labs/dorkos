@@ -8,6 +8,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   test: {
     environment: 'jsdom',
+    // Ensure React loads development bundles (act, error messages) even when
+    // the host shell has NODE_ENV=production.
+    env: { NODE_ENV: 'test' },
     setupFiles: ['./src/test-setup.ts'],
     server: {
       // Inline jest-dom so Vitest resolves its transitive deps (redent,

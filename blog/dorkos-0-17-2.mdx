@@ -1,0 +1,36 @@
+---
+title: DorkOS 0.17.2
+description: Dev port convention update and test reliability fixes
+date: 2026-03-19
+author: DorkOS Team
+category: release
+tags: [release, dx, configuration, testing]
+---
+
+DorkOS 0.17.2 updates the dev port convention and fixes test reliability across the entire test suite.
+
+## Highlights
+
+**Simultaneous Dev + Production** — Dev now uses 6xxx ports (6242 server, 6241 client) while production keeps 4xxx ports (4242, 4241). Run both environments at the same time without conflicts.
+
+**Test Suite Reliability** — Fixed 153+ client test failures caused by NODE_ENV=production leaking into the jsdom environment, plus several server test fixes for environment isolation.
+
+## All Changes
+
+### Changed
+
+- Update dev port convention from 4xxx to 6xxx for simultaneous dev/production operation
+- Move tunnel port resolution to call time so tests can override VITE_PORT
+- Move `createTestDb` to `@dorkos/test-utils/db` subpath to avoid pulling Node.js-only db into jsdom tests
+
+### Fixed
+
+- Fix 153 client test failures caused by NODE_ENV=production leaking into jsdom environment
+- Fix error handler and tunnel tests failing when shell has NODE_ENV=production
+- Fix getCommands test finding real `.claude/commands/` from repo root
+
+## Install / Update
+
+```
+npm install -g dorkos@0.17.2
+```

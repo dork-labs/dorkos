@@ -9,20 +9,18 @@ import type { TunnelStatus } from '@dorkos/shared/types';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { configManager } from '../services/core/config-manager.js';
 
-/** Default port for the Vite dev server (reads from VITE_PORT env var). */
-const DEV_CLIENT_PORT = Number(process.env.VITE_PORT) || 4241;
-
 const router = Router();
 
 /**
  * Resolve the port the tunnel should forward to.
- * In dev, Vite serves the UI on DEV_CLIENT_PORT and proxies /api to Express,
+ * In dev, Vite serves the UI on VITE_PORT (default 4241) and proxies /api to Express,
  * so the tunnel targets Vite. In production, Express serves everything.
  */
 function resolveTunnelPort(): number {
   if (process.env.TUNNEL_PORT) return Number(process.env.TUNNEL_PORT);
   const isDev = process.env.NODE_ENV !== 'production';
-  return isDev ? DEV_CLIENT_PORT : Number(process.env.DORKOS_PORT) || DEFAULT_PORT;
+  const devClientPort = Number(process.env.VITE_PORT) || 4241;
+  return isDev ? devClientPort : Number(process.env.DORKOS_PORT) || DEFAULT_PORT;
 }
 
 /** GET /api/tunnel/status — on-demand status check. */

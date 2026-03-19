@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -53,10 +53,15 @@ describe('Tunnel Route', () => {
     delete process.env.TUNNEL_PORT;
     delete process.env.DORKOS_PORT;
     delete process.env.VITE_PORT;
-    process.env.NODE_ENV = originalNodeEnv;
+    // Ensure non-production (dev mode) by default so tunnel resolves to Vite port
+    process.env.NODE_ENV = 'test';
 
     // Reset status to default
     (tunnelManager as unknown as Record<string, unknown>).status = { ...defaultTunnelStatus };
+  });
+
+  afterAll(() => {
+    process.env.NODE_ENV = originalNodeEnv;
   });
 
   describe('POST /api/tunnel/start', () => {

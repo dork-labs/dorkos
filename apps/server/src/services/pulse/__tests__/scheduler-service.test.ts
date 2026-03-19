@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SchedulerService, buildPulseAppend, type SchedulerAgentManager } from '../scheduler-service.js';
 import { PulseStore } from '../pulse-store.js';
-import { createTestDb } from '@dorkos/test-utils';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { PulseSchedule, PulseRun } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';

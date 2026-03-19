@@ -727,9 +727,9 @@ describe('ClaudeCodeRuntime', () => {
     }
 
     it('returns filesystem-only commands before any sendMessage', async () => {
-      const result = await agentManager.getCommands();
+      // Pass a temp cwd with no .claude/commands/ so the filesystem scanner finds nothing
+      const result = await agentManager.getCommands(false, '/tmp/dorkos-test-nonexistent');
       // No SDK commands cached yet — should fall back to filesystem scanner
-      // (empty in test env since .claude/commands/ doesn't exist)
       expect(result.commands).toEqual([]);
       expect(result.lastScanned).toBeDefined();
     });

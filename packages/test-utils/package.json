@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./db": "./src/db.ts",
     "./mock-factories": "./src/mock-factories.ts",
     "./react-helpers": "./src/react-helpers.tsx",
     "./sse-helpers": "./src/sse-helpers.ts"
