@@ -18,6 +18,7 @@ export function useRuns(opts?: Partial<ListRunsQuery>, enabled = true) {
     queryFn: () => transport.listRuns(opts),
     refetchInterval: (query) =>
       query.state.data?.some((r) => r.status === 'running') ? 10_000 : false,
+    refetchIntervalInBackground: false,
     enabled,
   });
 }
@@ -49,6 +50,7 @@ export function useActiveRunCount(enabled = true) {
     },
     enabled,
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }
 

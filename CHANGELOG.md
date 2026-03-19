@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pause background-tab polling for always-on query hooks
 - Add hourglass reaction immediately and clean up orphaned reactions
 ---
 

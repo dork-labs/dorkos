@@ -13,6 +13,7 @@ export function useTunnelStatus() {
       return config.tunnel;
     },
     refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   return query;

@@ -29,6 +29,7 @@ export function useSessions() {
     queryKey: ['sessions', selectedCwd],
     queryFn: () => transport.listSessions(selectedCwd ?? undefined),
     refetchInterval: QUERY_TIMING.SESSIONS_REFETCH_MS,
+    refetchIntervalInBackground: false,
     enabled: selectedCwd !== null,
   });
 

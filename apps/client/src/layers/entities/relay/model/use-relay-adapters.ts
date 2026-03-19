@@ -20,6 +20,7 @@ export function useRelayAdapters(enabled = true) {
     queryFn: () => transport.listRelayAdapters(),
     enabled,
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }
 
