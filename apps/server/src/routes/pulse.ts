@@ -15,25 +15,21 @@ import type { SchedulerService } from '../services/pulse/scheduler-service.js';
 import { loadPresets } from '../services/pulse/pulse-presets.js';
 import { isWithinBoundary } from '../lib/boundary.js';
 import { parseBody } from '../lib/route-utils.js';
-import { env } from '../env.js';
 
 /**
  * Create the Pulse router with schedule and run management endpoints.
  *
  * @param store - PulseStore for data persistence
  * @param scheduler - SchedulerService for cron management and dispatch
+ * @param dorkHome - Resolved data directory path
  * @param meshCore - Optional MeshCore for validating agentId on create/update
  */
-export function createPulseRouter(store: PulseStore, scheduler: SchedulerService, meshCore?: MeshCore): Router {
+export function createPulseRouter(store: PulseStore, scheduler: SchedulerService, dorkHome: string, meshCore?: MeshCore): Router {
   const router = Router();
 
   // === Preset endpoints ===
 
   router.get('/presets', async (_req, res) => {
-    const dorkHome = env.DORK_HOME;
-    if (!dorkHome) {
-      return res.status(500).json({ error: 'DORK_HOME not configured' });
-    }
     const presets = await loadPresets(dorkHome);
     return res.json(presets);
   });

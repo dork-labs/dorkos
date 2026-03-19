@@ -247,7 +247,7 @@ async function start() {
       retentionCount: schedulerConfig.retentionCount,
       timezone: schedulerConfig.timezone,
     }, relayCore, meshCore);
-    app.use('/api/pulse', createPulseRouter(pulseStore, schedulerService, meshCore));
+    app.use('/api/pulse', createPulseRouter(pulseStore, schedulerService, dorkHome, meshCore));
     setPulseEnabled(true);
     logger.info('[Pulse] Routes mounted and scheduler configured');
 

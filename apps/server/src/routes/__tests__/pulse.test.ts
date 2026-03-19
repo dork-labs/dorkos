@@ -35,7 +35,7 @@ describe('Pulse routes', () => {
     scheduler = createMockScheduler();
     app = express();
     app.use(express.json());
-    app.use('/api/pulse', createPulseRouter(store, scheduler));
+    app.use('/api/pulse', createPulseRouter(store, scheduler, '/tmp/dork-test'));
     // Error handler to surface errors instead of hanging
     app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       res.status(500).json({ error: err.message });
