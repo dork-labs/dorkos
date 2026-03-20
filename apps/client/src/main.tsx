@@ -1,16 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NuqsAdapter } from 'nuqs/adapters/react';
-import { App } from './App';
+import { RouterProvider } from '@tanstack/react-router';
+import { createAppRouter } from './router';
 import { HttpTransport, QUERY_TIMING } from '@/layers/shared/lib';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import './index.css';
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
-const DevPlayground = import.meta.env.DEV
-  ? React.lazy(() => import('./dev/DevPlayground'))
-  : null;
+const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;
 
 function DevtoolsToggle() {
   const open = useAppStore((s) => s.devtoolsOpen);
@@ -28,6 +26,7 @@ function DevtoolsToggle() {
 
 /** Root decides between the dev playground and the real app. */
 function Root() {
+  // Dev playground renders outside router (unchanged)
   if (window.location.pathname.startsWith('/dev') && DevPlayground) {
     return (
       <React.Suspense fallback={null}>
@@ -36,15 +35,14 @@ function Root() {
     );
   }
 
+  const router = createAppRouter(queryClient);
   return (
-    <NuqsAdapter>
-      <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>
-          <App />
-        </TransportProvider>
-        {import.meta.env.DEV && <DevtoolsToggle />}
-      </QueryClientProvider>
-    </NuqsAdapter>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <RouterProvider router={router} />
+      </TransportProvider>
+      {import.meta.env.DEV && <DevtoolsToggle />}
+    </QueryClientProvider>
   );
 }
 

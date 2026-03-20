@@ -11,3 +11,4 @@ export { useDefaultCwd } from './model/use-default-cwd';
 export { useDirectoryState } from './model/use-directory-state';
 export type { SetDirOptions } from './model/use-directory-state';
 export { useModels } from './model/use-models';
+export { useSessionSearch } from './model/use-session-search';

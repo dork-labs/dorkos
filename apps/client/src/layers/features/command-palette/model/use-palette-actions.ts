@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useAppStore } from '@/layers/shared/model';
 import { useTheme } from '@/layers/shared/model';
 import { useDirectoryState } from '@/layers/entities/session';
@@ -27,6 +28,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const [selectedCwd, setDir] = useDirectoryState();
   const { recordUsage } = useAgentFrecency();
   const { setTheme, theme } = useTheme();
+  const navigate = useNavigate();
 
   const setPulseOpen = useAppStore((s) => s.setPulseOpen);
   const setRelayOpen = useAppStore((s) => s.setRelayOpen);
@@ -45,7 +47,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       setDir(agent.projectPath);
       closePalette();
     },
-    [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd],
+    [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd]
   );
 
   const handleFeatureAction = useCallback(
@@ -68,13 +70,16 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           break;
       }
     },
-    [closePalette, setPulseOpen, setRelayOpen, setMeshOpen, setSettingsOpen],
+    [closePalette, setPulseOpen, setRelayOpen, setMeshOpen, setSettingsOpen]
   );
 
   const handleQuickAction = useCallback(
     (action: string) => {
       closePalette();
       switch (action) {
+        case 'navigateDashboard':
+          navigate({ to: '/' });
+          break;
         case 'discoverAgents':
           setMeshOpen(true);
           break;
@@ -88,7 +93,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           break;
       }
     },
-    [closePalette, setMeshOpen, setPickerOpen, setTheme, theme],
+    [closePalette, navigate, setMeshOpen, setPickerOpen, setTheme, theme]
   );
 
   return {

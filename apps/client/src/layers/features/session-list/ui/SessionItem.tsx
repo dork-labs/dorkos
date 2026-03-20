@@ -82,15 +82,13 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
       data-testid="session-item"
       className={cn(
         'group relative rounded-lg transition-colors duration-150',
-        isActive
-          ? 'text-foreground border-primary border-l-2'
-          : 'border-l-2 border-transparent'
+        isActive ? 'text-foreground border-primary border-l-2' : 'border-l-2 border-transparent'
       )}
     >
       {isActive && (
         <motion.div
           layoutId="active-session-bg"
-          className="absolute inset-0 rounded-lg bg-secondary"
+          className="bg-secondary absolute inset-0 rounded-lg"
           transition={{ type: 'spring', stiffness: 280, damping: 32 }}
         />
       )}

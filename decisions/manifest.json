@@ -1,7 +1,79 @@
 {
   "version": 1,
-  "nextNumber": 154,
+  "nextNumber": 162,
   "decisions": [
+    {
+      "number": 161,
+      "slug": "route-aware-sidebar-header-slot-pattern",
+      "title": "Route-Aware Sidebar & Header Slot Pattern via Private Switch Hooks",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "dynamic-sidebar-content",
+      "specSlug": "dynamic-sidebar-content"
+    },
+    {
+      "number": 160,
+      "slug": "additive-features-module-no-subsystems-migration",
+      "title": "Introduce Additive features.ts Without Migrating subsystems.ts",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "site-feature-catalog",
+      "specSlug": "site-feature-catalog"
+    },
+    {
+      "number": 159,
+      "slug": "server-rendered-url-params-for-feature-catalog-filtering",
+      "title": "Use Server-Rendered URL Params for Feature Catalog Filtering",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "site-feature-catalog",
+      "specSlug": "site-feature-catalog"
+    },
+    {
+      "number": 158,
+      "slug": "typescript-const-as-authoritative-feature-catalog-source",
+      "title": "Use TypeScript Const Array as Authoritative Feature Catalog Source",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "site-feature-catalog",
+      "specSlug": "site-feature-catalog"
+    },
+    {
+      "number": 157,
+      "slug": "pathless-layout-route-for-app-shell",
+      "title": "Use Pathless Layout Route for Shared App Shell",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "dashboard-home-route",
+      "specSlug": "dashboard-home-route"
+    },
+    {
+      "number": 156,
+      "slug": "code-based-routing-over-file-based",
+      "title": "Use Code-Based Route Definitions Over File-Based Routing",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "dashboard-home-route",
+      "specSlug": "dashboard-home-route"
+    },
+    {
+      "number": 155,
+      "slug": "replace-nuqs-with-tanstack-router-search-params",
+      "title": "Replace nuqs with TanStack Router Search Params",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "dashboard-home-route",
+      "specSlug": "dashboard-home-route"
+    },
+    {
+      "number": 154,
+      "slug": "adopt-tanstack-router-for-client-routing",
+      "title": "Adopt TanStack Router for Client-Side Routing",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "dashboard-home-route",
+      "specSlug": "dashboard-home-route"
+    },
     {
       "number": 153,
       "slug": "move-inference-indicator-outside-scroll-container",

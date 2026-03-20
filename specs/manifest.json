@@ -1088,7 +1088,28 @@
       "title": "Unified Status Strip — Consolidate InferenceIndicator & SystemStatusZone",
       "created": "2026-03-20",
       "status": "specified"
+    },
+    {
+      "number": 154,
+      "slug": "dashboard-home-route",
+      "title": "Dashboard Home Route & Navigation Restructure",
+      "created": "2026-03-20",
+      "status": "draft"
+    },
+    {
+      "number": 155,
+      "slug": "site-feature-catalog",
+      "title": "Feature Catalog System for Marketing Site",
+      "created": "2026-03-20",
+      "status": "specified"
+    },
+    {
+      "number": 156,
+      "slug": "dynamic-sidebar-content",
+      "title": "Dynamic Route-Aware Sidebar & Header Content",
+      "created": "2026-03-20",
+      "status": "specified"
     }
   ],
-  "nextNumber": 154
+  "nextNumber": 157
 }

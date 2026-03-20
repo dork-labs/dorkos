@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add TanStack Router, dashboard route, and supporting artifacts
 - Add feature catalog system with SEO-optimized pages
 - Unify InferenceIndicator and SystemStatusZone into ChatStatusStrip
 - Add status bar toggles for multi-window sync and background refresh

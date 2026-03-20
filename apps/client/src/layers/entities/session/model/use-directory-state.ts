@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { getPlatform } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
-import { useQueryState } from 'nuqs';
+import { useSessionSearch } from './use-session-search';
 import { useSessionId } from './use-session-id';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
@@ -17,11 +18,10 @@ export interface SetDirOptions {
 /**
  * Dual-mode working-directory hook.
  *
- * - **Standalone (web):** The `?dir=` URL query parameter is the source of
- *   truth. A one-way `useEffect` syncs URL → Zustand so store consumers
- *   (e.g. `useSessions`) see the correct CWD. When no `?dir=` is present the
- *   getter falls back to Zustand, which holds the server default CWD set by
- *   {@link useDefaultCwd} — this keeps URLs clean.
+ * - **Standalone (web):** `?dir=` from TanStack Router search params.
+ *   A one-way `useEffect` syncs URL → Zustand so store consumers see the
+ *   correct CWD. When no `?dir=` is present the getter falls back to Zustand,
+ *   which holds the server default CWD set by {@link useDefaultCwd}.
  * - **Embedded (Obsidian):** Zustand is the sole store; URL is unused.
  *
  * Both stores are subscribed unconditionally to satisfy React's rules of hooks.
@@ -31,18 +31,15 @@ export function useDirectoryState(): [
   (dir: string | null, opts?: SetDirOptions) => void,
 ] {
   const platform = getPlatform();
-
-  // Zustand state (used in embedded mode + sync target)
   const storeDir = useAppStore((s) => s.selectedCwd);
   const setStoreDir = useAppStore((s) => s.setSelectedCwd);
-
-  // URL state (standalone mode)
-  const [urlDir, setUrlDir] = useQueryState('dir');
-
-  // Session clearing on directory change
+  const search = useSessionSearch();
+  const navigate = useNavigate();
   const [, setSessionId] = useSessionId();
 
-  // Sync URL -> Zustand on initial load (standalone only)
+  const urlDir = search.dir ?? null;
+
+  // Sync URL → Zustand on initial load (standalone only)
   useEffect(() => {
     if (!platform.isEmbedded && urlDir && urlDir !== storeDir) {
       setStoreDir(urlDir);
@@ -62,16 +59,21 @@ export function useDirectoryState(): [
     ];
   }
 
-  // Standalone: URL is source of truth, sync to Zustand
   return [
-    urlDir ?? storeDir, // Fall back to Zustand (for default cwd set by useDefaultCwd)
+    urlDir ?? storeDir,
     (dir, opts) => {
       if (dir) {
-        setUrlDir(dir);
-        setStoreDir(dir); // Sync to Zustand for localStorage + consumers
+        void navigate({
+          to: '/session',
+          search: (prev) => ({ ...prev, dir }),
+        });
+        setStoreDir(dir);
         if (!opts?.preserveSession) setSessionId(null);
       } else {
-        setUrlDir(null); // Remove from URL
+        void navigate({
+          to: '/session',
+          search: (prev) => ({ ...prev, dir: undefined }),
+        });
       }
     },
   ];
