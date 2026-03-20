@@ -1,20 +1,24 @@
 pre-commit:
   commands:
+    format:
+      glob: '*.{ts,tsx,js,jsx,mjs,json,css,md,mdx,yml,yaml}'
+      run: pnpm exec prettier --write {staged_files}
+      stage_fixed: true
     db-migrations:
-      glob: "packages/db/src/schema/*.ts"
+      glob: 'packages/db/src/schema/*.ts'
       run: |
         npx drizzle-kit generate --config packages/db/drizzle.config.ts
         git add packages/db/drizzle/
-      fail_text: "DB schema changed — migrations generated and staged. Review and re-commit."
+      fail_text: 'DB schema changed — migrations generated and staged. Review and re-commit.'
     lint:
       run: pnpm lint
-      fail_text: "Lint errors found — fix them before committing."
+      fail_text: 'Lint errors found — fix them before committing.'
     typecheck:
       run: pnpm typecheck
-      fail_text: "Type errors found — fix them before committing."
+      fail_text: 'Type errors found — fix them before committing.'
 
 pre-push:
   commands:
     tests:
       run: pnpm test -- --run
-      fail_text: "Tests failed — fix them before pushing."
+      fail_text: 'Tests failed — fix them before pushing.'

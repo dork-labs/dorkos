@@ -21,11 +21,21 @@ import { join } from 'path';
 const ROADMAP_PATH = join(process.cwd(), 'roadmap/roadmap.json');
 
 /**
- * Read Claude's output from stdin
+ * Read Claude's output from stdin with a hard timeout to prevent hanging.
  */
 async function readStdin() {
   return new Promise((resolve) => {
     let data = '';
+    let resolved = false;
+
+    const done = (result) => {
+      if (resolved) return;
+      resolved = true;
+      process.stdin.removeAllListeners();
+      process.stdin.unref(); // Allow process to exit even if stdin stays open
+      resolve(result);
+    };
+
     process.stdin.setEncoding('utf8');
 
     process.stdin.on('data', (chunk) => {
@@ -33,15 +43,15 @@ async function readStdin() {
     });
 
     process.stdin.on('end', () => {
-      resolve(data);
+      done(data);
     });
 
-    // Handle case where stdin is empty or closed immediately
-    setTimeout(() => {
-      if (data === '') {
-        resolve('');
-      }
-    }, 100);
+    process.stdin.on('error', () => {
+      done(data);
+    });
+
+    // Hard timeout — if stdin hasn't closed in 500ms, proceed with what we have
+    setTimeout(() => done(data), 500).unref();
   });
 }
 
