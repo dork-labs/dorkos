@@ -22,6 +22,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from 'supertest';
 import { createApp } from '../../app.js';
+import { env } from '../../env.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
 const app = createApp();
@@ -33,11 +34,12 @@ describe('CORS with tunnel origin', () => {
   });
 
   it('accepts requests from localhost origins', async () => {
+    const origin = `http://localhost:${env.DORKOS_PORT}`;
     const res = await request(app)
       .get('/api/health')
-      .set('Origin', 'http://localhost:4242');
+      .set('Origin', origin);
 
-    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:4242');
+    expect(res.headers['access-control-allow-origin']).toBe(origin);
   });
 
   it('rejects requests from unknown origins', async () => {
