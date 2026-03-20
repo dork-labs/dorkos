@@ -1,17 +1,17 @@
-import Link from 'next/link'
-import { DorkLogo } from '@dorkos/icons/logos'
+import Link from 'next/link';
+import { DorkLogo } from '@dorkos/icons/logos';
 
 interface SocialLink {
-  name: string
-  href: string
-  icon: React.ReactNode
+  name: string;
+  href: string;
+  icon: React.ReactNode;
 }
 
 interface MarketingFooterProps {
-  bylineText?: string
-  bylineHref?: string
-  email: string
-  socialLinks?: SocialLink[]
+  bylineText?: string;
+  bylineHref?: string;
+  email: string;
+  socialLinks?: SocialLink[];
 }
 
 export function MarketingFooter({
@@ -24,18 +24,18 @@ export function MarketingFooter({
     <>
       {/* Retro brand stripes */}
       <div>
-        <div className="h-1 bg-brand-orange" />
-        <div className="h-1 bg-brand-green" />
+        <div className="bg-brand-orange h-1" />
+        <div className="bg-brand-green h-1" />
       </div>
 
-      <footer className="py-20 pb-40 px-8 text-center bg-charcoal">
+      <footer className="bg-charcoal px-8 py-20 pb-40 text-center">
         {/* Logo */}
-        <Link href="/" className="inline-block mb-1.5">
-          <DorkLogo variant="white" size={40} className="h-10 w-auto mx-auto" />
+        <Link href="/" className="mb-1.5 inline-block">
+          <DorkLogo variant="white" size={40} className="mx-auto h-10 w-auto" />
         </Link>
 
         {/* Tagline */}
-        <p className="font-mono text-2xs tracking-[0.15em] uppercase text-cream-tertiary mb-2">
+        <p className="text-2xs text-cream-tertiary mb-2 font-mono tracking-[0.15em] uppercase">
           DorkOS
         </p>
 
@@ -44,19 +44,19 @@ export function MarketingFooter({
           href={bylineHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-mono text-2xs tracking-[0.1em] text-brand-orange hover:text-cream-white transition-smooth block mb-8"
+          className="text-2xs text-brand-orange hover:text-cream-white transition-smooth mb-8 block font-mono tracking-[0.1em]"
         >
           {bylineText}
         </a>
 
         {/* Tagline - mission */}
-        <p className="font-mono text-2xs tracking-[0.12em] uppercase text-cream-tertiary/60 mb-8">
+        <p className="text-2xs text-cream-tertiary/60 mb-8 font-mono tracking-[0.12em] uppercase">
           You slept. They shipped.
         </p>
 
         {/* Social icons */}
         {socialLinks.length > 0 && (
-          <div className="flex justify-center gap-5 mb-5">
+          <div className="mb-5 flex justify-center gap-5">
             {socialLinks.map((link) => (
               <a
                 key={link.name}
@@ -75,12 +75,11 @@ export function MarketingFooter({
         {/* Email */}
         <a
           href={`mailto:${email}`}
-          className="font-mono text-2xs text-cream-tertiary hover:text-brand-orange transition-smooth"
+          className="text-2xs text-cream-tertiary hover:text-brand-orange transition-smooth font-mono"
         >
           {email}
         </a>
-
       </footer>
     </>
-  )
+  );
 }

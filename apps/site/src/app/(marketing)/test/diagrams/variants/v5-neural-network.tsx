@@ -1,12 +1,8 @@
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
-import {
-  STAGGER,
-  SCALE_IN,
-  VIEWPORT,
-} from '@/layers/features/marketing/lib/motion-variants'
+import { motion } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
+import { STAGGER, SCALE_IN, VIEWPORT } from '@/layers/features/marketing/lib/motion-variants';
 
 // ---------------------------------------------------------------------------
 // Layout constants — organic, brain-like positioning in a 900×520 viewBox
@@ -14,61 +10,66 @@ import {
 
 /** Major neuron positions — large nodes representing each module. */
 const NEURON_POSITIONS: Record<string, { cx: number; cy: number }> = {
-  core:     { cx: 450, cy:  88 },
-  console:  { cx: 192, cy: 205 },
-  pulse:    { cx: 708, cy: 198 },
-  wing:    { cx: 148, cy: 378 },
-  mesh:     { cx: 452, cy: 408 },
+  core: { cx: 450, cy: 88 },
+  console: { cx: 192, cy: 205 },
+  pulse: { cx: 708, cy: 198 },
+  wing: { cx: 148, cy: 378 },
+  mesh: { cx: 452, cy: 408 },
   channels: { cx: 754, cy: 365 },
-}
+};
 
 /** Radius of the major neuron circles. */
-const NEURON_R = 26
+const NEURON_R = 26;
 
 /** Visual config per status. */
 const STATUS_CONFIG = {
   available: { glowOpacity: 0.55, strokeOpacity: 1, fillOpacity: 1, pulseClass: 'neuron-breathe' },
-  'coming-soon': { glowOpacity: 0.22, strokeOpacity: 0.55, fillOpacity: 0.85, pulseClass: 'neuron-breathe-dim' },
-} as const
+  'coming-soon': {
+    glowOpacity: 0.22,
+    strokeOpacity: 0.55,
+    fillOpacity: 0.85,
+    pulseClass: 'neuron-breathe-dim',
+  },
+} as const;
 
 // ---------------------------------------------------------------------------
 // Relay nodes — smaller intermediate nodes creating the neural mesh texture
 // ---------------------------------------------------------------------------
 
 interface RelayNode {
-  id: string
-  cx: number
-  cy: number
-  delay: number
+  id: string;
+  cx: number;
+  cy: number;
+  delay: number;
 }
 
 const RELAY_NODES: RelayNode[] = [
-  { id: 'r1',  cx: 318, cy: 130, delay: 0.0  },
-  { id: 'r2',  cx: 580, cy: 118, delay: 0.4  },
-  { id: 'r3',  cx: 260, cy: 290, delay: 0.8  },
-  { id: 'r4',  cx: 620, cy: 278, delay: 0.2  },
-  { id: 'r5',  cx: 355, cy: 310, delay: 1.0  },
-  { id: 'r6',  cx: 560, cy: 325, delay: 0.6  },
-  { id: 'r7',  cx: 188, cy: 490, delay: 1.4  },
-  { id: 'r8',  cx: 660, cy: 450, delay: 0.9  },
-  { id: 'r9',  cx: 385, cy: 465, delay: 1.2  },
-  { id: 'r10', cx: 518, cy: 155, delay: 0.3  },
-]
+  { id: 'r1', cx: 318, cy: 130, delay: 0.0 },
+  { id: 'r2', cx: 580, cy: 118, delay: 0.4 },
+  { id: 'r3', cx: 260, cy: 290, delay: 0.8 },
+  { id: 'r4', cx: 620, cy: 278, delay: 0.2 },
+  { id: 'r5', cx: 355, cy: 310, delay: 1.0 },
+  { id: 'r6', cx: 560, cy: 325, delay: 0.6 },
+  { id: 'r7', cx: 188, cy: 490, delay: 1.4 },
+  { id: 'r8', cx: 660, cy: 450, delay: 0.9 },
+  { id: 'r9', cx: 385, cy: 465, delay: 1.2 },
+  { id: 'r10', cx: 518, cy: 155, delay: 0.3 },
+];
 
 // ---------------------------------------------------------------------------
 // Dendrite connections — cubic Bezier paths between major neurons + relays
 // ---------------------------------------------------------------------------
 
 interface DendriteConnection {
-  id: string
+  id: string;
   /** Full SVG path `d` attribute — cubic or quadratic Bezier. */
-  d: string
+  d: string;
   /** Delay for draw-in animation (seconds). */
-  delay: number
+  delay: number;
   /** Synaptic pulse travel duration (seconds). */
-  pulseDur: string
+  pulseDur: string;
   /** Whether this carries a visible synaptic pulse. */
-  hasPulse: boolean
+  hasPulse: boolean;
 }
 
 const DENDRITES: DendriteConnection[] = [
@@ -320,20 +321,23 @@ const DENDRITES: DendriteConnection[] = [
     pulseDur: '5.2s',
     hasPulse: false,
   },
-]
+];
 
 // ---------------------------------------------------------------------------
 // Label config — where to place text relative to each neuron
 // ---------------------------------------------------------------------------
 
-const LABEL_OFFSETS: Record<string, { dx: number; dy: number; anchor: 'middle' | 'start' | 'end' }> = {
-  core:     { dx:   0, dy: -38, anchor: 'middle' },
-  console:  { dx: -34, dy:   0, anchor: 'end'    },
-  pulse:    { dx:  34, dy:   0, anchor: 'start'  },
-  wing:    { dx: -34, dy:   0, anchor: 'end'    },
-  mesh:     { dx:   0, dy:  42, anchor: 'middle' },
-  channels: { dx:  34, dy:   0, anchor: 'start'  },
-}
+const LABEL_OFFSETS: Record<
+  string,
+  { dx: number; dy: number; anchor: 'middle' | 'start' | 'end' }
+> = {
+  core: { dx: 0, dy: -38, anchor: 'middle' },
+  console: { dx: -34, dy: 0, anchor: 'end' },
+  pulse: { dx: 34, dy: 0, anchor: 'start' },
+  wing: { dx: -34, dy: 0, anchor: 'end' },
+  mesh: { dx: 0, dy: 42, anchor: 'middle' },
+  channels: { dx: 34, dy: 0, anchor: 'start' },
+};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -372,7 +376,7 @@ function NeuralStyles() {
         }
       }
     `}</style>
-  )
+  );
 }
 
 /** SVG filter definitions for glow effects at different intensities. */
@@ -445,11 +449,11 @@ function GlowFilters() {
         <feComposite in="SourceGraphic" in2="colored" operator="over" />
       </filter>
     </defs>
-  )
+  );
 }
 
 interface DendriteProps {
-  conn: DendriteConnection
+  conn: DendriteConnection;
 }
 
 /** Single animated dendrite path with optional synaptic pulse. */
@@ -461,7 +465,7 @@ function Dendrite({ conn }: DendriteProps) {
       opacity: 1,
       transition: { duration: 1.4, ease: 'easeInOut' as const, delay: conn.delay },
     },
-  }
+  };
 
   return (
     <g>
@@ -497,11 +501,11 @@ function Dendrite({ conn }: DendriteProps) {
         </circle>
       )}
     </g>
-  )
+  );
 }
 
 interface RelayNodeProps {
-  node: RelayNode
+  node: RelayNode;
 }
 
 /** Small relay node that blinks softly at random intervals. */
@@ -523,23 +527,23 @@ function RelayNodeCircle({ node }: RelayNodeProps) {
         },
       }}
     />
-  )
+  );
 }
 
 interface MajorNeuronProps {
-  module: SystemModule
+  module: SystemModule;
 }
 
 /** Major neuron circle with glow, breathing animation, and label. */
 function MajorNeuron({ module }: MajorNeuronProps) {
-  const pos = NEURON_POSITIONS[module.id]
-  const label = LABEL_OFFSETS[module.id]
-  const cfg = STATUS_CONFIG[module.status]
+  const pos = NEURON_POSITIONS[module.id];
+  const label = LABEL_OFFSETS[module.id];
+  const cfg = STATUS_CONFIG[module.status];
 
-  if (!pos || !label) return null
+  if (!pos || !label) return null;
 
-  const labelX = pos.cx + label.dx
-  const labelY = pos.cy + label.dy
+  const labelX = pos.cx + label.dx;
+  const labelY = pos.cy + label.dy;
 
   return (
     <motion.g variants={SCALE_IN}>
@@ -607,11 +611,15 @@ function MajorNeuron({ module }: MajorNeuronProps) {
         cx={pos.cx + NEURON_R - 5}
         cy={pos.cy - NEURON_R + 5}
         r={4}
-        fill={module.status === 'available' ? 'var(--color-brand-green)' : 'var(--color-warm-gray-light)'}
+        fill={
+          module.status === 'available'
+            ? 'var(--color-brand-green)'
+            : 'var(--color-warm-gray-light)'
+        }
         fillOpacity={module.status === 'available' ? 0.9 : 0.5}
       />
     </motion.g>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -632,7 +640,7 @@ export function DiagramV5({ modules }: { modules: SystemModule[] }) {
 
       <motion.svg
         viewBox="0 0 900 520"
-        className="w-full h-auto"
+        className="h-auto w-full"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
         initial="hidden"
@@ -674,5 +682,5 @@ export function DiagramV5({ modules }: { modules: SystemModule[] }) {
         </motion.g>
       </motion.svg>
     </div>
-  )
+  );
 }

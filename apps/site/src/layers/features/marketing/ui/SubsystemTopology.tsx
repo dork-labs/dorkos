@@ -1,12 +1,7 @@
-'use client'
+'use client';
 
-import {
-  ReactFlow,
-  type Node,
-  type Edge,
-  Position,
-} from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
+import { ReactFlow, type Node, type Edge, Position } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 
 /** Module colors matching the brand palette. */
 const MODULE_COLORS: Record<string, string> = {
@@ -16,16 +11,52 @@ const MODULE_COLORS: Record<string, string> = {
   console: '#E85D04',
   loop: '#B8860B',
   wing: '#228B22',
-}
+};
 
 /** Hexagonal layout — 6 nodes arranged in a ring. */
 const NODES: Node[] = [
-  { id: 'console', position: { x: 250, y: 20 }, data: { label: 'Console' }, sourcePosition: Position.Bottom, targetPosition: Position.Top },
-  { id: 'pulse', position: { x: 80, y: 80 }, data: { label: 'Pulse' }, sourcePosition: Position.Right, targetPosition: Position.Left },
-  { id: 'relay', position: { x: 420, y: 80 }, data: { label: 'Relay' }, sourcePosition: Position.Left, targetPosition: Position.Right },
-  { id: 'mesh', position: { x: 80, y: 200 }, data: { label: 'Mesh' }, sourcePosition: Position.Right, targetPosition: Position.Left },
-  { id: 'loop', position: { x: 420, y: 200 }, data: { label: 'Loop' }, sourcePosition: Position.Left, targetPosition: Position.Right },
-  { id: 'wing', position: { x: 250, y: 240 }, data: { label: 'Wing' }, sourcePosition: Position.Top, targetPosition: Position.Bottom },
+  {
+    id: 'console',
+    position: { x: 250, y: 20 },
+    data: { label: 'Console' },
+    sourcePosition: Position.Bottom,
+    targetPosition: Position.Top,
+  },
+  {
+    id: 'pulse',
+    position: { x: 80, y: 80 },
+    data: { label: 'Pulse' },
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+  },
+  {
+    id: 'relay',
+    position: { x: 420, y: 80 },
+    data: { label: 'Relay' },
+    sourcePosition: Position.Left,
+    targetPosition: Position.Right,
+  },
+  {
+    id: 'mesh',
+    position: { x: 80, y: 200 },
+    data: { label: 'Mesh' },
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+  },
+  {
+    id: 'loop',
+    position: { x: 420, y: 200 },
+    data: { label: 'Loop' },
+    sourcePosition: Position.Left,
+    targetPosition: Position.Right,
+  },
+  {
+    id: 'wing',
+    position: { x: 250, y: 240 },
+    data: { label: 'Wing' },
+    sourcePosition: Position.Top,
+    targetPosition: Position.Bottom,
+  },
 ].map((node) => ({
   ...node,
   type: 'default',
@@ -42,7 +73,7 @@ const NODES: Node[] = [
     minWidth: 80,
     textAlign: 'center' as const,
   },
-}))
+}));
 
 /** Edges showing data flow between modules. */
 const EDGES: Edge[] = [
@@ -62,7 +93,7 @@ const EDGES: Edge[] = [
     strokeDasharray: edge.animated ? '5 3' : undefined,
   },
   type: 'default' as const,
-}))
+}));
 
 /** Non-interactive React Flow topology showing how DorkOS modules relate. */
 export function SubsystemTopology() {
@@ -82,5 +113,5 @@ export function SubsystemTopology() {
       proOptions={{ hideAttribution: true }}
       style={{ background: 'transparent' }}
     />
-  )
+  );
 }

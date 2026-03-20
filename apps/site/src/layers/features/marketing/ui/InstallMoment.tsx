@@ -1,12 +1,12 @@
-'use client'
+'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import Link from 'next/link'
-import { motion, useInView, useReducedMotion } from 'motion/react'
-import { Copy, Check } from 'lucide-react'
-import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
+import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
+import { motion, useInView, useReducedMotion } from 'motion/react';
+import { Copy, Check } from 'lucide-react';
+import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
-const SCRAMBLE_CHARS = '!@#$%&*_+-=<>?~'
+const SCRAMBLE_CHARS = '!@#$%&*_+-=<>?~';
 
 const INSTALL_METHODS = [
   {
@@ -30,89 +30,91 @@ const INSTALL_METHODS = [
     description: 'macOS and Linux. Updates via brew upgrade.',
     recommended: false,
   },
-] as const
+] as const;
 
 /**
  * Scramble/decode effect — each position cycles through random characters
  * before settling on the real character. Creates a "system booting" feel.
  */
 function useTextScramble(text: string, isActive: boolean) {
-  const reducedMotion = useReducedMotion()
-  const [display, setDisplay] = useState(text)
-  const hasRun = useRef(false)
+  const reducedMotion = useReducedMotion();
+  const [display, setDisplay] = useState(text);
+  const hasRun = useRef(false);
 
   const scramble = useCallback(() => {
-    if (hasRun.current) return
-    hasRun.current = true
+    if (hasRun.current) return;
+    hasRun.current = true;
 
-    const chars = text.split('')
-    const settled = new Array(chars.length).fill(false)
-    let frame = 0
+    const chars = text.split('');
+    const settled = new Array(chars.length).fill(false);
+    let frame = 0;
 
     const interval = setInterval(() => {
-      frame++
+      frame++;
       const result = chars.map((char, i) => {
-        if (char === ' ') return ' '
-        const settleAt = (i + 1) * 3
+        if (char === ' ') return ' ';
+        const settleAt = (i + 1) * 3;
         if (frame >= settleAt) {
-          settled[i] = true
-          return char
+          settled[i] = true;
+          return char;
         }
-        return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]
-      })
+        return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+      });
 
-      setDisplay(result.join(''))
+      setDisplay(result.join(''));
 
       if (settled.every(Boolean)) {
-        clearInterval(interval)
+        clearInterval(interval);
       }
-    }, 30)
+    }, 30);
 
-    return () => clearInterval(interval)
-  }, [text])
+    return () => clearInterval(interval);
+  }, [text]);
 
   useEffect(() => {
-    if (!isActive || reducedMotion) return
-    return scramble()
-  }, [isActive, reducedMotion, scramble])
+    if (!isActive || reducedMotion) return;
+    return scramble();
+  }, [isActive, reducedMotion, scramble]);
 
-  return display
+  return display;
 }
 
 /** Combined install + close section — "Ready." headline with tabbed install in a terminal mockup. */
 export function InstallMoment() {
-  const ref = useRef<HTMLDivElement>(null)
-  const isInView = useInView(ref, { once: true, amount: 0.3 })
-  const [activeTab, setActiveTab] = useState('curl')
-  const [copied, setCopied] = useState(false)
+  const ref = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { once: true, amount: 0.3 });
+  const [activeTab, setActiveTab] = useState('curl');
+  const [copied, setCopied] = useState(false);
 
-  const activeMethod = INSTALL_METHODS.find((m) => m.id === activeTab)!
-  const displayText = useTextScramble(INSTALL_METHODS[0].command, isInView && activeTab === 'curl')
+  const activeMethod = INSTALL_METHODS.find((m) => m.id === activeTab)!;
+  const displayText = useTextScramble(INSTALL_METHODS[0].command, isInView && activeTab === 'curl');
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(activeMethod.command)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }, [activeMethod.command])
+    navigator.clipboard.writeText(activeMethod.command);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [activeMethod.command]);
 
   return (
-    <section id="install" ref={ref} className="py-14 md:py-24 px-8 bg-cream-primary relative">
+    <section id="install" ref={ref} className="bg-cream-primary relative px-8 py-14 md:py-24">
       {/* Graph-paper background */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: `
             linear-gradient(to right, rgba(139, 90, 43, 0.07) 1px, transparent 1px),
             linear-gradient(to bottom, rgba(139, 90, 43, 0.07) 1px, transparent 1px)
           `,
           backgroundSize: '32px 32px',
-          maskImage: 'linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%)',
-          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%)',
+          maskImage:
+            'linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%)',
+          WebkitMaskImage:
+            'linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%)',
         }}
       />
 
       <motion.div
-        className="max-w-xl mx-auto text-center relative z-10"
+        className="relative z-10 mx-auto max-w-xl text-center"
         initial="hidden"
         whileInView="visible"
         viewport={VIEWPORT}
@@ -121,28 +123,29 @@ export function InstallMoment() {
         {/* Headline */}
         <motion.p
           variants={REVEAL}
-          className="text-warm-gray text-lg md:text-xl leading-[1.5] mb-6"
+          className="text-warm-gray mb-6 text-lg leading-[1.5] md:text-xl"
         >
           Your agents are ready. Give them the night.
         </motion.p>
 
         <motion.p
           variants={REVEAL}
-          className="font-mono text-[48px] md:text-[72px] font-bold text-brand-orange leading-none tracking-[-0.03em] mb-10"
+          className="text-brand-orange mb-10 font-mono text-[48px] leading-none font-bold tracking-[-0.03em] md:text-[72px]"
         >
-          Get started<span className="cursor-blink" aria-hidden="true" />.
+          Get started
+          <span className="cursor-blink" aria-hidden="true" />.
         </motion.p>
 
         {/* Tab bar */}
-        <motion.div variants={REVEAL} className="flex items-center justify-center gap-1 mb-4">
+        <motion.div variants={REVEAL} className="mb-4 flex items-center justify-center gap-1">
           {INSTALL_METHODS.map((method) => (
             <button
               key={method.id}
               onClick={() => {
-                setActiveTab(method.id)
-                setCopied(false)
+                setActiveTab(method.id);
+                setCopied(false);
               }}
-              className={`font-mono text-xs tracking-[0.06em] px-3 py-1.5 rounded-md transition-all inline-flex items-center gap-1.5 ${
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-xs tracking-[0.06em] transition-all ${
                 activeTab === method.id
                   ? 'bg-charcoal text-cream'
                   : 'text-warm-gray-light hover:text-charcoal'
@@ -151,9 +154,10 @@ export function InstallMoment() {
               {method.label}
               {method.recommended && (
                 <span
-                  className="text-[8px] tracking-[0.1em] uppercase px-1 py-px rounded-sm"
+                  className="rounded-sm px-1 py-px text-[8px] tracking-[0.1em] uppercase"
                   style={{
-                    background: activeTab === method.id ? 'rgba(255,255,255,0.15)' : 'rgba(232, 93, 4, 0.1)',
+                    background:
+                      activeTab === method.id ? 'rgba(255,255,255,0.15)' : 'rgba(232, 93, 4, 0.1)',
                     color: activeTab === method.id ? '#FFFEFB' : '#E85D04',
                   }}
                 >
@@ -167,7 +171,7 @@ export function InstallMoment() {
         {/* Terminal mockup */}
         <motion.div variants={REVEAL} className="mb-3">
           <div
-            className="rounded-lg overflow-hidden mx-auto max-w-lg"
+            className="mx-auto max-w-lg overflow-hidden rounded-lg"
             style={{
               border: '1px solid rgba(139, 90, 43, 0.12)',
               background: '#1A1814',
@@ -180,16 +184,28 @@ export function InstallMoment() {
               style={{ background: '#252220', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
             >
               <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#E85D04', opacity: 0.5 }} />
-                <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#7A756A', opacity: 0.3 }} />
-                <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#7A756A', opacity: 0.3 }} />
+                <div
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ background: '#E85D04', opacity: 0.5 }}
+                />
+                <div
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ background: '#7A756A', opacity: 0.3 }}
+                />
+                <div
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ background: '#7A756A', opacity: 0.3 }}
+                />
               </div>
-              <span className="font-mono text-[10px] tracking-[0.06em]" style={{ color: '#7A756A' }}>
+              <span
+                className="font-mono text-[10px] tracking-[0.06em]"
+                style={{ color: '#7A756A' }}
+              >
                 Terminal
               </span>
               <button
                 onClick={handleCopy}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:bg-white/10"
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-white/10"
                 aria-label="Copy command"
               >
                 {copied ? (
@@ -197,7 +213,10 @@ export function InstallMoment() {
                 ) : (
                   <Copy size={12} style={{ color: '#7A756A' }} />
                 )}
-                <span className="font-mono text-[10px]" style={{ color: copied ? '#228B22' : '#7A756A' }}>
+                <span
+                  className="font-mono text-[10px]"
+                  style={{ color: copied ? '#228B22' : '#7A756A' }}
+                >
                   {copied ? 'copied' : 'copy'}
                 </span>
               </button>
@@ -205,7 +224,7 @@ export function InstallMoment() {
 
             {/* Terminal body */}
             <div className="px-4 py-4">
-              <p className="font-mono text-sm md:text-base text-left" style={{ color: '#F5F0E6' }}>
+              <p className="text-left font-mono text-sm md:text-base" style={{ color: '#F5F0E6' }}>
                 <span style={{ color: '#E85D04' }}>~ </span>
                 <span style={{ color: '#7A756A' }}>$ </span>
                 {activeTab === 'curl' ? displayText : activeMethod.command}
@@ -217,23 +236,21 @@ export function InstallMoment() {
 
         {/* "Run in terminal" hint + description */}
         <motion.div variants={REVEAL} className="mb-10">
-          <p className="text-warm-gray-light text-xs font-mono mb-1 tracking-[0.04em]">
+          <p className="text-warm-gray-light mb-1 font-mono text-xs tracking-[0.04em]">
             Run in your terminal
           </p>
-          <p className="text-warm-gray-light text-sm font-mono">
-            {activeMethod.description}
-          </p>
+          <p className="text-warm-gray-light font-mono text-sm">{activeMethod.description}</p>
         </motion.div>
 
         {/* Badges */}
         <motion.div
           variants={REVEAL}
-          className="flex flex-wrap items-center justify-center gap-2 mb-6"
+          className="mb-6 flex flex-wrap items-center justify-center gap-2"
         >
           {['Open Source', 'MIT Licensed', 'Runs on Your Machine'].map((badge) => (
             <span
               key={badge}
-              className="font-mono text-[9px] tracking-[0.08em] uppercase px-2 py-0.5 rounded-[3px]"
+              className="rounded-[3px] px-2 py-0.5 font-mono text-[9px] tracking-[0.08em] uppercase"
               style={{
                 background: 'rgba(232, 93, 4, 0.06)',
                 color: '#7A756A',
@@ -245,19 +262,19 @@ export function InstallMoment() {
           ))}
         </motion.div>
 
-        <motion.p variants={REVEAL} className="text-charcoal text-lg font-medium mb-2">
+        <motion.p variants={REVEAL} className="text-charcoal mb-2 text-lg font-medium">
           One person. Ten agents. Ship around the clock.
         </motion.p>
 
-        <motion.div variants={REVEAL} className="flex items-center justify-center gap-6 mt-8">
+        <motion.div variants={REVEAL} className="mt-8 flex items-center justify-center gap-6">
           <Link
             href="/docs/getting-started/quickstart"
-            className="font-mono text-button tracking-[0.08em] text-warm-gray-light hover:text-brand-orange transition-smooth"
+            className="text-button text-warm-gray-light hover:text-brand-orange transition-smooth font-mono tracking-[0.08em]"
           >
             Read the docs
           </Link>
         </motion.div>
       </motion.div>
     </section>
-  )
+  );
 }

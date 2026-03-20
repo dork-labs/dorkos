@@ -1,28 +1,23 @@
-import Link from 'next/link'
-import type { Project } from '../lib/types'
+import Link from 'next/link';
+import type { Project } from '../lib/types';
 
 interface ProjectCardProps {
-  project: Project
+  project: Project;
 }
 
 /** Feature card — title + description, optional link. */
 export function ProjectCard({ project }: ProjectCardProps) {
   const content = (
     <>
-      <h3 className="text-charcoal font-semibold text-xl tracking-[-0.01em] mb-3">
+      <h3 className="text-charcoal mb-3 text-xl font-semibold tracking-[-0.01em]">
         {project.title}
       </h3>
-      <p className="text-warm-gray text-sm leading-relaxed">
-        {project.description}
-      </p>
+      <p className="text-warm-gray text-sm leading-relaxed">{project.description}</p>
     </>
-  )
+  );
 
-  const baseClassName =
-    'text-center py-12 px-6 bg-cream-primary transition-smooth'
-  const hoverClassName = project.href
-    ? 'hover:bg-cream-secondary cursor-pointer'
-    : ''
+  const baseClassName = 'text-center py-12 px-6 bg-cream-primary transition-smooth';
+  const hoverClassName = project.href ? 'hover:bg-cream-secondary cursor-pointer' : '';
 
   if (project.href) {
     return (
@@ -34,8 +29,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
       >
         {content}
       </Link>
-    )
+    );
   }
 
-  return <article className={baseClassName}>{content}</article>
+  return <article className={baseClassName}>{content}</article>;
 }

@@ -27,11 +27,7 @@ const TOP = 25;
  * @param xStart  X origin of the character's bounding box
  * @param fill    Fill colour (defaults to #000)
  */
-function renderChar(
-  bitmap: boolean[][],
-  xStart: number,
-  fill = '#000',
-): React.ReactNode[] {
+function renderChar(bitmap: boolean[][], xStart: number, fill = '#000'): React.ReactNode[] {
   const rects: React.ReactNode[] = [];
   bitmap.forEach((row, rowIdx) => {
     row.forEach((on, colIdx) => {
@@ -44,7 +40,7 @@ function renderChar(
           width={PX}
           height={PX}
           fill={fill}
-        />,
+        />
       );
     });
   });
@@ -155,16 +151,7 @@ function GridDots(): React.ReactNode {
 
   for (let gx = gridLeft; gx <= gridRight; gx += S) {
     for (let gy = gridTop; gy <= gridBottom; gy += S) {
-      dots.push(
-        <circle
-          key={dotId++}
-          cx={gx}
-          cy={gy}
-          r={1}
-          fill="#ccc"
-          opacity={0.6}
-        />,
-      );
+      dots.push(<circle key={dotId++} cx={gx} cy={gy} r={1} fill="#ccc" opacity={0.6} />);
     }
   }
   return dots;

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add feature catalog system with SEO-optimized pages
 - Unify InferenceIndicator and SystemStatusZone into ChatStatusStrip
 - Add status bar toggles for multi-window sync and background refresh
 - Add per-word text animation and spring-based smooth scroll
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Add messageIds to DoneEventSchema, export SubagentStatus, extract history helpers
+
 ---
 
 ## [0.18.0] - 2026-03-19

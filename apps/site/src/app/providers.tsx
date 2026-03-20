@@ -1,21 +1,16 @@
-'use client'
+'use client';
 
-import { ThemeProvider } from 'next-themes'
-import type { ReactNode } from 'react'
+import { ThemeProvider } from 'next-themes';
+import type { ReactNode } from 'react';
 
 interface ProvidersProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 export function Providers({ children }: ProvidersProps) {
   return (
-    <ThemeProvider
-      attribute="class"
-      defaultTheme="system"
-      enableSystem
-      disableTransitionOnChange
-    >
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       {children}
     </ThemeProvider>
-  )
+  );
 }

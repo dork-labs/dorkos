@@ -1,26 +1,29 @@
-'use client'
+'use client';
 
-import { Suspense, lazy, type ComponentType } from 'react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
-import { systemModules } from '@/layers/features/marketing'
+import { Suspense, lazy, type ComponentType } from 'react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
+import { systemModules } from '@/layers/features/marketing';
 
 interface DiagramProps {
-  modules: SystemModule[]
+  modules: SystemModule[];
 }
 
 /** Lazily load a variant — renders placeholder if file doesn't exist yet. */
-function lazyVariant(loader: () => Promise<{ [key: string]: ComponentType<DiagramProps> }>, exportName: string) {
+function lazyVariant(
+  loader: () => Promise<{ [key: string]: ComponentType<DiagramProps> }>,
+  exportName: string
+) {
   return lazy(() =>
     loader()
       .then((mod) => ({ default: mod[exportName] }))
       .catch(() => ({
         default: () => (
-          <div className="flex items-center justify-center h-64 text-warm-gray font-mono text-sm">
+          <div className="text-warm-gray flex h-64 items-center justify-center font-mono text-sm">
             Loading... (agent still working)
           </div>
         ),
       }))
-  )
+  );
 }
 
 const variants = [
@@ -129,53 +132,51 @@ const variants = [
       'Draggable nodes with spring-physics connections. Click and drag modules to rearrange. Connections stretch and bounce. The most interactive variant.',
     Component: lazyVariant(() => import('./variants/v15-draggable-graph'), 'DiagramV15'),
   },
-]
+];
 
 function DiagramFallback() {
   return (
-    <div className="flex items-center justify-center h-64 text-warm-gray font-mono text-sm animate-pulse">
+    <div className="text-warm-gray flex h-64 animate-pulse items-center justify-center font-mono text-sm">
       Loading diagram...
     </div>
-  )
+  );
 }
 
 export default function DiagramTestPage() {
   return (
-    <div className="min-h-screen bg-cream-primary">
+    <div className="bg-cream-primary min-h-screen">
       {/* Header */}
-      <div className="py-16 px-8 text-center">
-        <span className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange block mb-4">
+      <div className="px-8 py-16 text-center">
+        <span className="text-2xs text-brand-orange mb-4 block font-mono tracking-[0.15em] uppercase">
           Exploration
         </span>
-        <h1 className="text-charcoal text-[40px] md:text-[56px] font-semibold tracking-[-0.04em] leading-[1.0] mb-6">
+        <h1 className="text-charcoal mb-6 text-[40px] leading-[1.0] font-semibold tracking-[-0.04em] md:text-[56px]">
           System Architecture Variants
         </h1>
-        <p className="text-warm-gray text-base leading-[1.7] max-w-xl mx-auto">
-          Fifteen different approaches to visualizing the DorkOS six-module
-          architecture. Each explores a distinct metaphor, layout, and animation
-          strategy. V11-V15 are Aceternity-inspired with heavy interactivity.
+        <p className="text-warm-gray mx-auto max-w-xl text-base leading-[1.7]">
+          Fifteen different approaches to visualizing the DorkOS six-module architecture. Each
+          explores a distinct metaphor, layout, and animation strategy. V11-V15 are
+          Aceternity-inspired with heavy interactivity.
         </p>
       </div>
 
       {/* Variants */}
-      <div className="max-w-7xl mx-auto px-8 pb-32 space-y-24">
+      <div className="mx-auto max-w-7xl space-y-24 px-8 pb-32">
         {variants.map((v) => (
           <section key={v.id} className="scroll-mt-8">
             {/* Variant label */}
             <div className="mb-8 flex items-baseline gap-4">
-              <span className="font-mono text-3xs tracking-[0.15em] uppercase text-brand-orange">
+              <span className="text-3xs text-brand-orange font-mono tracking-[0.15em] uppercase">
                 V{String(v.id).padStart(2, '0')}
               </span>
               <h2 className="text-charcoal text-[24px] font-semibold tracking-[-0.02em]">
                 {v.title}
               </h2>
             </div>
-            <p className="text-warm-gray text-sm leading-[1.7] max-w-xl mb-8">
-              {v.description}
-            </p>
+            <p className="text-warm-gray mb-8 max-w-xl text-sm leading-[1.7]">{v.description}</p>
 
             {/* Diagram container */}
-            <div className="bg-cream-tertiary rounded-xl border border-[var(--border-warm)] p-8 overflow-hidden">
+            <div className="bg-cream-tertiary overflow-hidden rounded-xl border border-[var(--border-warm)] p-8">
               <Suspense fallback={<DiagramFallback />}>
                 <v.Component modules={systemModules} />
               </Suspense>
@@ -184,5 +185,5 @@ export default function DiagramTestPage() {
         ))}
       </div>
     </div>
-  )
+  );
 }

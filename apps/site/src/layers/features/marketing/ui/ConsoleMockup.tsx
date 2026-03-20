@@ -1,7 +1,7 @@
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, VIEWPORT } from '../lib/motion-variants'
+import { motion } from 'motion/react';
+import { REVEAL, VIEWPORT } from '../lib/motion-variants';
 
 /** Stylized browser-frame mock of the DorkOS console — answers "what does this look like?" */
 export function ConsoleMockup() {
@@ -11,7 +11,7 @@ export function ConsoleMockup() {
       whileInView="visible"
       viewport={VIEWPORT}
       variants={REVEAL}
-      className="rounded-lg overflow-hidden hidden lg:block"
+      className="hidden overflow-hidden rounded-lg lg:block"
       style={{
         border: '1px solid rgba(139, 90, 43, 0.12)',
         background: '#FFFEFB',
@@ -23,10 +23,10 @@ export function ConsoleMockup() {
         className="flex items-center gap-1.5 px-3 py-2"
         style={{ background: '#F5F0E6', borderBottom: '1px solid rgba(139, 90, 43, 0.08)' }}
       >
-        <div className="w-2 h-2 rounded-full" style={{ background: 'rgba(232, 93, 4, 0.3)' }} />
-        <div className="w-2 h-2 rounded-full" style={{ background: 'rgba(139, 90, 43, 0.15)' }} />
-        <div className="w-2 h-2 rounded-full" style={{ background: 'rgba(139, 90, 43, 0.15)' }} />
-        <span className="ml-2 font-mono text-[9px] tracking-[0.06em] text-warm-gray-light">
+        <div className="h-2 w-2 rounded-full" style={{ background: 'rgba(232, 93, 4, 0.3)' }} />
+        <div className="h-2 w-2 rounded-full" style={{ background: 'rgba(139, 90, 43, 0.15)' }} />
+        <div className="h-2 w-2 rounded-full" style={{ background: 'rgba(139, 90, 43, 0.15)' }} />
+        <span className="text-warm-gray-light ml-2 font-mono text-[9px] tracking-[0.06em]">
           localhost:4242
         </span>
       </div>
@@ -35,34 +35,34 @@ export function ConsoleMockup() {
       <div className="flex" style={{ height: 140 }}>
         {/* Mini sidebar */}
         <div
-          className="w-[120px] shrink-0 py-2 px-2 space-y-1.5"
+          className="w-[120px] shrink-0 space-y-1.5 px-2 py-2"
           style={{ borderRight: '1px solid rgba(139, 90, 43, 0.08)', background: '#FAF7F0' }}
         >
           <div
-            className="rounded px-2 py-1 font-mono text-[9px] truncate"
+            className="truncate rounded px-2 py-1 font-mono text-[9px]"
             style={{ background: 'rgba(232, 93, 4, 0.06)', color: '#E85D04' }}
           >
             refactor-auth
           </div>
-          <div className="rounded px-2 py-1 font-mono text-[9px] text-warm-gray-light truncate">
+          <div className="text-warm-gray-light truncate rounded px-2 py-1 font-mono text-[9px]">
             test-coverage
           </div>
-          <div className="rounded px-2 py-1 font-mono text-[9px] text-warm-gray-light truncate">
+          <div className="text-warm-gray-light truncate rounded px-2 py-1 font-mono text-[9px]">
             dep-upgrade
           </div>
         </div>
 
         {/* Main panel */}
-        <div className="flex-1 py-2 px-3 space-y-2">
+        <div className="flex-1 space-y-2 px-3 py-2">
           <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#228B22' }} />
-            <span className="font-mono text-[9px] text-warm-gray-light">Agent</span>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#228B22' }} />
+            <span className="text-warm-gray-light font-mono text-[9px]">Agent</span>
           </div>
-          <p className="font-mono text-[10px] leading-[1.6] text-warm-gray">
-            Refactored auth module. Removed 340 lines of dead code.
-            Tests passing. Ready for your review.
+          <p className="text-warm-gray font-mono text-[10px] leading-[1.6]">
+            Refactored auth module. Removed 340 lines of dead code. Tests passing. Ready for your
+            review.
           </p>
-          <p className="font-mono text-[10px] leading-[1.6] text-warm-gray-light/60">
+          <p className="text-warm-gray-light/60 font-mono text-[10px] leading-[1.6]">
             3 files changed &middot; 2m ago
           </p>
         </div>
@@ -74,11 +74,11 @@ export function ConsoleMockup() {
         style={{ borderTop: '1px solid rgba(139, 90, 43, 0.08)', background: '#FAF7F0' }}
       >
         <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#228B22' }} />
-          <span className="font-mono text-[9px] text-warm-gray-light">3 agents active</span>
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#228B22' }} />
+          <span className="text-warm-gray-light font-mono text-[9px]">3 agents active</span>
         </div>
-        <span className="font-mono text-[9px] text-warm-gray-light/50">$0.42 tonight</span>
+        <span className="text-warm-gray-light/50 font-mono text-[9px]">$0.42 tonight</span>
       </div>
     </motion.div>
-  )
+  );
 }

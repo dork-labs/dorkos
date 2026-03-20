@@ -1,19 +1,19 @@
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
-import { STAGGER, VIEWPORT } from '@/layers/features/marketing/lib/motion-variants'
+import { motion } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
+import { STAGGER, VIEWPORT } from '@/layers/features/marketing/lib/motion-variants';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const VIEWBOX_W = 800
-const VIEWBOX_H = 500
+const VIEWBOX_W = 800;
+const VIEWBOX_H = 500;
 
 /** Brand colors — used inline because this SVG lives on a dark background. */
-const ORANGE = '#E85D04'
-const CREAM = '#FFFEFB'
-const CREAM_DIM = 'rgba(255, 254, 251, 0.55)'
-const ORANGE_DIM = 'rgba(232, 93, 4, 0.35)'
+const ORANGE = '#E85D04';
+const CREAM = '#FFFEFB';
+const CREAM_DIM = 'rgba(255, 254, 251, 0.55)';
+const ORANGE_DIM = 'rgba(232, 93, 4, 0.35)';
 
 // ─── Star Positions ────────────────────────────────────────────────────────────
 //
@@ -23,26 +23,26 @@ const ORANGE_DIM = 'rgba(232, 93, 4, 0.35)'
 // Module order: core, console, pulse, wing, channels, mesh
 
 const STAR_POSITIONS: Record<string, { x: number; y: number }> = {
-  core:     { x: 370, y: 240 },  // dominant center — brightest star
-  console:  { x: 175, y: 155 },  // upper-left — close companion
-  pulse:    { x: 580, y: 145 },  // upper-right
-  wing:    { x: 640, y: 330 },  // right midfield
-  mesh:     { x: 195, y: 355 },  // lower-left
-  channels: { x: 490, y: 420 },  // lower-right sweep
-}
+  core: { x: 370, y: 240 }, // dominant center — brightest star
+  console: { x: 175, y: 155 }, // upper-left — close companion
+  pulse: { x: 580, y: 145 }, // upper-right
+  wing: { x: 640, y: 330 }, // right midfield
+  mesh: { x: 195, y: 355 }, // lower-left
+  channels: { x: 490, y: 420 }, // lower-right sweep
+};
 
 /** Label anchor offsets so text doesn't overlap the star glow. */
 const LABEL_OFFSETS: Record<
   string,
   { dx: number; dy: number; anchor: 'start' | 'middle' | 'end' }
 > = {
-  core:     { dx:   0, dy: -34, anchor: 'middle' },
-  console:  { dx: -22, dy: -22, anchor: 'end'    },
-  pulse:    { dx:  22, dy: -22, anchor: 'start'  },
-  wing:    { dx:  28, dy:   4, anchor: 'start'  },
-  mesh:     { dx: -28, dy:   4, anchor: 'end'    },
-  channels: { dx:   0, dy:  30, anchor: 'middle' },
-}
+  core: { dx: 0, dy: -34, anchor: 'middle' },
+  console: { dx: -22, dy: -22, anchor: 'end' },
+  pulse: { dx: 22, dy: -22, anchor: 'start' },
+  wing: { dx: 28, dy: 4, anchor: 'start' },
+  mesh: { dx: -28, dy: 4, anchor: 'end' },
+  channels: { dx: 0, dy: 30, anchor: 'middle' },
+};
 
 /** Constellation edges — Engine connects to all; a few lateral links. */
 const EDGES: Array<[string, string]> = [
@@ -54,40 +54,40 @@ const EDGES: Array<[string, string]> = [
   ['console', 'pulse'],
   ['mesh', 'relay'],
   ['pulse', 'wing'],
-]
+];
 
 // ─── Seeded Background Stars ──────────────────────────────────────────────────
 //
 // Using a simple LCG so positions are deterministic (no hydration mismatch).
 
 function seededRandom(seed: number): () => number {
-  let s = seed
+  let s = seed;
   return () => {
-    s = (s * 1664525 + 1013904223) & 0xffffffff
-    return (s >>> 0) / 0xffffffff
-  }
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff;
+  };
 }
 
 interface BackgroundStar {
-  x: number
-  y: number
-  r: number
-  opacity: number
-  delay: number
+  x: number;
+  y: number;
+  r: number;
+  opacity: number;
+  delay: number;
 }
 
 function buildBackgroundStars(count: number): BackgroundStar[] {
-  const rand = seededRandom(42)
+  const rand = seededRandom(42);
   return Array.from({ length: count }, () => ({
     x: rand() * VIEWBOX_W,
     y: rand() * VIEWBOX_H,
     r: 0.5 + rand() * 1.0,
     opacity: 0.08 + rand() * 0.22,
     delay: rand() * 4,
-  }))
+  }));
 }
 
-const BG_STARS = buildBackgroundStars(32)
+const BG_STARS = buildBackgroundStars(32);
 
 // ─── Motion Variants ─────────────────────────────────────────────────────────
 
@@ -107,7 +107,7 @@ const STAR_APPEAR = {
       opacity: { duration: 0.4, ease: 'easeOut' },
     },
   },
-}
+};
 
 /** Line draw — delayed to run after stars have appeared. */
 const LINE_APPEAR = {
@@ -117,33 +117,33 @@ const LINE_APPEAR = {
     opacity: 1,
     transition: { duration: 1.4, ease: 'easeInOut', delay: 0.6 },
   },
-}
+};
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 interface StarGlowDefsProps {
-  id: string
-  color: string
+  id: string;
+  color: string;
 }
 
 /** SVG radial-gradient filter for a soft glow halo. */
 function StarGlowDef({ id, color }: StarGlowDefsProps) {
   return (
     <radialGradient id={id} cx="50%" cy="50%" r="50%">
-      <stop offset="0%"   stopColor={color} stopOpacity="0.9" />
-      <stop offset="35%"  stopColor={color} stopOpacity="0.45" />
-      <stop offset="70%"  stopColor={color} stopOpacity="0.12" />
+      <stop offset="0%" stopColor={color} stopOpacity="0.9" />
+      <stop offset="35%" stopColor={color} stopOpacity="0.45" />
+      <stop offset="70%" stopColor={color} stopOpacity="0.12" />
       <stop offset="100%" stopColor={color} stopOpacity="0" />
     </radialGradient>
-  )
+  );
 }
 
 interface ConstellationLineProps {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-  index: number
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  index: number;
 }
 
 /** Animated dashed line between two stars. Uses path for pathLength support. */
@@ -157,7 +157,7 @@ function ConstellationLine({ x1, y1, x2, y2, index }: ConstellationLineProps) {
         delay: 0.5 + index * 0.12,
       },
     },
-  }
+  };
 
   return (
     <motion.path
@@ -169,27 +169,27 @@ function ConstellationLine({ x1, y1, x2, y2, index }: ConstellationLineProps) {
       fill="none"
       variants={variant}
     />
-  )
+  );
 }
 
 interface StarNodeProps {
-  module: SystemModule
-  index: number
+  module: SystemModule;
+  index: number;
 }
 
 /** A single star node with halo, core dot, and label. */
 function StarNode({ module, index }: StarNodeProps) {
-  const pos = STAR_POSITIONS[module.id]
-  const labelOff = LABEL_OFFSETS[module.id]
-  if (!pos || !labelOff) return null
+  const pos = STAR_POSITIONS[module.id];
+  const labelOff = LABEL_OFFSETS[module.id];
+  if (!pos || !labelOff) return null;
 
-  const isAvailable = module.status === 'available'
-  const isEngine = module.id === 'engine'
+  const isAvailable = module.status === 'available';
+  const isEngine = module.id === 'engine';
 
   // Size tiers
-  const coreR = isEngine ? 5.5 : isAvailable ? 3.5 : 2.5
-  const haloR  = isEngine ? 36  : isAvailable ? 24  : 18
-  const glowId = `star-glow-${module.id}`
+  const coreR = isEngine ? 5.5 : isAvailable ? 3.5 : 2.5;
+  const haloR = isEngine ? 36 : isAvailable ? 24 : 18;
+  const glowId = `star-glow-${module.id}`;
 
   const variant = {
     ...STAR_APPEAR,
@@ -200,7 +200,7 @@ function StarNode({ module, index }: StarNodeProps) {
         delay: index * 0.12,
       },
     },
-  }
+  };
 
   return (
     <motion.g
@@ -228,14 +228,7 @@ function StarNode({ module, index }: StarNodeProps) {
       />
 
       {/* Tiny bright center spark */}
-      {isAvailable && (
-        <circle
-          cx={pos.x}
-          cy={pos.y}
-          r={isEngine ? 2.2 : 1.4}
-          fill={CREAM}
-        />
-      )}
+      {isAvailable && <circle cx={pos.x} cy={pos.y} r={isEngine ? 2.2 : 1.4} fill={CREAM} />}
 
       {/* Module name label */}
       <text
@@ -264,7 +257,7 @@ function StarNode({ module, index }: StarNodeProps) {
         {module.label.toUpperCase()}
       </text>
     </motion.g>
-  )
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -278,7 +271,7 @@ function StarNode({ module, index }: StarNodeProps) {
 export function DiagramV3({ modules }: { modules: SystemModule[] }) {
   return (
     <div
-      className="w-full rounded-xl overflow-hidden"
+      className="w-full overflow-hidden rounded-xl"
       style={{ background: '#0E0C0A', position: 'relative' }}
     >
       {/* Inline keyframes for star breathing and twinkle effects */}
@@ -326,23 +319,23 @@ export function DiagramV3({ modules }: { modules: SystemModule[] }) {
       >
         <defs>
           {/* Glow gradients for each module */}
-          <StarGlowDef id="star-glow-core"     color={ORANGE} />
-          <StarGlowDef id="star-glow-console"  color={ORANGE} />
-          <StarGlowDef id="star-glow-pulse"    color={ORANGE} />
-          <StarGlowDef id="star-glow-wing"    color={ORANGE} />
+          <StarGlowDef id="star-glow-core" color={ORANGE} />
+          <StarGlowDef id="star-glow-console" color={ORANGE} />
+          <StarGlowDef id="star-glow-pulse" color={ORANGE} />
+          <StarGlowDef id="star-glow-wing" color={ORANGE} />
           <StarGlowDef id="star-glow-channels" color={ORANGE} />
-          <StarGlowDef id="star-glow-mesh"     color={ORANGE} />
+          <StarGlowDef id="star-glow-mesh" color={ORANGE} />
 
           {/* Nebula glow behind core */}
           <radialGradient id="nebula" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   stopColor="#E85D04" stopOpacity="0.06" />
+            <stop offset="0%" stopColor="#E85D04" stopOpacity="0.06" />
             <stop offset="100%" stopColor="#E85D04" stopOpacity="0" />
           </radialGradient>
 
           {/* Shooting star gradient */}
           <linearGradient id="shooting-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stopColor={CREAM} stopOpacity="0" />
-            <stop offset="60%"  stopColor={CREAM} stopOpacity="0.8" />
+            <stop offset="0%" stopColor={CREAM} stopOpacity="0" />
+            <stop offset="60%" stopColor={CREAM} stopOpacity="0.8" />
             <stop offset="100%" stopColor={CREAM} stopOpacity="0" />
           </linearGradient>
 
@@ -366,12 +359,14 @@ export function DiagramV3({ modules }: { modules: SystemModule[] }) {
             cy={s.y}
             r={s.r}
             fill={CREAM}
-            style={{
-              '--tw-op': s.opacity,
-              '--tw-dur': `${2.2 + s.delay * 0.7}s`,
-              animationDelay: `${s.delay}s`,
-              opacity: s.opacity,
-            } as React.CSSProperties}
+            style={
+              {
+                '--tw-op': s.opacity,
+                '--tw-dur': `${2.2 + s.delay * 0.7}s`,
+                animationDelay: `${s.delay}s`,
+                opacity: s.opacity,
+              } as React.CSSProperties
+            }
           />
         ))}
 
@@ -379,8 +374,10 @@ export function DiagramV3({ modules }: { modules: SystemModule[] }) {
         <g clipPath="url(#diagram-clip)">
           <line
             className="shooting-star-line"
-            x1="-40" y1="80"
-            x2="0"   y2="80"
+            x1="-40"
+            y1="80"
+            x2="0"
+            y2="80"
             stroke="url(#shooting-grad)"
             strokeWidth="1.5"
             strokeLinecap="round"
@@ -389,33 +386,26 @@ export function DiagramV3({ modules }: { modules: SystemModule[] }) {
         </g>
 
         {/* Constellation lines — drawn after stars appear */}
-        <motion.g
-          initial="hidden"
-          whileInView="visible"
-          viewport={VIEWPORT}
-        >
+        <motion.g initial="hidden" whileInView="visible" viewport={VIEWPORT}>
           {EDGES.map(([aId, bId], i) => {
-            const a = STAR_POSITIONS[aId]
-            const b = STAR_POSITIONS[bId]
-            if (!a || !b) return null
+            const a = STAR_POSITIONS[aId];
+            const b = STAR_POSITIONS[bId];
+            if (!a || !b) return null;
             return (
               <ConstellationLine
                 key={`${aId}-${bId}`}
-                x1={a.x} y1={a.y}
-                x2={b.x} y2={b.y}
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
                 index={i}
               />
-            )
+            );
           })}
         </motion.g>
 
         {/* Star nodes — staggered entrance */}
-        <motion.g
-          variants={STAGGER}
-          initial="hidden"
-          whileInView="visible"
-          viewport={VIEWPORT}
-        >
+        <motion.g variants={STAGGER} initial="hidden" whileInView="visible" viewport={VIEWPORT}>
           {modules.map((module, i) => (
             <StarNode key={module.id} module={module} index={i} />
           ))}
@@ -426,7 +416,8 @@ export function DiagramV3({ modules }: { modules: SystemModule[] }) {
           <circle cx="762" cy="28" r="12" stroke={CREAM} strokeWidth="0.5" fill="none" />
           <line x1="762" y1="16" x2="762" y2="20" stroke={CREAM} strokeWidth="0.8" />
           <text
-            x="762" y="33"
+            x="762"
+            y="33"
             textAnchor="middle"
             fontSize="7"
             fill={CREAM}
@@ -439,7 +430,8 @@ export function DiagramV3({ modules }: { modules: SystemModule[] }) {
 
         {/* Chart catalogue number — bottom-left corner */}
         <text
-          x="18" y={VIEWBOX_H - 14}
+          x="18"
+          y={VIEWBOX_H - 14}
           fontSize="7.5"
           fill={CREAM}
           opacity="0.2"
@@ -450,5 +442,5 @@ export function DiagramV3({ modules }: { modules: SystemModule[] }) {
         </text>
       </svg>
     </div>
-  )
+  );
 }

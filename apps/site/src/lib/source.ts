@@ -1,7 +1,7 @@
-import { docs, blogPosts } from '@/.source'
-import { loader } from 'fumadocs-core/source'
-import { openapiPlugin } from 'fumadocs-openapi/server'
-import { toFumadocsSource } from 'fumadocs-mdx/runtime/server'
+import { docs, blogPosts } from '@/.source';
+import { loader } from 'fumadocs-core/source';
+import { openapiPlugin } from 'fumadocs-openapi/server';
+import { toFumadocsSource } from 'fumadocs-mdx/runtime/server';
 
 /**
  * Fumadocs source loader for documentation pages.
@@ -14,7 +14,7 @@ export const source = loader({
   baseUrl: '/docs',
   source: docs.toFumadocsSource(),
   plugins: [openapiPlugin()],
-})
+});
 
 /**
  * Fumadocs source loader for blog posts.
@@ -25,4 +25,4 @@ export const source = loader({
 export const blog = loader({
   baseUrl: '/blog',
   source: toFumadocsSource(blogPosts, []),
-})
+});

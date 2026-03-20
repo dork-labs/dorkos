@@ -1,37 +1,37 @@
-'use client'
+'use client';
 
-import { useState, useEffect, useRef } from 'react'
-import Link from 'next/link'
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants'
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface HeroProps {
-  headline: string
-  subhead: string
-  ctaText: string
-  ctaHref: string
+  headline: string;
+  subhead: string;
+  ctaText: string;
+  ctaHref: string;
 }
 
-type ModuleId = 'engine' | 'pulse' | 'wing' | 'mesh' | 'relay' | 'agent' | 'loop'
+type ModuleId = 'engine' | 'pulse' | 'wing' | 'mesh' | 'relay' | 'agent' | 'loop';
 
 interface FeedEntry {
   /** Unique key for AnimatePresence — never reused. */
-  id: number
-  module: ModuleId
-  text: string
+  id: number;
+  module: ModuleId;
+  text: string;
   /** Seconds elapsed since this action occurred (display only). */
-  secondsAgo: number
+  secondsAgo: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** How many entries are visible in the feed at one time. */
-const MAX_VISIBLE = 6
+const MAX_VISIBLE = 6;
 
 /** Interval between new entries appearing, in ms. */
-const FEED_INTERVAL_MS = 2400
+const FEED_INTERVAL_MS = 2400;
 
 /** Module dot colors matching brand palette. */
 const MODULE_COLORS: Record<ModuleId, string> = {
@@ -42,7 +42,7 @@ const MODULE_COLORS: Record<ModuleId, string> = {
   relay: '#8B7BA4',
   agent: '#7A756A',
   loop: '#B8860B',
-}
+};
 
 /** Module label for the badge. */
 const MODULE_LABELS: Record<ModuleId, string> = {
@@ -53,7 +53,7 @@ const MODULE_LABELS: Record<ModuleId, string> = {
   relay: 'Relay',
   agent: 'Agent',
   loop: 'Loop',
-}
+};
 
 /** The full activity pool — cycled through in order, looping back. */
 const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
@@ -94,10 +94,10 @@ const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
   { module: 'loop', text: 'Loop triaged 8 signals — 3 became hypotheses' },
   { module: 'loop', text: 'Loop validated hypothesis — conversion up 2.1% after fix' },
   { module: 'loop', text: 'Loop dispatched next priority task to Pulse' },
-]
+];
 
 /** Seconds-ago values used for the initial snapshot display. */
-const INITIAL_SECONDS = [31, 28, 25, 22, 18, 15]
+const INITIAL_SECONDS = [31, 28, 25, 22, 18, 15];
 
 // ─── useActivityFeed hook ─────────────────────────────────────────────────────
 
@@ -110,31 +110,31 @@ const INITIAL_SECONDS = [31, 28, 25, 22, 18, 15]
  */
 function useActivityFeed(): FeedEntry[] {
   // Start at MAX_VISIBLE so new entries get unique ids after the initial 0..MAX_VISIBLE-1
-  const counterRef = useRef(MAX_VISIBLE)
-  const poolIndexRef = useRef(0)
+  const counterRef = useRef(MAX_VISIBLE);
+  const poolIndexRef = useRef(0);
 
   // Build the initial snapshot — start mid-pool so the first "live" entry
   // picks up naturally from where the snapshot left off.
   const [entries, setEntries] = useState<FeedEntry[]>(() => {
-    const snapshot: FeedEntry[] = []
+    const snapshot: FeedEntry[] = [];
     // Show the last MAX_VISIBLE entries from the pool as the "already happened" state
-    const startIndex = ACTIVITY_POOL.length - MAX_VISIBLE
+    const startIndex = ACTIVITY_POOL.length - MAX_VISIBLE;
     for (let i = 0; i < MAX_VISIBLE; i++) {
-      const poolItem = ACTIVITY_POOL[(startIndex + i) % ACTIVITY_POOL.length]
+      const poolItem = ACTIVITY_POOL[(startIndex + i) % ACTIVITY_POOL.length];
       snapshot.push({
         id: i, // sequential 0..MAX_VISIBLE-1; counterRef continues from MAX_VISIBLE
         module: poolItem.module,
         text: poolItem.text,
         secondsAgo: INITIAL_SECONDS[MAX_VISIBLE - 1 - i] ?? (i + 1) * 5,
-      })
+      });
     }
-    return snapshot
-  })
+    return snapshot;
+  });
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const poolItem = ACTIVITY_POOL[poolIndexRef.current % ACTIVITY_POOL.length]
-      poolIndexRef.current++
+      const poolItem = ACTIVITY_POOL[poolIndexRef.current % ACTIVITY_POOL.length];
+      poolIndexRef.current++;
 
       setEntries((prev) => {
         const newEntry: FeedEntry = {
@@ -142,38 +142,38 @@ function useActivityFeed(): FeedEntry[] {
           module: poolItem.module,
           text: poolItem.text,
           secondsAgo: 0,
-        }
+        };
         // Prepend new entry and trim to MAX_VISIBLE
-        return [newEntry, ...prev].slice(0, MAX_VISIBLE)
-      })
-    }, FEED_INTERVAL_MS)
+        return [newEntry, ...prev].slice(0, MAX_VISIBLE);
+      });
+    }, FEED_INTERVAL_MS);
 
-    return () => clearInterval(interval)
-  }, [])
+    return () => clearInterval(interval);
+  }, []);
 
-  return entries
+  return entries;
 }
 
 // ─── FeedDot ──────────────────────────────────────────────────────────────────
 
 function FeedDot({ module }: { module: ModuleId }) {
-  const color = MODULE_COLORS[module]
+  const color = MODULE_COLORS[module];
   return (
     <span
-      className="inline-flex w-2 h-2 rounded-full shrink-0 mt-0.5"
+      className="mt-0.5 inline-flex h-2 w-2 shrink-0 rounded-full"
       style={{ background: color }}
       aria-hidden="true"
     />
-  )
+  );
 }
 
 // ─── FeedBadge ────────────────────────────────────────────────────────────────
 
 function FeedBadge({ module }: { module: ModuleId }) {
-  const color = MODULE_COLORS[module]
+  const color = MODULE_COLORS[module];
   return (
     <span
-      className="font-mono text-[9px] tracking-[0.1em] uppercase px-1.5 py-0.5 rounded-[3px] leading-none shrink-0"
+      className="shrink-0 rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] leading-none tracking-[0.1em] uppercase"
       style={{
         background: `${color}18`,
         color,
@@ -182,19 +182,16 @@ function FeedBadge({ module }: { module: ModuleId }) {
     >
       {MODULE_LABELS[module]}
     </span>
-  )
+  );
 }
 
 // ─── FeedItem ─────────────────────────────────────────────────────────────────
 
 function FeedItem({ entry, index }: { entry: FeedEntry; index: number }) {
   // Items deeper in the list fade out gradually — creates the "scrolling log" feel
-  const targetOpacity = index === 0 ? 1 : Math.max(0.3, 1 - index * 0.13)
+  const targetOpacity = index === 0 ? 1 : Math.max(0.3, 1 - index * 0.13);
 
-  const timestamp =
-    entry.secondsAgo === 0
-      ? 'just now'
-      : `${entry.secondsAgo}s ago`
+  const timestamp = entry.secondsAgo === 0 ? 'just now' : `${entry.secondsAgo}s ago`;
 
   return (
     <motion.div
@@ -208,47 +205,40 @@ function FeedItem({ entry, index }: { entry: FeedEntry; index: number }) {
         opacity: { duration: 0.25 },
         y: { type: 'spring', stiffness: 400, damping: 35, mass: 0.8 },
       }}
-      className="flex items-start gap-2.5 px-3 py-2.5 rounded-[6px]"
+      className="flex items-start gap-2.5 rounded-[6px] px-3 py-2.5"
       style={{
-        background: index === 0
-          ? 'rgba(232, 93, 4, 0.04)'
-          : 'transparent',
-        borderLeft: index === 0
-          ? '2px solid rgba(232, 93, 4, 0.25)'
-          : '2px solid transparent',
+        background: index === 0 ? 'rgba(232, 93, 4, 0.04)' : 'transparent',
+        borderLeft: index === 0 ? '2px solid rgba(232, 93, 4, 0.25)' : '2px solid transparent',
       }}
     >
       <FeedDot module={entry.module} />
 
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <p
-          className="font-mono text-[11px] leading-[1.5] text-charcoal"
+          className="text-charcoal font-mono text-[11px] leading-[1.5]"
           style={{ color: index === 0 ? '#1A1814' : '#4A4640' }}
         >
           {entry.text}
         </p>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="mt-1 flex items-center gap-2">
           <FeedBadge module={entry.module} />
-          <span
-            className="font-mono text-[9px] tracking-[0.06em]"
-            style={{ color: '#7A756A' }}
-          >
+          <span className="font-mono text-[9px] tracking-[0.06em]" style={{ color: '#7A756A' }}>
             {timestamp}
           </span>
         </div>
       </div>
     </motion.div>
-  )
+  );
 }
 
 // ─── ActivityFeedPanel ────────────────────────────────────────────────────────
 
 function ActivityFeedPanel() {
-  const entries = useActivityFeed()
+  const entries = useActivityFeed();
 
   return (
     <div
-      className="rounded-lg overflow-hidden shadow-floating flex flex-col"
+      className="shadow-floating flex flex-col overflow-hidden rounded-lg"
       style={{
         background: '#FFFEFB',
         border: '1px solid rgba(139, 90, 43, 0.12)',
@@ -256,7 +246,7 @@ function ActivityFeedPanel() {
     >
       {/* Panel header */}
       <div
-        className="flex items-center justify-between px-4 py-3 shrink-0"
+        className="flex shrink-0 items-center justify-between px-4 py-3"
         style={{
           background: '#F5F0E6',
           borderBottom: '1px solid rgba(139, 90, 43, 0.1)',
@@ -266,11 +256,11 @@ function ActivityFeedPanel() {
           {/* Live indicator */}
           <span className="relative flex h-2 w-2">
             <span
-              className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60"
+              className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
               style={{ background: '#228B22' }}
             />
             <span
-              className="relative inline-flex rounded-full h-2 w-2"
+              className="relative inline-flex h-2 w-2 rounded-full"
               style={{ background: '#228B22' }}
             />
           </span>
@@ -282,7 +272,7 @@ function ActivityFeedPanel() {
           </span>
         </div>
         <span
-          className="font-mono text-[9px] tracking-[0.08em] uppercase px-2 py-0.5 rounded-[3px]"
+          className="rounded-[3px] px-2 py-0.5 font-mono text-[9px] tracking-[0.08em] uppercase"
           style={{
             background: 'rgba(34, 139, 34, 0.1)',
             color: '#228B22',
@@ -297,7 +287,7 @@ function ActivityFeedPanel() {
       <div className="relative flex-1 overflow-hidden">
         {/* Top fade mask */}
         <div
-          className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
+          className="pointer-events-none absolute top-0 right-0 left-0 z-10"
           style={{
             height: '48px',
             background: 'linear-gradient(to bottom, #FFFEFB 0%, transparent 100%)',
@@ -305,7 +295,7 @@ function ActivityFeedPanel() {
         />
         {/* Bottom fade mask */}
         <div
-          className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
+          className="pointer-events-none absolute right-0 bottom-0 left-0 z-10"
           style={{
             height: '32px',
             background: 'linear-gradient(to top, #FFFEFB 0%, transparent 100%)',
@@ -313,7 +303,7 @@ function ActivityFeedPanel() {
         />
 
         {/* Feed area — fixed height prevents layout shift */}
-        <div className="px-2 py-3 space-y-0.5" style={{ height: 370, overflow: 'hidden' }}>
+        <div className="space-y-0.5 px-2 py-3" style={{ height: 370, overflow: 'hidden' }}>
           {entries.map((entry, index) => (
             <FeedItem key={entry.id} entry={entry} index={index} />
           ))}
@@ -322,21 +312,21 @@ function ActivityFeedPanel() {
 
       {/* Panel footer */}
       <div
-        className="px-4 py-2.5 shrink-0"
+        className="shrink-0 px-4 py-2.5"
         style={{
           borderTop: '1px solid rgba(139, 90, 43, 0.08)',
           background: '#F5F0E6',
         }}
       >
         <p
-          className="font-mono text-[9px] tracking-[0.06em] text-center"
+          className="text-center font-mono text-[9px] tracking-[0.06em]"
           style={{ color: '#7A756A' }}
         >
           While you read this, your agents could be doing all of this.
         </p>
       </div>
     </div>
-  )
+  );
 }
 
 // ─── StatBadge ────────────────────────────────────────────────────────────────
@@ -344,26 +334,26 @@ function ActivityFeedPanel() {
 function StatBadge({ value, label }: { value: string; label: string }) {
   return (
     <div
-      className="flex flex-col items-start px-3 py-2 rounded-[6px]"
+      className="flex flex-col items-start rounded-[6px] px-3 py-2"
       style={{
         background: 'rgba(232, 93, 4, 0.06)',
         border: '1px solid rgba(232, 93, 4, 0.15)',
       }}
     >
       <span
-        className="font-mono text-lg font-bold leading-none tracking-[-0.03em]"
+        className="font-mono text-lg leading-none font-bold tracking-[-0.03em]"
         style={{ color: '#E85D04' }}
       >
         {value}
       </span>
       <span
-        className="font-mono text-[9px] tracking-[0.08em] uppercase mt-0.5"
+        className="mt-0.5 font-mono text-[9px] tracking-[0.08em] uppercase"
         style={{ color: '#7A756A' }}
       >
         {label}
       </span>
     </div>
-  )
+  );
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -378,45 +368,45 @@ function StatBadge({ value, label }: { value: string; label: string }) {
  */
 export function HeroV9({ headline, subhead, ctaText, ctaHref }: HeroProps) {
   return (
-    <section className="relative min-h-[85vh] bg-cream-primary flex flex-col items-center justify-center px-6 py-16 overflow-hidden">
+    <section className="bg-cream-primary relative flex min-h-[85vh] flex-col items-center justify-center overflow-hidden px-6 py-16">
       {/* Subtle graph-paper background */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: `
             linear-gradient(to right, rgba(139, 90, 43, 0.05) 1px, transparent 1px),
             linear-gradient(to bottom, rgba(139, 90, 43, 0.05) 1px, transparent 1px)
           `,
           backgroundSize: '32px 32px',
-          maskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)',
-          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)',
+          maskImage:
+            'linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)',
+          WebkitMaskImage:
+            'linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)',
         }}
       />
 
       {/* Content wrapper */}
       <motion.div
-        className="relative z-10 w-full max-w-6xl mx-auto"
+        className="relative z-10 mx-auto w-full max-w-6xl"
         initial="hidden"
         animate="visible"
         variants={STAGGER}
       >
         {/* Eyebrow label */}
         <motion.div variants={REVEAL} className="mb-6">
-          <p className="font-mono text-2xs tracking-[0.2em] uppercase text-brand-orange">
+          <p className="text-2xs text-brand-orange font-mono tracking-[0.2em] uppercase">
             Autonomous by default
           </p>
         </motion.div>
 
         {/* Main layout — left prose + right feed */}
-        <div className="flex flex-col lg:flex-row gap-10 lg:gap-16 items-start">
-
+        <div className="flex flex-col items-start gap-10 lg:flex-row lg:gap-16">
           {/* ── Left column ── */}
-          <div className="flex-[0_0_55%] max-w-[55%] max-lg:max-w-full flex flex-col gap-8">
-
+          <div className="flex max-w-[55%] flex-[0_0_55%] flex-col gap-8 max-lg:max-w-full">
             {/* Headline */}
             <motion.div variants={REVEAL}>
               <h1
-                className="font-bold text-charcoal tracking-[-0.04em] text-balance"
+                className="text-charcoal font-bold tracking-[-0.04em] text-balance"
                 style={{ fontSize: 'clamp(32px, 5.5vw, 64px)', lineHeight: 1.06 }}
               >
                 {headline}
@@ -426,17 +416,14 @@ export function HeroV9({ headline, subhead, ctaText, ctaHref }: HeroProps) {
             {/* Subhead */}
             <motion.p
               variants={REVEAL}
-              className="text-warm-gray font-light leading-[1.75] max-w-[480px]"
+              className="text-warm-gray max-w-[480px] leading-[1.75] font-light"
               style={{ fontSize: 'clamp(15px, 1.5vw, 18px)' }}
             >
               {subhead}
             </motion.p>
 
             {/* Stats row */}
-            <motion.div
-              variants={REVEAL}
-              className="flex flex-wrap gap-3"
-            >
+            <motion.div variants={REVEAL} className="flex flex-wrap gap-3">
               <StatBadge value="10x" label="Agent throughput" />
               <StatBadge value="24/7" label="Autonomous ops" />
               <StatBadge value="∞" label="Parallel tasks" />
@@ -445,7 +432,7 @@ export function HeroV9({ headline, subhead, ctaText, ctaHref }: HeroProps) {
             {/* CTA group */}
             <motion.div
               variants={REVEAL}
-              className="flex flex-col sm:flex-row items-start sm:items-center gap-5 pt-2"
+              className="flex flex-col items-start gap-5 pt-2 sm:flex-row sm:items-center"
             >
               {/* Primary CTA */}
               <Link
@@ -465,11 +452,17 @@ export function HeroV9({ headline, subhead, ctaText, ctaHref }: HeroProps) {
               {/* Secondary CTA */}
               <Link
                 href="/docs/getting-started/quickstart"
-                className="inline-flex items-center gap-1.5 font-mono text-button tracking-[0.08em] text-warm-gray-light hover:text-brand-orange transition-smooth"
+                className="text-button text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center gap-1.5 font-mono tracking-[0.08em]"
               >
                 Read the docs
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M2.5 6h7M6.5 3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path
+                    d="M2.5 6h7M6.5 3l3 3-3 3"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </Link>
             </motion.div>
@@ -477,7 +470,7 @@ export function HeroV9({ headline, subhead, ctaText, ctaHref }: HeroProps) {
             {/* Social proof */}
             <motion.p
               variants={REVEAL}
-              className="font-mono text-2xs tracking-[0.06em]"
+              className="text-2xs font-mono tracking-[0.06em]"
               style={{ color: '#7A756A' }}
             >
               npm install -g dorkos &mdash; free to start, no card required
@@ -486,15 +479,15 @@ export function HeroV9({ headline, subhead, ctaText, ctaHref }: HeroProps) {
 
           {/* ── Right column — Activity feed ── */}
           <motion.div
-            className="flex-[0_0_45%] max-w-[45%] max-lg:max-w-full w-full"
+            className="w-full max-w-[45%] flex-[0_0_45%] max-lg:max-w-full"
             initial={{ opacity: 0, x: 32 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.55, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
           >
             {/* Feed label */}
-            <div className="flex items-center gap-2 mb-3">
+            <div className="mb-3 flex items-center gap-2">
               <span
-                className="font-mono text-2xs tracking-[0.12em] uppercase"
+                className="text-2xs font-mono tracking-[0.12em] uppercase"
                 style={{ color: '#7A756A' }}
               >
                 Right now, somewhere
@@ -506,7 +499,7 @@ export function HeroV9({ headline, subhead, ctaText, ctaHref }: HeroProps) {
 
             {/* Attribution beneath feed */}
             <p
-              className="font-mono text-[10px] tracking-[0.04em] text-center mt-3 leading-[1.6]"
+              className="mt-3 text-center font-mono text-[10px] leading-[1.6] tracking-[0.04em]"
               style={{ color: '#7A756A' }}
             >
               Simulated. Real agents log every action, in real time.
@@ -515,5 +508,5 @@ export function HeroV9({ headline, subhead, ctaText, ctaHref }: HeroProps) {
         </div>
       </motion.div>
     </section>
-  )
+  );
 }

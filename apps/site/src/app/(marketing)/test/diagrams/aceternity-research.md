@@ -8,7 +8,7 @@
 
 ## Research Summary
 
-Aceternity UI is a copy-paste React component library built on **Tailwind CSS + Framer Motion** (now the `motion` package). It ships 200+ components oriented toward visually striking landing pages and SaaS marketing sites. There is no dedicated node-connection diagram component — but a combination of its card, background, border, and particle components can be composed into a world-class interactive architecture diagram. The key insight: Aceternity has the *nodes* (3D cards, glare cards, spotlight cards) and the *environments* (grids, aurora, sparkles, vortex) but not the *edges*. For animated connection lines between nodes, Magic UI's `AnimatedBeam` is the purpose-built solution and shares the same tech stack.
+Aceternity UI is a copy-paste React component library built on **Tailwind CSS + Framer Motion** (now the `motion` package). It ships 200+ components oriented toward visually striking landing pages and SaaS marketing sites. There is no dedicated node-connection diagram component — but a combination of its card, background, border, and particle components can be composed into a world-class interactive architecture diagram. The key insight: Aceternity has the _nodes_ (3D cards, glare cards, spotlight cards) and the _environments_ (grids, aurora, sparkles, vortex) but not the _edges_. For animated connection lines between nodes, Magic UI's `AnimatedBeam` is the purpose-built solution and shares the same tech stack.
 
 ---
 
@@ -37,8 +37,8 @@ npm i motion clsx tailwind-merge
 **Utility function** — create `lib/utils.ts`:
 
 ```typescript
-import { ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { ClassValue, clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -81,6 +81,7 @@ npx shadcn@latest add https://ui.aceternity.com/registry/[component].json
 These establish the visual environment around the diagram. Layer them as absolute-positioned elements beneath node cards.
 
 #### Aurora Background
+
 - **Tech**: Pure CSS `@keyframes` — animates `background-position` over 60 seconds continuously
 - **Effect**: Slow-shifting gradient layers that simulate Northern Lights
 - **Props**: `children`, `className`, `showRadialGradient` (boolean, default true)
@@ -93,6 +94,7 @@ These establish the visual environment around the diagram. Layer them as absolut
 ```
 
 #### Grid and Dot Backgrounds
+
 - **Tech**: CSS `background-image` with two `linear-gradient` layers (no JS, no SVG)
 - **Effect**: Crisp grid lines or dot grid. Adapts automatically to dark/light mode.
 - **Grid sizes**: 40px x 40px (standard), 20px x 20px (fine)
@@ -107,7 +109,7 @@ These establish the visual environment around the diagram. Layer them as absolut
     style={{
       backgroundImage: `linear-gradient(#e4e4e7 1px, transparent 1px),
                         linear-gradient(to right, #e4e4e7 1px, transparent 1px)`,
-      backgroundSize: "40px 40px",
+      backgroundSize: '40px 40px',
     }}
   />
   <div className="pointer-events-none absolute inset-0 z-10 bg-white [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black)]" />
@@ -118,30 +120,35 @@ These establish the visual environment around the diagram. Layer them as absolut
 ```
 
 #### Sparkles
+
 - **Tech**: Canvas-based particle renderer
 - **Effect**: Shimmering star/sparkle particles floating in a defined area
 - **Props**: `background`, `particleSize`, `minSize`, `maxSize`, `speed`, `particleColor`, `particleDensity`, `className`, `id`
 - **Diagram use**: Position around individual node cards to make them feel "active" or "alive." Works well as a tight background for a highlighted/selected node. Use `particleColor` to theme per node type.
 
 #### Vortex
+
 - **Tech**: Canvas-based (inspired by AmbientCanvasBackgrounds on GitHub)
 - **Effect**: 700 animated particles spiraling in a whirlpool pattern
 - **Props**: `particleCount` (default 700), `rangeY` (default 100), `baseHue` (default 220), `baseSpeed`, `rangeSpeed`, `baseRadius`, `backgroundColor`, `className`, `children`
 - **Diagram use**: Striking full-section CTA-style background. Too chaotic for a node diagram background, but excellent as an attention-grabbing surrounding canvas. Scale down with `particleCount: 150` for subtlety.
 
 #### Background Beams
+
 - **Tech**: SVG path-following animation
 - **Effect**: Multiple light beams radiate from a central point following SVG paths — classic hero-section "rays from the center" look
 - **Props**: `className` only (paths are internal)
 - **Diagram use**: Place behind the diagram to create a "light source" focal point. The beams create directionality without adding noise. Good for suggesting "data flow" visually.
 
 #### Background Beams With Collision
+
 - **Tech**: Framer Motion — beams animate using `translateX/translateY` with collision detection via React refs
 - **Effect**: Beams move across the viewport and "explode" when they hit a boundary
 - **Props**: `children`, `className`; internal `beamOptions` includes `initialX`, `translateX`, `initialY`, `translateY`, `rotate`, `duration` (default 8s), `delay`, `repeatDelay`
 - **Diagram use**: A spectacular ambient background. The explosions read as "activity" in a data system. However, paths are fixed, not programmable to travel between specific nodes.
 
 #### Meteors
+
 - **Tech**: CSS `@keyframes meteor` — elements rotate 215deg and translate -500px over 5 seconds, infinite
 - **Effect**: Diagonal streaks that fall across the container like shooting stars
 - **Props**: `number` (count), `className`
@@ -154,6 +161,7 @@ These establish the visual environment around the diagram. Layer them as absolut
 These are the primary candidates for representing the 6 nodes.
 
 #### 3D Card Effect (CardContainer / CardBody / CardItem)
+
 - **Tech**: CSS `perspective` + JS mouse tracking + CSS `transform: rotate3d()` and `translateZ()`
 - **Effect**: On hover, child elements float up with different Z-depths, creating genuine parallax 3D
 - **Component parts**:
@@ -164,14 +172,14 @@ These are the primary candidates for representing the 6 nodes.
 
 ```tsx
 <CardContainer className="inter-var">
-  <CardBody className="bg-gray-50 relative group/card dark:bg-black border-black/10 w-48 h-48 rounded-xl p-4">
+  <CardBody className="group/card relative h-48 w-48 rounded-xl border-black/10 bg-gray-50 p-4 dark:bg-black">
     <CardItem translateZ="50" className="text-xl font-bold">
       Agent Manager
     </CardItem>
     <CardItem translateZ="60" as="div" className="mt-4">
       <AgentIcon />
     </CardItem>
-    <CardItem translateZ="40" className="text-xs text-neutral-500 mt-2">
+    <CardItem translateZ="40" className="mt-2 text-xs text-neutral-500">
       Manages Claude sessions
     </CardItem>
   </CardBody>
@@ -179,6 +187,7 @@ These are the primary candidates for representing the 6 nodes.
 ```
 
 #### Card Spotlight
+
 - **Tech**: JavaScript mouse tracking — dynamically injects a CSS radial gradient that follows the cursor position within the card bounds
 - **Effect**: A visible cone of light sweeps across the card surface on hover
 - **Props**: `children`, `radius` (default 350px), `color` (default "#262616"), `className`
@@ -186,22 +195,26 @@ These are the primary candidates for representing the 6 nodes.
 - **Diagram use**: Excellent for dark-themed architecture diagrams. Each node card gets a spotlight that activates on hover, communicating "this node is active." Adjust `color` per node type (blue for data nodes, green for processing nodes, red for output nodes).
 
 #### Glare Card
+
 - **Tech**: CSS/JS — tracks mouse position and applies a specular highlight (reflective glare) that moves across the card surface
 - **Effect**: A "Linear website"-style card with a physical glass/metal sheen on hover
 - **Props**: `children`, `className`
 - **Diagram use**: Premium finish for node cards. The glare physically suggests "hardware" or "physical infrastructure." Best for 3–4 primary nodes rather than all 6 (visual overload risk).
 
 #### Wobble Card
+
 - **Tech**: Framer Motion `mousemove` handlers — translates and scales the card as the pointer moves across it
 - **Effect**: Card physically wobbles and follows the cursor with elastic springback
 - **Props**: `children`, `containerClassName`, `className`
 - **Diagram use**: Makes nodes feel tactile and interactive. Pairs well with a grid/dot background. Use for "leaf" nodes (endpoints) rather than "hub" nodes (center of the diagram) to avoid confusion with the connection lines.
 
 #### Evervault Card
+
 - **Effect**: On hover, reveals "encrypted gibberish text" that slowly decodes — creates a mysterious, data-system aesthetic
 - **Diagram use**: Perfect for a "black box" or "AI model" node in the architecture diagram. The encryption effect visually communicates "opaque processing."
 
 #### Expandable Cards
+
 - **Effect**: Click to expand and reveal more content below
 - **Diagram use**: Excellent for progressive disclosure — nodes show a compact view by default, expand on click to reveal implementation details, API docs, or sub-components.
 
@@ -212,6 +225,7 @@ These are the primary candidates for representing the 6 nodes.
 Apply these to node card containers for connective visual weight.
 
 #### Moving Border
+
 - **Tech**: Framer Motion — animates a gradient element along the perimeter of the container on a continuous loop
 - **Effect**: A light or color pulse travels clockwise around the element's border
 - **Props**: `borderRadius` (default "1.75rem"), `children`, `duration` (ms, default 2000), `className`, `containerClassName`, `borderClassName`, `as` (default "button")
@@ -224,6 +238,7 @@ Apply these to node card containers for connective visual weight.
 ```
 
 #### Glowing Effect
+
 - **Tech**: Interactive JS — monitors mouse position relative to element bounds; dynamically adjusts a conic gradient glow
 - **Effect**: Adaptive border glow that intensifies as the cursor approaches — as seen on Cursor's enterprise page
 - **Props**: `blur` (px), `inactiveZone` (0–1, center dead zone), `proximity` (px outside bounds), `spread` (degrees), `variant` ("default" or "white"), `glow` (boolean, force-show), `movementDuration` (s), `borderWidth` (px), `disabled`, `className`
@@ -234,26 +249,32 @@ Apply these to node card containers for connective visual weight.
 ### 5. Text Effects (Node Labels)
 
 #### Text Generate Effect
+
 - **Effect**: Words fade in sequentially on load, like a terminal printing output
 - **Diagram use**: Perfect for diagram section headings (e.g., "DorkOS Architecture") that reveal on scroll or mount. Creates a "system boot" narrative.
 
 #### Typewriter Effect
+
 - **Effect**: Characters appear one by one as if being typed
 - **Diagram use**: Use in individual node cards to show "active status" text like "Processing... connecting... ready."
 
 #### Flip Words
+
 - **Effect**: A component that cycles through a list of words with a flip animation
 - **Diagram use**: For nodes with multiple roles, cycle through their capabilities: "Streaming → Broadcasting → Recording"
 
 #### Text Hover Effect
+
 - **Effect**: Animates and outlines a gradient on hover over text
 - **Diagram use**: Node labels that reveal color on hover — helps communicate the node's type/category through color.
 
 #### Colourful Text
+
 - **Effect**: Multi-color text with filter and scale animations
 - **Diagram use**: Title/heading treatment for the overall diagram section.
 
 #### Encrypted Text (Evervault)
+
 - **Effect**: Text reveals gradually from gibberish to readable on hover
 - **Diagram use**: For "internal" label details that reveal on interaction — reinforces the idea that the system is decoding itself.
 
@@ -277,8 +298,12 @@ const nodeARef = useRef<HTMLDivElement>(null);
 const nodeBRef = useRef<HTMLDivElement>(null);
 
 <div ref={containerRef} className="relative">
-  <div ref={nodeARef}><AgentManagerCard /></div>
-  <div ref={nodeBRef}><TranscriptReaderCard /></div>
+  <div ref={nodeARef}>
+    <AgentManagerCard />
+  </div>
+  <div ref={nodeBRef}>
+    <TranscriptReaderCard />
+  </div>
   <AnimatedBeam
     containerRef={containerRef}
     fromRef={nodeARef}
@@ -287,7 +312,7 @@ const nodeBRef = useRef<HTMLDivElement>(null);
     gradientStartColor="#6344F5"
     gradientStopColor="#18CCFC"
   />
-</div>
+</div>;
 ```
 
 ---
@@ -297,28 +322,34 @@ const nodeBRef = useRef<HTMLDivElement>(null);
 This is the optimal composition for a visually stunning, interactive architecture diagram:
 
 **Background layer**:
+
 - Grid/Dot Background (CSS, zero perf cost) — establishes spatial grid
 - Sparkles (Canvas) — ambient particle field
 
 **Section wrapper**:
+
 - Aurora Background (CSS) — slow color shift beneath the entire section
 
 **Node cards (x6)** — pick one card type per node, or mix:
+
 - `CardContainer` + `CardBody` + `CardItem` for the primary "hub" nodes (most impressive)
 - `CardSpotlight` for secondary/leaf nodes
 - `GlowingEffect` border on all cards for proximity-reactive glowing
 - `Meteors` inside 1–2 cards to indicate active processing
 
 **Connection edges (x N)**:
+
 - Magic UI `AnimatedBeam` — one per directed connection, with curvature to avoid overlap
 - Vary `gradientStartColor`/`gradientStopColor` per connection type (data flow, control flow, etc.)
 
 **Labels and headings**:
+
 - `TextGenerateEffect` for the diagram section title
 - `TypewriterEffect` inside node cards for status text
 - `FlipWords` for nodes with multiple roles
 
 **Interactive borders**:
+
 - `MovingBorder` on 2–3 "active" nodes to show live activity
 - `GlowingEffect` on all cards for cursor-proximity glow
 

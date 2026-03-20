@@ -1,5 +1,5 @@
 @import 'tailwindcss';
-@import "tw-animate-css";
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -10,21 +10,21 @@
 
 :root {
   /* Dorkian Brand - Warm Cream Palette */
-  --cream-primary: #F5F0E6;
-  --cream-secondary: #EDE6D6;
-  --cream-tertiary: #E5DCC8;
-  --cream-white: #FFFEFB;
+  --cream-primary: #f5f0e6;
+  --cream-secondary: #ede6d6;
+  --cream-tertiary: #e5dcc8;
+  --cream-white: #fffefb;
 
   /* Dorkian Brand - Text Colors */
-  --charcoal: #1A1814;
-  --warm-gray: #4A4640;
-  --warm-gray-light: #7A756A;
+  --charcoal: #1a1814;
+  --warm-gray: #4a4640;
+  --warm-gray-light: #7a756a;
 
   /* Dorkian Brand - Accent Colors */
-  --brand-orange: #E85D04;
-  --brand-green: #228B22;
-  --brand-blue: #4A90A4;
-  --brand-purple: #8B7BA4;
+  --brand-orange: #e85d04;
+  --brand-green: #228b22;
+  --brand-blue: #4a90a4;
+  --brand-purple: #8b7ba4;
 
   /* Dorkian Brand - Borders */
   --border-warm: rgba(139, 90, 43, 0.1);
@@ -240,19 +240,19 @@
   --animate-accordion-collapse: accordion-collapse var(--tw-duration, 200ms) ease-out;
   --animate-accordion-expand: accordion-expand var(--tw-duration, 200ms) ease-out;
   @keyframes accordion-collapse {
-  from {
-    height: var(--accordion-panel-height, auto);
+    from {
+      height: var(--accordion-panel-height, auto);
     }
-  to {
-    height: 0;
+    to {
+      height: 0;
     }
   }
   @keyframes accordion-expand {
-  from {
-    height: 0;
+    from {
+      height: 0;
     }
-  to {
-    height: var(--accordion-panel-height, auto);
+    to {
+      height: var(--accordion-panel-height, auto);
     }
   }
 }
@@ -263,14 +263,19 @@
   }
 
   html {
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1,
+      'tnum' 1;
   }
 
   /* Smooth scroll */
@@ -282,7 +287,7 @@
 
   /* Focus visible styles */
   :focus-visible {
-    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+    @apply ring-ring ring-offset-background ring-2 ring-offset-2 outline-none;
   }
 
   /* Selection */
@@ -291,12 +296,17 @@
   }
 
   /* Headings */
-  h1, h2, h3, h4, h5, h6 {
-    @apply tracking-tight font-semibold;
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-semibold tracking-tight;
   }
 
   h1 {
-    @apply text-3xl md:text-4xl font-bold;
+    @apply text-3xl font-bold md:text-4xl;
     letter-spacing: -0.025em;
   }
 
@@ -321,7 +331,7 @@
 
   /* Code */
   code {
-    @apply font-mono text-sm bg-muted px-1.5 py-0.5 rounded-md;
+    @apply bg-muted rounded-md px-1.5 py-0.5 font-mono text-sm;
   }
 
   pre code {
@@ -365,7 +375,8 @@
 
 /* Smooth transitions for interactive elements - 300ms feels deliberate and luxurious */
 @utility transition-smooth {
-  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity;
+  transition-property:
+    color, background-color, border-color, text-decoration-color, fill, stroke, opacity;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 300ms;
 }
@@ -444,7 +455,9 @@
 @utility focus-ring {
   &:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
+    box-shadow:
+      0 0 0 2px var(--background),
+      0 0 0 4px var(--ring);
   }
 }
 
@@ -462,7 +475,9 @@
   text-transform: uppercase;
   padding: 16px 28px;
   border-radius: 4px;
-  transition: transform 0.2s, opacity 0.2s;
+  transition:
+    transform 0.2s,
+    opacity 0.2s;
   &:hover {
     transform: translateY(-2px);
     opacity: 0.9;
@@ -501,9 +516,17 @@
 
 /* Blinking cursor - terminal aesthetic with smooth fade */
 @keyframes cursor-fade {
-  0%, 35% { opacity: 1; }
-  50%, 85% { opacity: 0; }
-  100% { opacity: 1; }
+  0%,
+  35% {
+    opacity: 1;
+  }
+  50%,
+  85% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 @utility cursor-blink {
@@ -520,7 +543,7 @@
 /* Hide cursor when parent interactive element is hovered */
 a:hover .cursor-blink,
 button:hover .cursor-blink,
-[role="button"]:hover .cursor-blink {
+[role='button']:hover .cursor-blink {
   opacity: 0;
   animation: none;
 }
@@ -592,30 +615,53 @@ button:hover .cursor-blink,
 
 /* Villain card tab bar pulse — idle and urgent variants */
 @keyframes tab-pulse-idle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 @keyframes tab-pulse-urgent {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.15; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
 }
 
 /* Star twinkle for timeline night sky */
 @keyframes star-twinkle {
-  0%, 100% { opacity: 0.1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Clock hand rotation for 3am build card */
 @keyframes clock-hour {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes clock-minute {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Reduced motion: disable all CSS and SMIL animations */
@@ -634,9 +680,9 @@ button:hover .cursor-blink,
   }
 
   /* Villain card and star animations — disable in reduced motion */
-  [style*="tab-pulse"],
-  [style*="clock-"],
-  [style*="star-twinkle"] {
+  [style*='tab-pulse'],
+  [style*='clock-'],
+  [style*='star-twinkle'] {
     animation: none !important;
   }
 }
@@ -745,6 +791,11 @@ html[data-presentation-mode] header {
 
 /* Cursor blink for terminal art (used in VillainSection -- included here for reuse) */
 @keyframes tab-pulse-urgent {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 0.9; }
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
 }

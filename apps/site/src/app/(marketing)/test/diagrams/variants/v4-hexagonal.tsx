@@ -1,32 +1,32 @@
-'use client'
+'use client';
 
-import { useState, useEffect, useRef } from 'react'
-import { motion } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
-import { VIEWPORT } from '@/layers/features/marketing/lib/motion-variants'
+import { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
+import { VIEWPORT } from '@/layers/features/marketing/lib/motion-variants';
 
 // ---------------------------------------------------------------------------
 // Geometry constants
 // ---------------------------------------------------------------------------
 
 /** Circumradius of each hexagon (center to vertex). */
-const R = 82
+const R = 82;
 
 /** sqrt(3) precomputed for pointy-top hex math. */
-const SQRT3 = Math.sqrt(3)
+const SQRT3 = Math.sqrt(3);
 
 /**
  * Center-to-center distance between adjacent hexagons.
  * For pointy-top: d = sqrt(3) * R (horizontal) and 1.5 * R (vertical components).
  * We place neighbors using polar angles at 60° intervals.
  */
-const D = SQRT3 * R
+const D = SQRT3 * R;
 
 /** SVG viewBox dimensions — wide enough for the honeycomb plus labels. */
-const VB_W = 820
-const VB_H = 560
-const CX = VB_W / 2
-const CY = VB_H / 2
+const VB_W = 820;
+const VB_H = 560;
+const CX = VB_W / 2;
+const CY = VB_H / 2;
 
 // ---------------------------------------------------------------------------
 // Hex vertex helpers
@@ -38,14 +38,14 @@ const CY = VB_H / 2
  */
 function hexVertices(cx: number, cy: number, r: number): [number, number][] {
   return Array.from({ length: 6 }, (_, i) => {
-    const angle = (Math.PI / 180) * (60 * i - 30)
-    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)] as [number, number]
-  })
+    const angle = (Math.PI / 180) * (60 * i - 30);
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)] as [number, number];
+  });
 }
 
 /** Convert hex vertices to SVG polygon points string. */
 function toPoints(verts: [number, number][]): string {
-  return verts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ')
+  return verts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
 }
 
 /**
@@ -58,25 +58,25 @@ function sharedEdge(
   ay: number,
   bx: number,
   by: number,
-  r: number,
+  r: number
 ): [[number, number], [number, number]] {
-  const av = hexVertices(ax, ay, r)
-  const bv = hexVertices(bx, by, r)
-  const shared: [number, number][] = []
+  const av = hexVertices(ax, ay, r);
+  const bv = hexVertices(bx, by, r);
+  const shared: [number, number][] = [];
 
   for (const [avx, avy] of av) {
     for (const [bvx, bvy] of bv) {
-      const dist = Math.hypot(avx - bvx, avy - bvy)
+      const dist = Math.hypot(avx - bvx, avy - bvy);
       // Vertices are "shared" if they coincide within floating-point tolerance
       if (dist < 1.5) {
-        shared.push([avx, avy])
-        break
+        shared.push([avx, avy]);
+        break;
       }
     }
   }
 
   // Always returns exactly 2 vertices for adjacent hexes
-  return [shared[0] ?? [ax, ay], shared[1] ?? [bx, by]]
+  return [shared[0] ?? [ax, ay], shared[1] ?? [bx, by]];
 }
 
 // ---------------------------------------------------------------------------
@@ -96,45 +96,43 @@ function sharedEdge(
  *   4 → bottom-left (150° in SVG)
  *   5 → top-left    (210° in SVG)
  */
-const RING_ANGLES_DEG = [270, 330, 30, 90, 150, 210] as const
+const RING_ANGLES_DEG = [270, 330, 30, 90, 150, 210] as const;
 
 /** Module IDs assigned to each ring position (index 5 = empty/decorative). */
-const RING_MODULE_IDS = ['console', 'wing', 'relay', 'mesh', 'pulse', null] as const
+const RING_MODULE_IDS = ['console', 'wing', 'relay', 'mesh', 'pulse', null] as const;
 
 interface HexCell {
-  id: string | null
-  cx: number
-  cy: number
+  id: string | null;
+  cx: number;
+  cy: number;
   /** Whether this hex is the center Engine cell. */
-  isCenter: boolean
+  isCenter: boolean;
   /** Ring slot index (0-5), or -1 for center. */
-  slot: number
+  slot: number;
 }
 
 function buildLayout(): HexCell[] {
-  const cells: HexCell[] = [
-    { id: 'engine', cx: CX, cy: CY, isCenter: true, slot: -1 },
-  ]
+  const cells: HexCell[] = [{ id: 'engine', cx: CX, cy: CY, isCenter: true, slot: -1 }];
 
   for (let i = 0; i < 6; i++) {
-    const angleDeg = RING_ANGLES_DEG[i]
-    const angleRad = (Math.PI / 180) * angleDeg
+    const angleDeg = RING_ANGLES_DEG[i];
+    const angleRad = (Math.PI / 180) * angleDeg;
     // Distance between hex centers = sqrt(3) * R for pointy-top neighbors
-    const dx = D * Math.cos(angleRad)
-    const dy = D * Math.sin(angleRad)
+    const dx = D * Math.cos(angleRad);
+    const dy = D * Math.sin(angleRad);
     cells.push({
       id: RING_MODULE_IDS[i],
       cx: CX + dx,
       cy: CY + dy,
       isCenter: false,
       slot: i,
-    })
+    });
   }
 
-  return cells
+  return cells;
 }
 
-const HEX_CELLS = buildLayout()
+const HEX_CELLS = buildLayout();
 
 /** All center-to-ring edge pairs (center connects to all 5 named modules). */
 const CORE_EDGES = HEX_CELLS.slice(1)
@@ -145,7 +143,7 @@ const CORE_EDGES = HEX_CELLS.slice(1)
     bx: c.cx,
     by: c.cy,
     id: c.id!,
-  }))
+  }));
 
 // ---------------------------------------------------------------------------
 // Motion variants
@@ -164,7 +162,7 @@ const HEX_VARIANT = {
       mass: 1,
     },
   }),
-}
+};
 
 const EDGE_GLOW_VARIANT = {
   hidden: { opacity: 0 },
@@ -172,38 +170,38 @@ const EDGE_GLOW_VARIANT = {
     opacity: 1,
     transition: { delay, duration: 0.5, ease: 'easeOut' as const },
   }),
-}
+};
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
 interface HexCellProps {
-  cell: HexCell
-  module: SystemModule | undefined
-  animDelay: number
-  isDecorativeEmpty: boolean
+  cell: HexCell;
+  module: SystemModule | undefined;
+  animDelay: number;
+  isDecorativeEmpty: boolean;
 }
 
 /** A single hexagonal cell with label content inside. */
 function HexCellShape({ cell, module, animDelay, isDecorativeEmpty }: HexCellProps) {
-  const verts = hexVertices(cell.cx, cell.cy, R)
-  const pts = toPoints(verts)
+  const verts = hexVertices(cell.cx, cell.cy, R);
+  const pts = toPoints(verts);
   // Inner hex for a double-ring effect on the center
-  const innerPts = cell.isCenter ? toPoints(hexVertices(cell.cx, cell.cy, R - 10)) : null
+  const innerPts = cell.isCenter ? toPoints(hexVertices(cell.cx, cell.cy, R - 10)) : null;
 
-  const isAvailable = module?.status === 'available'
+  const isAvailable = module?.status === 'available';
   const borderColor = isDecorativeEmpty
     ? 'var(--border-warm)'
     : isAvailable
       ? 'var(--color-brand-orange)'
-      : 'var(--color-warm-gray)'
+      : 'var(--color-warm-gray)';
 
   const fillColor = cell.isCenter
     ? 'var(--color-brand-orange)'
     : isDecorativeEmpty
       ? 'transparent'
-      : 'var(--color-cream-white)'
+      : 'var(--color-cream-white)';
 
   return (
     <motion.g
@@ -234,12 +232,7 @@ function HexCellShape({ cell, module, animDelay, isDecorativeEmpty }: HexCellPro
 
       {/* Inner double-ring on Engine */}
       {innerPts && (
-        <polygon
-          points={innerPts}
-          fill="none"
-          stroke="rgba(255,255,255,0.3)"
-          strokeWidth="1"
-        />
+        <polygon points={innerPts} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
       )}
 
       {/* Hover glow for non-core, non-empty cells */}
@@ -249,7 +242,7 @@ function HexCellShape({ cell, module, animDelay, isDecorativeEmpty }: HexCellPro
           fill="var(--color-brand-orange)"
           fillOpacity="0"
           stroke="none"
-          className="transition-all duration-300 group-hover:fill-opacity-5"
+          className="group-hover:fill-opacity-5 transition-all duration-300"
         />
       )}
 
@@ -339,32 +332,32 @@ function HexCellShape({ cell, module, animDelay, isDecorativeEmpty }: HexCellPro
                 fill="var(--color-warm-gray)"
                 fillOpacity="0.18"
               />
-            )),
+            ))
           )}
         </>
       )}
     </motion.g>
-  )
+  );
 }
 
 interface SharedEdgeProps {
-  ax: number
-  ay: number
-  bx: number
-  by: number
-  animDelay: number
-  moduleId: string
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  animDelay: number;
+  moduleId: string;
 }
 
 /** Glowing shared edge between two adjacent hexagons, with a traveling energy dot. */
 function SharedEdgeGlow({ ax, ay, bx, by, animDelay, moduleId }: SharedEdgeProps) {
-  const [p1, p2] = sharedEdge(ax, ay, bx, by, R)
+  const [p1, p2] = sharedEdge(ax, ay, bx, by, R);
 
   // Path for the edge line (used by SMIL animateMotion)
-  const edgePath = `M ${p1[0].toFixed(2)},${p1[1].toFixed(2)} L ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`
+  const edgePath = `M ${p1[0].toFixed(2)},${p1[1].toFixed(2)} L ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
 
   // Gradient id (unique per module)
-  const gradId = `edge-grad-${moduleId}`
+  const gradId = `edge-grad-${moduleId}`;
 
   return (
     <motion.g
@@ -436,7 +429,7 @@ function SharedEdgeGlow({ ax, ay, bx, by, animDelay, moduleId }: SharedEdgeProps
         />
       </circle>
     </motion.g>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -451,44 +444,44 @@ function SharedEdgeGlow({ ax, ay, bx, by, animDelay, moduleId }: SharedEdgeProps
  * Staggered entrance animation ripples outward from center.
  */
 export function DiagramV4({ modules }: { modules: SystemModule[] }) {
-  const [edgesVisible, setEdgesVisible] = useState(false)
-  const svgRef = useRef<SVGSVGElement>(null)
+  const [edgesVisible, setEdgesVisible] = useState(false);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   // Map module id → module data for quick lookup
-  const moduleMap = new Map(modules.map((m) => [m.id, m]))
+  const moduleMap = new Map(modules.map((m) => [m.id, m]));
 
   // Reveal edges after the ring animation completes.
   // Last ring cell animates at delay 0.15 + 5 * 0.1 = 0.65s,
   // plus spring settle time (~0.5s) = ~1.2s total.
   // We use an IntersectionObserver to start the timer only when visible.
   useEffect(() => {
-    if (!svgRef.current) return
-    let timerId: ReturnType<typeof setTimeout>
+    if (!svgRef.current) return;
+    let timerId: ReturnType<typeof setTimeout>;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           // Wait for ring cells to finish their entrance animations
-          timerId = setTimeout(() => setEdgesVisible(true), 1400)
-          observer.disconnect()
+          timerId = setTimeout(() => setEdgesVisible(true), 1400);
+          observer.disconnect();
         }
       },
-      { threshold: 0.2 },
-    )
+      { threshold: 0.2 }
+    );
 
-    observer.observe(svgRef.current)
+    observer.observe(svgRef.current);
     return () => {
-      observer.disconnect()
-      clearTimeout(timerId)
-    }
-  }, [])
+      observer.disconnect();
+      clearTimeout(timerId);
+    };
+  }, []);
 
   return (
-    <div className="w-full flex items-center justify-center">
+    <div className="flex w-full items-center justify-center">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${VB_W} ${VB_H}`}
-        className="w-full max-w-[900px] h-auto"
+        className="h-auto w-full max-w-[900px]"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
         aria-label="DorkOS hexagonal architecture diagram"
@@ -541,13 +534,7 @@ export function DiagramV4({ modules }: { modules: SystemModule[] }) {
         <rect width={VB_W} height={VB_H} fill="url(#hex-bg-pattern)" />
 
         {/* Radial glow behind center */}
-        <ellipse
-          cx={CX}
-          cy={CY}
-          rx={R * 2.2}
-          ry={R * 2.2}
-          fill="url(#core-glow)"
-        />
+        <ellipse cx={CX} cy={CY} rx={R * 2.2} ry={R * 2.2} fill="url(#core-glow)" />
 
         {/* ----------------------------------------------------------------- */}
         {/* Shared edges (rendered behind hexes so hexes sit on top)           */}
@@ -579,7 +566,7 @@ export function DiagramV4({ modules }: { modules: SystemModule[] }) {
 
         {/* Ring cells with stagger — each 100ms apart after center */}
         {HEX_CELLS.slice(1).map((cell, i) => {
-          const isEmpty = cell.id === null
+          const isEmpty = cell.id === null;
           return (
             <HexCellShape
               key={cell.slot}
@@ -588,7 +575,7 @@ export function DiagramV4({ modules }: { modules: SystemModule[] }) {
               animDelay={0.15 + i * 0.1}
               isDecorativeEmpty={isEmpty}
             />
-          )
+          );
         })}
 
         {/* ----------------------------------------------------------------- */}
@@ -622,5 +609,5 @@ export function DiagramV4({ modules }: { modules: SystemModule[] }) {
         </g>
       </svg>
     </div>
-  )
+  );
 }

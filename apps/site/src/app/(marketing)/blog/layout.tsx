@@ -1,8 +1,8 @@
-import { RootProvider } from 'fumadocs-ui/provider/next'
-import type { ReactNode } from 'react'
-import { siteConfig } from '@/config/site'
-import { MarketingFooter, MarketingHeader } from '@/layers/features/marketing'
-import 'fumadocs-ui/style.css'
+import { RootProvider } from 'fumadocs-ui/provider/next';
+import type { ReactNode } from 'react';
+import { siteConfig } from '@/config/site';
+import { MarketingFooter, MarketingHeader } from '@/layers/features/marketing';
+import 'fumadocs-ui/style.css';
 
 const socialLinks = [
   {
@@ -23,7 +23,7 @@ const socialLinks = [
       </svg>
     ),
   },
-]
+];
 
 /**
  * Layout for blog pages within the marketing route group.
@@ -38,23 +38,25 @@ export default function BlogLayout({ children }: { children: ReactNode }) {
       <MarketingHeader />
       <div
         className="blog-layout not-fumadocs-codeblock"
-        style={{
-          // Override fumadocs CSS variables to match marketing palette
-          '--color-fd-foreground': 'var(--charcoal)',
-          '--color-fd-muted-foreground': 'var(--warm-gray)',
-          '--color-fd-muted': 'var(--cream-secondary)',
-          '--color-fd-primary': 'var(--charcoal)',
-          '--color-fd-background': 'var(--cream-primary)',
-          '--color-fd-card': 'var(--cream-primary)',
-          '--color-fd-border': 'var(--warm-gray-light)',
-          // Restore code block padding excluded by not-fumadocs-codeblock
-          '--padding-left': '1rem',
-          '--padding-right': '1rem',
-        } as React.CSSProperties}
+        style={
+          {
+            // Override fumadocs CSS variables to match marketing palette
+            '--color-fd-foreground': 'var(--charcoal)',
+            '--color-fd-muted-foreground': 'var(--warm-gray)',
+            '--color-fd-muted': 'var(--cream-secondary)',
+            '--color-fd-primary': 'var(--charcoal)',
+            '--color-fd-background': 'var(--cream-primary)',
+            '--color-fd-card': 'var(--cream-primary)',
+            '--color-fd-border': 'var(--warm-gray-light)',
+            // Restore code block padding excluded by not-fumadocs-codeblock
+            '--padding-left': '1rem',
+            '--padding-right': '1rem',
+          } as React.CSSProperties
+        }
       >
         {children}
         <MarketingFooter email={siteConfig.contactEmail} socialLinks={socialLinks} />
       </div>
     </RootProvider>
-  )
+  );
 }

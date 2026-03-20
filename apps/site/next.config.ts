@@ -1,7 +1,7 @@
-import { createMDX } from 'fumadocs-mdx/next'
-import type { NextConfig } from 'next'
+import { createMDX } from 'fumadocs-mdx/next';
+import type { NextConfig } from 'next';
 
-const withMDX = createMDX()
+const withMDX = createMDX();
 
 const nextConfig: NextConfig = {
   // Transpile Base UI packages for better Turbopack compatibility
@@ -18,10 +18,10 @@ const nextConfig: NextConfig = {
         source: '/ingest/:path*',
         destination: 'https://us.i.posthog.com/:path*',
       },
-    ]
+    ];
   },
   // Required to support PostHog trailing slash API requests
   skipTrailingSlashRedirect: true,
-}
+};
 
-export default withMDX(nextConfig)
+export default withMDX(nextConfig);

@@ -1,14 +1,14 @@
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
+import { motion } from 'motion/react';
 import {
   Accordion,
   AccordionItem,
   AccordionTrigger,
   AccordionContent,
-} from '@/components/ui/accordion'
-import { faqItems } from '../lib/faq-items'
-import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
+} from '@/components/ui/accordion';
+import { faqItems } from '../lib/faq-items';
+import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 /** FAQ accordion section — handles residual objections before the install CTA. */
 export function FAQSection() {
@@ -24,7 +24,7 @@ export function FAQSection() {
         {/* Eyebrow */}
         <motion.span
           variants={REVEAL}
-          className="mb-6 block text-center font-mono text-2xs uppercase tracking-[0.2em] text-brand-orange"
+          className="text-2xs text-brand-orange mb-6 block text-center font-mono tracking-[0.2em] uppercase"
         >
           Questions
         </motion.span>
@@ -33,18 +33,10 @@ export function FAQSection() {
         <motion.div variants={REVEAL}>
           <Accordion>
             {faqItems.map((item) => (
-              <AccordionItem
-                key={item.id}
-                value={item.id}
-                className="border-charcoal/10"
-              >
-                <AccordionTrigger className="text-charcoal">
-                  {item.question}
-                </AccordionTrigger>
+              <AccordionItem key={item.id} value={item.id} className="border-charcoal/10">
+                <AccordionTrigger className="text-charcoal">{item.question}</AccordionTrigger>
                 <AccordionContent>
-                  <p className="text-warm-gray leading-relaxed">
-                    {item.answer}
-                  </p>
+                  <p className="text-warm-gray leading-relaxed">{item.answer}</p>
                 </AccordionContent>
               </AccordionItem>
             ))}
@@ -52,5 +44,5 @@ export function FAQSection() {
         </motion.div>
       </motion.div>
     </section>
-  )
+  );
 }

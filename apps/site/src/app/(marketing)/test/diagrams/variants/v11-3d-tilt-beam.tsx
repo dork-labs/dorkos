@@ -1,25 +1,25 @@
-'use client'
+'use client';
 
-import { useState, useRef, useCallback, useEffect, type MouseEvent, type RefObject } from 'react'
-import { motion, AnimatePresence, useInView, type Variants } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
-import { REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing/lib/motion-variants'
+import { useState, useRef, useCallback, useEffect, type MouseEvent, type RefObject } from 'react';
+import { motion, AnimatePresence, useInView, type Variants } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
+import { REVEAL, STAGGER, VIEWPORT } from '@/layers/features/marketing/lib/motion-variants';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ORANGE      = '#E85D04'
-const ORANGE_GLOW = 'rgba(232, 93, 4, 0.35)'
-const MAX_TILT    = 15 // degrees
+const ORANGE = '#E85D04';
+const ORANGE_GLOW = 'rgba(232, 93, 4, 0.35)';
+const MAX_TILT = 15; // degrees
 
 /** Module ID → [row, col] in the 3×2 grid. */
 const GRID_POS: Record<string, [number, number]> = {
-  console:  [0, 0],
-  core:     [0, 1],
-  wing:    [0, 2],
-  pulse:    [1, 0],
-  mesh:     [1, 1],
+  console: [0, 0],
+  core: [0, 1],
+  wing: [0, 2],
+  pulse: [1, 0],
+  mesh: [1, 1],
   channels: [1, 2],
-}
+};
 
 /** Directed edges for tracing beams. */
 const CONNECTIONS: [string, string][] = [
@@ -29,18 +29,18 @@ const CONNECTIONS: [string, string][] = [
   ['engine', 'mesh'],
   ['engine', 'relay'],
   ['mesh', 'relay'],
-]
+];
 
 // ─── Tilt math ────────────────────────────────────────────────────────────────
 
 interface TiltState {
-  rotateX: number
-  rotateY: number
-  spotX: number
-  spotY: number
+  rotateX: number;
+  rotateY: number;
+  spotX: number;
+  spotY: number;
 }
 
-const NEUTRAL_TILT: TiltState = { rotateX: 0, rotateY: 0, spotX: 50, spotY: 50 }
+const NEUTRAL_TILT: TiltState = { rotateX: 0, rotateY: 0, spotX: 50, spotY: 50 };
 
 /**
  * Compute 3D tilt angles and spotlight position from a mouse event
@@ -50,41 +50,41 @@ const NEUTRAL_TILT: TiltState = { rotateX: 0, rotateY: 0, spotX: 50, spotY: 50 }
  * @param el - The card DOM element
  */
 function computeTilt(e: MouseEvent<HTMLDivElement>, el: HTMLElement): TiltState {
-  const rect    = el.getBoundingClientRect()
-  const centerX = rect.left + rect.width  / 2
-  const centerY = rect.top  + rect.height / 2
+  const rect = el.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
 
   // Normalise to [-1, +1]
-  const nx = (e.clientX - centerX) / (rect.width  / 2)
-  const ny = (e.clientY - centerY) / (rect.height / 2)
+  const nx = (e.clientX - centerX) / (rect.width / 2);
+  const ny = (e.clientY - centerY) / (rect.height / 2);
 
   return {
-    rotateX:  -ny * MAX_TILT, // tilt toward cursor
-    rotateY:   nx * MAX_TILT,
-    spotX:    ((e.clientX - rect.left) / rect.width)  * 100,
-    spotY:    ((e.clientY - rect.top)  / rect.height) * 100,
-  }
+    rotateX: -ny * MAX_TILT, // tilt toward cursor
+    rotateY: nx * MAX_TILT,
+    spotX: ((e.clientX - rect.left) / rect.width) * 100,
+    spotY: ((e.clientY - rect.top) / rect.height) * 100,
+  };
 }
 
 // ─── Beam geometry ────────────────────────────────────────────────────────────
 
 interface Rect {
-  cx: number
-  cy: number
+  cx: number;
+  cy: number;
 }
 
 // ─── TiltCard sub-component ───────────────────────────────────────────────────
 
 interface TiltCardProps {
-  module:      SystemModule
-  isHovered:   boolean
-  isExpanded:  boolean
-  isAnyHovered: boolean
-  onHoverStart: () => void
-  onHoverEnd:   () => void
-  onToggle:     () => void
-  cardRef:      RefObject<HTMLDivElement | null>
-  entryVariant: Variants
+  module: SystemModule;
+  isHovered: boolean;
+  isExpanded: boolean;
+  isAnyHovered: boolean;
+  onHoverStart: () => void;
+  onHoverEnd: () => void;
+  onToggle: () => void;
+  cardRef: RefObject<HTMLDivElement | null>;
+  entryVariant: Variants;
 }
 
 /**
@@ -104,38 +104,34 @@ function TiltCard({
   cardRef,
   entryVariant,
 }: TiltCardProps) {
-  const [tilt, setTilt] = useState<TiltState>(NEUTRAL_TILT)
+  const [tilt, setTilt] = useState<TiltState>(NEUTRAL_TILT);
 
-  const available = module.status === 'available'
-  const isEngine    = module.id === 'engine'
+  const available = module.status === 'available';
+  const isEngine = module.id === 'engine';
 
   const handleMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
-    const el = e.currentTarget
-    setTilt(computeTilt(e, el))
-  }, [])
+    const el = e.currentTarget;
+    setTilt(computeTilt(e, el));
+  }, []);
 
   const handleMouseLeave = useCallback(() => {
-    setTilt(NEUTRAL_TILT)
-    onHoverEnd()
-  }, [onHoverEnd])
+    setTilt(NEUTRAL_TILT);
+    onHoverEnd();
+  }, [onHoverEnd]);
 
   // Dim cards that aren't active when something else is hovered
-  const dimmed = isAnyHovered && !isHovered
+  const dimmed = isAnyHovered && !isHovered;
 
   return (
-    <motion.div
-      variants={entryVariant}
-      style={{ perspective: '1000px' }}
-      className="w-full"
-    >
+    <motion.div variants={entryVariant} style={{ perspective: '1000px' }} className="w-full">
       {/* Glow halo behind card — brightens when hovered or connected */}
       <motion.div
         animate={{
           opacity: isHovered ? 1 : available ? 0.3 : 0.1,
-          scale:   isHovered ? 1.06 : 1,
+          scale: isHovered ? 1.06 : 1,
         }}
         transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-        className="absolute inset-0 rounded-2xl pointer-events-none"
+        className="pointer-events-none absolute inset-0 rounded-2xl"
         style={{
           background: `radial-gradient(ellipse at center, ${ORANGE_GLOW} 0%, transparent 70%)`,
           zIndex: 0,
@@ -151,33 +147,33 @@ function TiltCard({
         onMouseEnter={onHoverStart}
         onMouseLeave={handleMouseLeave}
         animate={{
-          rotateX:  tilt.rotateX,
-          rotateY:  tilt.rotateY,
-          scale:    isHovered ? 1.04 : dimmed ? 0.97 : 1,
-          opacity:  dimmed ? 0.55 : 1,
+          rotateX: tilt.rotateX,
+          rotateY: tilt.rotateY,
+          scale: isHovered ? 1.04 : dimmed ? 0.97 : 1,
+          opacity: dimmed ? 0.55 : 1,
         }}
         transition={{
           rotateX: { type: 'spring', stiffness: 280, damping: 28 },
           rotateY: { type: 'spring', stiffness: 280, damping: 28 },
-          scale:   { type: 'spring', stiffness: 300, damping: 25 },
+          scale: { type: 'spring', stiffness: 300, damping: 25 },
           opacity: { duration: 0.2 },
         }}
         style={{
-          transformStyle:  'preserve-3d',
-          willChange:      'transform',
-          cursor:          'pointer',
-          position:        'relative',
-          zIndex:          isHovered ? 10 : 1,
+          transformStyle: 'preserve-3d',
+          willChange: 'transform',
+          cursor: 'pointer',
+          position: 'relative',
+          zIndex: isHovered ? 10 : 1,
         }}
-        className="relative rounded-2xl overflow-hidden select-none"
+        className="relative overflow-hidden rounded-2xl select-none"
       >
         {/* Card surface */}
         <div
           className="relative overflow-hidden rounded-2xl"
           style={{
-            background:   'var(--color-cream-white)',
-            border:       `1px solid var(--border-warm)`,
-            boxShadow:    isHovered
+            background: 'var(--color-cream-white)',
+            border: `1px solid var(--border-warm)`,
+            boxShadow: isHovered
               ? `0 20px 60px rgba(232,93,4,0.18), 0 8px 24px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)`
               : `0 2px 12px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8)`,
             transition: 'box-shadow 0.3s ease',
@@ -197,9 +193,9 @@ function TiltCard({
 
           {/* Orange top accent line — thicker for core */}
           <div
-            className="absolute top-0 left-0 right-0"
+            className="absolute top-0 right-0 left-0"
             style={{
-              height:  isEngine ? '3px' : '2px',
+              height: isEngine ? '3px' : '2px',
               background: available
                 ? `linear-gradient(90deg, transparent 0%, ${ORANGE} 30%, ${ORANGE} 70%, transparent 100%)`
                 : `linear-gradient(90deg, transparent 0%, rgba(232,93,4,0.3) 30%, rgba(232,93,4,0.3) 70%, transparent 100%)`,
@@ -212,9 +208,9 @@ function TiltCard({
           {/* Card content */}
           <div className="relative p-5" style={{ zIndex: 3 }}>
             {/* Header row */}
-            <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="mb-3 flex items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="mb-1 flex items-center gap-2">
                   <span
                     className="font-mono text-xs tracking-[0.12em] uppercase"
                     style={{ color: ORANGE, opacity: available ? 1 : 0.45 }}
@@ -223,9 +219,9 @@ function TiltCard({
                   </span>
                 </div>
                 <h3
-                  className="font-semibold tracking-tight leading-none"
+                  className="leading-none font-semibold tracking-tight"
                   style={{
-                    color:    'var(--color-charcoal)',
+                    color: 'var(--color-charcoal)',
                     fontSize: isEngine ? '20px' : '17px',
                   }}
                 >
@@ -235,11 +231,9 @@ function TiltCard({
 
               {/* Status badge */}
               <div
-                className="shrink-0 font-mono text-[10px] tracking-[0.1em] uppercase px-2 py-1 rounded-full"
+                className="shrink-0 rounded-full px-2 py-1 font-mono text-[10px] tracking-[0.1em] uppercase"
                 style={{
-                  background: available
-                    ? 'rgba(34, 139, 34, 0.10)'
-                    : 'rgba(74, 70, 64, 0.08)',
+                  background: available ? 'rgba(34, 139, 34, 0.10)' : 'rgba(74, 70, 64, 0.08)',
                   color: available ? 'var(--brand-green)' : 'var(--warm-gray-light)',
                   border: available
                     ? '1px solid rgba(34,139,34,0.2)'
@@ -252,7 +246,7 @@ function TiltCard({
 
             {/* Expand indicator */}
             <div
-              className="flex items-center gap-1.5 mb-0"
+              className="mb-0 flex items-center gap-1.5"
               style={{ color: 'var(--warm-gray-light)', fontSize: '11px' }}
             >
               <motion.span
@@ -263,7 +257,7 @@ function TiltCard({
               >
                 ›
               </motion.span>
-              <span className="font-mono tracking-wide text-[10px] uppercase opacity-60">
+              <span className="font-mono text-[10px] tracking-wide uppercase opacity-60">
                 {isExpanded ? 'collapse' : 'details'}
               </span>
             </div>
@@ -285,21 +279,18 @@ function TiltCard({
                       borderTop: '1px solid var(--border-warm)',
                     }}
                   >
-                    <p
-                      className="text-sm leading-relaxed"
-                      style={{ color: 'var(--warm-gray)' }}
-                    >
+                    <p className="text-sm leading-relaxed" style={{ color: 'var(--warm-gray)' }}>
                       {module.description}
                     </p>
 
                     {/* ID chip */}
                     <div className="mt-3 flex items-center gap-2">
                       <span
-                        className="font-mono text-[10px] tracking-[0.15em] uppercase px-2 py-0.5 rounded"
+                        className="rounded px-2 py-0.5 font-mono text-[10px] tracking-[0.15em] uppercase"
                         style={{
                           background: 'rgba(232,93,4,0.07)',
-                          color:      ORANGE,
-                          border:     `1px solid rgba(232,93,4,0.15)`,
+                          color: ORANGE,
+                          border: `1px solid rgba(232,93,4,0.15)`,
                         }}
                       >
                         {module.id}
@@ -313,16 +304,16 @@ function TiltCard({
         </div>
       </motion.div>
     </motion.div>
-  )
+  );
 }
 
 // ─── Tracing beam SVG overlay ─────────────────────────────────────────────────
 
 interface BeamOverlayProps {
-  containerRef: RefObject<HTMLDivElement | null>
-  cardRefs:     Record<string, RefObject<HTMLDivElement | null>>
-  activeId:     string | null
-  isVisible:    boolean
+  containerRef: RefObject<HTMLDivElement | null>;
+  cardRefs: Record<string, RefObject<HTMLDivElement | null>>;
+  activeId: string | null;
+  isVisible: boolean;
 }
 
 /**
@@ -333,38 +324,38 @@ interface BeamOverlayProps {
  * Beams connected to the hovered card glow brighter.
  */
 function BeamOverlay({ containerRef, cardRefs, activeId, isVisible }: BeamOverlayProps) {
-  const [centers, setCenters] = useState<Record<string, Rect>>({})
-  const [svgSize,  setSvgSize] = useState({ w: 0, h: 0 })
+  const [centers, setCenters] = useState<Record<string, Rect>>({});
+  const [svgSize, setSvgSize] = useState({ w: 0, h: 0 });
 
   // Measure card centers on mount and resize
   const measure = useCallback(() => {
-    const container = containerRef.current
-    if (!container) return
+    const container = containerRef.current;
+    if (!container) return;
 
-    const cRect = container.getBoundingClientRect()
-    setSvgSize({ w: cRect.width, h: cRect.height })
+    const cRect = container.getBoundingClientRect();
+    setSvgSize({ w: cRect.width, h: cRect.height });
 
-    const next: Record<string, Rect> = {}
+    const next: Record<string, Rect> = {};
     for (const [id, ref] of Object.entries(cardRefs)) {
-      const el = ref.current
-      if (!el) continue
-      const kRect = el.getBoundingClientRect()
+      const el = ref.current;
+      if (!el) continue;
+      const kRect = el.getBoundingClientRect();
       next[id] = {
-        cx: kRect.left + kRect.width  / 2 - cRect.left,
-        cy: kRect.top  + kRect.height / 2 - cRect.top,
-      }
+        cx: kRect.left + kRect.width / 2 - cRect.left,
+        cy: kRect.top + kRect.height / 2 - cRect.top,
+      };
     }
-    setCenters(next)
-  }, [containerRef, cardRefs])
+    setCenters(next);
+  }, [containerRef, cardRefs]);
 
   useEffect(() => {
-    measure()
-    const observer = new ResizeObserver(measure)
-    if (containerRef.current) observer.observe(containerRef.current)
-    return () => observer.disconnect()
-  }, [measure, containerRef])
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [measure, containerRef]);
 
-  if (svgSize.w === 0) return null
+  if (svgSize.w === 0) return null;
 
   return (
     <svg
@@ -395,40 +386,40 @@ function BeamOverlay({ containerRef, cardRefs, activeId, isVisible }: BeamOverla
             x2={centers[to]?.cx ?? 0}
             y2={centers[to]?.cy ?? 0}
           >
-            <stop offset="0%"   stopColor={ORANGE} stopOpacity="0" />
-            <stop offset="50%"  stopColor={ORANGE} stopOpacity="1" />
+            <stop offset="0%" stopColor={ORANGE} stopOpacity="0" />
+            <stop offset="50%" stopColor={ORANGE} stopOpacity="1" />
             <stop offset="100%" stopColor={ORANGE} stopOpacity="0" />
           </linearGradient>
         ))}
       </defs>
 
       {CONNECTIONS.map(([from, to], i) => {
-        const a = centers[from]
-        const b = centers[to]
-        if (!a || !b) return null
+        const a = centers[from];
+        const b = centers[to];
+        if (!a || !b) return null;
 
-        const isActive = activeId === from || activeId === to
+        const isActive = activeId === from || activeId === to;
 
         // Cubic bezier control points — gently arc upward between cards
-        const mx  = (a.cx + b.cx) / 2
-        const my  = (a.cy + b.cy) / 2
-        const dx  = b.cx - a.cx
-        const dy  = b.cy - a.cy
-        const len = Math.sqrt(dx * dx + dy * dy) || 1
+        const mx = (a.cx + b.cx) / 2;
+        const my = (a.cy + b.cy) / 2;
+        const dx = b.cx - a.cx;
+        const dy = b.cy - a.cy;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
 
         // Perpendicular offset — curve beams away from each other
-        const perpX = (-dy / len) * 40 * (i % 2 === 0 ? 1 : -1)
-        const perpY = ( dx / len) * 40 * (i % 2 === 0 ? 1 : -1)
+        const perpX = (-dy / len) * 40 * (i % 2 === 0 ? 1 : -1);
+        const perpY = (dx / len) * 40 * (i % 2 === 0 ? 1 : -1);
 
-        const cx1 = a.cx + (mx - a.cx) * 0.5 + perpX
-        const cy1 = a.cy + (my - a.cy) * 0.5 + perpY
-        const cx2 = b.cx + (mx - b.cx) * 0.5 + perpX
-        const cy2 = b.cy + (my - b.cy) * 0.5 + perpY
+        const cx1 = a.cx + (mx - a.cx) * 0.5 + perpX;
+        const cy1 = a.cy + (my - a.cy) * 0.5 + perpY;
+        const cx2 = b.cx + (mx - b.cx) * 0.5 + perpX;
+        const cy2 = b.cy + (my - b.cy) * 0.5 + perpY;
 
-        const d = `M ${a.cx} ${a.cy} C ${cx1} ${cy1} ${cx2} ${cy2} ${b.cx} ${b.cy}`
+        const d = `M ${a.cx} ${a.cy} C ${cx1} ${cy1} ${cx2} ${cy2} ${b.cx} ${b.cy}`;
 
-        const baseOpacity  = isActive ? 0.55 : 0.18
-        const pulseOpacity = isActive ? 1.0  : 0.45
+        const baseOpacity = isActive ? 0.55 : 0.18;
+        const pulseOpacity = isActive ? 1.0 : 0.45;
 
         return (
           <g key={`beam-${i}`}>
@@ -440,12 +431,12 @@ function BeamOverlay({ containerRef, cardRefs, activeId, isVisible }: BeamOverla
               strokeWidth={isActive ? 1.5 : 1}
               filter={isActive ? 'url(#v11-beam-glow)' : undefined}
               initial={{ pathLength: 0, opacity: 0 }}
-              animate={isVisible
-                ? { pathLength: 1, opacity: baseOpacity }
-                : { pathLength: 0, opacity: 0 }}
+              animate={
+                isVisible ? { pathLength: 1, opacity: baseOpacity } : { pathLength: 0, opacity: 0 }
+              }
               transition={{
                 pathLength: { duration: 1.4, delay: 0.3 + i * 0.15, ease: 'easeOut' },
-                opacity:    { duration: 0.5, delay: 0.3 + i * 0.15 },
+                opacity: { duration: 0.5, delay: 0.3 + i * 0.15 },
               }}
               strokeLinecap="round"
             />
@@ -487,10 +478,10 @@ function BeamOverlay({ containerRef, cardRefs, activeId, isVisible }: BeamOverla
               </motion.circle>
             )}
           </g>
-        )
+        );
       })}
     </svg>
-  )
+  );
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -509,27 +500,27 @@ function BeamOverlay({ containerRef, cardRefs, activeId, isVisible }: BeamOverla
  * @param modules - The six DorkOS system modules to render
  */
 export function DiagramV11({ modules }: { modules: SystemModule[] }) {
-  const [hoveredId,  setHoveredId]  = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null)
-  const isInView     = useInView(containerRef, VIEWPORT)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isInView = useInView(containerRef, VIEWPORT);
 
   // One ref per card for beam anchor measurement — created once from initial modules
   const [cardRefsMap] = useState<Record<string, RefObject<HTMLDivElement | null>>>(() =>
-    Object.fromEntries(modules.map(m => [m.id, { current: null }]))
-  )
+    Object.fromEntries(modules.map((m) => [m.id, { current: null }]))
+  );
 
   const handleToggle = useCallback((id: string) => {
-    setExpandedId((prev) => (prev === id ? null : id))
-  }, [])
+    setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
 
   // Sort modules into 3×2 grid order: [console, core, wing, pulse, mesh, channels]
   const sorted = [...modules].sort((a, b) => {
-    const [ar, ac] = GRID_POS[a.id] ?? [99, 99]
-    const [br, bc] = GRID_POS[b.id] ?? [99, 99]
-    return ar !== br ? ar - br : ac - bc
-  })
+    const [ar, ac] = GRID_POS[a.id] ?? [99, 99];
+    const [br, bc] = GRID_POS[b.id] ?? [99, 99];
+    return ar !== br ? ar - br : ac - bc;
+  });
 
   return (
     <div className="relative w-full" style={{ minHeight: '360px' }}>
@@ -547,24 +538,24 @@ export function DiagramV11({ modules }: { modules: SystemModule[] }) {
           className="relative grid gap-4"
           style={{
             gridTemplateColumns: 'repeat(3, 1fr)',
-            gridTemplateRows:    'auto auto',
+            gridTemplateRows: 'auto auto',
             zIndex: 1,
           }}
         >
           {sorted.map((module, index) => {
             const staggeredReveal: Variants = {
-              hidden:  { opacity: 0, y: 24 },
+              hidden: { opacity: 0, y: 24 },
               visible: {
                 opacity: 1,
                 y: 0,
                 transition: {
-                  type:      'spring' as const,
+                  type: 'spring' as const,
                   stiffness: 120,
-                  damping:   18,
-                  delay:     index * 0.08,
+                  damping: 18,
+                  delay: index * 0.08,
                 },
               },
-            }
+            };
 
             return (
               <div key={module.id} className="relative">
@@ -580,12 +571,12 @@ export function DiagramV11({ modules }: { modules: SystemModule[] }) {
                   entryVariant={staggeredReveal}
                 />
               </div>
-            )
+            );
           })}
         </div>
 
         {/* SVG beam overlay — absolute, sits behind cards */}
-        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+        <div className="pointer-events-none absolute inset-0" style={{ zIndex: 0 }}>
           <BeamOverlay
             containerRef={containerRef}
             cardRefs={cardRefsMap}
@@ -601,11 +592,11 @@ export function DiagramV11({ modules }: { modules: SystemModule[] }) {
         initial="hidden"
         whileInView="visible"
         viewport={VIEWPORT}
-        className="flex items-center gap-6 mt-6 pl-1"
+        className="mt-6 flex items-center gap-6 pl-1"
       >
         <div className="flex items-center gap-2">
           <div
-            className="w-2 h-2 rounded-full"
+            className="h-2 w-2 rounded-full"
             style={{ background: 'var(--brand-green)', opacity: 0.85 }}
           />
           <span
@@ -617,7 +608,7 @@ export function DiagramV11({ modules }: { modules: SystemModule[] }) {
         </div>
         <div className="flex items-center gap-2">
           <div
-            className="w-2 h-2 rounded-full"
+            className="h-2 w-2 rounded-full"
             style={{ background: 'var(--warm-gray-light)', opacity: 0.5 }}
           />
           <span
@@ -630,7 +621,10 @@ export function DiagramV11({ modules }: { modules: SystemModule[] }) {
         <div className="flex items-center gap-2">
           <svg width="20" height="4" style={{ overflow: 'visible' }}>
             <line
-              x1="0" y1="2" x2="20" y2="2"
+              x1="0"
+              y1="2"
+              x2="20"
+              y2="2"
               stroke={ORANGE}
               strokeWidth="1.5"
               strokeLinecap="round"
@@ -646,12 +640,12 @@ export function DiagramV11({ modules }: { modules: SystemModule[] }) {
           </span>
         </div>
         <span
-          className="font-mono text-[10px] tracking-[0.12em] uppercase ml-auto opacity-30"
+          className="ml-auto font-mono text-[10px] tracking-[0.12em] uppercase opacity-30"
           style={{ color: 'var(--warm-gray-light)' }}
         >
           DRK-OS · V11 · TILT CARDS
         </span>
       </motion.div>
     </div>
-  )
+  );
 }

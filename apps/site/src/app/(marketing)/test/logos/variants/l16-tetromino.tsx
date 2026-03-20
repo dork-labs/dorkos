@@ -33,13 +33,7 @@ const STRIDE = SQ + GAP;
  * @param oy    - Y pixel offset of the letter origin
  * @param key   - React key
  */
-function sq(
-  col: number,
-  row: number,
-  ox: number,
-  oy: number,
-  key: string,
-): React.ReactElement {
+function sq(col: number, row: number, ox: number, oy: number, key: string): React.ReactElement {
   return (
     <rect
       key={key}
@@ -60,17 +54,8 @@ function sq(
  * @param oy     - Y pixel offset for the letter origin
  * @param id     - Unique string prefix for React keys
  */
-function piece(
-  cells: [number, number][],
-  ox: number,
-  oy: number,
-  id: string,
-): React.ReactElement {
-  return (
-    <g key={id}>
-      {cells.map(([c, r], i) => sq(c, r, ox, oy, `${id}-${i}`))}
-    </g>
-  );
+function piece(cells: [number, number][], ox: number, oy: number, id: string): React.ReactElement {
+  return <g key={id}>{cells.map(([c, r], i) => sq(c, r, ox, oy, `${id}-${i}`))}</g>;
 }
 
 // ---------------------------------------------------------------------------
@@ -398,9 +383,7 @@ export function Logo16({
         const ox = letterOriginX(letterIdx);
         return (
           <g key={label} aria-label={label}>
-            {pieces.map((cells, pieceIdx) =>
-              piece(cells, ox, ORIGIN_Y, `${label}-p${pieceIdx}`),
-            )}
+            {pieces.map((cells, pieceIdx) => piece(cells, ox, ORIGIN_Y, `${label}-p${pieceIdx}`))}
           </g>
         );
       })}

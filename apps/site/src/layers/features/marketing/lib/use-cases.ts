@@ -1,15 +1,14 @@
 export interface UseCase {
-  id: string
-  title: string
-  description: string
+  id: string;
+  title: string;
+  description: string;
 }
 
 export const useCases: UseCase[] = [
   {
     id: 'ship-while-you-sleep',
     title: 'Ship around the clock',
-    description:
-      'Pulse executes your roadmap autonomously. Wake up to PRs, not TODO lists.',
+    description: 'Pulse executes your roadmap autonomously. Wake up to PRs, not TODO lists.',
   },
   {
     id: 'agents-that-talk',
@@ -41,4 +40,4 @@ export const useCases: UseCase[] = [
     description:
       'Loop closes the feedback loop — turning signals into hypotheses, hypotheses into tasks, and outcomes into the next iteration. Your system gets better on its own.',
   },
-]
+];

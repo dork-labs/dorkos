@@ -28,48 +28,43 @@ interface RectDef {
 
 /** D — x origin 0, width 108 */
 const RECTS_D: RectDef[] = [
-  { x: 0,  y: 0,   w: 22, h: 140 },            // left vertical slab
-  { x: 0,  y: 0,   w: 86, h: 22  },            // top horizontal slab
-  { x: 0,  y: 118, w: 86, h: 22  },            // bottom horizontal slab
-  { x: 86, y: 0,   w: 22, h: 140 },            // right vertical cap
-  { x: 22, y: 22,  w: 64, h: 96, cutout: true }, // inner void
+  { x: 0, y: 0, w: 22, h: 140 }, // left vertical slab
+  { x: 0, y: 0, w: 86, h: 22 }, // top horizontal slab
+  { x: 0, y: 118, w: 86, h: 22 }, // bottom horizontal slab
+  { x: 86, y: 0, w: 22, h: 140 }, // right vertical cap
+  { x: 22, y: 22, w: 64, h: 96, cutout: true }, // inner void
 ];
 
 /** O — x origin 122, width 108 */
 const RECTS_O: RectDef[] = [
-  { x: 122, y: 0,  w: 108, h: 140 },            // outer block
-  { x: 148, y: 26, w: 56,  h: 88, cutout: true }, // inner void
+  { x: 122, y: 0, w: 108, h: 140 }, // outer block
+  { x: 148, y: 26, w: 56, h: 88, cutout: true }, // inner void
 ];
 
 /** R — x origin 244, width 110 */
 const RECTS_R: RectDef[] = [
-  { x: 244, y: 0,  w: 22, h: 140 },             // left vertical slab
-  { x: 244, y: 0,  w: 86, h: 22  },             // top horizontal slab
-  { x: 244, y: 64, w: 86, h: 22  },             // middle horizontal slab
-  { x: 308, y: 0,  w: 22, h: 86  },             // right cap — top counter bowl
+  { x: 244, y: 0, w: 22, h: 140 }, // left vertical slab
+  { x: 244, y: 0, w: 86, h: 22 }, // top horizontal slab
+  { x: 244, y: 64, w: 86, h: 22 }, // middle horizontal slab
+  { x: 308, y: 0, w: 22, h: 86 }, // right cap — top counter bowl
   { x: 266, y: 22, w: 42, h: 42, cutout: true }, // upper inner void (bowl)
-  { x: 298, y: 86, w: 36, h: 54  },             // leg — thick rect lower-right
+  { x: 298, y: 86, w: 36, h: 54 }, // leg — thick rect lower-right
 ];
 
 /** K — x origin 366, width 110 */
 const RECTS_K: RectDef[] = [
-  { x: 366, y: 0,   w: 22, h: 140 }, // left vertical slab
+  { x: 366, y: 0, w: 22, h: 140 }, // left vertical slab
   // upper arm staircase
-  { x: 388, y: 42,  w: 60, h: 22  }, // step 1
-  { x: 420, y: 20,  w: 28, h: 22  }, // step 2
-  { x: 448, y: 0,   w: 28, h: 20  }, // step 3 — top-right cap
+  { x: 388, y: 42, w: 60, h: 22 }, // step 1
+  { x: 420, y: 20, w: 28, h: 22 }, // step 2
+  { x: 448, y: 0, w: 28, h: 20 }, // step 3 — top-right cap
   // lower arm staircase
-  { x: 388, y: 76,  w: 60, h: 22  }, // step 1
-  { x: 420, y: 98,  w: 28, h: 22  }, // step 2
-  { x: 448, y: 120, w: 28, h: 20  }, // step 3 — bottom-right cap
+  { x: 388, y: 76, w: 60, h: 22 }, // step 1
+  { x: 420, y: 98, w: 28, h: 22 }, // step 2
+  { x: 448, y: 120, w: 28, h: 20 }, // step 3 — bottom-right cap
 ];
 
-const ALL_LETTERS: RectDef[] = [
-  ...RECTS_D,
-  ...RECTS_O,
-  ...RECTS_R,
-  ...RECTS_K,
-];
+const ALL_LETTERS: RectDef[] = [...RECTS_D, ...RECTS_O, ...RECTS_R, ...RECTS_K];
 
 // ---------------------------------------------------------------------------
 // Layer renderer

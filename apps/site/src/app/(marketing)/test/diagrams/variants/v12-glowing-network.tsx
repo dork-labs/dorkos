@@ -1,17 +1,17 @@
-'use client'
+'use client';
 
-import { useState, useRef, useCallback } from 'react'
-import { motion } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
-import { STAGGER, REVEAL, VIEWPORT } from '@/layers/features/marketing/lib/motion-variants'
+import { useState, useRef, useCallback } from 'react';
+import { motion } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
+import { STAGGER, REVEAL, VIEWPORT } from '@/layers/features/marketing/lib/motion-variants';
 
 // ─── Color palette ────────────────────────────────────────────────────────────
 
-const ORANGE      = '#E85D04'
-const ORANGE_GLOW = 'rgba(232, 93, 4, 0.35)'
-const ORANGE_DIM  = 'rgba(232, 93, 4, 0.15)'
-const BLUE_SOON   = '#3B82F6'
-const BLUE_GLOW   = 'rgba(59, 130, 246, 0.25)'
+const ORANGE = '#E85D04';
+const ORANGE_GLOW = 'rgba(232, 93, 4, 0.35)';
+const ORANGE_DIM = 'rgba(232, 93, 4, 0.15)';
+const BLUE_SOON = '#3B82F6';
+const BLUE_GLOW = 'rgba(59, 130, 246, 0.25)';
 
 // ─── Layout — organic network positions ──────────────────────────────────────
 //
@@ -20,39 +20,39 @@ const BLUE_GLOW   = 'rgba(59, 130, 246, 0.25)'
 // The SVG beam layer uses the same percentage system to draw connections.
 
 interface CardLayout {
-  top:    string
-  left:   string
-  width:  number   // px — approximate; container is ~1000px ref width
-  height: number   // px
+  top: string;
+  left: string;
+  width: number; // px — approximate; container is ~1000px ref width
+  height: number; // px
 }
 
 const CARD_LAYOUT: Record<string, CardLayout> = {
-  core:     { top: '33%',  left: '37%',  width: 172, height: 132 },
-  console:  { top: '5%',   left: '7%',   width: 152, height: 118 },
-  mesh:     { top: '7%',   left: '66%',  width: 152, height: 118 },
-  wing:    { top: '63%',  left: '5%',   width: 152, height: 118 },
-  pulse:    { top: '65%',  left: '65%',  width: 152, height: 118 },
-  channels: { top: '69%',  left: '34%',  width: 152, height: 118 },
-}
+  core: { top: '33%', left: '37%', width: 172, height: 132 },
+  console: { top: '5%', left: '7%', width: 152, height: 118 },
+  mesh: { top: '7%', left: '66%', width: 152, height: 118 },
+  wing: { top: '63%', left: '5%', width: 152, height: 118 },
+  pulse: { top: '65%', left: '65%', width: 152, height: 118 },
+  channels: { top: '69%', left: '34%', width: 152, height: 118 },
+};
 
 // ─── Connection beam definitions ──────────────────────────────────────────────
 
 interface BeamDef {
-  from:     string
-  to:       string
+  from: string;
+  to: string;
   /** Travel speed in seconds for the animated gradient sweep. */
-  dur:      number
+  dur: number;
 }
 
 const BEAMS: BeamDef[] = [
-  { from: 'engine',    to: 'console',  dur: 2.2 },
-  { from: 'engine',    to: 'mesh',     dur: 2.5 },
-  { from: 'engine',    to: 'wing',    dur: 2.8 },
-  { from: 'engine',    to: 'pulse',    dur: 2.4 },
-  { from: 'engine',    to: 'relay', dur: 2.0 },
-  { from: 'mesh',    to: 'pulse',    dur: 3.1 },
-  { from: 'console', to: 'wing',    dur: 3.4 },
-]
+  { from: 'engine', to: 'console', dur: 2.2 },
+  { from: 'engine', to: 'mesh', dur: 2.5 },
+  { from: 'engine', to: 'wing', dur: 2.8 },
+  { from: 'engine', to: 'pulse', dur: 2.4 },
+  { from: 'engine', to: 'relay', dur: 2.0 },
+  { from: 'mesh', to: 'pulse', dur: 3.1 },
+  { from: 'console', to: 'wing', dur: 3.4 },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,24 +63,24 @@ const BEAMS: BeamDef[] = [
  * @param layout - Card layout descriptor
  */
 function cardCenter(layout: CardLayout): { cx: string; cy: string } {
-  const REF_W = 1000
-  const REF_H = 680
+  const REF_W = 1000;
+  const REF_H = 680;
 
-  const topPct  = parseFloat(layout.top)
-  const leftPct = parseFloat(layout.left)
-  const cx = leftPct + (layout.width  / 2 / REF_W) * 100
-  const cy = topPct  + (layout.height / 2 / REF_H) * 100
+  const topPct = parseFloat(layout.top);
+  const leftPct = parseFloat(layout.left);
+  const cx = leftPct + (layout.width / 2 / REF_W) * 100;
+  const cy = topPct + (layout.height / 2 / REF_H) * 100;
 
   return {
     cx: `${cx.toFixed(2)}%`,
     cy: `${cy.toFixed(2)}%`,
-  }
+  };
 }
 
 // Pre-compute all card centres once at module load
 const CENTERS: Record<string, { cx: string; cy: string }> = Object.fromEntries(
   Object.entries(CARD_LAYOUT).map(([id, layout]) => [id, cardCenter(layout)])
-)
+);
 
 // ─── CSS Keyframes ────────────────────────────────────────────────────────────
 //
@@ -111,14 +111,14 @@ const KEYFRAMES = `
       animation: none !important;
     }
   }
-`
+`;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 interface MovingBorderProps {
-  isEngine:   boolean
-  isActive: boolean
-  isAvail:  boolean
+  isEngine: boolean;
+  isActive: boolean;
+  isAvail: boolean;
 }
 
 /**
@@ -129,10 +129,10 @@ interface MovingBorderProps {
  * An inner div masks the card center so only the border ring is exposed.
  */
 function MovingBorder({ isEngine, isActive, isAvail }: MovingBorderProps) {
-  const color  = isAvail ? ORANGE : BLUE_SOON
-  const glow   = isAvail ? ORANGE_GLOW : BLUE_GLOW
-  const radius = isEngine ? '14px' : '12px'
-  const spinCls = isEngine ? 'v12-spin' : 'v12-spin-slow'
+  const color = isAvail ? ORANGE : BLUE_SOON;
+  const glow = isAvail ? ORANGE_GLOW : BLUE_GLOW;
+  const radius = isEngine ? '14px' : '12px';
+  const spinCls = isEngine ? 'v12-spin' : 'v12-spin-slow';
 
   // Active state: brighter sweep + secondary ghost arc
   const gradient = isActive
@@ -152,90 +152,90 @@ function MovingBorder({ isEngine, isActive, isAvail }: MovingBorderProps) {
         #ffffffcc   28deg,
         ${color}66 38deg,
         transparent 80deg
-      )`
+      )`;
 
   return (
     <div
       aria-hidden
       style={{
-        position:     'absolute',
-        inset:        '-1px',
+        position: 'absolute',
+        inset: '-1px',
         borderRadius: radius,
-        overflow:     'hidden',
-        zIndex:       0,
+        overflow: 'hidden',
+        zIndex: 0,
       }}
     >
       {/* Rotating conic gradient */}
       <div
         className={spinCls}
         style={{
-          position:   'absolute',
-          top:        '50%',
-          left:       '50%',
-          width:      '220%',
-          height:     '220%',
-          transform:  'translate(-50%, -50%)',
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          width: '220%',
+          height: '220%',
+          transform: 'translate(-50%, -50%)',
           background: gradient,
         }}
       />
       {/* Inner mask — covers the card body, revealing only the border zone */}
       <div
         style={{
-          position:     'absolute',
-          inset:        '2px',
+          position: 'absolute',
+          inset: '2px',
           borderRadius: isEngine ? '13px' : '11px',
-          background:   '#0a0a0f',
-          zIndex:       1,
+          background: '#0a0a0f',
+          zIndex: 1,
         }}
       />
     </div>
-  )
+  );
 }
 
 interface GlowCardProps {
-  module:     SystemModule
-  isHovered:  boolean
-  isActive:   boolean
-  onHover:    (id: string | null) => void
-  onActivate: (id: string) => void
+  module: SystemModule;
+  isHovered: boolean;
+  isActive: boolean;
+  onHover: (id: string | null) => void;
+  onActivate: (id: string) => void;
 }
 
 /** A single module card with moving border, content, and glow effects. */
 function GlowCard({ module, isHovered, isActive, onHover, onActivate }: GlowCardProps) {
-  const layout  = CARD_LAYOUT[module.id]
-  const isAvail = module.status === 'available'
-  const isEngine  = module.id === 'engine'
+  const layout = CARD_LAYOUT[module.id];
+  const isAvail = module.status === 'available';
+  const isEngine = module.id === 'engine';
 
-  if (!layout) return null
+  if (!layout) return null;
 
-  const color      = isAvail ? ORANGE : BLUE_SOON
-  const glowColor  = isAvail ? ORANGE_GLOW : BLUE_GLOW
-  const glowBright = isAvail ? 'rgba(232, 93, 4, 0.6)' : 'rgba(59, 130, 246, 0.5)'
+  const color = isAvail ? ORANGE : BLUE_SOON;
+  const glowColor = isAvail ? ORANGE_GLOW : BLUE_GLOW;
+  const glowBright = isAvail ? 'rgba(232, 93, 4, 0.6)' : 'rgba(59, 130, 246, 0.5)';
 
   const boxShadow = isActive
     ? `0 0 0 1px ${color}, 0 0 24px ${glowBright}, 0 0 48px ${glowColor}, inset 0 0 24px rgba(0,0,0,0.7)`
     : isHovered
-    ? `0 0 0 1px ${color}88, 0 0 16px ${glowColor}, inset 0 0 16px rgba(0,0,0,0.6)`
-    : `0 0 0 1px rgba(255,255,255,0.055), inset 0 0 16px rgba(0,0,0,0.4)`
+      ? `0 0 0 1px ${color}88, 0 0 16px ${glowColor}, inset 0 0 16px rgba(0,0,0,0.6)`
+      : `0 0 0 1px rgba(255,255,255,0.055), inset 0 0 16px rgba(0,0,0,0.4)`;
 
   const cardBg = isActive
     ? 'linear-gradient(135deg, rgba(28,14,4,0.96) 0%, rgba(14,8,4,0.98) 100%)'
-    : 'linear-gradient(135deg, rgba(16,16,22,0.96) 0%, rgba(10,10,16,0.98) 100%)'
+    : 'linear-gradient(135deg, rgba(16,16,22,0.96) 0%, rgba(10,10,16,0.98) 100%)';
 
   return (
     <motion.div
       variants={REVEAL}
       style={{
         position: 'absolute',
-        top:      layout.top,
-        left:     layout.left,
-        width:    layout.width,
-        height:   layout.height,
-        cursor:   'pointer',
-        zIndex:   4,
+        top: layout.top,
+        left: layout.left,
+        width: layout.width,
+        height: layout.height,
+        cursor: 'pointer',
+        zIndex: 4,
       }}
       whileHover={{ scale: 1.025 }}
-      whileTap={{  scale: 0.975 }}
+      whileTap={{ scale: 0.975 }}
       transition={{ type: 'spring', stiffness: 260, damping: 22 }}
       onMouseEnter={() => onHover(module.id)}
       onMouseLeave={() => onHover(null)}
@@ -248,33 +248,33 @@ function GlowCard({ module, isHovered, isActive, onHover, onActivate }: GlowCard
       <div
         className={isEngine && isActive ? 'v12-core-pulse' : undefined}
         style={{
-          position:      'relative',
-          width:         '100%',
-          height:        '100%',
-          borderRadius:  isEngine ? '13px' : '11px',
-          background:    cardBg,
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          borderRadius: isEngine ? '13px' : '11px',
+          background: cardBg,
           boxShadow,
-          zIndex:        2,
-          padding:       isEngine ? '16px 18px' : '14px 16px',
-          display:       'flex',
+          zIndex: 2,
+          padding: isEngine ? '16px 18px' : '14px 16px',
+          display: 'flex',
           flexDirection: 'column',
-          justifyContent:'space-between',
-          overflow:      'hidden',
-          transition:    'box-shadow 0.35s ease, background 0.35s ease',
+          justifyContent: 'space-between',
+          overflow: 'hidden',
+          transition: 'box-shadow 0.35s ease, background 0.35s ease',
         }}
       >
         {/* Subtle inner dot-grid texture */}
         <div
           aria-hidden
           style={{
-            position:         'absolute',
-            inset:            0,
-            backgroundImage:  'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)',
-            backgroundSize:   '14px 14px',
-            borderRadius:     'inherit',
-            pointerEvents:    'none',
-            opacity:          isHovered || isActive ? 1 : 0.5,
-            transition:       'opacity 0.3s ease',
+            position: 'absolute',
+            inset: 0,
+            backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)',
+            backgroundSize: '14px 14px',
+            borderRadius: 'inherit',
+            pointerEvents: 'none',
+            opacity: isHovered || isActive ? 1 : 0.5,
+            transition: 'opacity 0.3s ease',
           }}
         />
 
@@ -282,25 +282,38 @@ function GlowCard({ module, isHovered, isActive, onHover, onActivate }: GlowCard
         <div
           aria-hidden
           style={{
-            position:       'absolute',
-            inset:          0,
-            background:     'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px)',
-            borderRadius:   'inherit',
-            pointerEvents:  'none',
+            position: 'absolute',
+            inset: 0,
+            background:
+              'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px)',
+            borderRadius: 'inherit',
+            pointerEvents: 'none',
           }}
         />
 
         {/* Top row: module name + status dot */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
           <span
             style={{
-              fontFamily:    'var(--font-ibm-plex-mono, ui-monospace, monospace)',
-              fontSize:      isEngine ? '13px' : '11px',
-              fontWeight:    700,
+              fontFamily: 'var(--font-ibm-plex-mono, ui-monospace, monospace)',
+              fontSize: isEngine ? '13px' : '11px',
+              fontWeight: 700,
               letterSpacing: '0.07em',
               textTransform: 'uppercase',
-              color:         isActive ? '#ffffff' : isHovered ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.78)',
-              transition:    'color 0.3s ease',
+              color: isActive
+                ? '#ffffff'
+                : isHovered
+                  ? 'rgba(255,255,255,0.92)'
+                  : 'rgba(255,255,255,0.78)',
+              transition: 'color 0.3s ease',
             }}
           >
             {module.name}
@@ -309,16 +322,16 @@ function GlowCard({ module, isHovered, isActive, onHover, onActivate }: GlowCard
           <span
             className={isAvail ? 'v12-live-dot' : undefined}
             style={{
-              display:      'inline-block',
-              width:        isAvail ? 7 : 6,
-              height:       isAvail ? 7 : 6,
+              display: 'inline-block',
+              width: isAvail ? 7 : 6,
+              height: isAvail ? 7 : 6,
               borderRadius: '50%',
-              background:   color,
-              boxShadow:    isAvail
+              background: color,
+              boxShadow: isAvail
                 ? `0 0 6px ${ORANGE_GLOW}, 0 0 14px ${ORANGE_DIM}`
                 : `0 0 6px ${BLUE_GLOW}`,
-              opacity:      isAvail ? 1 : 0.5,
-              flexShrink:   0,
+              opacity: isAvail ? 1 : 0.5,
+              flexShrink: 0,
             }}
           />
         </div>
@@ -327,14 +340,14 @@ function GlowCard({ module, isHovered, isActive, onHover, onActivate }: GlowCard
         <div style={{ position: 'relative', zIndex: 1 }}>
           <span
             style={{
-              display:       'block',
-              fontFamily:    'var(--font-ibm-plex-mono, ui-monospace, monospace)',
-              fontSize:      '8px',
+              display: 'block',
+              fontFamily: 'var(--font-ibm-plex-mono, ui-monospace, monospace)',
+              fontSize: '8px',
               letterSpacing: '0.15em',
               textTransform: 'uppercase',
               color,
-              opacity:       isAvail ? 0.9 : 0.45,
-              marginBottom:  '5px',
+              opacity: isAvail ? 0.9 : 0.45,
+              marginBottom: '5px',
             }}
           >
             {module.label}
@@ -342,16 +355,16 @@ function GlowCard({ module, isHovered, isActive, onHover, onActivate }: GlowCard
 
           <p
             style={{
-              fontFamily:          'var(--font-ibm-plex-mono, ui-monospace, monospace)',
-              fontSize:            '9px',
-              lineHeight:          '1.6',
-              color:               isHovered || isActive ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.33)',
-              margin:              0,
-              transition:          'color 0.3s ease',
-              display:             '-webkit-box',
-              WebkitLineClamp:     3,
-              WebkitBoxOrient:     'vertical',
-              overflow:            'hidden',
+              fontFamily: 'var(--font-ibm-plex-mono, ui-monospace, monospace)',
+              fontSize: '9px',
+              lineHeight: '1.6',
+              color: isHovered || isActive ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.33)',
+              margin: 0,
+              transition: 'color 0.3s ease',
+              display: '-webkit-box',
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
             }}
           >
             {module.description}
@@ -359,16 +372,24 @@ function GlowCard({ module, isHovered, isActive, onHover, onActivate }: GlowCard
         </div>
 
         {/* Footer row: status text + bracket decoration */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
           <span
             style={{
-              fontFamily:    'var(--font-ibm-plex-mono, ui-monospace, monospace)',
-              fontSize:      '7.5px',
+              fontFamily: 'var(--font-ibm-plex-mono, ui-monospace, monospace)',
+              fontSize: '7.5px',
               letterSpacing: '0.12em',
               textTransform: 'uppercase',
-              color:         isAvail ? ORANGE : BLUE_SOON,
-              opacity:       isActive ? 0.95 : isAvail ? 0.55 : 0.4,
-              transition:    'opacity 0.3s ease',
+              color: isAvail ? ORANGE : BLUE_SOON,
+              opacity: isActive ? 0.95 : isAvail ? 0.55 : 0.4,
+              transition: 'opacity 0.3s ease',
             }}
           >
             {isActive && isAvail ? '● Online' : isAvail ? 'Active' : 'Coming soon'}
@@ -388,12 +409,12 @@ function GlowCard({ module, isHovered, isActive, onHover, onActivate }: GlowCard
         </div>
       </div>
     </motion.div>
-  )
+  );
 }
 
 interface BeamLayerProps {
-  hoveredId: string | null
-  activeIds: Set<string>
+  hoveredId: string | null;
+  activeIds: Set<string>;
 }
 
 /**
@@ -411,13 +432,13 @@ function BeamLayer({ hoveredId, activeIds }: BeamLayerProps) {
     <svg
       aria-hidden
       style={{
-        position:      'absolute',
-        inset:         0,
-        width:         '100%',
-        height:        '100%',
-        overflow:      'visible',
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        overflow: 'visible',
         pointerEvents: 'none',
-        zIndex:        2,
+        zIndex: 2,
       }}
       // Use a viewBox so % values on gradient coords are consistent
       viewBox="0 0 100 100"
@@ -433,31 +454,36 @@ function BeamLayer({ hoveredId, activeIds }: BeamLayerProps) {
         </filter>
 
         {BEAMS.map((beam, i) => {
-          const fromC = CENTERS[beam.from]
-          const toC   = CENTERS[beam.to]
-          if (!fromC || !toC) return null
+          const fromC = CENTERS[beam.from];
+          const toC = CENTERS[beam.to];
+          if (!fromC || !toC) return null;
 
-          const isLit = hoveredId === beam.from || hoveredId === beam.to
-            || activeIds.has(beam.from) || activeIds.has(beam.to)
+          const isLit =
+            hoveredId === beam.from ||
+            hoveredId === beam.to ||
+            activeIds.has(beam.from) ||
+            activeIds.has(beam.to);
 
           // Convert e.g. "52.30%" → "52.30" for viewBox-based SVG coords
-          const x1 = parseFloat(fromC.cx)
-          const y1 = parseFloat(fromC.cy)
-          const x2 = parseFloat(toC.cx)
-          const y2 = parseFloat(toC.cy)
+          const x1 = parseFloat(fromC.cx);
+          const y1 = parseFloat(fromC.cy);
+          const x2 = parseFloat(toC.cx);
+          const y2 = parseFloat(toC.cy);
 
           return (
             <linearGradient
               key={`v12-grad-${i}`}
               id={`v12-grad-${i}`}
               gradientUnits="userSpaceOnUse"
-              x1={x1} y1={y1}
-              x2={x2} y2={y2}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
             >
-              <stop offset="0%"   stopColor={ORANGE} stopOpacity="0" />
-              <stop offset="35%"  stopColor={ORANGE} stopOpacity={isLit ? '0.9' : '0.4'} />
-              <stop offset="50%"  stopColor="#ffffff" stopOpacity={isLit ? '1.0' : '0.5'} />
-              <stop offset="65%"  stopColor={ORANGE} stopOpacity={isLit ? '0.9' : '0.4'} />
+              <stop offset="0%" stopColor={ORANGE} stopOpacity="0" />
+              <stop offset="35%" stopColor={ORANGE} stopOpacity={isLit ? '0.9' : '0.4'} />
+              <stop offset="50%" stopColor="#ffffff" stopOpacity={isLit ? '1.0' : '0.5'} />
+              <stop offset="65%" stopColor={ORANGE} stopOpacity={isLit ? '0.9' : '0.4'} />
               <stop offset="100%" stopColor={ORANGE} stopOpacity="0" />
               <animateTransform
                 attributeName="gradientTransform"
@@ -469,35 +495,44 @@ function BeamLayer({ hoveredId, activeIds }: BeamLayerProps) {
                 additive="sum"
               />
             </linearGradient>
-          )
+          );
         })}
       </defs>
 
       {BEAMS.map((beam, i) => {
-        const fromC = CENTERS[beam.from]
-        const toC   = CENTERS[beam.to]
-        if (!fromC || !toC) return null
+        const fromC = CENTERS[beam.from];
+        const toC = CENTERS[beam.to];
+        if (!fromC || !toC) return null;
 
-        const isLit = hoveredId === beam.from || hoveredId === beam.to
-          || activeIds.has(beam.from) || activeIds.has(beam.to)
+        const isLit =
+          hoveredId === beam.from ||
+          hoveredId === beam.to ||
+          activeIds.has(beam.from) ||
+          activeIds.has(beam.to);
 
-        const x1 = parseFloat(fromC.cx)
-        const y1 = parseFloat(fromC.cy)
-        const x2 = parseFloat(toC.cx)
-        const y2 = parseFloat(toC.cy)
+        const x1 = parseFloat(fromC.cx);
+        const y1 = parseFloat(fromC.cy);
+        const x2 = parseFloat(toC.cx);
+        const y2 = parseFloat(toC.cy);
 
         return (
           <g key={`v12-beam-${i}`}>
             {/* Static dim track */}
             <line
-              x1={x1} y1={y1} x2={x2} y2={y2}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
               stroke={isLit ? ORANGE_GLOW : 'rgba(255,255,255,0.05)'}
               strokeWidth={isLit ? 0.18 : 0.08}
               style={{ transition: 'stroke 0.35s ease, stroke-width 0.35s ease' }}
             />
             {/* Animated traveling pulse */}
             <line
-              x1={x1} y1={y1} x2={x2} y2={y2}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
               stroke={`url(#v12-grad-${i})`}
               strokeWidth={isLit ? 0.28 : 0.12}
               strokeLinecap="round"
@@ -506,16 +541,16 @@ function BeamLayer({ hoveredId, activeIds }: BeamLayerProps) {
               style={{ transition: 'stroke-width 0.35s ease, opacity 0.35s ease' }}
             />
           </g>
-        )
+        );
       })}
     </svg>
-  )
+  );
 }
 
 interface SpotlightProps {
-  x:       number
-  y:       number
-  visible: boolean
+  x: number;
+  y: number;
+  visible: boolean;
 }
 
 /** Radial gradient spotlight that follows the cursor across the container. */
@@ -524,22 +559,22 @@ function Spotlight({ x, y, visible }: SpotlightProps) {
     <div
       aria-hidden
       style={{
-        position:      'absolute',
-        inset:         0,
+        position: 'absolute',
+        inset: 0,
         pointerEvents: 'none',
-        zIndex:        3,
-        opacity:       visible ? 1 : 0,
-        transition:    'opacity 0.5s ease',
-        background:    `radial-gradient(
+        zIndex: 3,
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 0.5s ease',
+        background: `radial-gradient(
           480px circle at ${x}px ${y}px,
           rgba(232, 93, 4, 0.065) 0%,
           rgba(232, 93, 4, 0.022) 40%,
           transparent 68%
         )`,
-        borderRadius:  'inherit',
+        borderRadius: 'inherit',
       }}
     />
-  )
+  );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -552,40 +587,40 @@ function Spotlight({ x, y, visible }: SpotlightProps) {
  * pulses. Dark cyberpunk aesthetic: hover to illuminate, click to activate.
  */
 export function DiagramV12({ modules }: { modules: SystemModule[] }) {
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const [activeIds, setActiveIds] = useState<Set<string>>(new Set(['engine']))
-  const [spotlight, setSpotlight] = useState({ x: 0, y: 0, visible: false })
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [activeIds, setActiveIds] = useState<Set<string>>(new Set(['engine']));
+  const [spotlight, setSpotlight] = useState({ x: 0, y: 0, visible: false });
 
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = containerRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setSpotlight({ x: e.clientX - rect.left, y: e.clientY - rect.top, visible: true })
-  }, [])
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setSpotlight({ x: e.clientX - rect.left, y: e.clientY - rect.top, visible: true });
+  }, []);
 
   const handleMouseLeave = useCallback(() => {
-    setSpotlight((prev) => ({ ...prev, visible: false }))
-    setHoveredId(null)
-  }, [])
+    setSpotlight((prev) => ({ ...prev, visible: false }));
+    setHoveredId(null);
+  }, []);
 
   const handleHover = useCallback((id: string | null) => {
-    setHoveredId(id)
-  }, [])
+    setHoveredId(id);
+  }, []);
 
   const handleActivate = useCallback((id: string) => {
     setActiveIds((prev) => {
-      const next = new Set(prev)
+      const next = new Set(prev);
       // Engine is always active — cannot be toggled off
-      if (id === 'engine') return next
+      if (id === 'engine') return next;
       if (next.has(id)) {
-        next.delete(id)
+        next.delete(id);
       } else {
-        next.add(id)
+        next.add(id);
       }
-      return next
-    })
-  }, [])
+      return next;
+    });
+  }, []);
 
   return (
     <>
@@ -594,26 +629,26 @@ export function DiagramV12({ modules }: { modules: SystemModule[] }) {
       {/* Outermost wrapper — provides the dark background this diagram needs */}
       <div
         style={{
-          position:     'relative',
-          width:        '100%',
+          position: 'relative',
+          width: '100%',
           borderRadius: '16px',
-          overflow:     'hidden',
-          background:   'linear-gradient(160deg, #09090f 0%, #0d0a0f 45%, #080810 100%)',
-          minHeight:    '600px',
+          overflow: 'hidden',
+          background: 'linear-gradient(160deg, #09090f 0%, #0d0a0f 45%, #080810 100%)',
+          minHeight: '600px',
         }}
       >
         {/* Background pixel-grid texture */}
         <div
           aria-hidden
           style={{
-            position:        'absolute',
-            inset:           0,
+            position: 'absolute',
+            inset: 0,
             backgroundImage: `
               linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
               linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px)
             `,
             backgroundSize: '52px 52px',
-            pointerEvents:  'none',
+            pointerEvents: 'none',
           }}
         />
 
@@ -621,30 +656,31 @@ export function DiagramV12({ modules }: { modules: SystemModule[] }) {
         <div
           aria-hidden
           style={{
-            position:      'absolute',
-            top:           '33%',
-            left:          '37%',
-            width:         '300px',
-            height:        '240px',
-            borderRadius:  '50%',
-            background:    'radial-gradient(ellipse, rgba(232,93,4,0.07) 0%, transparent 70%)',
-            transform:     'translate(-50%, -50%)',
-            filter:        'blur(32px)',
+            position: 'absolute',
+            top: '33%',
+            left: '37%',
+            width: '300px',
+            height: '240px',
+            borderRadius: '50%',
+            background: 'radial-gradient(ellipse, rgba(232,93,4,0.07) 0%, transparent 70%)',
+            transform: 'translate(-50%, -50%)',
+            filter: 'blur(32px)',
             pointerEvents: 'none',
           }}
         />
 
         {/* Corner brackets — HUD aesthetic */}
         {[
-          { style: { top: '12px',    left:  '12px',  transform: 'rotate(0deg)'   } },
-          { style: { top: '12px',    right: '12px',  transform: 'rotate(90deg)'  } },
-          { style: { bottom: '12px', left:  '12px',  transform: 'rotate(270deg)' } },
-          { style: { bottom: '12px', right: '12px',  transform: 'rotate(180deg)' } },
+          { style: { top: '12px', left: '12px', transform: 'rotate(0deg)' } },
+          { style: { top: '12px', right: '12px', transform: 'rotate(90deg)' } },
+          { style: { bottom: '12px', left: '12px', transform: 'rotate(270deg)' } },
+          { style: { bottom: '12px', right: '12px', transform: 'rotate(180deg)' } },
         ].map(({ style }, i) => (
           <svg
             key={i}
             aria-hidden
-            width="18" height="18"
+            width="18"
+            height="18"
             viewBox="0 0 18 18"
             fill="none"
             style={{ position: 'absolute', opacity: 0.28, zIndex: 6, ...style }}
@@ -696,16 +732,16 @@ export function DiagramV12({ modules }: { modules: SystemModule[] }) {
           <div
             aria-hidden
             style={{
-              position:      'absolute',
-              bottom:        '14px',
-              left:          '18px',
-              zIndex:        10,
-              fontFamily:    'var(--font-ibm-plex-mono, ui-monospace, monospace)',
-              fontSize:      '7.5px',
+              position: 'absolute',
+              bottom: '14px',
+              left: '18px',
+              zIndex: 10,
+              fontFamily: 'var(--font-ibm-plex-mono, ui-monospace, monospace)',
+              fontSize: '7.5px',
               letterSpacing: '0.14em',
               textTransform: 'uppercase',
-              color:         ORANGE,
-              opacity:       0.35,
+              color: ORANGE,
+              opacity: 0.35,
               pointerEvents: 'none',
             }}
           >
@@ -716,40 +752,41 @@ export function DiagramV12({ modules }: { modules: SystemModule[] }) {
           <div
             aria-hidden
             style={{
-              position:      'absolute',
-              bottom:        '14px',
-              right:         '18px',
-              zIndex:        10,
-              display:       'flex',
-              alignItems:    'center',
-              gap:           '16px',
+              position: 'absolute',
+              bottom: '14px',
+              right: '18px',
+              zIndex: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
               pointerEvents: 'none',
             }}
           >
             {[
-              { color: ORANGE,    glow: ORANGE_GLOW, label: 'Available', opacity: 1    },
-              { color: BLUE_SOON, glow: BLUE_GLOW,   label: 'Planned',   opacity: 0.55 },
+              { color: ORANGE, glow: ORANGE_GLOW, label: 'Available', opacity: 1 },
+              { color: BLUE_SOON, glow: BLUE_GLOW, label: 'Planned', opacity: 0.55 },
             ].map(({ color, glow, label, opacity }) => (
               <span
                 key={label}
                 style={{
-                  display:       'flex',
-                  alignItems:    'center',
-                  gap:           '5px',
-                  fontFamily:    'var(--font-ibm-plex-mono, ui-monospace, monospace)',
-                  fontSize:      '7.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontFamily: 'var(--font-ibm-plex-mono, ui-monospace, monospace)',
+                  fontSize: '7.5px',
                   letterSpacing: '0.1em',
                   textTransform: 'uppercase',
-                  color:         'rgba(255,255,255,0.28)',
+                  color: 'rgba(255,255,255,0.28)',
                 }}
               >
                 <span
                   style={{
-                    display:      'inline-block',
-                    width:        6, height: 6,
+                    display: 'inline-block',
+                    width: 6,
+                    height: 6,
                     borderRadius: '50%',
-                    background:   color,
-                    boxShadow:    `0 0 5px ${glow}`,
+                    background: color,
+                    boxShadow: `0 0 5px ${glow}`,
                     opacity,
                   }}
                 />
@@ -762,19 +799,19 @@ export function DiagramV12({ modules }: { modules: SystemModule[] }) {
           <p
             aria-hidden
             style={{
-              position:      'absolute',
-              top:           '14px',
-              left:          '50%',
-              transform:     'translateX(-50%)',
-              zIndex:        10,
-              fontFamily:    'var(--font-ibm-plex-mono, ui-monospace, monospace)',
-              fontSize:      '7.5px',
+              position: 'absolute',
+              top: '14px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 10,
+              fontFamily: 'var(--font-ibm-plex-mono, ui-monospace, monospace)',
+              fontSize: '7.5px',
               letterSpacing: '0.12em',
               textTransform: 'uppercase',
-              color:         'rgba(255,255,255,0.18)',
-              whiteSpace:    'nowrap',
+              color: 'rgba(255,255,255,0.18)',
+              whiteSpace: 'nowrap',
               pointerEvents: 'none',
-              margin:        0,
+              margin: 0,
             }}
           >
             Hover to illuminate · Click to activate
@@ -782,5 +819,5 @@ export function DiagramV12({ modules }: { modules: SystemModule[] }) {
         </div>
       </div>
     </>
-  )
+  );
 }

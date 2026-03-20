@@ -1,8 +1,9 @@
-import type { MetadataRoute } from 'next'
-import { siteConfig } from '@/config/site'
-import { source, blog } from '@/lib/source'
+import type { MetadataRoute } from 'next';
+import { siteConfig } from '@/config/site';
+import { source, blog } from '@/lib/source';
+import { features } from '@/layers/features/marketing';
 
-const BASE_URL = siteConfig.url
+const BASE_URL = siteConfig.url;
 
 /**
  * Generate the sitemap for the DorkOS marketing site.
@@ -42,21 +43,37 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'weekly',
       priority: 0.6,
     },
-  ]
+  ];
+
+  const featureCatalogPage: MetadataRoute.Sitemap = [
+    {
+      url: `${BASE_URL}/features`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+  ];
+
+  const featurePages: MetadataRoute.Sitemap = features.map((feature) => ({
+    url: `${BASE_URL}/features/${feature.slug}`,
+    lastModified: new Date(),
+    changeFrequency: 'monthly' as const,
+    priority: 0.8,
+  }));
 
   const docPages: MetadataRoute.Sitemap = source.getPages().map((page) => ({
     url: `${BASE_URL}${page.url}`,
     lastModified: new Date(),
     changeFrequency: 'weekly' as const,
     priority: 0.7,
-  }))
+  }));
 
   const blogPages: MetadataRoute.Sitemap = blog.getPages().map((page) => ({
     url: `${BASE_URL}${page.url}`,
     lastModified: new Date(),
     changeFrequency: 'monthly' as const,
     priority: 0.6,
-  }))
+  }));
 
-  return [...staticPages, ...docPages, ...blogPages]
+  return [...staticPages, ...featureCatalogPage, ...featurePages, ...docPages, ...blogPages];
 }

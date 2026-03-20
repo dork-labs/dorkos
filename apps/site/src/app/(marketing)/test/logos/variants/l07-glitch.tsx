@@ -93,7 +93,8 @@ function Letterforms() {
         Right curved cap: a thick arc closing the bowl.
         Approximated with a filled path: outer arc minus inner arc.
       */}
-      <path d="
+      <path
+        d="
         M 80 10
         Q 100 10 100 60
         Q 100 110 80 110
@@ -101,7 +102,8 @@ function Letterforms() {
         Q 84 110 84 60
         Q 84 10 60 10
         Z
-      " />
+      "
+      />
       {/* Bridge fill connecting bars to curve cap */}
       <rect x="60" y="10" width="20" height="16" />
       <rect x="60" y="94" width="20" height="16" />

@@ -1,8 +1,9 @@
-import { source, blog } from '@/lib/source'
-import { siteConfig } from '@/config/site'
-import { subsystems } from '@/layers/features/marketing/lib/subsystems'
+import { source, blog } from '@/lib/source';
+import { siteConfig } from '@/config/site';
+import { subsystems } from '@/layers/features/marketing/lib/subsystems';
+import { features } from '@/layers/features/marketing/lib/features';
 
-export const dynamic = 'force-static'
+export const dynamic = 'force-static';
 
 const SECTION_TITLES: Record<string, string> = {
   'getting-started': 'Getting Started',
@@ -13,7 +14,7 @@ const SECTION_TITLES: Record<string, string> = {
   'self-hosting': 'Self-Hosting',
   contributing: 'Contributing',
   changelog: 'Changelog',
-}
+};
 
 const SECTION_ORDER = [
   'getting-started',
@@ -24,78 +25,82 @@ const SECTION_ORDER = [
   'self-hosting',
   'contributing',
   'changelog',
-]
+];
 
 function toTitleCase(slug: string): string {
   return slug
     .split('-')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
+    .join(' ');
 }
 
 function getSectionTitle(slug: string): string {
-  return SECTION_TITLES[slug] ?? toTitleCase(slug)
+  return SECTION_TITLES[slug] ?? toTitleCase(slug);
 }
 
 function buildDocsSections(): string {
-  const pages = source.getPages()
+  const pages = source.getPages();
 
   // Group by first slug segment; skip pages with no slugs (root /docs page)
-  const groups = new Map<string, typeof pages>()
+  const groups = new Map<string, typeof pages>();
   for (const page of pages) {
-    if (page.slugs.length === 0) continue
-    const section = page.slugs[0]
+    if (page.slugs.length === 0) continue;
+    const section = page.slugs[0];
     // For the api section, only include the root page (slugs.length === 1)
-    if (section === 'api' && page.slugs.length > 1) continue
-    if (!groups.has(section)) groups.set(section, [])
-    groups.get(section)!.push(page)
+    if (section === 'api' && page.slugs.length > 1) continue;
+    if (!groups.has(section)) groups.set(section, []);
+    groups.get(section)!.push(page);
   }
 
   // Sort sections: known order first, then unknown alphabetically
-  const knownSections = SECTION_ORDER.filter((s) => groups.has(s))
-  const unknownSections = [...groups.keys()]
-    .filter((s) => !SECTION_ORDER.includes(s))
-    .sort()
-  const orderedSections = [...knownSections, ...unknownSections]
+  const knownSections = SECTION_ORDER.filter((s) => groups.has(s));
+  const unknownSections = [...groups.keys()].filter((s) => !SECTION_ORDER.includes(s)).sort();
+  const orderedSections = [...knownSections, ...unknownSections];
 
   return orderedSections
     .map((section) => {
-      const pages = groups.get(section)!
-      const title = getSectionTitle(section)
+      const pages = groups.get(section)!;
+      const title = getSectionTitle(section);
       const lines = pages.map((page) => {
-        const url = `${siteConfig.url}${page.url}`
-        const desc = page.data.description
-        return desc ? `- [${page.data.title}](${url}): ${desc}` : `- [${page.data.title}](${url})`
-      })
-      return `### ${title}\n${lines.join('\n')}`
+        const url = `${siteConfig.url}${page.url}`;
+        const desc = page.data.description;
+        return desc ? `- [${page.data.title}](${url}): ${desc}` : `- [${page.data.title}](${url})`;
+      });
+      return `### ${title}\n${lines.join('\n')}`;
     })
-    .join('\n\n')
+    .join('\n\n');
 }
 
 function buildBlogSection(): string {
   const posts = blog
     .getPages()
-    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime())
+    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
 
   const lines = posts.map((post) => {
-    const url = `${siteConfig.url}${post.url}`
+    const url = `${siteConfig.url}${post.url}`;
     const date = new Date(post.data.date).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
-    })
-    const desc = post.data.description
+    });
+    const desc = post.data.description;
     return desc
       ? `- [${post.data.title}](${url}): ${desc} (${date})`
-      : `- [${post.data.title}](${url}) (${date})`
-  })
+      : `- [${post.data.title}](${url}) (${date})`;
+  });
 
-  return lines.join('\n')
+  return lines.join('\n');
 }
 
 function buildCapabilitiesSection(): string {
-  const available = subsystems.filter((s) => s.status === 'available')
-  return available.map((s) => `- **${s.name}**: ${s.description}`).join('\n')
+  const available = subsystems.filter((s) => s.status === 'available');
+  return available.map((s) => `- **${s.name}**: ${s.description}`).join('\n');
+}
+
+function buildFeaturesSection(): string {
+  return features
+    .map((f) => `- **${f.name}** (${f.category}): ${f.tagline}`)
+    .join('\n');
 }
 
 /**
@@ -115,6 +120,10 @@ DorkOS is an OS-layer for AI agents that provides the scheduling, memory, commun
 
 ${buildCapabilitiesSection()}
 
+## Features
+
+${buildFeaturesSection()}
+
 ## Documentation
 
 ${buildDocsSections()}
@@ -131,11 +140,11 @@ RSS feed: ${siteConfig.url}/blog/feed.xml
 - GitHub: ${siteConfig.github}
 - npm: ${siteConfig.npm}
 - Contact: ${siteConfig.contactEmail}
-`
+`;
 
   return new Response(text, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
     },
-  })
+  });
 }

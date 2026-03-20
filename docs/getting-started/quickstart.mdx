@@ -74,27 +74,32 @@ The **sidebar** lists every conversation session across all your Claude Code cli
 - Click a session to switch to it
 - Click **New Session** to start fresh
 - History persists across restarts
+
 </Tab>
 
 <Tab value="Slash Commands">
-Type `/` in the chat input to open the **command palette**. Slash commands load from `.claude/commands/` in your working directory and inject predefined prompts or workflows into the conversation.
+  Type `/` in the chat input to open the **command palette**. Slash commands load from
+  `.claude/commands/` in your working directory and inject predefined prompts or workflows into the
+  conversation.
 </Tab>
 
 <Tab value="Working Directory">
-DorkOS operates in a working directory, the same way the Claude Code CLI does. By default it uses the directory where you ran `dorkos`. Use the **directory picker** in the sidebar to switch without restarting.
+  DorkOS operates in a working directory, the same way the Claude Code CLI does. By default it uses
+  the directory where you ran `dorkos`. Use the **directory picker** in the sidebar to switch
+  without restarting.
 </Tab>
 
 </Tabs>
 
 ## CLI Quick Reference
 
-| Flag | Short | Description | Default |
-|------|-------|-------------|---------|
-| `--port <port>` | `-p` | Server port | `4242` |
-| `--dir <path>` | `-d` | Working directory | Current directory |
-| `--boundary <path>` | `-b` | Directory access boundary | Home directory |
-| `--tunnel` | `-t` | Enable ngrok tunnel | Off |
-| `--log-level <level>` | `-l` | Log verbosity (`fatal` through `trace`) | `info` |
+| Flag                  | Short | Description                             | Default           |
+| --------------------- | ----- | --------------------------------------- | ----------------- |
+| `--port <port>`       | `-p`  | Server port                             | `4242`            |
+| `--dir <path>`        | `-d`  | Working directory                       | Current directory |
+| `--boundary <path>`   | `-b`  | Directory access boundary               | Home directory    |
+| `--tunnel`            | `-t`  | Enable ngrok tunnel                     | Off               |
+| `--log-level <level>` | `-l`  | Log verbosity (`fatal` through `trace`) | `info`            |
 
 ## Next Steps
 

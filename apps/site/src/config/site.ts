@@ -17,6 +17,6 @@ export const siteConfig = {
    * Set to `true` to hide the banner completely.
    */
   disableCookieBanner: true,
-} as const
+} as const;
 
-export type SiteConfig = typeof siteConfig
+export type SiteConfig = typeof siteConfig;

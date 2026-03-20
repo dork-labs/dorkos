@@ -1,51 +1,51 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { motion } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
+import { useState } from 'react';
+import { motion } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
 import {
   STAGGER,
   SCALE_IN,
   DRAW_PATH,
   VIEWPORT,
-} from '@/layers/features/marketing/lib/motion-variants'
+} from '@/layers/features/marketing/lib/motion-variants';
 
 // ─── Geometry constants ────────────────────────────────────────────────────────
 
-const VB_W = 400
-const VB_H = 640
+const VB_W = 400;
+const VB_H = 640;
 
 /** Horizontal center of the helix. */
-const CX = 200
+const CX = 200;
 
 /** Amplitude: how far each strand swings from center. */
-const AMP = 80
+const AMP = 80;
 
 /** Y positions of the three base-pair rungs. */
-const RUNG_Y = [130, 320, 510] as const
+const RUNG_Y = [130, 320, 510] as const;
 
 /** Y midpoints between rungs — where strands cross. */
 const CROSS_Y = [
   (RUNG_Y[0] + RUNG_Y[1]) / 2, // 225
   (RUNG_Y[1] + RUNG_Y[2]) / 2, // 415
-] as const
+] as const;
 
 /** Node radius. */
-const NODE_R = 22
+const NODE_R = 22;
 
 /** Bezier control point vertical offset for the S-curve segments. */
-const CP_DY = 52
+const CP_DY = 52;
 
 // ─── Brand colours ─────────────────────────────────────────────────────────────
 
-const ORANGE = '#E85D04'
-const BLUE = '#4A90A4'
-const ORANGE_DIM = 'rgba(232,93,4,0.28)'
-const BLUE_DIM = 'rgba(74,144,164,0.28)'
-const CREAM = '#FFFEFB'
-const CHARCOAL = '#1A1814'
-const WARM_GRAY = '#7A756A'
-const RUNG_COLOR = 'rgba(139,90,43,0.22)'
+const ORANGE = '#E85D04';
+const BLUE = '#4A90A4';
+const ORANGE_DIM = 'rgba(232,93,4,0.28)';
+const BLUE_DIM = 'rgba(74,144,164,0.28)';
+const CREAM = '#FFFEFB';
+const CHARCOAL = '#1A1814';
+const WARM_GRAY = '#7A756A';
+const RUNG_COLOR = 'rgba(139,90,43,0.22)';
 
 // ─── Module layout ─────────────────────────────────────────────────────────────
 //
@@ -54,8 +54,8 @@ const RUNG_COLOR = 'rgba(139,90,43,0.22)'
 //
 // Each triplet: [moduleId, rungIndex]
 
-const LEFT_IDS = ['console', 'engine', 'wing'] as const
-const RIGHT_IDS = ['pulse', 'mesh', 'relay'] as const
+const LEFT_IDS = ['console', 'engine', 'wing'] as const;
+const RIGHT_IDS = ['pulse', 'mesh', 'relay'] as const;
 
 // ─── SVG path builders ─────────────────────────────────────────────────────────
 
@@ -73,13 +73,13 @@ function buildLeftStrand(): string {
   //   CROSS_Y[1]: (CX, CROSS_Y[1])        — crossing (in front of right strand)
   //   RUNG_Y[2]: (CX - AMP, RUNG_Y[2])   — left extreme (Wing node)
 
-  const x0 = CX - AMP
-  const x2 = CX + AMP
-  const y0 = RUNG_Y[0]
-  const yc0 = CROSS_Y[0]
-  const y1 = RUNG_Y[1]
-  const yc1 = CROSS_Y[1]
-  const y2 = RUNG_Y[2]
+  const x0 = CX - AMP;
+  const x2 = CX + AMP;
+  const y0 = RUNG_Y[0];
+  const yc0 = CROSS_Y[0];
+  const y1 = RUNG_Y[1];
+  const yc1 = CROSS_Y[1];
+  const y2 = RUNG_Y[2];
 
   return [
     `M ${x0} ${y0}`,
@@ -91,7 +91,7 @@ function buildLeftStrand(): string {
     `C ${x2} ${y1 + CP_DY}  ${CX} ${yc1 - CP_DY}  ${CX} ${yc1}`,
     // Segment 4: crossing → left-extreme
     `C ${CX} ${yc1 + CP_DY}  ${x0} ${y2 - CP_DY}  ${x0} ${y2}`,
-  ].join(' ')
+  ].join(' ');
 }
 
 /**
@@ -101,13 +101,13 @@ function buildLeftStrand(): string {
  * swings left, crosses again, back to right-extreme.
  */
 function buildRightStrand(): string {
-  const x0 = CX + AMP
-  const x2 = CX - AMP
-  const y0 = RUNG_Y[0]
-  const yc0 = CROSS_Y[0]
-  const y1 = RUNG_Y[1]
-  const yc1 = CROSS_Y[1]
-  const y2 = RUNG_Y[2]
+  const x0 = CX + AMP;
+  const x2 = CX - AMP;
+  const y0 = RUNG_Y[0];
+  const yc0 = CROSS_Y[0];
+  const y1 = RUNG_Y[1];
+  const yc1 = CROSS_Y[1];
+  const y2 = RUNG_Y[2];
 
   return [
     `M ${x0} ${y0}`,
@@ -115,38 +115,38 @@ function buildRightStrand(): string {
     `C ${CX} ${yc0 + CP_DY}  ${x2} ${y1 - CP_DY}  ${x2} ${y1}`,
     `C ${x2} ${y1 + CP_DY}  ${CX} ${yc1 - CP_DY}  ${CX} ${yc1}`,
     `C ${CX} ${yc1 + CP_DY}  ${x0} ${y2 - CP_DY}  ${x0} ${y2}`,
-  ].join(' ')
+  ].join(' ');
 }
 
 // Pre-compute paths (stable references, not recalculated on every render)
-const LEFT_STRAND_D = buildLeftStrand()
-const RIGHT_STRAND_D = buildRightStrand()
+const LEFT_STRAND_D = buildLeftStrand();
+const RIGHT_STRAND_D = buildRightStrand();
 
 // ─── Node positions ────────────────────────────────────────────────────────────
 
 /** X position of left-strand nodes at each rung. Alternates: left, right, left. */
 function leftNodeX(rungIndex: number): number {
   // Rung 0 and 2: left extreme; Rung 1: right extreme (strand has swung right)
-  return rungIndex === 1 ? CX + AMP : CX - AMP
+  return rungIndex === 1 ? CX + AMP : CX - AMP;
 }
 
 /** X position of right-strand nodes at each rung (mirror of left). */
 function rightNodeX(rungIndex: number): number {
-  return rungIndex === 1 ? CX - AMP : CX + AMP
+  return rungIndex === 1 ? CX - AMP : CX + AMP;
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 interface HelixRungProps {
-  rungIndex: number
-  delay: number
+  rungIndex: number;
+  delay: number;
 }
 
 /** Horizontal connecting rung between a base pair. */
 function HelixRung({ rungIndex, delay }: HelixRungProps) {
-  const y = RUNG_Y[rungIndex]
-  const lx = leftNodeX(rungIndex)
-  const rx = rightNodeX(rungIndex)
+  const y = RUNG_Y[rungIndex];
+  const lx = leftNodeX(rungIndex);
+  const rx = rightNodeX(rungIndex);
 
   const variant = {
     hidden: { pathLength: 0, opacity: 0 },
@@ -155,7 +155,7 @@ function HelixRung({ rungIndex, delay }: HelixRungProps) {
       opacity: 1,
       transition: { duration: 0.6, ease: 'easeInOut' as const, delay },
     },
-  }
+  };
 
   return (
     <motion.line
@@ -168,14 +168,14 @@ function HelixRung({ rungIndex, delay }: HelixRungProps) {
       strokeLinecap="round"
       variants={variant}
     />
-  )
+  );
 }
 
 interface HelixNodeProps {
-  module: SystemModule
-  rungIndex: number
-  side: 'left' | 'right'
-  delay: number
+  module: SystemModule;
+  rungIndex: number;
+  side: 'left' | 'right';
+  delay: number;
 }
 
 /**
@@ -183,17 +183,17 @@ interface HelixNodeProps {
  * Available modules are filled; coming-soon modules are outlined.
  */
 function HelixNode({ module, rungIndex, side, delay }: HelixNodeProps) {
-  const y = RUNG_Y[rungIndex]
-  const x = side === 'left' ? leftNodeX(rungIndex) : rightNodeX(rungIndex)
-  const isAvailable = module.status === 'available'
-  const color = side === 'left' ? ORANGE : BLUE
-  const colorDim = side === 'left' ? ORANGE_DIM : BLUE_DIM
-  const gradId = `node-grad-${module.id}`
+  const y = RUNG_Y[rungIndex];
+  const x = side === 'left' ? leftNodeX(rungIndex) : rightNodeX(rungIndex);
+  const isAvailable = module.status === 'available';
+  const color = side === 'left' ? ORANGE : BLUE;
+  const colorDim = side === 'left' ? ORANGE_DIM : BLUE_DIM;
+  const gradId = `node-grad-${module.id}`;
 
   // Label anchor: push outward from center
-  const isLeft = x < CX
-  const labelX = isLeft ? x - NODE_R - 10 : x + NODE_R + 10
-  const textAnchor = isLeft ? 'end' : 'start'
+  const isLeft = x < CX;
+  const labelX = isLeft ? x - NODE_R - 10 : x + NODE_R + 10;
+  const textAnchor = isLeft ? 'end' : 'start';
 
   const variant = {
     hidden: { opacity: 0, scale: 0 },
@@ -207,21 +207,12 @@ function HelixNode({ module, rungIndex, side, delay }: HelixNodeProps) {
         delay,
       },
     },
-  }
+  };
 
   return (
-    <motion.g
-      variants={variant}
-      style={{ transformOrigin: `${x}px ${y}px` }}
-    >
+    <motion.g variants={variant} style={{ transformOrigin: `${x}px ${y}px` }}>
       {/* Soft ambient glow behind node */}
-      <circle
-        cx={x}
-        cy={y}
-        r={NODE_R + 12}
-        fill={isAvailable ? color : colorDim}
-        opacity="0.08"
-      />
+      <circle cx={x} cy={y} r={NODE_R + 12} fill={isAvailable ? color : colorDim} opacity="0.08" />
 
       {/* Node body */}
       {isAvailable ? (
@@ -290,16 +281,16 @@ function HelixNode({ module, rungIndex, side, delay }: HelixNodeProps) {
         {module.label.toUpperCase()}
       </text>
     </motion.g>
-  )
+  );
 }
 
 interface NucleotideParticleProps {
-  pathId: string
-  dur: string
-  begin: string
-  color: string
-  r?: number
-  opacity?: number
+  pathId: string;
+  dur: string;
+  begin: string;
+  color: string;
+  r?: number;
+  opacity?: number;
 }
 
 /** SMIL animateMotion particle that travels along a helix backbone strand. */
@@ -317,7 +308,7 @@ function NucleotideParticle({
         <mpath href={`#${pathId}`} />
       </animateMotion>
     </circle>
-  )
+  );
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
@@ -331,21 +322,21 @@ function NucleotideParticle({
  * Paired modules are connected by horizontal rungs.
  */
 export function DiagramV9({ modules }: { modules: SystemModule[] }) {
-  const [entranceDone, setEntranceDone] = useState(false)
+  const [entranceDone, setEntranceDone] = useState(false);
 
   const leftModules = LEFT_IDS.map((id) => modules.find((m) => m.id === id)).filter(
-    Boolean,
-  ) as SystemModule[]
+    Boolean
+  ) as SystemModule[];
 
   const rightModules = RIGHT_IDS.map((id) => modules.find((m) => m.id === id)).filter(
-    Boolean,
-  ) as SystemModule[]
+    Boolean
+  ) as SystemModule[];
 
   // Rung delays: appear after both strands have drawn through their Y position.
   // Strand draw takes ~1.8s total; each rung appears proportionally.
-  const rungDelays = [1.0, 1.5, 2.0]
+  const rungDelays = [1.0, 1.5, 2.0];
   // Node delays: slightly after their rung
-  const nodeDelay = (rungIndex: number) => rungDelays[rungIndex] + 0.15
+  const nodeDelay = (rungIndex: number) => rungDelays[rungIndex] + 0.15;
 
   return (
     <>
@@ -387,7 +378,7 @@ export function DiagramV9({ modules }: { modules: SystemModule[] }) {
 
       <motion.svg
         viewBox={`0 0 ${VB_W} ${VB_H}`}
-        className="w-full h-auto"
+        className="h-auto w-full"
         style={{ maxWidth: '400px', margin: '0 auto', display: 'block' }}
         preserveAspectRatio="xMidYMid meet"
         aria-label="DorkOS DNA helix architecture diagram"
@@ -464,7 +455,6 @@ export function DiagramV9({ modules }: { modules: SystemModule[] }) {
 
         {/* ── Helix group: scales in X for the rotation illusion ── */}
         <g className={entranceDone ? 'helix-group' : ''}>
-
           {/* ── Layer A: Back portions of strands + back-crossing rungs ──
               At crossing points, the strand going left→right is "behind".
               For top crossing (CROSS_Y[0]): left strand going right is behind
@@ -588,28 +578,16 @@ export function DiagramV9({ modules }: { modules: SystemModule[] }) {
               opacity={0.65}
             />
           </g>
-
-        </g>{/* end helix-group */}
+        </g>
+        {/* end helix-group */}
 
         {/* ── Layer E: Module nodes (outside helix-group to avoid scale distortion) ── */}
         <motion.g variants={STAGGER}>
           {leftModules.map((mod, i) => (
-            <HelixNode
-              key={mod.id}
-              module={mod}
-              rungIndex={i}
-              side="left"
-              delay={nodeDelay(i)}
-            />
+            <HelixNode key={mod.id} module={mod} rungIndex={i} side="left" delay={nodeDelay(i)} />
           ))}
           {rightModules.map((mod, i) => (
-            <HelixNode
-              key={mod.id}
-              module={mod}
-              rungIndex={i}
-              side="right"
-              delay={nodeDelay(i)}
-            />
+            <HelixNode key={mod.id} module={mod} rungIndex={i} side="right" delay={nodeDelay(i)} />
           ))}
         </motion.g>
 
@@ -713,5 +691,5 @@ export function DiagramV9({ modules }: { modules: SystemModule[] }) {
         </text>
       </motion.svg>
     </>
-  )
+  );
 }

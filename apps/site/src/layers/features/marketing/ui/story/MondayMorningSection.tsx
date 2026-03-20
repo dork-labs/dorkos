@@ -1,13 +1,13 @@
-'use client'
+'use client';
 
-import { motion, AnimatePresence, LayoutGroup } from 'motion/react'
-import { REVEAL, STAGGER, SPRING, VIEWPORT_REPEAT as VIEWPORT } from '../../lib/motion-variants'
-import { bootCards } from '../../lib/story-data'
-import type { BootCard } from '../../lib/story-data'
-import { usePresentationContext } from '../../lib/presentation-context'
+import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
+import { REVEAL, STAGGER, SPRING, VIEWPORT_REPEAT as VIEWPORT } from '../../lib/motion-variants';
+import { bootCards } from '../../lib/story-data';
+import type { BootCard } from '../../lib/story-data';
+import { usePresentationContext } from '../../lib/presentation-context';
 
 interface MondayMorningSectionProps {
-  slideId?: string
+  slideId?: string;
 }
 
 const BORDER_COLOR: Record<BootCard['color'], string> = {
@@ -16,7 +16,7 @@ const BORDER_COLOR: Record<BootCard['color'], string> = {
   purple: 'border-brand-purple',
   green: 'border-brand-green',
   gray: 'border-warm-gray/20',
-}
+};
 
 const LABEL_COLOR: Record<BootCard['color'], string> = {
   orange: 'text-brand-orange',
@@ -24,14 +24,14 @@ const LABEL_COLOR: Record<BootCard['color'], string> = {
   purple: 'text-brand-purple',
   green: 'text-brand-green',
   gray: 'text-warm-gray-light',
-}
+};
 
 /** The "Thursday Morning" boot dashboard — cards appear one by one in presentation mode. */
 export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSectionProps) {
-  const { isPresent, subStep } = usePresentationContext()
+  const { isPresent, subStep } = usePresentationContext();
 
   // In presentation mode, reveal cards one at a time. In normal scroll, show all.
-  const visibleCards = isPresent ? bootCards.slice(0, subStep + 1) : bootCards
+  const visibleCards = isPresent ? bootCards.slice(0, subStep + 1) : bootCards;
 
   return (
     <section
@@ -49,17 +49,17 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
         >
           <motion.div
             variants={REVEAL}
-            className="mb-3 font-mono text-[9px] tracking-[0.2em] text-brand-orange uppercase"
+            className="text-brand-orange mb-3 font-mono text-[9px] tracking-[0.2em] uppercase"
           >
             A Thursday Morning
           </motion.div>
           <motion.h2
             variants={REVEAL}
-            className="mb-2 text-[clamp(22px,3vw,36px)] font-semibold tracking-tight text-cream-white"
+            className="text-cream-white mb-2 text-[clamp(22px,3vw,36px)] font-semibold tracking-tight"
           >
             Before you touched anything.
           </motion.h2>
-          <motion.p variants={REVEAL} className="text-sm text-warm-gray">
+          <motion.p variants={REVEAL} className="text-warm-gray text-sm">
             While you slept, the system ran.
           </motion.p>
         </motion.div>
@@ -76,15 +76,19 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ ...SPRING, delay: isPresent ? 0 : i * 0.08 }}
-                  className={`rounded-lg border bg-charcoal p-5 ${BORDER_COLOR[card.color]}`}
+                  className={`bg-charcoal rounded-lg border p-5 ${BORDER_COLOR[card.color]}`}
                 >
-                  <div className={`mb-2 font-mono text-[9px] tracking-[0.12em] uppercase ${LABEL_COLOR[card.color]}`}>
+                  <div
+                    className={`mb-2 font-mono text-[9px] tracking-[0.12em] uppercase ${LABEL_COLOR[card.color]}`}
+                  >
                     {card.label}
                   </div>
-                  <div className={`mb-1.5 font-mono text-[18px] font-semibold ${card.urgent ? 'text-brand-orange' : 'text-cream-white'}`}>
+                  <div
+                    className={`mb-1.5 font-mono text-[18px] font-semibold ${card.urgent ? 'text-brand-orange' : 'text-cream-white'}`}
+                  >
                     {card.value}
                   </div>
-                  <div className="font-mono text-[9px] text-warm-gray-light">{card.detail}</div>
+                  <div className="text-warm-gray-light font-mono text-[9px]">{card.detail}</div>
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -99,9 +103,9 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.4, delay: 0.2 }}
-                className="border-t border-warm-gray/10 pt-5 text-center"
+                className="border-warm-gray/10 border-t pt-5 text-center"
               >
-                <p className="text-[15px] font-semibold italic text-cream-white">
+                <p className="text-cream-white text-[15px] font-semibold italic">
                   &ldquo;This isn&apos;t ChatGPT. This is a personal operating system.&rdquo;
                 </p>
               </motion.div>
@@ -110,5 +114,5 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
         </LayoutGroup>
       </div>
     </section>
-  )
+  );
 }

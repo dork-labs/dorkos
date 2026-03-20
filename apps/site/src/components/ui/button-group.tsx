@@ -1,9 +1,9 @@
-import { mergeProps } from "@base-ui/react/merge-props";
-import { useRender } from "@base-ui/react/use-render";
-import { cva, type VariantProps } from "class-variance-authority";
+import { mergeProps } from '@base-ui/react/merge-props';
+import { useRender } from '@base-ui/react/use-render';
+import { cva, type VariantProps } from 'class-variance-authority';
 
-import { cn } from "@/lib/utils";
-import { Separator } from "@/components/ui/separator";
+import { cn } from '@/lib/utils';
+import { Separator } from '@/components/ui/separator';
 
 const buttonGroupVariants = cva(
   "flex w-fit items-stretch [&>*]:focus-visible:z-10 [&>*]:focus-visible:relative [&>[data-slot=select-trigger]:not([class*='w-'])]:w-fit [&>input]:flex-1 has-[select[aria-hidden=true]:last-child]:[&>[data-slot=select-trigger]:last-of-type]:rounded-r-md has-[>[data-slot=button-group]]:gap-2",
@@ -11,13 +11,13 @@ const buttonGroupVariants = cva(
     variants: {
       orientation: {
         horizontal:
-          "*:not-[&:nth-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:rounded-l-none *:not-[&:nth-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:border-l-0 *:not-[&:nth-last-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:rounded-r-none",
+          '*:not-[&:nth-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:rounded-l-none *:not-[&:nth-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:border-l-0 *:not-[&:nth-last-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:rounded-r-none',
         vertical:
-          "flex-col *:not-[&:nth-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:rounded-t-none *:not-[&:nth-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:border-t-0 *:not-[&:nth-last-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:rounded-b-none",
+          'flex-col *:not-[&:nth-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:rounded-t-none *:not-[&:nth-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:border-t-0 *:not-[&:nth-last-child(1_of_:not([aria-hidden],span[data-base-ui-inert]))]:rounded-b-none',
       },
     },
     defaultVariants: {
-      orientation: "horizontal",
+      orientation: 'horizontal',
     },
   }
 );
@@ -26,7 +26,7 @@ function ButtonGroup({
   className,
   orientation,
   ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof buttonGroupVariants>) {
+}: React.ComponentProps<'div'> & VariantProps<typeof buttonGroupVariants>) {
   return (
     <div
       role="group"
@@ -42,11 +42,11 @@ function ButtonGroupText({
   className,
   render,
   ...props
-}: React.ComponentProps<"div"> & {
+}: React.ComponentProps<'div'> & {
   render?: useRender.RenderProp;
 }) {
   return useRender({
-    defaultTagName: "div",
+    defaultTagName: 'div',
     render,
     props: mergeProps(
       {
@@ -62,7 +62,7 @@ function ButtonGroupText({
 
 function ButtonGroupSeparator({
   className,
-  orientation = "vertical",
+  orientation = 'vertical',
   ...props
 }: React.ComponentProps<typeof Separator>) {
   return (
@@ -70,7 +70,7 @@ function ButtonGroupSeparator({
       data-slot="button-group-separator"
       orientation={orientation}
       className={cn(
-        "bg-input relative !m-0 self-stretch data-[orientation=vertical]:h-auto",
+        'bg-input relative !m-0 self-stretch data-[orientation=vertical]:h-auto',
         className
       )}
       {...props}
@@ -78,9 +78,4 @@ function ButtonGroupSeparator({
   );
 }
 
-export {
-  ButtonGroup,
-  ButtonGroupSeparator,
-  ButtonGroupText,
-  buttonGroupVariants,
-};
+export { ButtonGroup, ButtonGroupSeparator, ButtonGroupText, buttonGroupVariants };

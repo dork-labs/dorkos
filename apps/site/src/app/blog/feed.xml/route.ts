@@ -1,7 +1,7 @@
-import { blog } from '@/lib/source'
-import { siteConfig } from '@/config/site'
+import { blog } from '@/lib/source';
+import { siteConfig } from '@/config/site';
 
-export const dynamic = 'force-static'
+export const dynamic = 'force-static';
 
 function escapeXml(str: string): string {
   return str
@@ -9,7 +9,7 @@ function escapeXml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
+    .replace(/'/g, '&apos;');
 }
 
 /**
@@ -18,7 +18,7 @@ function escapeXml(str: string): string {
 export function GET() {
   const posts = blog
     .getPages()
-    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime())
+    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
 
   const items = posts
     .map(
@@ -33,7 +33,7 @@ export function GET() {
       }
     </item>`
     )
-    .join('\n')
+    .join('\n');
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
@@ -45,11 +45,11 @@ export function GET() {
     <atom:link href="${siteConfig.url}/blog/feed.xml" rel="self" type="application/rss+xml"/>
 ${items}
   </channel>
-</rss>`
+</rss>`;
 
   return new Response(xml, {
     headers: {
       'Content-Type': 'application/rss+xml; charset=utf-8',
     },
-  })
+  });
 }

@@ -1,23 +1,23 @@
-'use client'
+'use client';
 
-import Link from 'next/link'
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants'
+import Link from 'next/link';
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants';
 
 interface HeroProps {
-  headline: string
-  subhead: string
-  ctaText: string
-  ctaHref: string
+  headline: string;
+  subhead: string;
+  ctaText: string;
+  ctaHref: string;
 }
 
 // ─── Notification bubbles ────────────────────────────────────────────────────
 
 interface BubbleData {
-  icon: string
-  text: string
-  delay: number
-  floatOffset: number
+  icon: string;
+  text: string;
+  delay: number;
+  floatOffset: number;
 }
 
 const BUBBLES: BubbleData[] = [
@@ -25,7 +25,7 @@ const BUBBLES: BubbleData[] = [
   { icon: '📝', text: 'Docs updated', delay: 0.22, floatOffset: 4 },
   { icon: '🧪', text: 'Tests passing', delay: 0.34, floatOffset: -3 },
   { icon: '⚡', text: 'Deployed v2.1', delay: 0.46, floatOffset: 5 },
-]
+];
 
 function NotificationBubble({ bubble, index }: { bubble: BubbleData; index: number }) {
   return (
@@ -41,20 +41,20 @@ function NotificationBubble({ bubble, index }: { bubble: BubbleData; index: numb
           delay: index * 0.7,
         },
       }}
-      className="inline-flex items-center gap-1.5 bg-cream-white border border-[var(--border-warm)] rounded-lg px-3 py-2 shadow-floating whitespace-nowrap"
+      className="bg-cream-white shadow-floating inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-warm)] px-3 py-2 whitespace-nowrap"
     >
       <span className="text-xs leading-none" aria-hidden="true">
         {bubble.icon}
       </span>
-      <span className="font-mono text-2xs tracking-wide text-charcoal font-medium">
+      <span className="text-2xs text-charcoal font-mono font-medium tracking-wide">
         {bubble.text}
       </span>
       <span
-        className="ml-1 w-1.5 h-1.5 rounded-full bg-brand-green flex-shrink-0"
+        className="bg-brand-green ml-1 h-1.5 w-1.5 flex-shrink-0 rounded-full"
         aria-hidden="true"
       />
     </motion.div>
-  )
+  );
 }
 
 // ─── DorkOS laptop screen mini-UI ────────────────────────────────────────────
@@ -72,7 +72,14 @@ function LaptopScreen() {
       <circle cx="222" cy="184" r="3" fill="#228B22" opacity="0.6" />
 
       {/* Brand label in titlebar */}
-      <text x="255" y="187.5" fontSize="6" fill="#7A756A" fontFamily="monospace" textAnchor="middle">
+      <text
+        x="255"
+        y="187.5"
+        fontSize="6"
+        fill="#7A756A"
+        fontFamily="monospace"
+        textAnchor="middle"
+      >
         DorkOS
       </text>
 
@@ -105,7 +112,7 @@ function LaptopScreen() {
       <rect x="206" y="285.5" width="12" height="1" rx="0.5" fill="#7A756A" />
       <rect x="352" y="285.5" width="12" height="1" rx="0.5" fill="#7A756A" />
     </g>
-  )
+  );
 }
 
 // ─── Scene illustration (SVG) ─────────────────────────────────────────────────
@@ -116,7 +123,7 @@ function TravelSceneIllustration() {
       viewBox="0 0 560 420"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className="w-full h-auto"
+      className="h-auto w-full"
       aria-label="Person at a cafe window using DorkOS on a laptop while agents work autonomously"
       role="img"
     >
@@ -124,7 +131,16 @@ function TravelSceneIllustration() {
       <rect width="560" height="420" fill="#EDE6D6" />
 
       {/* Large window frame */}
-      <rect x="60" y="40" width="440" height="240" rx="8" fill="#E5DCC8" stroke="#C8BEA8" strokeWidth="2" />
+      <rect
+        x="60"
+        y="40"
+        width="440"
+        height="240"
+        rx="8"
+        fill="#E5DCC8"
+        stroke="#C8BEA8"
+        strokeWidth="2"
+      />
 
       {/* Window glass — sky gradient */}
       <defs>
@@ -191,7 +207,15 @@ function TravelSceneIllustration() {
       <rect x="0" y="277" width="560" height="6" fill="#C8BEA8" />
 
       {/* ── Table surface ── */}
-      <rect x="80" y="296" width="400" height="20" rx="4" fill="url(#tableGrad)" filter="url(#softShadow)" />
+      <rect
+        x="80"
+        y="296"
+        width="400"
+        height="20"
+        rx="4"
+        fill="url(#tableGrad)"
+        filter="url(#softShadow)"
+      />
       {/* Table legs */}
       <rect x="100" y="316" width="12" height="90" rx="2" fill="#B8AE98" />
       <rect x="448" y="316" width="12" height="90" rx="2" fill="#B8AE98" />
@@ -227,15 +251,51 @@ function TravelSceneIllustration() {
         {/* Cup body */}
         <path d="M0 0 L4 50 L36 50 L40 0 Z" fill="#FFFEFB" stroke="#C8BEA8" strokeWidth="1.5" />
         {/* Handle */}
-        <path d="M38 10 Q54 10 54 25 Q54 40 38 40" fill="none" stroke="#C8BEA8" strokeWidth="2" strokeLinecap="round" />
+        <path
+          d="M38 10 Q54 10 54 25 Q54 40 38 40"
+          fill="none"
+          stroke="#C8BEA8"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
         {/* Coffee liquid */}
         <path d="M2 4 L5 46 L35 46 L38 4 Z" fill="#8B5A2B" opacity="0.35" />
         {/* Cup rim */}
-        <rect x="0" y="0" width="40" height="5" rx="1" fill="#EDE6D6" stroke="#C8BEA8" strokeWidth="1" />
+        <rect
+          x="0"
+          y="0"
+          width="40"
+          height="5"
+          rx="1"
+          fill="#EDE6D6"
+          stroke="#C8BEA8"
+          strokeWidth="1"
+        />
         {/* Steam wisps */}
-        <path d="M12 -6 Q16 -14 12 -22" stroke="#C8BEA8" strokeWidth="1.5" strokeLinecap="round" fill="none" opacity="0.6" />
-        <path d="M20 -8 Q24 -18 20 -28" stroke="#C8BEA8" strokeWidth="1.5" strokeLinecap="round" fill="none" opacity="0.5" />
-        <path d="M28 -5 Q32 -15 28 -23" stroke="#C8BEA8" strokeWidth="1.5" strokeLinecap="round" fill="none" opacity="0.55" />
+        <path
+          d="M12 -6 Q16 -14 12 -22"
+          stroke="#C8BEA8"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          fill="none"
+          opacity="0.6"
+        />
+        <path
+          d="M20 -8 Q24 -18 20 -28"
+          stroke="#C8BEA8"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          fill="none"
+          opacity="0.5"
+        />
+        <path
+          d="M28 -5 Q32 -15 28 -23"
+          stroke="#C8BEA8"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          fill="none"
+          opacity="0.55"
+        />
       </g>
 
       {/* ── Boarding pass / passport ── */}
@@ -243,7 +303,15 @@ function TravelSceneIllustration() {
         {/* Boarding pass card */}
         <rect width="68" height="38" rx="4" fill="#FFFEFB" stroke="#E5DCC8" strokeWidth="1" />
         {/* Dashed perforation line */}
-        <line x1="44" y1="4" x2="44" y2="34" stroke="#C8BEA8" strokeWidth="1" strokeDasharray="3 2" />
+        <line
+          x1="44"
+          y1="4"
+          x2="44"
+          y2="34"
+          stroke="#C8BEA8"
+          strokeWidth="1"
+          strokeDasharray="3 2"
+        />
         {/* Left section text bars */}
         <rect x="6" y="8" width="28" height="3" rx="1" fill="#E85D04" opacity="0.7" />
         <rect x="6" y="14" width="20" height="2.5" rx="1" fill="#C8BEA8" />
@@ -265,16 +333,42 @@ function TravelSceneIllustration() {
       {/* Neck */}
       <rect x="112" y="240" width="16" height="12" rx="3" fill="#8B7BA4" opacity="0.8" />
       {/* Torso / sweater */}
-      <path d="M92 252 Q98 248 120 248 Q142 248 148 252 L152 296 L88 296 Z" fill="#8B7BA4" opacity="0.8" />
+      <path
+        d="M92 252 Q98 248 120 248 Q142 248 148 252 L152 296 L88 296 Z"
+        fill="#8B7BA4"
+        opacity="0.8"
+      />
       {/* Left arm reaching to laptop */}
-      <path d="M92 262 Q72 272 112 286" stroke="#8B7BA4" strokeWidth="16" strokeLinecap="round" fill="none" opacity="0.75" />
+      <path
+        d="M92 262 Q72 272 112 286"
+        stroke="#8B7BA4"
+        strokeWidth="16"
+        strokeLinecap="round"
+        fill="none"
+        opacity="0.75"
+      />
       {/* Right arm */}
-      <path d="M148 262 Q162 272 174 284" stroke="#8B7BA4" strokeWidth="14" strokeLinecap="round" fill="none" opacity="0.75" />
+      <path
+        d="M148 262 Q162 272 174 284"
+        stroke="#8B7BA4"
+        strokeWidth="14"
+        strokeLinecap="round"
+        fill="none"
+        opacity="0.75"
+      />
 
       {/* ── Subtle glow behind laptop screen (ambient light) ── */}
-      <ellipse cx="280" cy="228" rx="100" ry="40" fill="#E85D04" opacity="0.04" filter="url(#windowGlow)" />
+      <ellipse
+        cx="280"
+        cy="228"
+        rx="100"
+        ry="40"
+        fill="#E85D04"
+        opacity="0.04"
+        filter="url(#windowGlow)"
+      />
     </svg>
-  )
+  );
 }
 
 // ─── Floating notification cluster ───────────────────────────────────────────
@@ -286,23 +380,23 @@ function NotificationCluster() {
       whileInView="visible"
       viewport={{ once: true, amount: 0.3 }}
       variants={STAGGER}
-      className="flex flex-wrap gap-2 justify-center lg:justify-start"
+      className="flex flex-wrap justify-center gap-2 lg:justify-start"
       aria-label="Active agent notifications"
     >
       {BUBBLES.map((bubble, i) => (
         <NotificationBubble key={bubble.text} bubble={bubble} index={i} />
       ))}
     </motion.div>
-  )
+  );
 }
 
 // ─── Headline / CTA panel ────────────────────────────────────────────────────
 
 interface ContentPanelProps {
-  headline: string
-  subhead: string
-  ctaText: string
-  ctaHref: string
+  headline: string;
+  subhead: string;
+  ctaText: string;
+  ctaHref: string;
 }
 
 function ContentPanel({ headline, subhead, ctaText, ctaHref }: ContentPanelProps) {
@@ -317,7 +411,7 @@ function ContentPanel({ headline, subhead, ctaText, ctaHref }: ContentPanelProps
       {/* Eyebrow label */}
       <motion.span
         variants={REVEAL}
-        className="font-mono text-2xs tracking-[0.2em] uppercase text-brand-orange self-start"
+        className="text-2xs text-brand-orange self-start font-mono tracking-[0.2em] uppercase"
       >
         Work from anywhere
       </motion.span>
@@ -325,7 +419,7 @@ function ContentPanel({ headline, subhead, ctaText, ctaHref }: ContentPanelProps
       {/* Headline */}
       <motion.h1
         variants={REVEAL}
-        className="text-charcoal font-bold tracking-[-0.04em] leading-[1.0] text-balance"
+        className="text-charcoal leading-[1.0] font-bold tracking-[-0.04em] text-balance"
         style={{ fontSize: 'clamp(36px, 5.5vw, 72px)' }}
       >
         {headline}
@@ -334,39 +428,39 @@ function ContentPanel({ headline, subhead, ctaText, ctaHref }: ContentPanelProps
       {/* Subhead */}
       <motion.p
         variants={REVEAL}
-        className="text-warm-gray text-lg font-light leading-[1.7] max-w-[480px]"
+        className="text-warm-gray max-w-[480px] text-lg leading-[1.7] font-light"
       >
         {subhead}
       </motion.p>
 
       {/* Notification bubbles — proof of autonomous work */}
       <motion.div variants={REVEAL} className="space-y-3">
-        <p className="font-mono text-2xs tracking-[0.12em] uppercase text-warm-gray-light">
+        <p className="text-2xs text-warm-gray-light font-mono tracking-[0.12em] uppercase">
           While you were boarding
         </p>
         <NotificationCluster />
       </motion.div>
 
       {/* CTA */}
-      <motion.div variants={REVEAL} className="flex flex-col sm:flex-row gap-4 items-start">
+      <motion.div variants={REVEAL} className="flex flex-col items-start gap-4 sm:flex-row">
         <Link
           href={ctaHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 bg-charcoal text-cream-white font-mono text-button tracking-[0.08em] uppercase px-6 py-3.5 rounded-sm hover:bg-brand-orange transition-smooth"
+          className="bg-charcoal text-cream-white text-button hover:bg-brand-orange transition-smooth inline-flex items-center gap-2 rounded-sm px-6 py-3.5 font-mono tracking-[0.08em] uppercase"
         >
           {ctaText}
           <span className="cursor-blink" aria-hidden="true" />
         </Link>
         <Link
           href="/docs/getting-started/quickstart"
-          className="inline-flex items-center font-mono text-2xs tracking-[0.1em] uppercase text-warm-gray-light hover:text-brand-orange transition-smooth self-center"
+          className="text-2xs text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center self-center font-mono tracking-[0.1em] uppercase"
         >
           See it in action &rarr;
         </Link>
       </motion.div>
     </motion.div>
-  )
+  );
 }
 
 // ─── Illustration panel ───────────────────────────────────────────────────────
@@ -378,11 +472,11 @@ function IllustrationPanel() {
       whileInView="visible"
       viewport={{ once: true, amount: 0.2 }}
       variants={REVEAL}
-      className="relative w-full max-w-[560px] mx-auto lg:mx-0"
+      className="relative mx-auto w-full max-w-[560px] lg:mx-0"
     >
       {/* Warm halo behind scene */}
       <div
-        className="absolute inset-0 rounded-2xl pointer-events-none"
+        className="pointer-events-none absolute inset-0 rounded-2xl"
         style={{
           background:
             'radial-gradient(ellipse 70% 55% at 50% 60%, rgba(232, 93, 4, 0.07) 0%, transparent 70%)',
@@ -394,11 +488,11 @@ function IllustrationPanel() {
       <TravelSceneIllustration />
 
       {/* Caption below illustration */}
-      <p className="text-center font-mono text-2xs tracking-[0.12em] uppercase text-warm-gray-light mt-4">
+      <p className="text-2xs text-warm-gray-light mt-4 text-center font-mono tracking-[0.12em] uppercase">
         Your flight took off. Your agents never stopped.
       </p>
     </motion.div>
-  )
+  );
 }
 
 // ─── Root hero component ──────────────────────────────────────────────────────
@@ -413,12 +507,12 @@ function IllustrationPanel() {
 export function HeroV6({ headline, subhead, ctaText, ctaHref }: HeroProps) {
   return (
     <section
-      className="relative min-h-[85vh] bg-cream-primary overflow-hidden flex items-center"
+      className="bg-cream-primary relative flex min-h-[85vh] items-center overflow-hidden"
       aria-label="Hero: Work from anywhere with DorkOS"
     >
       {/* Subtle warm grid pattern */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           backgroundImage: `
@@ -435,7 +529,7 @@ export function HeroV6({ headline, subhead, ctaText, ctaHref }: HeroProps) {
 
       {/* Cream vignette edges */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           background:
@@ -444,20 +538,15 @@ export function HeroV6({ headline, subhead, ctaText, ctaHref }: HeroProps) {
       />
 
       {/* Content grid */}
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-20 lg:py-28">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-10 items-center">
+      <div className="relative z-10 mx-auto w-full max-w-7xl px-6 py-20 sm:px-10 lg:px-16 lg:py-28">
+        <div className="grid grid-cols-1 items-center gap-16 lg:grid-cols-2 lg:gap-10">
           {/* Left: Headline + CTA */}
-          <ContentPanel
-            headline={headline}
-            subhead={subhead}
-            ctaText={ctaText}
-            ctaHref={ctaHref}
-          />
+          <ContentPanel headline={headline} subhead={subhead} ctaText={ctaText} ctaHref={ctaHref} />
 
           {/* Right: Illustration */}
           <IllustrationPanel />
         </div>
       </div>
     </section>
-  )
+  );
 }

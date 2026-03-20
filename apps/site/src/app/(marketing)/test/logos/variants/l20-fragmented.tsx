@@ -66,21 +66,28 @@ function cutY(x0: number, y0: number, x1: number, y1: number, x: number): number
 // ─────────────────────────────────────────────────────────────────────────────
 function ShardsD() {
   // stem/bar geometry
-  const L = 8, R = 82;         // letter left / right
-  const stemR = 22;            // stem right edge
-  const barR = 68;             // bar right extent (before bowl rounds off)
-  const bh = 14;               // bar height
+  const L = 8,
+    R = 82; // letter left / right
+  const stemR = 22; // stem right edge
+  const barR = 68; // bar right extent (before bowl rounds off)
+  const bh = 14; // bar height
 
   // Cut A anchor points
-  const aX0 = L, aY0 = 42, aX1 = R, aY1 = 36;
+  const aX0 = L,
+    aY0 = 42,
+    aX1 = R,
+    aY1 = 36;
   // Cut B anchor points
-  const bX0 = L, bY0 = 78, bX1 = R, bY1 = 84;
+  const bX0 = L,
+    bY0 = 78,
+    bX1 = R,
+    bY1 = 84;
 
   // Cut y values at key x positions
   const aAtStemR = cutY(aX0, aY0, aX1, aY1, stemR); // ≈41.0
   const bAtStemR = cutY(bX0, bY0, bX1, bY1, stemR); // ≈78.8
-  const aAtR     = aY1; // cut A at right edge = 36
-  const bAtR     = bY1; // cut B at right edge = 84
+  const aAtR = aY1; // cut A at right edge = 36
+  const bAtR = bY1; // cut B at right edge = 84
 
   // Bowl polygon points (outer / inner)
   // outer: (68,10) → (82,28) → (82,60) → (82,92) → (68,110)
@@ -98,32 +105,38 @@ function ShardsD() {
   return (
     <g>
       {/* ── D1: upper stem + top bar (above cut A) ── */}
-      <polygon points={pts([
-        [L,     10],
-        [barR,  10],          // top bar spans to barR
-        [barR,  10 + bh],     // top bar bottom (y=24)
-        [stemR, 10 + bh],     // back to stem on top bar bottom
-        [stemR, aAtStemR - HG],
-        [L,     aY0 - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [L, 10],
+          [barR, 10], // top bar spans to barR
+          [barR, 10 + bh], // top bar bottom (y=24)
+          [stemR, 10 + bh], // back to stem on top bar bottom
+          [stemR, aAtStemR - HG],
+          [L, aY0 - HG],
+        ])}
+      />
 
       {/* ── D2: mid stem (between cuts) ── */}
-      <polygon points={pts([
-        [L,     aY0 + HG],
-        [stemR, aAtStemR + HG],
-        [stemR, bAtStemR - HG],
-        [L,     bY0 - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [L, aY0 + HG],
+          [stemR, aAtStemR + HG],
+          [stemR, bAtStemR - HG],
+          [L, bY0 - HG],
+        ])}
+      />
 
       {/* ── D3: lower stem + bottom bar (below cut B) ── */}
-      <polygon points={pts([
-        [L,     bY0 + HG],
-        [stemR, bAtStemR + HG],
-        [stemR, 110 - bh],    // bottom bar top (y=96)
-        [barR,  110 - bh],
-        [barR,  110],
-        [L,     110],
-      ])} />
+      <polygon
+        points={pts([
+          [L, bY0 + HG],
+          [stemR, bAtStemR + HG],
+          [stemR, 110 - bh], // bottom bar top (y=96)
+          [barR, 110 - bh],
+          [barR, 110],
+          [L, 110],
+        ])}
+      />
 
       {/* ── D4: upper bowl (above cut A) ──
           Outer boundary: (barR,10) → (82,28) → (82, aAtR−HG)
@@ -131,34 +144,40 @@ function ShardsD() {
           Plus the right edge of the top bar already covered by D1, so we
           connect along the cut line.
       */}
-      <polygon points={pts([
-        [barR,  10],
-        [82,    28],
-        [82,    aAtR - HG],
-        [72,    aAtInnerR - HG],
-        [72,    36],
-        [barR,  24],
-      ])} />
+      <polygon
+        points={pts([
+          [barR, 10],
+          [82, 28],
+          [82, aAtR - HG],
+          [72, aAtInnerR - HG],
+          [72, 36],
+          [barR, 24],
+        ])}
+      />
 
       {/* ── D5: mid bowl (between cuts) ── */}
-      <polygon points={pts([
-        [82,    aAtR + HG],
-        [82,    60],
-        [82,    bAtR - HG],
-        [72,    bAtInnerR - HG],
-        [72,    60],
-        [72,    aAtInnerR + HG],
-      ])} />
+      <polygon
+        points={pts([
+          [82, aAtR + HG],
+          [82, 60],
+          [82, bAtR - HG],
+          [72, bAtInnerR - HG],
+          [72, 60],
+          [72, aAtInnerR + HG],
+        ])}
+      />
 
       {/* ── D6: lower bowl (below cut B) ── */}
-      <polygon points={pts([
-        [82,    bAtR + HG],
-        [82,    92],
-        [barR,  110],
-        [barR,  96],
-        [72,    84],
-        [72,    bAtInnerR + HG],
-      ])} />
+      <polygon
+        points={pts([
+          [82, bAtR + HG],
+          [82, 92],
+          [barR, 110],
+          [barR, 96],
+          [72, 84],
+          [72, bAtInnerR + HG],
+        ])}
+      />
     </g>
   );
 }
@@ -181,62 +200,81 @@ function ShardsD() {
 //   o4: bottom ring arc (below cut B)
 // ─────────────────────────────────────────────────────────────────────────────
 function ShardsO_lower() {
-  const ox = 92, or_ = 152;
-  const oy0 = 22, oy1 = 98;
+  const ox = 92,
+    or_ = 152;
+  const oy0 = 22,
+    oy1 = 98;
   const sw = 14;
-  const ix = ox + sw, ir = or_ - sw;    // 106, 138
-  const iy0 = oy0 + sw, iy1 = oy1 - sw; // 36, 84
+  const ix = ox + sw,
+    ir = or_ - sw; // 106, 138
+  const iy0 = oy0 + sw,
+    iy1 = oy1 - sw; // 36, 84
 
   // Cut A: (ox, 46) → (or_, 40)
-  const aX0 = ox, aY0 = 46, aX1 = or_, aY1 = 40;
+  const aX0 = ox,
+    aY0 = 46,
+    aX1 = or_,
+    aY1 = 40;
   // Cut B: (ox, 74) → (or_, 80)
-  const bX0 = ox, bY0 = 74, bX1 = or_, bY1 = 80;
+  const bX0 = ox,
+    bY0 = 74,
+    bX1 = or_,
+    bY1 = 80;
 
-  const aAtIx  = cutY(aX0, aY0, aX1, aY1, ix);   // ≈44.6
-  const aAtIr  = cutY(aX0, aY0, aX1, aY1, ir);   // ≈41.4
-  const bAtIx  = cutY(bX0, bY0, bX1, bY1, ix);   // ≈75.4
-  const bAtIr  = cutY(bX0, bY0, bX1, bY1, ir);   // ≈78.6
+  const aAtIx = cutY(aX0, aY0, aX1, aY1, ix); // ≈44.6
+  const aAtIr = cutY(aX0, aY0, aX1, aY1, ir); // ≈41.4
+  const bAtIx = cutY(bX0, bY0, bX1, bY1, ix); // ≈75.4
+  const bAtIr = cutY(bX0, bY0, bX1, bY1, ir); // ≈78.6
 
   return (
     <g>
       {/* o1: top ring segment (above cut A) */}
-      <polygon points={pts([
-        [ox,  oy0], [or_, oy0],         // outer top
-        [or_, aY1 - HG],                // outer right down to cut A
-        [ir,  aAtIr - HG],             // inner right at cut A
-        [ir,  iy0],                     // inner top-right
-        [ix,  iy0],                     // inner top-left
-        [ix,  aAtIx - HG],             // inner left at cut A
-        [ox,  aY0 - HG],               // outer left at cut A
-      ])} />
+      <polygon
+        points={pts([
+          [ox, oy0],
+          [or_, oy0], // outer top
+          [or_, aY1 - HG], // outer right down to cut A
+          [ir, aAtIr - HG], // inner right at cut A
+          [ir, iy0], // inner top-right
+          [ix, iy0], // inner top-left
+          [ix, aAtIx - HG], // inner left at cut A
+          [ox, aY0 - HG], // outer left at cut A
+        ])}
+      />
 
       {/* o2: left ring strip (between cuts, left thick wall only) */}
-      <polygon points={pts([
-        [ox,  aY0 + HG],
-        [ix,  aAtIx + HG],
-        [ix,  bAtIx - HG],
-        [ox,  bY0 - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [ox, aY0 + HG],
+          [ix, aAtIx + HG],
+          [ix, bAtIx - HG],
+          [ox, bY0 - HG],
+        ])}
+      />
 
       {/* o3: right ring strip (between cuts, right thick wall only) */}
-      <polygon points={pts([
-        [ir,  aAtIr + HG],
-        [or_, aY1 + HG],
-        [or_, bY1 - HG],
-        [ir,  bAtIr - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [ir, aAtIr + HG],
+          [or_, aY1 + HG],
+          [or_, bY1 - HG],
+          [ir, bAtIr - HG],
+        ])}
+      />
 
       {/* o4: bottom ring segment (below cut B) */}
-      <polygon points={pts([
-        [ox,  bY0 + HG],               // outer left at cut B
-        [ix,  bAtIx + HG],             // inner left at cut B
-        [ix,  iy1],                     // inner bottom-left
-        [ir,  iy1],                     // inner bottom-right
-        [ir,  bAtIr + HG],             // inner right at cut B
-        [or_, bY1 + HG],               // outer right at cut B
-        [or_, oy1],                     // outer bottom-right
-        [ox,  oy1],                     // outer bottom-left
-      ])} />
+      <polygon
+        points={pts([
+          [ox, bY0 + HG], // outer left at cut B
+          [ix, bAtIx + HG], // inner left at cut B
+          [ix, iy1], // inner bottom-left
+          [ir, iy1], // inner bottom-right
+          [ir, bAtIr + HG], // inner right at cut B
+          [or_, bY1 + HG], // outer right at cut B
+          [or_, oy1], // outer bottom-right
+          [ox, oy1], // outer bottom-left
+        ])}
+      />
     </g>
   );
 }
@@ -261,13 +299,17 @@ function ShardsO_lower() {
 //   r3: lower stem below cut B
 // ─────────────────────────────────────────────────────────────────────────────
 function ShardsR() {
-  const rx = 162, rr = 176;  // stem x-range
-  const ry0 = 22, ry1 = 98;
+  const rx = 162,
+    rr = 176; // stem x-range
+  const ry0 = 22,
+    ry1 = 98;
 
   // Cut A: (rx, 52) → (rr, 46)
-  const aAtL = 52, aAtR = 46;
+  const aAtL = 52,
+    aAtR = 46;
   // Cut B: (rx, 76) → (rr, 79)
-  const bAtL = 76, bAtR = 79;
+  const bAtL = 76,
+    bAtR = 79;
 
   return (
     <g>
@@ -275,36 +317,42 @@ function ShardsR() {
           Path: start at stem bottom-left at cut A, ascend left edge of stem to top,
           traverse arm shape, descend stem right side to cut A.
       */}
-      <polygon points={pts([
-        // cut A bottom edge (left then right)
-        [rx,  aAtL - HG],
-        // up left edge of stem
-        [rx,  ry0],
-        // arm outer shape
-        [214, ry0],
-        [214, 36],
-        [186, 46],
-        // back down inner edge of arm to where it meets stem
-        [rr,  38],
-        // down right edge of stem to cut A
-        [rr,  aAtR - HG],
-      ])} />
+      <polygon
+        points={pts([
+          // cut A bottom edge (left then right)
+          [rx, aAtL - HG],
+          // up left edge of stem
+          [rx, ry0],
+          // arm outer shape
+          [214, ry0],
+          [214, 36],
+          [186, 46],
+          // back down inner edge of arm to where it meets stem
+          [rr, 38],
+          // down right edge of stem to cut A
+          [rr, aAtR - HG],
+        ])}
+      />
 
       {/* r2: mid stem */}
-      <polygon points={pts([
-        [rx,  aAtL + HG],
-        [rr,  aAtR + HG],
-        [rr,  bAtR - HG],
-        [rx,  bAtL - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [rx, aAtL + HG],
+          [rr, aAtR + HG],
+          [rr, bAtR - HG],
+          [rx, bAtL - HG],
+        ])}
+      />
 
       {/* r3: lower stem */}
-      <polygon points={pts([
-        [rx,  bAtL + HG],
-        [rr,  bAtR + HG],
-        [rr,  ry1],
-        [rx,  ry1],
-      ])} />
+      <polygon
+        points={pts([
+          [rx, bAtL + HG],
+          [rr, bAtR + HG],
+          [rr, ry1],
+          [rx, ry1],
+        ])}
+      />
     </g>
   );
 }
@@ -329,20 +377,27 @@ function ShardsR() {
 //   k5: lower stem (below cut B)
 // ─────────────────────────────────────────────────────────────────────────────
 function ShardsK() {
-  const kx = 224, kr = 238;  // stem x-range (width = 14)
+  const kx = 224,
+    kr = 238; // stem x-range (width = 14)
 
   // Cut A: (kx, 44) → (kr, 40)
-  const aAtL = 44, aAtR = 40;
+  const aAtL = 44,
+    aAtR = 40;
   // Cut B: (kx, 76) → (kr, 80)
-  const bAtL = 76, bAtR = 80;
+  const bAtL = 76,
+    bAtR = 80;
 
   return (
     <g>
       {/* k1: upper stem (above cut A) */}
-      <polygon points={pts([
-        [kx, 10],      [kr, 10],
-        [kr, aAtR - HG], [kx, aAtL - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [kx, 10],
+          [kr, 10],
+          [kr, aAtR - HG],
+          [kx, aAtL - HG],
+        ])}
+      />
 
       {/* k2: upper arm — leave HG gap on the left (stem-adjacent) edge */}
       {/*
@@ -350,38 +405,46 @@ function ShardsK() {
         Original arm polygon: (238,50)→(238,36)→(287,10)→(287,24)
         With gap: left edge shifts to kr+HG, y values interpolated.
       */}
-      <polygon points={pts([
-        [kr + HG, aAtR + HG],   // bottom-left near cut A (gap from stem)
-        [kr + HG, 36 - HG],     // top-left of arm
-        [287,     10],
-        [287,     24],
-        [kr + HG, 50 - HG],     // bottom-right — keep HG from cut-to-stem
-      ])} />
+      <polygon
+        points={pts([
+          [kr + HG, aAtR + HG], // bottom-left near cut A (gap from stem)
+          [kr + HG, 36 - HG], // top-left of arm
+          [287, 10],
+          [287, 24],
+          [kr + HG, 50 - HG], // bottom-right — keep HG from cut-to-stem
+        ])}
+      />
 
       {/* k3: mid stem between cuts */}
-      <polygon points={pts([
-        [kx, aAtL + HG],
-        [kr, aAtR + HG],
-        [kr, bAtR - HG],
-        [kx, bAtL - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [kx, aAtL + HG],
+          [kr, aAtR + HG],
+          [kr, bAtR - HG],
+          [kx, bAtL - HG],
+        ])}
+      />
 
       {/* k4: lower leg (detached diagonal shard) */}
-      <polygon points={pts([
-        [kr + HG, bAtR - HG],   // top-left near cut B
-        [287,     96],
-        [287,     110],
-        [kr + HG, 74 + HG],     // bottom-left
-        [kr + HG, bAtR + HG],
-      ])} />
+      <polygon
+        points={pts([
+          [kr + HG, bAtR - HG], // top-left near cut B
+          [287, 96],
+          [287, 110],
+          [kr + HG, 74 + HG], // bottom-left
+          [kr + HG, bAtR + HG],
+        ])}
+      />
 
       {/* k5: lower stem (below cut B) */}
-      <polygon points={pts([
-        [kx, bAtL + HG],
-        [kr, bAtR + HG],
-        [kr, 110],
-        [kx, 110],
-      ])} />
+      <polygon
+        points={pts([
+          [kx, bAtL + HG],
+          [kr, bAtR + HG],
+          [kr, 110],
+          [kx, 110],
+        ])}
+      />
     </g>
   );
 }
@@ -404,61 +467,79 @@ function ShardsK() {
 //   O4: bottom ring segment(below cut B)
 // ─────────────────────────────────────────────────────────────────────────────
 function ShardsO_upper() {
-  const ox = 297, or_ = 371;
+  const ox = 297,
+    or_ = 371;
   const sw = 14;
-  const ix = ox + sw, ir = or_ - sw;    // 311, 357
-  const iy0 = 10 + sw, iy1 = 110 - sw; // 24, 96
+  const ix = ox + sw,
+    ir = or_ - sw; // 311, 357
+  const iy0 = 10 + sw,
+    iy1 = 110 - sw; // 24, 96
 
   // Cut A: (ox, 40) → (or_, 32)
-  const aX0 = ox, aY0 = 40, aX1 = or_, aY1 = 32;
+  const aX0 = ox,
+    aY0 = 40,
+    aX1 = or_,
+    aY1 = 32;
   // Cut B: (ox, 80) → (or_, 88)
-  const bX0 = ox, bY0 = 80, bX1 = or_, bY1 = 88;
+  const bX0 = ox,
+    bY0 = 80,
+    bX1 = or_,
+    bY1 = 88;
 
-  const aAtIx  = cutY(aX0, aY0, aX1, aY1, ix);   // ≈38.4
-  const aAtIr  = cutY(aX0, aY0, aX1, aY1, ir);   // ≈33.6
-  const bAtIx  = cutY(bX0, bY0, bX1, bY1, ix);   // ≈81.6
-  const bAtIr  = cutY(bX0, bY0, bX1, bY1, ir);   // ≈86.4
+  const aAtIx = cutY(aX0, aY0, aX1, aY1, ix); // ≈38.4
+  const aAtIr = cutY(aX0, aY0, aX1, aY1, ir); // ≈33.6
+  const bAtIx = cutY(bX0, bY0, bX1, bY1, ix); // ≈81.6
+  const bAtIr = cutY(bX0, bY0, bX1, bY1, ir); // ≈86.4
 
   return (
     <g>
       {/* O1: top ring segment */}
-      <polygon points={pts([
-        [ox,  10],   [or_, 10],         // outer top
-        [or_, aY1 - HG],                // outer right down to cut A
-        [ir,  aAtIr - HG],             // inner right at cut A
-        [ir,  iy0],                     // inner top-right
-        [ix,  iy0],                     // inner top-left
-        [ix,  aAtIx - HG],             // inner left at cut A
-        [ox,  aY0 - HG],               // outer left at cut A
-      ])} />
+      <polygon
+        points={pts([
+          [ox, 10],
+          [or_, 10], // outer top
+          [or_, aY1 - HG], // outer right down to cut A
+          [ir, aAtIr - HG], // inner right at cut A
+          [ir, iy0], // inner top-right
+          [ix, iy0], // inner top-left
+          [ix, aAtIx - HG], // inner left at cut A
+          [ox, aY0 - HG], // outer left at cut A
+        ])}
+      />
 
       {/* O2: left ring strip */}
-      <polygon points={pts([
-        [ox,  aY0 + HG],
-        [ix,  aAtIx + HG],
-        [ix,  bAtIx - HG],
-        [ox,  bY0 - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [ox, aY0 + HG],
+          [ix, aAtIx + HG],
+          [ix, bAtIx - HG],
+          [ox, bY0 - HG],
+        ])}
+      />
 
       {/* O3: right ring strip */}
-      <polygon points={pts([
-        [ir,  aAtIr + HG],
-        [or_, aY1 + HG],
-        [or_, bY1 - HG],
-        [ir,  bAtIr - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [ir, aAtIr + HG],
+          [or_, aY1 + HG],
+          [or_, bY1 - HG],
+          [ir, bAtIr - HG],
+        ])}
+      />
 
       {/* O4: bottom ring segment */}
-      <polygon points={pts([
-        [ox,  bY0 + HG],
-        [ix,  bAtIx + HG],
-        [ix,  iy1],
-        [ir,  iy1],
-        [ir,  bAtIr + HG],
-        [or_, bY1 + HG],
-        [or_, 110],
-        [ox,  110],
-      ])} />
+      <polygon
+        points={pts([
+          [ox, bY0 + HG],
+          [ix, bAtIx + HG],
+          [ix, iy1],
+          [ir, iy1],
+          [ir, bAtIr + HG],
+          [or_, bY1 + HG],
+          [or_, 110],
+          [ox, 110],
+        ])}
+      />
     </g>
   );
 }
@@ -485,35 +566,49 @@ function ShardsO_upper() {
 //   S5: lower connector below cut B + bottom bar
 // ─────────────────────────────────────────────────────────────────────────────
 function ShardsS() {
-  const sx = 381, sr = 443;
-  const sw_bar = sr - sx;   // 62
+  const sx = 381,
+    sr = 443;
+  const sw_bar = sr - sx; // 62
   const stemW = 14;
 
   // Top bar
-  const tbY0 = 10, tbY1 = 24;
+  const tbY0 = 10,
+    tbY1 = 24;
   // Upper-left connector (left stroke of the S)
-  const ulX0 = sx, ulX1 = sx + stemW; // 381..395
-  const ulY0 = tbY1, ulY1 = 58;       // 24..58 (connects to mid bar)
+  const ulX0 = sx,
+    ulX1 = sx + stemW; // 381..395
+  const ulY0 = tbY1,
+    ulY1 = 58; // 24..58 (connects to mid bar)
   // Mid bar
-  const mbY0 = 51, mbY1 = 65;
+  const mbY0 = 51,
+    mbY1 = 65;
   // Lower-right connector (right stroke of S)
-  const lrX0 = sr - stemW, lrX1 = sr; // 429..443
-  const lrY0 = mbY1, lrY1 = 96;       // 65..96
+  const lrX0 = sr - stemW,
+    lrX1 = sr; // 429..443
+  const lrY0 = mbY1,
+    lrY1 = 96; // 65..96
   // Bottom bar
-  const bbY0 = 96, bbY1 = 110;
+  const bbY0 = 96,
+    bbY1 = 110;
 
   // Cut A: (sx, 36) → (sr, 30)
-  const aX0 = sx, aY0 = 36, aX1 = sr, aY1 = 30;
+  const aX0 = sx,
+    aY0 = 36,
+    aX1 = sr,
+    aY1 = 30;
   // Cut B: (sx, 80) → (sr, 86)
-  const bX0 = sx, bY0 = 80, bX1 = sr, bY1 = 86;
+  const bX0 = sx,
+    bY0 = 80,
+    bX1 = sr,
+    bY1 = 86;
 
   // Cut A crosses the upper connector (x=381..395):
-  const aAtUlX0 = aY0;                                   // = 36 (same as aY0 since ulX0=sx)
-  const aAtUlX1 = cutY(aX0, aY0, aX1, aY1, ulX1);      // ≈34.6
+  const aAtUlX0 = aY0; // = 36 (same as aY0 since ulX0=sx)
+  const aAtUlX1 = cutY(aX0, aY0, aX1, aY1, ulX1); // ≈34.6
 
   // Cut B crosses the lower connector (x=429..443):
-  const bAtLrX0 = cutY(bX0, bY0, bX1, bY1, lrX0);      // ≈84.4
-  const bAtLrX1 = bY1;                                   // = 86 (same as bY1 since lrX1=sr)
+  const bAtLrX0 = cutY(bX0, bY0, bX1, bY1, lrX0); // ≈84.4
+  const bAtLrX1 = bY1; // = 86 (same as bY1 since lrX1=sr)
 
   return (
     <g>
@@ -521,40 +616,48 @@ function ShardsS() {
       <rect x={sx} y={tbY0} width={sw_bar} height={tbY1 - tbY0} />
 
       {/* S2: upper-left connector piece above cut A (y=24..36 on left stroke) */}
-      <polygon points={pts([
-        [ulX0, ulY0 + HG],
-        [ulX1, ulY0 + HG],
-        [ulX1, aAtUlX1 - HG],
-        [ulX0, aAtUlX0 - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [ulX0, ulY0 + HG],
+          [ulX1, ulY0 + HG],
+          [ulX1, aAtUlX1 - HG],
+          [ulX0, aAtUlX0 - HG],
+        ])}
+      />
 
       {/* S3a: upper-left connector below cut A (y=36..58 on left stroke) */}
-      <polygon points={pts([
-        [ulX0, aAtUlX0 + HG],
-        [ulX1, aAtUlX1 + HG],
-        [ulX1, ulY1],
-        [ulX0, ulY1],
-      ])} />
+      <polygon
+        points={pts([
+          [ulX0, aAtUlX0 + HG],
+          [ulX1, aAtUlX1 + HG],
+          [ulX1, ulY1],
+          [ulX0, ulY1],
+        ])}
+      />
 
       {/* S3b: mid bar (fully between the two cuts — cut A ends at y=30 top, cut B starts at y=80 bottom;
                mid bar is y=51..65, safely between cuts) */}
       <rect x={sx} y={mbY0} width={sw_bar} height={mbY1 - mbY0} />
 
       {/* S4: lower-right connector above cut B (y=65..~84 on right stroke) */}
-      <polygon points={pts([
-        [lrX0, lrY0 + HG],
-        [lrX1, lrY0 + HG],
-        [lrX1, bAtLrX1 - HG],
-        [lrX0, bAtLrX0 - HG],
-      ])} />
+      <polygon
+        points={pts([
+          [lrX0, lrY0 + HG],
+          [lrX1, lrY0 + HG],
+          [lrX1, bAtLrX1 - HG],
+          [lrX0, bAtLrX0 - HG],
+        ])}
+      />
 
       {/* S5a: lower-right connector below cut B (y=~84..96 on right stroke) */}
-      <polygon points={pts([
-        [lrX0, bAtLrX0 + HG],
-        [lrX1, bAtLrX1 + HG],
-        [lrX1, lrY1],
-        [lrX0, lrY1],
-      ])} />
+      <polygon
+        points={pts([
+          [lrX0, bAtLrX0 + HG],
+          [lrX1, bAtLrX1 + HG],
+          [lrX1, lrY1],
+          [lrX0, lrY1],
+        ])}
+      />
 
       {/* S5b: bottom bar */}
       <rect x={sx} y={bbY0} width={sw_bar} height={bbY1 - bbY0} />

@@ -1,15 +1,15 @@
-import { ProjectCard } from './ProjectCard'
-import type { Project } from '../lib/types'
+import { ProjectCard } from './ProjectCard';
+import type { Project } from '../lib/types';
 
 interface ProjectsGridProps {
-  projects: Project[]
+  projects: Project[];
 }
 
 export function ProjectsGrid({ projects }: ProjectsGridProps) {
   return (
     <section id="features" className="py-40">
       {/* Section Label */}
-      <span className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange text-center block mb-20">
+      <span className="text-2xs text-brand-orange mb-20 block text-center font-mono tracking-[0.15em] uppercase">
         Features
       </span>
 
@@ -26,5 +26,5 @@ export function ProjectsGrid({ projects }: ProjectsGridProps) {
         ))}
       </div>
     </section>
-  )
+  );
 }

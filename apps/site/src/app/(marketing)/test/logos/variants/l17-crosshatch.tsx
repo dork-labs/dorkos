@@ -16,12 +16,7 @@
  */
 export function Logo17() {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 400 120"
-      role="img"
-      aria-label="DOS"
-    >
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" role="img" aria-label="DOS">
       <defs>
         {/*
           Crosshatch pattern: 12×12 tile with two diagonal strokes.
@@ -87,18 +82,21 @@ export function Logo17() {
           Together these form a blocky S silhouette.
         */}
         <clipPath id="l17-clip-s">
-          <rect x="256" y="8"   width="110" height="20" /> {/* top bar */}
-          <rect x="256" y="8"   width="20"  height="56" /> {/* upper-left vertical */}
-          <rect x="256" y="48"  width="110" height="24" /> {/* middle bar */}
-          <rect x="346" y="64"  width="20"  height="48" /> {/* lower-right vertical */}
-          <rect x="256" y="92"  width="110" height="20" /> {/* bottom bar */}
+          <rect x="256" y="8" width="110" height="20" /> {/* top bar */}
+          <rect x="256" y="8" width="20" height="56" /> {/* upper-left vertical */}
+          <rect x="256" y="48" width="110" height="24" /> {/* middle bar */}
+          <rect x="346" y="64" width="20" height="48" /> {/* lower-right vertical */}
+          <rect x="256" y="92" width="110" height="20" /> {/* bottom bar */}
         </clipPath>
       </defs>
 
       {/* ── D fill + outline ── */}
       {/* Crosshatch fill clipped to D shape */}
       <rect
-        x="8" y="8" width="110" height="104"
+        x="8"
+        y="8"
+        width="110"
+        height="104"
         fill="url(#l17-crosshatch)"
         clipPath="url(#l17-clip-d)"
       />
@@ -113,7 +111,10 @@ export function Logo17() {
 
       {/* ── O fill + outline ── */}
       <rect
-        x="132" y="8" width="110" height="104"
+        x="132"
+        y="8"
+        width="110"
+        height="104"
         fill="url(#l17-crosshatch)"
         clipPath="url(#l17-clip-o)"
       />
@@ -128,7 +129,10 @@ export function Logo17() {
       {/* ── S fill + outline ── */}
       {/* Crosshatch fill clipped to S shape */}
       <rect
-        x="256" y="8" width="110" height="104"
+        x="256"
+        y="8"
+        width="110"
+        height="104"
         fill="url(#l17-crosshatch)"
         clipPath="url(#l17-clip-s)"
       />
@@ -137,13 +141,13 @@ export function Logo17() {
         follow the block edges and produce a clear blocky S silhouette.
       */}
       {/* top bar outline */}
-      <rect x="256" y="8"  width="110" height="20" fill="none" stroke="#000" strokeWidth="2" />
+      <rect x="256" y="8" width="110" height="20" fill="none" stroke="#000" strokeWidth="2" />
       {/* upper-left cap outline */}
-      <rect x="256" y="8"  width="20"  height="56" fill="none" stroke="#000" strokeWidth="2" />
+      <rect x="256" y="8" width="20" height="56" fill="none" stroke="#000" strokeWidth="2" />
       {/* middle bar outline */}
       <rect x="256" y="48" width="110" height="24" fill="none" stroke="#000" strokeWidth="2" />
       {/* lower-right cap outline */}
-      <rect x="346" y="64" width="20"  height="48" fill="none" stroke="#000" strokeWidth="2" />
+      <rect x="346" y="64" width="20" height="48" fill="none" stroke="#000" strokeWidth="2" />
       {/* bottom bar outline */}
       <rect x="256" y="92" width="110" height="20" fill="none" stroke="#000" strokeWidth="2" />
     </svg>

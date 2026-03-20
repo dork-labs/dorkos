@@ -35,15 +35,7 @@ const UNIT = WALL + GAP; // 13
  * A horizontal wall stripe spanning [x, x+w) at vertical position y,
  * with height WALL. Used as the black "fill" of a maze wall row.
  */
-function HWall({
-  x,
-  y,
-  w,
-}: {
-  x: number;
-  y: number;
-  w: number;
-}) {
+function HWall({ x, y, w }: { x: number; y: number; w: number }) {
   return <rect x={x} y={y} width={w} height={WALL} fill="#000" />;
 }
 
@@ -51,32 +43,14 @@ function HWall({
  * A vertical wall stripe spanning [y, y+h) at horizontal position x,
  * with width WALL.
  */
-function VWall({
-  x,
-  y,
-  h,
-}: {
-  x: number;
-  y: number;
-  h: number;
-}) {
+function VWall({ x, y, h }: { x: number; y: number; h: number }) {
   return <rect x={x} y={y} width={WALL} height={h} fill="#000" />;
 }
 
 /**
  * A white corridor rectangle — cuts a passageway through existing walls.
  */
-function Corridor({
-  x,
-  y,
-  w,
-  h,
-}: {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}) {
+function Corridor({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
   return <rect x={x} y={y} width={w} height={h} fill="white" />;
 }
 
@@ -154,19 +128,9 @@ function LetterD({ ox, oy }: { ox: number; oy: number }) {
 
       {/* ── White interior cutout ── */}
       {/* Main hollow interior */}
-      <Corridor
-        x={ox + WALL}
-        y={oy + WALL}
-        w={colR1 - ox - WALL}
-        h={H - 2 * WALL}
-      />
+      <Corridor x={ox + WALL} y={oy + WALL} w={colR1 - ox - WALL} h={H - 2 * WALL} />
       {/* Right bulge interior */}
-      <Corridor
-        x={colR1 + WALL}
-        y={oy + UNIT + WALL}
-        w={GAP}
-        h={H - 2 * (UNIT + WALL)}
-      />
+      <Corridor x={colR1 + WALL} y={oy + UNIT + WALL} w={GAP} h={H - 2 * (UNIT + WALL)} />
 
       {/* ── Maze corridors: horizontal stripes through the solid walls ── */}
       {/* These run through the left spine and right walls, creating passages */}
@@ -262,27 +226,12 @@ function LetterO({ ox, oy }: { ox: number; oy: number }) {
       <Corridor x={ox + W - UNIT} y={oy + UNIT} w={GAP} h={H - 2 * UNIT} />
 
       {/* Inner hollow */}
-      <Corridor
-        x={innerX + WALL}
-        y={innerY + WALL}
-        w={innerW - 2 * WALL}
-        h={innerH - 2 * WALL}
-      />
+      <Corridor x={innerX + WALL} y={innerY + WALL} w={innerW - 2 * WALL} h={innerH - 2 * WALL} />
       {/* Inner annular corridors */}
       <Corridor x={innerX + WALL} y={innerY + WALL} w={innerW - 2 * WALL} h={GAP} />
-      <Corridor
-        x={innerX + WALL}
-        y={innerY + innerH - UNIT}
-        w={innerW - 2 * WALL}
-        h={GAP}
-      />
+      <Corridor x={innerX + WALL} y={innerY + innerH - UNIT} w={innerW - 2 * WALL} h={GAP} />
       <Corridor x={innerX + WALL} y={innerY + UNIT} w={GAP} h={innerH - 2 * UNIT} />
-      <Corridor
-        x={innerX + innerW - UNIT}
-        y={innerY + UNIT}
-        w={GAP}
-        h={innerH - 2 * UNIT}
-      />
+      <Corridor x={innerX + innerW - UNIT} y={innerY + UNIT} w={GAP} h={innerH - 2 * UNIT} />
 
       {/* ── Maze corridors through outer ring walls ── */}
 
@@ -308,19 +257,9 @@ function LetterO({ ox, oy }: { ox: number; oy: number }) {
       <Corridor x={innerX + 2 * UNIT} y={innerY} w={GAP} h={WALL} />
       <Corridor x={innerX + 2 * UNIT} y={innerY + innerH - WALL} w={GAP} h={WALL} />
       <Corridor x={innerX} y={innerY + 2 * UNIT} w={WALL} h={GAP} />
-      <Corridor
-        x={innerX + innerW - WALL}
-        y={innerY + 2 * UNIT}
-        w={WALL}
-        h={GAP}
-      />
+      <Corridor x={innerX + innerW - WALL} y={innerY + 2 * UNIT} w={WALL} h={GAP} />
       <Corridor x={innerX} y={innerY + 4 * UNIT} w={WALL} h={GAP} />
-      <Corridor
-        x={innerX + innerW - WALL}
-        y={innerY + 4 * UNIT}
-        w={WALL}
-        h={GAP}
-      />
+      <Corridor x={innerX + innerW - WALL} y={innerY + 4 * UNIT} w={WALL} h={GAP} />
     </g>
   );
 }
@@ -432,8 +371,7 @@ const O_WIDTH = 80;
 const S_WIDTH = 76;
 
 /** Total viewBox width: margins + letters + gaps. */
-const VB_WIDTH =
-  MARGIN_X * 2 + D_WIDTH + LETTER_SPACING + O_WIDTH + LETTER_SPACING + S_WIDTH;
+const VB_WIDTH = MARGIN_X * 2 + D_WIDTH + LETTER_SPACING + O_WIDTH + LETTER_SPACING + S_WIDTH;
 
 /**
  * "DOS" logotype whose letters are formed by right-angle maze corridors.

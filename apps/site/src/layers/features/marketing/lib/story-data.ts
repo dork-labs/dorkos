@@ -1,48 +1,73 @@
 /** Boot card displayed in the MondayMorningSection grid. */
 export interface BootCard {
-  id: string
-  label: string
-  value: string
-  detail: string
+  id: string;
+  label: string;
+  value: string;
+  detail: string;
   /** Design token color name for the border accent. */
-  color: 'orange' | 'blue' | 'purple' | 'green' | 'gray'
+  color: 'orange' | 'blue' | 'purple' | 'green' | 'gray';
   /** Whether the card has an urgent/flagged treatment. */
-  urgent?: boolean
+  urgent?: boolean;
 }
 
 /** One step in the LifeOS -> DorkOS evolution timeline. */
 export interface EvolutionStep {
-  step: number
-  product: string
-  duration: string
-  description: string
+  step: number;
+  product: string;
+  duration: string;
+  description: string;
   /** What limitation drove the next step. Null for the final step. */
-  ceiling: string | null
+  ceiling: string | null;
   /** Design token color for the step number circle. */
-  color: 'orange' | 'charcoal'
+  color: 'orange' | 'charcoal';
 }
 
 /** One line in the "platforms will just be prompts" equation. */
 export interface EquationItem {
-  lhs: string
-  rhs: string
+  lhs: string;
+  rhs: string;
 }
 
 /** One card in the FutureVisionSection. */
 export interface FutureCard {
-  id: string
-  label: string
-  title: string
-  description: string
-  color: 'orange' | 'blue' | 'green'
+  id: string;
+  label: string;
+  title: string;
+  description: string;
+  color: 'orange' | 'blue' | 'green';
 }
 
 export const bootCards: BootCard[] = [
-  { id: 'talk', label: 'This Talk', value: 'Outlined', detail: 'No Edges · draft outline', color: 'orange' },
-  { id: 'comms', label: 'Comms', value: 'Drafted', detail: 'slack · email · iMessage', color: 'purple' },
-  { id: 'calendar', label: 'Calendar', value: 'Timeboxed', detail: 'meetings briefed', color: 'blue' },
-  { id: 'todos', label: 'Tasks', value: 'Planned', detail: 'ready to start', color: 'orange', urgent: true },
-]
+  {
+    id: 'talk',
+    label: 'This Talk',
+    value: 'Outlined',
+    detail: 'No Edges · draft outline',
+    color: 'orange',
+  },
+  {
+    id: 'comms',
+    label: 'Comms',
+    value: 'Drafted',
+    detail: 'slack · email · iMessage',
+    color: 'purple',
+  },
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    value: 'Timeboxed',
+    detail: 'meetings briefed',
+    color: 'blue',
+  },
+  {
+    id: 'todos',
+    label: 'Tasks',
+    value: 'Planned',
+    detail: 'ready to start',
+    color: 'orange',
+    urgent: true,
+  },
+];
 
 export const evolutionSteps: EvolutionStep[] = [
   {
@@ -77,14 +102,14 @@ export const evolutionSteps: EvolutionStep[] = [
     ceiling: null,
     color: 'charcoal',
   },
-]
+];
 
 export const equationItems: EquationItem[] = [
   { lhs: '50+ skills', rhs: 'text files' },
   { lhs: '~100 coaching Qs', rhs: 'one markdown doc' },
   { lhs: 'board of advisors', rhs: 'configuration' },
   { lhs: 'automated hooks', rhs: 'small scripts' },
-]
+];
 
 export const futureCards: FutureCard[] = [
   {
@@ -108,4 +133,4 @@ export const futureCards: FutureCard[] = [
     description: 'HTTP 402. Agents negotiate, purchase, settle. The economy reshapes.',
     color: 'green',
   },
-]
+];

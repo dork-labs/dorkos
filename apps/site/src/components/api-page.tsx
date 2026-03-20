@@ -7,4 +7,4 @@
  * Note: This file must NOT have 'use client' — APIPage is an async Server
  * Component from fumadocs-openapi that performs file I/O to load the spec.
  */
-export { APIPage } from '@/lib/openapi'
+export { APIPage } from '@/lib/openapi';

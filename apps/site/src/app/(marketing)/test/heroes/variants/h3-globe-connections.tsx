@@ -1,29 +1,29 @@
-'use client'
+'use client';
 
-import Link from 'next/link'
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants'
-import { GlobeVisual } from './h3-globe-visual'
+import Link from 'next/link';
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants';
+import { GlobeVisual } from './h3-globe-visual';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface HeroProps {
-  headline: string
-  subhead: string
-  ctaText: string
-  ctaHref: string
+  headline: string;
+  subhead: string;
+  ctaText: string;
+  ctaHref: string;
 }
 
 // ─── Color ────────────────────────────────────────────────────────────────────
 
-const ORANGE = '#E85D04'
+const ORANGE = '#E85D04';
 
 // ─── Content Column ───────────────────────────────────────────────────────────
 
 function ContentColumn({ headline, subhead, ctaText, ctaHref }: HeroProps) {
   return (
     <motion.div
-      className="flex flex-col items-start gap-8 relative z-10"
+      className="relative z-10 flex flex-col items-start gap-8"
       variants={STAGGER}
       initial="hidden"
       animate="visible"
@@ -31,11 +31,11 @@ function ContentColumn({ headline, subhead, ctaText, ctaHref }: HeroProps) {
       {/* Eye-level badge */}
       <motion.div variants={REVEAL}>
         <span
-          className="inline-flex items-center gap-2 font-mono text-2xs tracking-[0.15em] uppercase"
+          className="text-2xs inline-flex items-center gap-2 font-mono tracking-[0.15em] uppercase"
           style={{ color: ORANGE }}
         >
           <span
-            className="inline-block w-1.5 h-1.5 rounded-full"
+            className="inline-block h-1.5 w-1.5 rounded-full"
             style={{ background: ORANGE }}
             aria-hidden="true"
           />
@@ -45,7 +45,7 @@ function ContentColumn({ headline, subhead, ctaText, ctaHref }: HeroProps) {
 
       {/* Headline */}
       <motion.h1
-        className="text-charcoal font-semibold leading-[1.0] tracking-[-0.04em]"
+        className="text-charcoal leading-[1.0] font-semibold tracking-[-0.04em]"
         style={{ fontSize: 'clamp(36px, 5vw, 64px)' }}
         variants={REVEAL}
       >
@@ -54,7 +54,7 @@ function ContentColumn({ headline, subhead, ctaText, ctaHref }: HeroProps) {
 
       {/* Subhead */}
       <motion.p
-        className="text-warm-gray leading-[1.7] max-w-md"
+        className="text-warm-gray max-w-md leading-[1.7]"
         style={{ fontSize: 'clamp(15px, 1.5vw, 18px)' }}
         variants={REVEAL}
       >
@@ -62,13 +62,13 @@ function ContentColumn({ headline, subhead, ctaText, ctaHref }: HeroProps) {
       </motion.p>
 
       {/* CTA group */}
-      <motion.div className="flex flex-col sm:flex-row gap-4" variants={REVEAL}>
+      <motion.div className="flex flex-col gap-4 sm:flex-row" variants={REVEAL}>
         {/* Primary — terminal install command */}
         <a
           href={ctaHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-3 px-6 py-4 rounded-sm"
+          className="inline-flex items-center gap-3 rounded-sm px-6 py-4"
           style={{
             background: ORANGE,
             fontFamily: 'var(--font-ibm-plex-mono), ui-monospace, monospace',
@@ -87,7 +87,7 @@ function ContentColumn({ headline, subhead, ctaText, ctaHref }: HeroProps) {
         {/* Secondary — docs link */}
         <Link
           href="/docs"
-          className="inline-flex items-center gap-1.5 px-6 py-4 rounded-sm border"
+          className="inline-flex items-center gap-1.5 rounded-sm border px-6 py-4"
           style={{
             borderColor: 'rgba(139, 90, 43, 0.2)',
             fontFamily: 'var(--font-ibm-plex-mono), ui-monospace, monospace',
@@ -99,20 +99,22 @@ function ContentColumn({ headline, subhead, ctaText, ctaHref }: HeroProps) {
           }}
         >
           Read the docs
-          <span aria-hidden="true" style={{ fontSize: '14px' }}>→</span>
+          <span aria-hidden="true" style={{ fontSize: '14px' }}>
+            →
+          </span>
         </Link>
       </motion.div>
 
       {/* Latitude coordinates — subtle flavour text */}
       <motion.p
-        className="font-mono text-3xs tracking-[0.12em] uppercase"
+        className="text-3xs font-mono tracking-[0.12em] uppercase"
         style={{ color: 'rgba(74, 70, 64, 0.4)', fontSize: '9px' }}
         variants={REVEAL}
       >
         Access from anywhere on Earth · 0°N 0°E to 90°S 180°W
       </motion.p>
     </motion.div>
-  )
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -126,24 +128,17 @@ function ContentColumn({ headline, subhead, ctaText, ctaHref }: HeroProps) {
  */
 export function HeroV3({ headline, subhead, ctaText, ctaHref }: HeroProps) {
   return (
-    <section className="relative min-h-[85vh] overflow-hidden bg-cream-primary">
+    <section className="bg-cream-primary relative min-h-[85vh] overflow-hidden">
       {/* ── Desktop/Tablet globe — right half, absolutely positioned ── */}
       <div
-        className="
-          absolute inset-y-0 right-0
-          w-full md:w-3/5 lg:w-1/2
-          flex items-center justify-center
-          pointer-events-none
-          opacity-30 md:opacity-60 lg:opacity-100
-        "
+        className="pointer-events-none absolute inset-y-0 right-0 flex w-full items-center justify-center opacity-30 md:w-3/5 md:opacity-60 lg:w-1/2 lg:opacity-100"
         aria-hidden="true"
       >
         {/* Fade mask on the left edge so globe blends into the cream */}
         <div
-          className="absolute inset-0 pointer-events-none hidden md:block"
+          className="pointer-events-none absolute inset-0 hidden md:block"
           style={{
-            background:
-              'linear-gradient(to right, var(--cream-primary) 0%, transparent 30%)',
+            background: 'linear-gradient(to right, var(--cream-primary) 0%, transparent 30%)',
           }}
         />
         <div className="w-full max-w-[520px] p-8">
@@ -152,35 +147,20 @@ export function HeroV3({ headline, subhead, ctaText, ctaHref }: HeroProps) {
       </div>
 
       {/* ── Content — left column ── */}
-      <div
-        className="
-          relative z-10
-          min-h-[85vh]
-          flex items-center
-          px-8 md:px-12 lg:px-16
-          py-24
-          max-w-2xl
-          lg:max-w-xl
-        "
-      >
-        <ContentColumn
-          headline={headline}
-          subhead={subhead}
-          ctaText={ctaText}
-          ctaHref={ctaHref}
-        />
+      <div className="relative z-10 flex min-h-[85vh] max-w-2xl items-center px-8 py-24 md:px-12 lg:max-w-xl lg:px-16">
+        <ContentColumn headline={headline} subhead={subhead} ctaText={ctaText} ctaHref={ctaHref} />
       </div>
 
       {/* ── Mobile globe — below content, centered, small ── */}
       <div
-        className="block md:hidden px-8 pb-16 pointer-events-none"
+        className="pointer-events-none block px-8 pb-16 md:hidden"
         aria-hidden="true"
         style={{ opacity: 0.5 }}
       >
-        <div className="w-full max-w-[260px] mx-auto">
+        <div className="mx-auto w-full max-w-[260px]">
           <GlobeVisual />
         </div>
       </div>
     </section>
-  )
+  );
 }

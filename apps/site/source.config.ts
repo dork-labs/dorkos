@@ -1,10 +1,10 @@
-import { defineConfig, defineDocs, defineCollections } from 'fumadocs-mdx/config'
-import { z } from 'zod'
+import { defineConfig, defineDocs, defineCollections } from 'fumadocs-mdx/config';
+import { z } from 'zod';
 
 export const docs = defineDocs({
   // Points to the root-level docs/ directory in the monorepo
   dir: '../../docs',
-})
+});
 
 export const blogPosts = defineCollections({
   type: 'doc',
@@ -20,6 +20,6 @@ export const blogPosts = defineCollections({
       tags: z.array(z.string()).optional(),
       image: z.string().optional(),
     }),
-})
+});
 
-export default defineConfig()
+export default defineConfig();

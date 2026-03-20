@@ -41,7 +41,10 @@ interface Transport {
 
   // Runtime
   getModels(): Promise<ModelOption[]>;
-  getCapabilities(): Promise<{ capabilities: Record<string, RuntimeCapabilities>; defaultRuntime: string }>;
+  getCapabilities(): Promise<{
+    capabilities: Record<string, RuntimeCapabilities>;
+    defaultRuntime: string;
+  }>;
 
   // File uploads
   uploadFiles(files: UploadFile[], cwd: string, onProgress?): Promise<UploadResult[]>;
@@ -69,6 +72,7 @@ The full interface also covers Pulse, Relay, Mesh, and agent identity operations
 - Server-Sent Events for streaming in `sendMessage()`
 - Parses SSE events into `StreamEvent` objects
 - Includes `X-Client-Id` header for session write coordination
+
 </Tab>
 
 <Tab value="DirectTransport">
@@ -77,6 +81,7 @@ The full interface also covers Pulse, Relay, Mesh, and agent identity operations
 - No HTTP, no port binding, no network serialization
 - Iterates `AsyncGenerator<StreamEvent>` from the Claude Agent SDK
 - Lower latency, ideal for embedded contexts
+
 </Tab>
 
 </Tabs>
@@ -155,6 +160,7 @@ function App() {
 ```
 
 All DorkOS hooks (`useSessions`, `useChatSession`, etc.) consume the Transport from context, so your implementation powers the entire UI automatically.
+
 </Tab>
 
 </Tabs>
@@ -163,22 +169,48 @@ All DorkOS hooks (`useSessions`, `useChatSession`, etc.) consume the Transport f
 
 Events emitted during message streaming:
 
-<TypeTable type={{
-  "text_delta": { type: "StreamEvent", description: "Incremental text chunk for the assistant message" },
-  "tool_call_start": { type: "StreamEvent", description: "Tool invocation begins (includes toolCallId, toolName)" },
-  "tool_call_delta": { type: "StreamEvent", description: "Incremental tool input/output" },
-  "tool_call_end": { type: "StreamEvent", description: "Tool invocation completes" },
-  "tool_result": { type: "StreamEvent", description: "Tool execution result" },
-  "approval_required": { type: "StreamEvent", description: "Tool needs user approval before executing" },
-  "question_prompt": { type: "StreamEvent", description: "Claude is asking the user a question with options" },
-  "error": { type: "StreamEvent", description: "Error occurred during execution" },
-  "done": { type: "StreamEvent", description: "Message stream complete" },
-  "session_status": { type: "StreamEvent", description: "Session state changed" },
-  "task_update": { type: "StreamEvent", description: "Task list updated" },
-  "relay_message": { type: "StreamEvent (Relay)", description: "Relay response chunk — contains a nested StreamEvent. Only emitted when DORKOS_RELAY_ENABLED=true" },
-  "relay_receipt": { type: "StreamEvent (Relay)", description: "Delivery confirmation when a message is routed through Relay. Only emitted when DORKOS_RELAY_ENABLED=true" },
-  "message_delivered": { type: "StreamEvent (Relay)", description: "Message delivery notification from the Relay transport. Only emitted when DORKOS_RELAY_ENABLED=true" },
-}} />
+<TypeTable
+  type={{
+    text_delta: {
+      type: 'StreamEvent',
+      description: 'Incremental text chunk for the assistant message',
+    },
+    tool_call_start: {
+      type: 'StreamEvent',
+      description: 'Tool invocation begins (includes toolCallId, toolName)',
+    },
+    tool_call_delta: { type: 'StreamEvent', description: 'Incremental tool input/output' },
+    tool_call_end: { type: 'StreamEvent', description: 'Tool invocation completes' },
+    tool_result: { type: 'StreamEvent', description: 'Tool execution result' },
+    approval_required: {
+      type: 'StreamEvent',
+      description: 'Tool needs user approval before executing',
+    },
+    question_prompt: {
+      type: 'StreamEvent',
+      description: 'Claude is asking the user a question with options',
+    },
+    error: { type: 'StreamEvent', description: 'Error occurred during execution' },
+    done: { type: 'StreamEvent', description: 'Message stream complete' },
+    session_status: { type: 'StreamEvent', description: 'Session state changed' },
+    task_update: { type: 'StreamEvent', description: 'Task list updated' },
+    relay_message: {
+      type: 'StreamEvent (Relay)',
+      description:
+        'Relay response chunk — contains a nested StreamEvent. Only emitted when DORKOS_RELAY_ENABLED=true',
+    },
+    relay_receipt: {
+      type: 'StreamEvent (Relay)',
+      description:
+        'Delivery confirmation when a message is routed through Relay. Only emitted when DORKOS_RELAY_ENABLED=true',
+    },
+    message_delivered: {
+      type: 'StreamEvent (Relay)',
+      description:
+        'Message delivery notification from the Relay transport. Only emitted when DORKOS_RELAY_ENABLED=true',
+    },
+  }}
+/>
 
 ## Next Steps
 

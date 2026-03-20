@@ -1,19 +1,19 @@
-'use client'
+'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import Link from 'next/link'
-import { motion, AnimatePresence } from 'motion/react'
-import { REVEAL } from '@/layers/features/marketing/lib/motion-variants'
+import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
+import { motion, AnimatePresence } from 'motion/react';
+import { REVEAL } from '@/layers/features/marketing/lib/motion-variants';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface HeroProps {
-  headline: string
-  subhead: string
-  ctaText: string
-  ctaHref: string
+  headline: string;
+  subhead: string;
+  ctaText: string;
+  ctaHref: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,44 +37,35 @@ const TERMINAL_LINES = [
       '→ Agent updated documentation',
     ],
   },
-] as const
+] as const;
 
 /** Minimum ms per character — randomness adds up to 40ms on top. */
-const CHAR_DELAY_BASE = 40
-const CHAR_DELAY_JITTER = 40
+const CHAR_DELAY_BASE = 40;
+const CHAR_DELAY_JITTER = 40;
 
 /** Delay between output lines appearing (ms). */
-const OUTPUT_LINE_DELAY = 280
+const OUTPUT_LINE_DELAY = 280;
 
 /** Pause after command before outputs appear (ms). */
-const POST_COMMAND_DELAY = 220
+const POST_COMMAND_DELAY = 220;
 
 /** Pause between terminal steps (ms). */
-const INTER_STEP_DELAY = 400
+const INTER_STEP_DELAY = 400;
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
 /** A single prompt line with optional blinking cursor at the end. */
-function TerminalPrompt({
-  text,
-  showCursor,
-}: {
-  text: string
-  showCursor: boolean
-}) {
+function TerminalPrompt({ text, showCursor }: { text: string; showCursor: boolean }) {
   // Split on the `$` so we can color just the prompt symbol.
-  const isComment = text.startsWith('$ #')
-  const dollar = text.slice(0, 1)
-  const rest = text.slice(1)
+  const isComment = text.startsWith('$ #');
+  const dollar = text.slice(0, 1);
+  const rest = text.slice(1);
 
   return (
     <div className="flex items-start gap-0 leading-relaxed">
-      <span
-        className="select-none shrink-0"
-        style={{ color: 'var(--brand-orange)' }}
-      >
+      <span className="shrink-0 select-none" style={{ color: 'var(--brand-orange)' }}>
         {dollar}
       </span>
       <span
@@ -83,35 +74,33 @@ function TerminalPrompt({
       >
         {rest}
       </span>
-      {showCursor && (
-        <span className="cursor-blink" aria-hidden="true" />
-      )}
+      {showCursor && <span className="cursor-blink" aria-hidden="true" />}
     </div>
-  )
+  );
 }
 
 /** A single output line — success (✓) or info (→). */
 function TerminalOutputLine({ text }: { text: string }) {
-  const isSuccess = text.startsWith('✓')
-  const isArrow = text.startsWith('→')
+  const isSuccess = text.startsWith('✓');
+  const isArrow = text.startsWith('→');
 
   const color = isSuccess
     ? 'var(--brand-green)'
     : isArrow
       ? 'var(--warm-gray)'
-      : 'var(--warm-gray-light)'
+      : 'var(--warm-gray-light)';
 
   return (
     <motion.div
       initial={{ opacity: 0, x: -4 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="font-mono leading-relaxed pl-4"
+      className="pl-4 font-mono leading-relaxed"
       style={{ color }}
     >
       {text}
     </motion.div>
-  )
+  );
 }
 
 /** The pulsing CTA button that appears after the sequence completes. */
@@ -125,7 +114,7 @@ function CtaButton({ text, href }: { text: string; href: string }) {
     >
       <Link
         href={href}
-        className="marketing-btn inline-flex items-center gap-2 text-cream-white focus-ring"
+        className="marketing-btn text-cream-white focus-ring inline-flex items-center gap-2"
         style={{ backgroundColor: 'var(--brand-orange)' }}
         target="_blank"
         rel="noopener noreferrer"
@@ -140,7 +129,7 @@ function CtaButton({ text, href }: { text: string; href: string }) {
         </motion.span>
       </Link>
     </motion.div>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -152,30 +141,30 @@ function CtaButton({ text, href }: { text: string; href: string }) {
  * Returns all state needed to render the terminal.
  */
 function useTypewriterSequence(headline: string) {
-  const [typedHeadline, setTypedHeadline] = useState('')
-  const [headlineDone, setHeadlineDone] = useState(false)
-  const [terminalVisible, setTerminalVisible] = useState(false)
-  const [commandTexts, setCommandTexts] = useState<string[]>(['', '', ''])
-  const [commandsDone, setCommandsDone] = useState<boolean[]>([false, false, false])
-  const [visibleOutputs, setVisibleOutputs] = useState<boolean[][]>([[], [], []])
-  const [ctaVisible, setCtaVisible] = useState(false)
+  const [typedHeadline, setTypedHeadline] = useState('');
+  const [headlineDone, setHeadlineDone] = useState(false);
+  const [terminalVisible, setTerminalVisible] = useState(false);
+  const [commandTexts, setCommandTexts] = useState<string[]>(['', '', '']);
+  const [commandsDone, setCommandsDone] = useState<boolean[]>([false, false, false]);
+  const [visibleOutputs, setVisibleOutputs] = useState<boolean[][]>([[], [], []]);
+  const [ctaVisible, setCtaVisible] = useState(false);
 
   // Track whether the component is still mounted to prevent stale closures
   // from firing after unmount.
-  const mountedRef = useRef(true)
+  const mountedRef = useRef(true);
   useEffect(() => {
-    mountedRef.current = true
+    mountedRef.current = true;
     return () => {
-      mountedRef.current = false
-    }
-  }, [])
+      mountedRef.current = false;
+    };
+  }, []);
 
   const schedule = useCallback((fn: () => void, delay: number) => {
     const id = setTimeout(() => {
-      if (mountedRef.current) fn()
-    }, delay)
-    return id
-  }, [])
+      if (mountedRef.current) fn();
+    }, delay);
+    return id;
+  }, []);
 
   /**
    * Types a string character by character, calling `onChar` after each
@@ -186,43 +175,43 @@ function useTypewriterSequence(headline: string) {
       str: string,
       startDelay: number,
       onChar: (partial: string) => void,
-      onDone: () => void,
+      onDone: () => void
     ): number => {
-      let elapsed = startDelay
+      let elapsed = startDelay;
 
       for (let i = 0; i < str.length; i++) {
-        const partial = str.slice(0, i + 1)
-        const jitter = Math.random() * CHAR_DELAY_JITTER
-        elapsed += CHAR_DELAY_BASE + jitter
+        const partial = str.slice(0, i + 1);
+        const jitter = Math.random() * CHAR_DELAY_JITTER;
+        elapsed += CHAR_DELAY_BASE + jitter;
 
         // Capture `partial` in closure
-        const capturedPartial = partial
-        schedule(() => onChar(capturedPartial), elapsed)
+        const capturedPartial = partial;
+        schedule(() => onChar(capturedPartial), elapsed);
       }
 
-      schedule(onDone, elapsed + 16)
-      return elapsed + 16
+      schedule(onDone, elapsed + 16);
+      return elapsed + 16;
     },
-    [schedule],
-  )
+    [schedule]
+  );
 
   useEffect(() => {
-    let cursor = 0
+    let cursor = 0;
 
     // Step 1 — type the headline
     cursor = typeString(
       headline,
       0,
       (p) => setTypedHeadline(p),
-      () => setHeadlineDone(true),
-    )
+      () => setHeadlineDone(true)
+    );
 
     // Step 2 — brief pause, then reveal terminal
-    cursor += 500
-    schedule(() => setTerminalVisible(true), cursor)
+    cursor += 500;
+    schedule(() => setTerminalVisible(true), cursor);
 
     // Step 3 — type each terminal command, then its outputs
-    let lineDelay = cursor + 300
+    let lineDelay = cursor + 300;
 
     TERMINAL_LINES.forEach((line, lineIndex) => {
       // Type the command
@@ -231,45 +220,45 @@ function useTypewriterSequence(headline: string) {
         lineDelay,
         (p) =>
           setCommandTexts((prev) => {
-            const next = [...prev]
-            next[lineIndex] = p
-            return next
+            const next = [...prev];
+            next[lineIndex] = p;
+            return next;
           }),
         () =>
           setCommandsDone((prev) => {
-            const next = [...prev]
-            next[lineIndex] = true
-            return next
-          }),
-      )
+            const next = [...prev];
+            next[lineIndex] = true;
+            return next;
+          })
+      );
 
       // After command is done, reveal each output line in sequence
-      let outputDelay = afterCommand + POST_COMMAND_DELAY
+      let outputDelay = afterCommand + POST_COMMAND_DELAY;
 
       line.outputs.forEach((_, outputIndex) => {
-        outputDelay += OUTPUT_LINE_DELAY
-        const capturedOutputDelay = outputDelay
-        const capturedOutputIndex = outputIndex
+        outputDelay += OUTPUT_LINE_DELAY;
+        const capturedOutputDelay = outputDelay;
+        const capturedOutputIndex = outputIndex;
 
         schedule(() => {
           setVisibleOutputs((prev) => {
-            const next = prev.map((row) => [...row]) as boolean[][]
-            next[lineIndex][capturedOutputIndex] = true
-            return next
-          })
-        }, capturedOutputDelay)
-      })
+            const next = prev.map((row) => [...row]) as boolean[][];
+            next[lineIndex][capturedOutputIndex] = true;
+            return next;
+          });
+        }, capturedOutputDelay);
+      });
 
       // Next command starts after all outputs + inter-step gap
-      lineDelay = outputDelay + INTER_STEP_DELAY
-    })
+      lineDelay = outputDelay + INTER_STEP_DELAY;
+    });
 
     // Step 4 — CTA pulses in after everything
-    schedule(() => setCtaVisible(true), lineDelay + 600)
+    schedule(() => setCtaVisible(true), lineDelay + 600);
 
     // `headline` is a static prop; `typeString` and `schedule` are stable (useCallback).
     // mountedRef guards against stale setState calls after unmount.
-  }, [headline, typeString, schedule])
+  }, [headline, typeString, schedule]);
 
   return {
     typedHeadline,
@@ -279,7 +268,7 @@ function useTypewriterSequence(headline: string) {
     commandsDone,
     visibleOutputs,
     ctaVisible,
-  }
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -302,20 +291,20 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
     commandsDone,
     visibleOutputs,
     ctaVisible,
-  } = useTypewriterSequence(headline)
+  } = useTypewriterSequence(headline);
 
   // Determine which line is actively being typed (shows cursor on prompt)
-  const activeLineIndex = commandsDone.findLastIndex((done) => !done)
+  const activeLineIndex = commandsDone.findLastIndex((done) => !done);
 
   return (
     <section
-      className="relative min-h-[85vh] flex flex-col items-center justify-center px-6 py-20"
+      className="relative flex min-h-[85vh] flex-col items-center justify-center px-6 py-20"
       style={{ backgroundColor: 'var(--cream-primary)' }}
     >
       {/* Subtle graph-paper grid in background */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: `
             linear-gradient(to right, rgba(139, 90, 43, 0.06) 1px, transparent 1px),
@@ -330,14 +319,13 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
       />
 
       {/* Content column */}
-      <div className="relative z-10 w-full max-w-[600px] mx-auto flex flex-col items-center gap-10">
-
+      <div className="relative z-10 mx-auto flex w-full max-w-[600px] flex-col items-center gap-10">
         {/* ------------------------------------------------------------------ */}
         {/* Headline — types out character by character                         */}
         {/* ------------------------------------------------------------------ */}
-        <div className="text-center w-full">
+        <div className="w-full text-center">
           <h1
-            className="font-bold tracking-[-0.04em] leading-[1.05] overflow-visible"
+            className="overflow-visible leading-[1.05] font-bold tracking-[-0.04em]"
             style={{
               fontSize: 'clamp(40px, 7vw, 80px)',
               color: 'var(--charcoal)',
@@ -346,9 +334,7 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
           >
             <span>{typedHeadline}</span>
             {/* Blink cursor only while headline is typing; hide once done */}
-            {!headlineDone && (
-              <span className="cursor-blink" aria-hidden="true" />
-            )}
+            {!headlineDone && <span className="cursor-blink" aria-hidden="true" />}
           </h1>
 
           {/* Subhead fades in once headline finishes */}
@@ -359,7 +345,7 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, ease: 'easeOut', delay: 0.1 }}
-                className="mt-4 text-base md:text-lg font-light leading-[1.7] max-w-[480px] mx-auto"
+                className="mx-auto mt-4 max-w-[480px] text-base leading-[1.7] font-light md:text-lg"
                 style={{ color: 'var(--warm-gray)' }}
               >
                 {subhead}
@@ -378,7 +364,7 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="w-full rounded-xl border overflow-hidden shadow-elevated"
+              className="shadow-elevated w-full overflow-hidden rounded-xl border"
               style={{
                 borderColor: 'var(--border-warm)',
                 backgroundColor: 'var(--cream-white)',
@@ -386,22 +372,22 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
             >
               {/* Window chrome — three dots */}
               <div
-                className="flex items-center gap-1.5 px-4 py-3 border-b"
+                className="flex items-center gap-1.5 border-b px-4 py-3"
                 style={{
                   borderColor: 'var(--border-warm)',
                   backgroundColor: 'var(--cream-secondary)',
                 }}
               >
                 <span
-                  className="w-3 h-3 rounded-full"
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: 'rgba(139,90,43,0.25)' }}
                 />
                 <span
-                  className="w-3 h-3 rounded-full"
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: 'rgba(139,90,43,0.15)' }}
                 />
                 <span
-                  className="w-3 h-3 rounded-full"
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: 'rgba(139,90,43,0.10)' }}
                 />
                 <span
@@ -413,14 +399,14 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
               </div>
 
               {/* Terminal body */}
-              <div className="p-5 space-y-3 font-mono text-[13px] md:text-[14px]">
+              <div className="space-y-3 p-5 font-mono text-[13px] md:text-[14px]">
                 {TERMINAL_LINES.map((line, lineIndex) => {
-                  const cmdText = commandTexts[lineIndex]
-                  const cmdDone = commandsDone[lineIndex]
-                  const lineOutputs = visibleOutputs[lineIndex] ?? []
+                  const cmdText = commandTexts[lineIndex];
+                  const cmdDone = commandsDone[lineIndex];
+                  const lineOutputs = visibleOutputs[lineIndex] ?? [];
 
                   // Render this line only once its text has started appearing.
-                  if (!cmdText) return null
+                  if (!cmdText) return null;
 
                   return (
                     <div key={lineIndex} className="space-y-1.5">
@@ -429,9 +415,7 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
                         <TerminalPrompt
                           text={cmdText}
                           showCursor={
-                            !cmdDone &&
-                            (activeLineIndex === lineIndex ||
-                              activeLineIndex === -1)
+                            !cmdDone && (activeLineIndex === lineIndex || activeLineIndex === -1)
                           }
                         />
                       )}
@@ -439,14 +423,11 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
                       {/* Output lines */}
                       {line.outputs.map((outputText, outputIndex) =>
                         lineOutputs[outputIndex] ? (
-                          <TerminalOutputLine
-                            key={outputIndex}
-                            text={outputText}
-                          />
-                        ) : null,
+                          <TerminalOutputLine key={outputIndex} text={outputText} />
+                        ) : null
                       )}
                     </div>
-                  )
+                  );
                 })}
 
                 {/* Idle cursor after everything is done */}
@@ -465,11 +446,9 @@ export function HeroV4({ headline, subhead, ctaText, ctaHref }: HeroProps) {
         {/* CTA                                                                 */}
         {/* ------------------------------------------------------------------ */}
         <AnimatePresence>
-          {ctaVisible && (
-            <CtaButton text={ctaText} href={ctaHref} />
-          )}
+          {ctaVisible && <CtaButton text={ctaText} href={ctaHref} />}
         </AnimatePresence>
       </div>
     </section>
-  )
+  );
 }

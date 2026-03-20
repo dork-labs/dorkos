@@ -1,8 +1,8 @@
 export interface TimelineEntry {
-  id: string
-  time: string
-  headline: string
-  paragraphs: string[]
+  id: string;
+  time: string;
+  headline: string;
+  paragraphs: string[];
 }
 
 export const timelineEntries: TimelineEntry[] = [
@@ -61,4 +61,4 @@ export const timelineEntries: TimelineEntry[] = [
       'The system you designed has been productive for eight hours. You\u2019ve been awake for four minutes.',
     ],
   },
-]
+];

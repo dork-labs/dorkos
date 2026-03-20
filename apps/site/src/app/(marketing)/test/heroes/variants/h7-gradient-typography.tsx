@@ -1,20 +1,20 @@
-'use client'
+'use client';
 
-import Link from 'next/link'
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants'
+import Link from 'next/link';
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants';
 
 interface HeroProps {
-  headline: string
-  subhead: string
-  ctaText: string
-  ctaHref: string
+  headline: string;
+  subhead: string;
+  ctaText: string;
+  ctaHref: string;
 }
 
 // Split the headline into individual words for staggered entrance.
 // Each word fades up independently for dramatic vertical rhythm.
 function HeadlineWords({ text }: { text: string }) {
-  const words = text.split(' ')
+  const words = text.split(' ');
   return (
     <motion.div
       variants={STAGGER}
@@ -27,7 +27,7 @@ function HeadlineWords({ text }: { text: string }) {
         <motion.span
           key={`${word}-${i}`}
           variants={REVEAL}
-          className="block leading-[0.92] hero-gradient-text"
+          className="hero-gradient-text block leading-[0.92]"
           style={{ letterSpacing: '-0.05em' }}
           aria-hidden="true"
         >
@@ -35,7 +35,7 @@ function HeadlineWords({ text }: { text: string }) {
         </motion.span>
       ))}
     </motion.div>
-  )
+  );
 }
 
 /**
@@ -44,24 +44,21 @@ function HeadlineWords({ text }: { text: string }) {
  */
 export function HeroV7({ headline, subhead, ctaText, ctaHref }: HeroProps) {
   return (
-    <section className="relative min-h-[90vh] flex flex-col items-center justify-center px-6 bg-cream-primary overflow-hidden">
+    <section className="bg-cream-primary relative flex min-h-[90vh] flex-col items-center justify-center overflow-hidden px-6">
       {/*
        * Mesh background — 3 large radial blobs that animate position.
        * Opacity is intentionally low (0.15) so the cream base reads clean.
        */}
-      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div className="mesh-blob mesh-blob-a" />
         <div className="mesh-blob mesh-blob-b" />
         <div className="mesh-blob mesh-blob-c" />
       </div>
 
       {/* Content — single centered column */}
-      <div className="relative z-10 w-full max-w-5xl mx-auto text-center flex flex-col items-center gap-10">
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center gap-10 text-center">
         {/* Oversized gradient headline */}
-        <h1
-          className="w-full"
-          style={{ fontSize: 'clamp(56px, 12vw, 140px)' }}
-        >
+        <h1 className="w-full" style={{ fontSize: 'clamp(56px, 12vw, 140px)' }}>
           <HeadlineWords text={headline} />
         </h1>
 
@@ -70,7 +67,7 @@ export function HeroV7({ headline, subhead, ctaText, ctaHref }: HeroProps) {
           variants={REVEAL}
           initial="hidden"
           animate="visible"
-          className="text-warm-gray text-base md:text-lg font-light leading-[1.75] max-w-[480px] mx-auto"
+          className="text-warm-gray mx-auto max-w-[480px] text-base leading-[1.75] font-light md:text-lg"
         >
           {subhead}
         </motion.p>
@@ -86,7 +83,7 @@ export function HeroV7({ headline, subhead, ctaText, ctaHref }: HeroProps) {
           <motion.div variants={REVEAL}>
             <Link
               href={ctaHref}
-              className="font-mono text-sm tracking-[0.08em] text-charcoal underline underline-offset-4 decoration-brand-orange/50 hover:decoration-brand-orange transition-smooth"
+              className="text-charcoal decoration-brand-orange/50 hover:decoration-brand-orange transition-smooth font-mono text-sm tracking-[0.08em] underline underline-offset-4"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -98,7 +95,7 @@ export function HeroV7({ headline, subhead, ctaText, ctaHref }: HeroProps) {
           <motion.div variants={REVEAL}>
             <Link
               href="/docs/getting-started/quickstart"
-              className="font-mono text-2xs tracking-[0.12em] text-warm-gray-light hover:text-brand-orange transition-smooth"
+              className="text-2xs text-warm-gray-light hover:text-brand-orange transition-smooth font-mono tracking-[0.12em]"
             >
               Read the docs &rarr;
             </Link>
@@ -202,5 +199,5 @@ export function HeroV7({ headline, subhead, ctaText, ctaHref }: HeroProps) {
         }
       `}</style>
     </section>
-  )
+  );
 }

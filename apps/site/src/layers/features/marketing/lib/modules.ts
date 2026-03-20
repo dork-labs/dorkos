@@ -1,12 +1,12 @@
 export interface SystemModule {
-  id: string
-  name: string
-  label: string
-  description: string
-  status: 'available' | 'coming-soon'
-  group: 'platform' | 'engine-capability' | 'extension'
+  id: string;
+  name: string;
+  label: string;
+  description: string;
+  status: 'available' | 'coming-soon';
+  group: 'platform' | 'engine-capability' | 'extension';
   /** External URL for modules with their own website (opens in new tab). */
-  url?: string
+  url?: string;
 }
 
 export const systemModules: SystemModule[] = [
@@ -74,4 +74,4 @@ export const systemModules: SystemModule[] = [
     group: 'extension',
     url: 'https://www.looped.me/',
   },
-]
+];

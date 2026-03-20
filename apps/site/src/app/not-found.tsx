@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from 'next/link';
 
 /**
  * Custom 404 page styled with the Calm Tech design system.
@@ -12,15 +12,10 @@ export default function NotFound() {
       <div className="mx-auto max-w-md space-y-8 text-center">
         {/* 404 indicator with brand orange accent */}
         <div className="space-y-4">
-          <p className="font-mono text-8xl font-bold tracking-tighter text-brand-orange/20">
-            404
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Page not found
-          </h1>
+          <p className="text-brand-orange/20 font-mono text-8xl font-bold tracking-tighter">404</p>
+          <h1 className="text-foreground text-2xl font-semibold tracking-tight">Page not found</h1>
           <p className="text-muted-foreground">
-            The page you&apos;re looking for doesn&apos;t exist or has been
-            moved.
+            The page you&apos;re looking for doesn&apos;t exist or has been moved.
           </p>
         </div>
 
@@ -28,19 +23,19 @@ export default function NotFound() {
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Link
             href="/"
-            className="marketing-btn inline-flex items-center justify-center gap-2 bg-charcoal text-cream-white dark:bg-cream-white dark:text-charcoal"
+            className="marketing-btn bg-charcoal text-cream-white dark:bg-cream-white dark:text-charcoal inline-flex items-center justify-center gap-2"
           >
             Go home
             <span className="cursor-blink" />
           </Link>
           <Link
             href="/docs"
-            className="marketing-btn inline-flex items-center justify-center gap-2 border border-border text-foreground"
+            className="marketing-btn border-border text-foreground inline-flex items-center justify-center gap-2 border"
           >
             Browse docs
           </Link>
         </div>
       </div>
     </div>
-  )
+  );
 }

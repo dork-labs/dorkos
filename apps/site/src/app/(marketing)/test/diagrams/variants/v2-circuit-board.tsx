@@ -1,35 +1,40 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { motion } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
-import { REVEAL, STAGGER, SCALE_IN, VIEWPORT } from '@/layers/features/marketing/lib/motion-variants'
+import { useState } from 'react';
+import { motion } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
+import {
+  REVEAL,
+  STAGGER,
+  SCALE_IN,
+  VIEWPORT,
+} from '@/layers/features/marketing/lib/motion-variants';
 
 // ─── Layout constants ──────────────────────────────────────────────────────────
 
-const VB_W = 800
-const VB_H = 520
+const VB_W = 800;
+const VB_H = 520;
 
 /** Chip dimensions */
-const CORE_W = 140
-const CORE_H = 80
-const SIDE_W = 120
-const SIDE_H = 72
-const BUS_W = 118
-const BUS_H = 64
+const CORE_W = 140;
+const CORE_H = 80;
+const SIDE_W = 120;
+const SIDE_H = 72;
+const BUS_W = 118;
+const BUS_H = 64;
 
 /** Chip center positions */
 const POS = {
-  core:     { x: VB_W / 2,      y: 185 },
-  console:  { x: 155,           y: 185 },
-  wing:    { x: VB_W - 155,    y: 185 },
-  pulse:    { x: 185,           y: 395 },
-  mesh:     { x: VB_W / 2,      y: 395 },
-  channels: { x: VB_W - 185,    y: 395 },
-} as const
+  core: { x: VB_W / 2, y: 185 },
+  console: { x: 155, y: 185 },
+  wing: { x: VB_W - 155, y: 185 },
+  pulse: { x: 185, y: 395 },
+  mesh: { x: VB_W / 2, y: 395 },
+  channels: { x: VB_W - 185, y: 395 },
+} as const;
 
 /** Pin connector geometry — 4px squares on chip edges */
-const PIN_SIZE = 5
+const PIN_SIZE = 5;
 
 // ─── Trace routing helpers ─────────────────────────────────────────────────────
 
@@ -38,7 +43,7 @@ const PIN_SIZE = 5
  * Always routes horizontal-first then vertical.
  */
 function hvPath(x1: number, y1: number, x2: number, y2: number): string {
-  return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`
+  return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
 }
 
 /**
@@ -46,7 +51,7 @@ function hvPath(x1: number, y1: number, x2: number, y2: number): string {
  * Routes vertical-first then horizontal.
  */
 function vhPath(x1: number, y1: number, x2: number, y2: number): string {
-  return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`
+  return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
 }
 
 // ─── Static layout data ────────────────────────────────────────────────────────
@@ -94,10 +99,10 @@ const TRACES = [
     delay: 0.8,
     dur: 2.6,
   },
-] as const
+] as const;
 
 /** PCB background grid tile size (subtle substrate grid) */
-const GRID = 20
+const GRID = 20;
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
@@ -112,13 +117,13 @@ function SolderJoint({ cx, cy }: { cx: number; cy: number }) {
       opacity={0.85}
       variants={SCALE_IN}
     />
-  )
+  );
 }
 
 /** Chip pin connector rectangle (appears on chip edge). */
 function Pin({ x, y, horizontal }: { x: number; y: number; horizontal: boolean }) {
-  const w = horizontal ? PIN_SIZE * 2 : PIN_SIZE
-  const h = horizontal ? PIN_SIZE : PIN_SIZE * 2
+  const w = horizontal ? PIN_SIZE * 2 : PIN_SIZE;
+  const h = horizontal ? PIN_SIZE : PIN_SIZE * 2;
   return (
     <rect
       x={x - w / 2}
@@ -129,30 +134,30 @@ function Pin({ x, y, horizontal }: { x: number; y: number; horizontal: boolean }
       opacity={0.5}
       rx={1}
     />
-  )
+  );
 }
 
 interface ChipProps {
-  id: string
-  cx: number
-  cy: number
-  w: number
-  h: number
-  name: string
-  label: string
-  status: 'available' | 'coming-soon'
-  isEngine?: boolean
+  id: string;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  name: string;
+  label: string;
+  status: 'available' | 'coming-soon';
+  isEngine?: boolean;
 }
 
 /** IC chip rectangle with notch, pin connectors, name, label, and status LED. */
 function Chip({ cx, cy, w, h, name, label, status, isEngine }: ChipProps) {
-  const x = cx - w / 2
-  const y = cy - h / 2
-  const statusColor = status === 'available' ? '#228B22' : '#7A756A'
-  const ledOpacity = status === 'available' ? 0.9 : 0.4
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+  const statusColor = status === 'available' ? '#228B22' : '#7A756A';
+  const ledOpacity = status === 'available' ? 0.9 : 0.4;
 
   // Notch radius (IC orientation notch on left edge)
-  const notchR = 6
+  const notchR = 6;
 
   // Chip body path: rect with a notch cutout on the left
   const bodyPath = [
@@ -163,7 +168,7 @@ function Chip({ cx, cy, w, h, name, label, status, isEngine }: ChipProps) {
     `L ${x} ${y + notchR * 2}`,
     `A ${notchR} ${notchR} 0 0 1 ${x + notchR * 2} ${y}`,
     'Z',
-  ].join(' ')
+  ].join(' ');
 
   return (
     <motion.g variants={isEngine ? SCALE_IN : REVEAL}>
@@ -186,19 +191,27 @@ function Chip({ cx, cy, w, h, name, label, status, isEngine }: ChipProps) {
       />
 
       {/* Corner registration marks — top-right and bottom-right */}
-      <line x1={x + w - 8} y1={y} x2={x + w} y2={y + 8}
-        stroke="var(--color-charcoal)" strokeWidth={0.8} opacity={0.2} />
-      <line x1={x + w - 8} y1={y + h} x2={x + w} y2={y + h - 8}
-        stroke="var(--color-charcoal)" strokeWidth={0.8} opacity={0.2} />
+      <line
+        x1={x + w - 8}
+        y1={y}
+        x2={x + w}
+        y2={y + 8}
+        stroke="var(--color-charcoal)"
+        strokeWidth={0.8}
+        opacity={0.2}
+      />
+      <line
+        x1={x + w - 8}
+        y1={y + h}
+        x2={x + w}
+        y2={y + h - 8}
+        stroke="var(--color-charcoal)"
+        strokeWidth={0.8}
+        opacity={0.2}
+      />
 
       {/* Status LED indicator dot (top-right area) */}
-      <circle
-        cx={x + w - 10}
-        cy={y + 10}
-        r={3}
-        fill={statusColor}
-        opacity={ledOpacity}
-      />
+      <circle cx={x + w - 10} cy={y + 10} r={3} fill={statusColor} opacity={ledOpacity} />
       {/* LED glow ring (available modules only) */}
       {status === 'available' && (
         <circle
@@ -255,28 +268,28 @@ function Chip({ cx, cy, w, h, name, label, status, isEngine }: ChipProps) {
       <Pin x={cx - w * 0.25} y={y + h} horizontal={false} />
       <Pin x={cx + w * 0.25} y={y + h} horizontal={false} />
     </motion.g>
-  )
+  );
 }
 
 // ─── Solder joint positions (where traces meet chip edges) ─────────────────────
 
 const SOLDER_JOINTS = [
   // Console–Engine horizontal trace endpoints
-  { cx: POS.console.x + SIDE_W / 2,    cy: POS.console.y },
-  { cx: POS.core.x - CORE_W / 2,       cy: POS.core.y },
+  { cx: POS.console.x + SIDE_W / 2, cy: POS.console.y },
+  { cx: POS.core.x - CORE_W / 2, cy: POS.core.y },
   // Engine–Wing horizontal trace endpoints
-  { cx: POS.core.x + CORE_W / 2,       cy: POS.core.y },
-  { cx: POS.wing.x - SIDE_W / 2,      cy: POS.wing.y },
+  { cx: POS.core.x + CORE_W / 2, cy: POS.core.y },
+  { cx: POS.wing.x - SIDE_W / 2, cy: POS.wing.y },
   // Engine–Mesh vertical trace: bottom of Engine, top of Mesh
-  { cx: POS.core.x,                    cy: POS.core.y + CORE_H / 2 },
-  { cx: POS.mesh.x,                    cy: POS.mesh.y - BUS_H / 2 },
+  { cx: POS.core.x, cy: POS.core.y + CORE_H / 2 },
+  { cx: POS.mesh.x, cy: POS.mesh.y - BUS_H / 2 },
   // Engine–Pulse elbow: elbow corner and Pulse top
-  { cx: POS.core.x,                    cy: POS.core.y + CORE_H / 2 + 20 },
-  { cx: POS.pulse.x,                   cy: POS.pulse.y - BUS_H / 2 },
+  { cx: POS.core.x, cy: POS.core.y + CORE_H / 2 + 20 },
+  { cx: POS.pulse.x, cy: POS.pulse.y - BUS_H / 2 },
   // Engine–Relay elbow: elbow corner and Relay top
-  { cx: POS.channels.x,               cy: POS.core.y + CORE_H / 2 + 20 },
-  { cx: POS.channels.x,               cy: POS.channels.y - BUS_H / 2 },
-] as const
+  { cx: POS.channels.x, cy: POS.core.y + CORE_H / 2 + 20 },
+  { cx: POS.channels.x, cy: POS.channels.y - BUS_H / 2 },
+] as const;
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
@@ -287,9 +300,9 @@ const SOLDER_JOINTS = [
  * @param modules - The six DorkOS system modules to render as IC chips.
  */
 export function DiagramV2({ modules }: { modules: SystemModule[] }) {
-  const [drawn, setDrawn] = useState(false)
+  const [drawn, setDrawn] = useState(false);
 
-  const byId = Object.fromEntries(modules.map((m) => [m.id, m]))
+  const byId = Object.fromEntries(modules.map((m) => [m.id, m]));
 
   return (
     <>
@@ -320,7 +333,7 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
 
       <motion.svg
         viewBox={`0 0 ${VB_W} ${VB_H}`}
-        className="w-full h-auto"
+        className="h-auto w-full"
         preserveAspectRatio="xMidYMid meet"
         aria-label="DorkOS circuit board architecture diagram"
         initial="hidden"
@@ -332,7 +345,14 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
         {/* ── PCB substrate background ── */}
         <defs>
           {/* Substrate grid pattern — subtle PCB-green-ish grid lines */}
-          <pattern id="pcb-grid" x="0" y="0" width={GRID} height={GRID} patternUnits="userSpaceOnUse">
+          <pattern
+            id="pcb-grid"
+            x="0"
+            y="0"
+            width={GRID}
+            height={GRID}
+            patternUnits="userSpaceOnUse"
+          >
             <path
               d={`M ${GRID} 0 L 0 0 0 ${GRID}`}
               fill="none"
@@ -361,7 +381,12 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
           </filter>
 
           {/* Signal pulse marker for animateMotion */}
-          <circle id="signal-dot" r="3.5" fill="var(--color-brand-orange)" filter="url(#pulse-glow)" />
+          <circle
+            id="signal-dot"
+            r="3.5"
+            fill="var(--color-brand-orange)"
+            filter="url(#pulse-glow)"
+          />
         </defs>
 
         {/* Substrate: fill + grid */}
@@ -369,18 +394,34 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
         <rect width={VB_W} height={VB_H} fill="url(#pcb-grid)" rx={4} />
 
         {/* Substrate edge markings — corner fiducials (PCB alignment marks) */}
-        {([
-          [24, 24], [VB_W - 24, 24], [24, VB_H - 24], [VB_W - 24, VB_H - 24],
-        ] as [number, number][]).map(([fx, fy], i) => (
+        {(
+          [
+            [24, 24],
+            [VB_W - 24, 24],
+            [24, VB_H - 24],
+            [VB_W - 24, VB_H - 24],
+          ] as [number, number][]
+        ).map(([fx, fy], i) => (
           <g key={i}>
-            <circle cx={fx} cy={fy} r={6} fill="none" stroke="var(--color-charcoal)" strokeWidth={0.8} opacity={0.15} />
+            <circle
+              cx={fx}
+              cy={fy}
+              r={6}
+              fill="none"
+              stroke="var(--color-charcoal)"
+              strokeWidth={0.8}
+              opacity={0.15}
+            />
             <circle cx={fx} cy={fy} r={1.5} fill="var(--color-charcoal)" opacity={0.15} />
           </g>
         ))}
 
         {/* PCB silkscreen border (dashed inner frame) */}
         <rect
-          x={16} y={16} width={VB_W - 32} height={VB_H - 32}
+          x={16}
+          y={16}
+          width={VB_W - 32}
+          height={VB_H - 32}
           fill="none"
           stroke="var(--color-charcoal)"
           strokeWidth={0.5}
@@ -530,14 +571,16 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
 
         {/* ── Silkscreen module reference designators ── */}
         {/* Small "U1", "U2" etc. ref designators below each chip, PCB style */}
-        {([
-          { label: 'U1', cx: POS.core.x,     cy: POS.core.y + CORE_H / 2 + 12 },
-          { label: 'U2', cx: POS.console.x,  cy: POS.console.y + SIDE_H / 2 + 12 },
-          { label: 'U3', cx: POS.wing.x,    cy: POS.wing.y + SIDE_H / 2 + 12 },
-          { label: 'U4', cx: POS.pulse.x,    cy: POS.pulse.y + BUS_H / 2 + 11 },
-          { label: 'U5', cx: POS.mesh.x,     cy: POS.mesh.y + BUS_H / 2 + 11 },
-          { label: 'U6', cx: POS.channels.x, cy: POS.channels.y + BUS_H / 2 + 11 },
-        ] as const).map(({ label, cx, cy }) => (
+        {(
+          [
+            { label: 'U1', cx: POS.core.x, cy: POS.core.y + CORE_H / 2 + 12 },
+            { label: 'U2', cx: POS.console.x, cy: POS.console.y + SIDE_H / 2 + 12 },
+            { label: 'U3', cx: POS.wing.x, cy: POS.wing.y + SIDE_H / 2 + 12 },
+            { label: 'U4', cx: POS.pulse.x, cy: POS.pulse.y + BUS_H / 2 + 11 },
+            { label: 'U5', cx: POS.mesh.x, cy: POS.mesh.y + BUS_H / 2 + 11 },
+            { label: 'U6', cx: POS.channels.x, cy: POS.channels.y + BUS_H / 2 + 11 },
+          ] as const
+        ).map(({ label, cx, cy }) => (
           <text
             key={label}
             x={cx}
@@ -564,7 +607,7 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
           opacity={0.18}
           letterSpacing="0.1em"
         >
-          DORKOS-REV-A  PCB-2026
+          DORKOS-REV-A PCB-2026
         </text>
 
         <text
@@ -581,5 +624,5 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
         </text>
       </motion.svg>
     </>
-  )
+  );
 }

@@ -1,5 +1,5 @@
-import type { Metadata } from 'next'
-import { siteConfig } from '@/config/site'
+import type { Metadata } from 'next';
+import { siteConfig } from '@/config/site';
 
 export const metadata: Metadata = {
   title: `The Story | ${siteConfig.name}`,
@@ -15,8 +15,8 @@ export const metadata: Metadata = {
   alternates: {
     canonical: '/story',
   },
-}
+};
 
 export default function StoryLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return children;
 }

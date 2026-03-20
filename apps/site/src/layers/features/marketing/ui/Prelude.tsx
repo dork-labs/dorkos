@@ -1,26 +1,26 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 
 /** Boot-sequence prelude — types "DorkOS is starting." then fades to reveal the page. */
 export function Prelude() {
-  const [text, setText] = useState('')
-  const [visible, setVisible] = useState(true)
-  const fullText = 'DorkOS is starting.'
+  const [text, setText] = useState('');
+  const [visible, setVisible] = useState(true);
+  const fullText = 'DorkOS is starting.';
 
   useEffect(() => {
-    let i = 0
+    let i = 0;
     const typeInterval = setInterval(() => {
-      i++
-      setText(fullText.slice(0, i))
+      i++;
+      setText(fullText.slice(0, i));
       if (i >= fullText.length) {
-        clearInterval(typeInterval)
-        setTimeout(() => setVisible(false), 600)
+        clearInterval(typeInterval);
+        setTimeout(() => setVisible(false), 600);
       }
-    }, 45)
-    return () => clearInterval(typeInterval)
-  }, [])
+    }, 45);
+    return () => clearInterval(typeInterval);
+  }, []);
 
   return (
     <AnimatePresence>
@@ -38,5 +38,5 @@ export function Prelude() {
         </motion.div>
       )}
     </AnimatePresence>
-  )
+  );
 }

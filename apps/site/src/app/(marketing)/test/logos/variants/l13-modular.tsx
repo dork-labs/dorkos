@@ -13,7 +13,7 @@
  */
 
 const MODULE = 12; // filled square side
-const GAP = 2;    // gap between modules
+const GAP = 2; // gap between modules
 const PITCH = MODULE + GAP; // 14px per cell
 
 /** Render a single filled square module at grid column c, row r, offset by ox/oy. */
@@ -35,15 +35,7 @@ function ModuleSquare({ x, y, fill = '#000' }: ModuleSquareProps) {
  * Render an array of [col, row] grid positions as module squares.
  * ox/oy = pixel offset for the letter's origin.
  */
-function Letter({
-  cells,
-  ox,
-  oy,
-}: {
-  cells: [number, number][];
-  ox: number;
-  oy: number;
-}) {
+function Letter({ cells, ox, oy }: { cells: [number, number][]; ox: number; oy: number }) {
   return (
     <>
       {cells.map(([c, r]) => {
@@ -70,13 +62,27 @@ function Letter({
  */
 const CELLS_D: [number, number][] = [
   // top bar (cols 0-3)
-  [0, 0], [1, 0], [2, 0], [3, 0],
+  [0, 0],
+  [1, 0],
+  [2, 0],
+  [3, 0],
   // left column (rows 1-5)
-  [0, 1], [0, 2], [0, 3], [0, 4], [0, 5],
+  [0, 1],
+  [0, 2],
+  [0, 3],
+  [0, 4],
+  [0, 5],
   // right cap (rows 1-5, col 4)
-  [4, 1], [4, 2], [4, 3], [4, 4], [4, 5],
+  [4, 1],
+  [4, 2],
+  [4, 3],
+  [4, 4],
+  [4, 5],
   // bottom bar (cols 0-3)
-  [0, 6], [1, 6], [2, 6], [3, 6],
+  [0, 6],
+  [1, 6],
+  [2, 6],
+  [3, 6],
 ];
 
 /**
@@ -91,13 +97,25 @@ const CELLS_D: [number, number][] = [
  */
 const CELLS_O: [number, number][] = [
   // top bar (cols 1-3)
-  [1, 0], [2, 0], [3, 0],
+  [1, 0],
+  [2, 0],
+  [3, 0],
   // left column (rows 1-5)
-  [0, 1], [0, 2], [0, 3], [0, 4], [0, 5],
+  [0, 1],
+  [0, 2],
+  [0, 3],
+  [0, 4],
+  [0, 5],
   // right column (rows 1-5)
-  [4, 1], [4, 2], [4, 3], [4, 4], [4, 5],
+  [4, 1],
+  [4, 2],
+  [4, 3],
+  [4, 4],
+  [4, 5],
   // bottom bar (cols 1-3)
-  [1, 6], [2, 6], [3, 6],
+  [1, 6],
+  [2, 6],
+  [3, 6],
 ];
 
 /**
@@ -112,15 +130,25 @@ const CELLS_O: [number, number][] = [
  */
 const CELLS_S: [number, number][] = [
   // top bar (cols 1-4)
-  [1, 0], [2, 0], [3, 0], [4, 0],
+  [1, 0],
+  [2, 0],
+  [3, 0],
+  [4, 0],
   // top-left column (rows 1-2)
-  [0, 1], [0, 2],
+  [0, 1],
+  [0, 2],
   // middle bar (cols 1-3)
-  [1, 3], [2, 3], [3, 3],
+  [1, 3],
+  [2, 3],
+  [3, 3],
   // bottom-right column (rows 4-5)
-  [4, 4], [4, 5],
+  [4, 4],
+  [4, 5],
   // bottom bar (cols 0-3)
-  [0, 6], [1, 6], [2, 6], [3, 6],
+  [0, 6],
+  [1, 6],
+  [2, 6],
+  [3, 6],
 ];
 
 // ---------------------------------------------------------------------------
@@ -141,7 +169,7 @@ const OX_S = OX_O + LETTER_WIDTH_PX + INTER_LETTER_PX;
 const LETTER_HEIGHT_PX = 7 * PITCH; // 98px
 
 const VIEWBOX_W = OX_S + LETTER_WIDTH_PX + PAD_X; // ~8 + 70 + 28 + 70 + 28 + 70 + 8 = 282
-const VIEWBOX_H = LETTER_HEIGHT_PX + PAD_Y * 2;   // 98 + 16 = 114
+const VIEWBOX_H = LETTER_HEIGHT_PX + PAD_Y * 2; // 98 + 16 = 114
 
 // ---------------------------------------------------------------------------
 // Component

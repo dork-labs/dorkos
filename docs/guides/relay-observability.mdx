@@ -3,10 +3,10 @@ title: Relay Observability
 description: Track message delivery, inspect traces, monitor metrics, and debug failures
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Relay Observability
 
@@ -18,18 +18,29 @@ Every message published through Relay gets a trace ID. Each delivery to an endpo
 
 ### Trace Span Fields
 
-<TypeTable type={{
-  "id": { type: "string", description: "ULID uniquely identifying this trace span" },
-  "messageId": { type: "string", description: "ULID of the message being delivered" },
-  "traceId": { type: "string", description: "ULID grouping all spans for a publish operation" },
-  "subject": { type: "string", description: "The target subject the message was published to" },
-  "status": { type: "string", description: "Delivery status: sent, delivered, failed, or timeout" },
-  "sentAt": { type: "string", description: "ISO 8601 timestamp when the message was published" },
-  "deliveredAt": { type: "string | null", description: "ISO 8601 timestamp when the message reached the endpoint" },
-  "processedAt": { type: "string | null", description: "ISO 8601 timestamp when the subscriber handler completed" },
-  "errorMessage": { type: "string | null", description: "Error message if delivery failed" },
-  "metadata": { type: "string | null", description: "JSON-encoded additional metadata about the delivery" },
-}} />
+<TypeTable
+  type={{
+    id: { type: 'string', description: 'ULID uniquely identifying this trace span' },
+    messageId: { type: 'string', description: 'ULID of the message being delivered' },
+    traceId: { type: 'string', description: 'ULID grouping all spans for a publish operation' },
+    subject: { type: 'string', description: 'The target subject the message was published to' },
+    status: { type: 'string', description: 'Delivery status: sent, delivered, failed, or timeout' },
+    sentAt: { type: 'string', description: 'ISO 8601 timestamp when the message was published' },
+    deliveredAt: {
+      type: 'string | null',
+      description: 'ISO 8601 timestamp when the message reached the endpoint',
+    },
+    processedAt: {
+      type: 'string | null',
+      description: 'ISO 8601 timestamp when the subscriber handler completed',
+    },
+    errorMessage: { type: 'string | null', description: 'Error message if delivery failed' },
+    metadata: {
+      type: 'string | null',
+      description: 'JSON-encoded additional metadata about the delivery',
+    },
+  }}
+/>
 
 ### Looking Up a Trace
 
@@ -63,12 +74,12 @@ For messages that fan out to multiple endpoints, the trace contains one span per
 
 ### Trace Statuses
 
-| Status | Meaning |
-|---|---|
-| `sent` | Message published, delivery in progress |
-| `delivered` | Message delivered and processed successfully |
-| `failed` | Subscription handler threw an error |
-| `timeout` | Message rejected (budget exceeded, access denied, TTL expired, no matching endpoints, or circuit breaker open) |
+| Status      | Meaning                                                                                                        |
+| ----------- | -------------------------------------------------------------------------------------------------------------- |
+| `sent`      | Message published, delivery in progress                                                                        |
+| `delivered` | Message delivered and processed successfully                                                                   |
+| `failed`    | Subscription handler threw an error                                                                            |
+| `timeout`   | Message rejected (budget exceeded, access denied, TTL expired, no matching endpoints, or circuit breaker open) |
 
 A healthy message moves from `sent` to `delivered`. The time between `sentAt` and `deliveredAt` is delivery latency. The time between `deliveredAt` and `processedAt` is processing latency, which includes the time the adapter (e.g., Claude Code) takes to handle the message.
 
@@ -113,19 +124,49 @@ curl http://localhost:4242/api/relay/trace/metrics
 
 ### Metrics Fields
 
-<TypeTable type={{
-  "totalMessages": { type: "number", description: "Total messages tracked in the trace store" },
-  "deliveredCount": { type: "number", description: "Messages successfully delivered or processed" },
-  "failedCount": { type: "number", description: "Messages where the subscriber handler threw an error" },
-  "deadLetteredCount": { type: "number", description: "Messages rejected to the dead letter queue" },
-  "avgDeliveryLatencyMs": { type: "number | null", description: "Average time from publish to endpoint delivery (milliseconds)" },
-  "p95DeliveryLatencyMs": { type: "number | null", description: "95th percentile delivery latency. Currently returns null — not yet implemented." },
-  "activeEndpoints": { type: "number", description: "Number of distinct endpoints that have received messages" },
-  "budgetRejections.hopLimit": { type: "number", description: "Messages rejected for exceeding the maximum hop count" },
-  "budgetRejections.ttlExpired": { type: "number", description: "Messages rejected because their TTL expired before delivery" },
-  "budgetRejections.cycleDetected": { type: "number", description: "Messages rejected because the ancestor chain contained a cycle" },
-  "budgetRejections.budgetExhausted": { type: "number", description: "Messages rejected because the call budget was depleted" },
-}} />
+<TypeTable
+  type={{
+    totalMessages: { type: 'number', description: 'Total messages tracked in the trace store' },
+    deliveredCount: { type: 'number', description: 'Messages successfully delivered or processed' },
+    failedCount: {
+      type: 'number',
+      description: 'Messages where the subscriber handler threw an error',
+    },
+    deadLetteredCount: {
+      type: 'number',
+      description: 'Messages rejected to the dead letter queue',
+    },
+    avgDeliveryLatencyMs: {
+      type: 'number | null',
+      description: 'Average time from publish to endpoint delivery (milliseconds)',
+    },
+    p95DeliveryLatencyMs: {
+      type: 'number | null',
+      description:
+        '95th percentile delivery latency. Currently returns null — not yet implemented.',
+    },
+    activeEndpoints: {
+      type: 'number',
+      description: 'Number of distinct endpoints that have received messages',
+    },
+    'budgetRejections.hopLimit': {
+      type: 'number',
+      description: 'Messages rejected for exceeding the maximum hop count',
+    },
+    'budgetRejections.ttlExpired': {
+      type: 'number',
+      description: 'Messages rejected because their TTL expired before delivery',
+    },
+    'budgetRejections.cycleDetected': {
+      type: 'number',
+      description: 'Messages rejected because the ancestor chain contained a cycle',
+    },
+    'budgetRejections.budgetExhausted': {
+      type: 'number',
+      description: 'Messages rejected because the call budget was depleted',
+    },
+  }}
+/>
 
 ### Interpreting the Numbers
 
@@ -138,7 +179,9 @@ A healthy bus has a high delivered-to-total ratio and low dead letter counts.
 - **High `avgDeliveryLatencyMs`** — A single slow endpoint can pull up the mean. Inspect traces filtered by endpoint to find the bottleneck.
 
 <Callout type="info">
-Relay metrics reflect the full history of the current database, not a recent time window. `p95DeliveryLatencyMs` currently returns `null` and `budgetRejections` counters return `0` — these are tracked at the RelayCore level but not yet aggregated into trace store metrics.
+  Relay metrics reflect the full history of the current database, not a recent time window.
+  `p95DeliveryLatencyMs` currently returns `null` and `budgetRejections` counters return `0` — these
+  are tracked at the RelayCore level but not yet aggregated into trace store metrics.
 </Callout>
 
 The DorkOS client includes a Delivery Metrics Dashboard in the Relay panel. Access it from the Relay tab in the sidebar when Relay is enabled.
@@ -160,6 +203,7 @@ Each dead letter includes the original envelope with subject, payload, and budge
 - **No matching endpoints** — The subject has no registered endpoints. Verify with `GET /api/relay/endpoints`.
 - **Budget exceeded** — The message's hop count, TTL, or call budget was exhausted.
 - **Access denied** — The sender lacks permission to publish to the target subject. Check `access-rules.json`.
+
 </Step>
 
 <Step>
@@ -172,12 +216,14 @@ curl http://localhost:4242/api/relay/messages/{messageId}/trace
 ```
 
 Check `status` and `errorMessage` on each span. A `failed` status with an error message tells you exactly what went wrong. For Claude Code adapter failures, the error typically includes the Agent SDK error message.
+
 </Step>
 
 <Step>
 ### Check endpoint health
 
 If deliveries are being rejected, the endpoint's circuit breaker may be open. The circuit breaker opens after 5 consecutive failures (configurable in `~/.dork/relay/config.json`). After a 30-second cooldown, it allows a single probe through. If the probe succeeds, normal delivery resumes.
+
 </Step>
 
 <Step>
@@ -186,6 +232,7 @@ If deliveries are being rejected, the endpoint's circuit breaker may be open. Th
 If a sender is publishing too quickly, messages are rejected by the rate limiter. The default allows 100 messages per 60-second window per sender. If an endpoint's mailbox has too many unprocessed messages, backpressure triggers at 80% capacity (warning) and 100% capacity (rejection).
 
 Both settings are tunable in `~/.dork/relay/config.json` and hot-reloaded without a restart.
+
 </Step>
 </Steps>
 
@@ -201,15 +248,17 @@ The `subject` query parameter filters which messages appear. Use `>` (URL-encode
 
 The stream emits four event types:
 
-| Event | Description |
-|---|---|
-| `relay_connected` | Initial connection confirmation with the filter pattern |
-| `relay_message` | A message envelope matching the subscription pattern |
+| Event                | Description                                                                      |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `relay_connected`    | Initial connection confirmation with the filter pattern                          |
+| `relay_message`      | A message envelope matching the subscription pattern                             |
 | `relay_backpressure` | A backpressure signal from an endpoint approaching or exceeding mailbox capacity |
-| `relay_signal` | Other signals (dead letters, typing indicators, delivery receipts) |
+| `relay_signal`       | Other signals (dead letters, typing indicators, delivery receipts)               |
 
 <Callout type="warn">
-The SSE stream is for debugging and monitoring. Long-lived SSE connections consume server resources — close them when no longer needed. For production monitoring, use the REST API or the UI dashboard.
+  The SSE stream is for debugging and monitoring. Long-lived SSE connections consume server
+  resources — close them when no longer needed. For production monitoring, use the REST API or the
+  UI dashboard.
 </Callout>
 
 ## Next Steps

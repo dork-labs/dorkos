@@ -2,12 +2,7 @@
 
 export function Logo06() {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 540 100"
-      role="img"
-      aria-label="DorkOS"
-    >
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 100" role="img" aria-label="DorkOS">
       <style>{`
         @keyframes blink {
           0%, 49% { opacity: 1; }
@@ -26,21 +21,21 @@ export function Logo06() {
 
       {/* ── D ── */}
       {/* vertical left stroke */}
-      <rect x="0"  y="14" width="10" height="72" fill="#000" />
+      <rect x="0" y="14" width="10" height="72" fill="#000" />
       {/* top horizontal bar */}
-      <rect x="0"  y="14" width="46" height="10" fill="#000" />
+      <rect x="0" y="14" width="46" height="10" fill="#000" />
       {/* bottom horizontal bar */}
-      <rect x="0"  y="76" width="46" height="10" fill="#000" />
+      <rect x="0" y="76" width="46" height="10" fill="#000" />
       {/* right vertical cap — partial height to form the D curve */}
       <rect x="46" y="24" width="10" height="52" fill="#000" />
 
       {/* ── o ── (lowercase, vertically centered; x-height 44px, y=28..72) */}
       {/* top bar */}
-      <rect x="64"  y="28" width="46" height="10" fill="#000" />
+      <rect x="64" y="28" width="46" height="10" fill="#000" />
       {/* bottom bar */}
-      <rect x="64"  y="62" width="46" height="10" fill="#000" />
+      <rect x="64" y="62" width="46" height="10" fill="#000" />
       {/* left stroke */}
-      <rect x="64"  y="28" width="10" height="44" fill="#000" />
+      <rect x="64" y="28" width="10" height="44" fill="#000" />
       {/* right stroke */}
       <rect x="100" y="28" width="10" height="44" fill="#000" />
 
@@ -84,14 +79,7 @@ export function Logo06() {
       <rect x="356" y="49" width="10" height="37" fill="#000" />
 
       {/* ── Blinking block cursor ── */}
-      <rect
-        className="cursor"
-        x="384"
-        y="14"
-        width="36"
-        height="72"
-        fill="#000"
-      />
+      <rect className="cursor" x="384" y="14" width="36" height="72" fill="#000" />
     </svg>
   );
 }

@@ -1,34 +1,32 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
-import posthog from 'posthog-js'
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import posthog from 'posthog-js';
 
 interface ContactSectionProps {
-  email: string
-  promptText?: string
+  email: string;
+  promptText?: string;
 }
 
 export function ContactSection({
   email,
   promptText = 'Have feedback, want to contribute, or just say hello?',
 }: ContactSectionProps) {
-  const [revealed, setRevealed] = useState(false)
+  const [revealed, setRevealed] = useState(false);
 
   return (
-    <section id="contact" className="py-32 px-8 bg-cream-secondary">
-      <div className="max-w-md mx-auto text-center">
-        <span className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange block mb-10">
+    <section id="contact" className="bg-cream-secondary px-8 py-32">
+      <div className="mx-auto max-w-md text-center">
+        <span className="text-2xs text-brand-orange mb-10 block font-mono tracking-[0.15em] uppercase">
           Contact
         </span>
 
-        <p className="text-warm-gray text-lg leading-[1.7] mb-10">
-          {promptText}
-        </p>
+        <p className="text-warm-gray mb-10 text-lg leading-[1.7]">{promptText}</p>
 
         {/* Terminal-style command */}
         <div className="inline-flex items-center justify-center gap-2">
-          <span className="font-mono text-lg text-warm-gray-light select-none">&gt;</span>
+          <span className="text-warm-gray-light font-mono text-lg select-none">&gt;</span>
           <AnimatePresence mode="wait">
             {revealed ? (
               <motion.a
@@ -38,7 +36,7 @@ export function ContactSection({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
                 href={`mailto:${email}`}
-                className="inline-flex items-center font-mono text-lg tracking-[0.02em] text-brand-orange hover:text-brand-green transition-smooth"
+                className="text-brand-orange hover:text-brand-green transition-smooth inline-flex items-center font-mono text-lg tracking-[0.02em]"
               >
                 {email}
                 <span className="cursor-blink" aria-hidden="true" />
@@ -51,10 +49,10 @@ export function ContactSection({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
                 onClick={() => {
-                  setRevealed(true)
-                  posthog.capture('contact_email_revealed')
+                  setRevealed(true);
+                  posthog.capture('contact_email_revealed');
                 }}
-                className="inline-flex items-center font-mono text-lg tracking-[0.02em] text-brand-orange hover:text-brand-green transition-smooth"
+                className="text-brand-orange hover:text-brand-green transition-smooth inline-flex items-center font-mono text-lg tracking-[0.02em]"
               >
                 <span>reveal_email</span>
                 <span className="cursor-blink" aria-hidden="true" />
@@ -64,5 +62,5 @@ export function ContactSection({
         </div>
       </div>
     </section>
-  )
+  );
 }

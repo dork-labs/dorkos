@@ -1,22 +1,22 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
-import posthog from 'posthog-js'
-import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import posthog from 'posthog-js';
+import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 interface IdentityCloseProps {
-  email: string
+  email: string;
 }
 
 /** Tribal identity close — origin story, boldness invitation, and contact postscript. */
 export function IdentityClose({ email }: IdentityCloseProps) {
-  const [revealed, setRevealed] = useState(false)
+  const [revealed, setRevealed] = useState(false);
 
   return (
-    <section id="about" className="py-16 md:py-28 px-8 bg-cream-white">
+    <section id="about" className="bg-cream-white px-8 py-16 md:py-28">
       <motion.div
-        className="max-w-2xl mx-auto text-center"
+        className="mx-auto max-w-2xl text-center"
         initial="hidden"
         whileInView="visible"
         viewport={VIEWPORT}
@@ -24,37 +24,40 @@ export function IdentityClose({ email }: IdentityCloseProps) {
       >
         <motion.h2
           variants={REVEAL}
-          className="text-charcoal text-[28px] md:text-[32px] font-medium tracking-[-0.02em] leading-[1.3] mb-12"
+          className="text-charcoal mb-12 text-[28px] leading-[1.3] font-medium tracking-[-0.02em] md:text-[32px]"
         >
           Built by dorks. For dorks. Run by you.
         </motion.h2>
 
-        <motion.div variants={STAGGER} className="space-y-6 mb-12">
+        <motion.div variants={STAGGER} className="mb-12 space-y-6">
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
             Dork was never an insult to us.
           </motion.p>
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
-            It is what you call someone who cares too much about something most
-            people do not care about at all. Someone who names their AI agents.
-            Someone who wakes up at 6am to check if the overnight tests passed
-            that nobody asked them to check.
+            It is what you call someone who cares too much about something most people do not care
+            about at all. Someone who names their AI agents. Someone who wakes up at 6am to check if
+            the overnight tests passed that nobody asked them to check.
           </motion.p>
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
-            We build at 3am because we cannot stop. Not because someone is paying
-            us to. Because the problem is right there and walking away from it
-            feels worse than staying up.
+            We build at 3am because we cannot stop. Not because someone is paying us to. Because the
+            problem is right there and walking away from it feels worse than staying up.
           </motion.p>
         </motion.div>
 
-
         <motion.div variants={STAGGER} className="mb-16">
-          <motion.p variants={REVEAL} className="text-warm-gray font-semibold text-lg leading-[1.7]">
+          <motion.p
+            variants={REVEAL}
+            className="text-warm-gray text-lg leading-[1.7] font-semibold"
+          >
             You&apos;ve always had more ideas than hours.
           </motion.p>
-          <motion.p variants={REVEAL} className="text-charcoal text-xl md:text-[22px] font-semibold tracking-[-0.02em] leading-[1.5]">
+          <motion.p
+            variants={REVEAL}
+            className="text-charcoal text-xl leading-[1.5] font-semibold tracking-[-0.02em] md:text-[22px]"
+          >
             That ratio just changed.
           </motion.p>
-          <motion.p variants={REVEAL} className="text-warm-gray font-semibold text-sm mt-6 italic">
+          <motion.p variants={REVEAL} className="text-warm-gray mt-6 text-sm font-semibold italic">
             &mdash;{' '}
             <a
               href="https://doriancollier.com"
@@ -67,7 +70,11 @@ export function IdentityClose({ email }: IdentityCloseProps) {
           </motion.p>
         </motion.div>
 
-        <motion.div variants={REVEAL} className="pt-8" style={{ borderTop: '1px solid rgba(139, 90, 43, 0.08)' }}>
+        <motion.div
+          variants={REVEAL}
+          className="pt-8"
+          style={{ borderTop: '1px solid rgba(139, 90, 43, 0.08)' }}
+        >
           <div className="inline-flex items-center gap-2">
             <span className="text-warm-gray text-sm">
               Questions, ideas, or just want to say hello &mdash;
@@ -79,7 +86,7 @@ export function IdentityClose({ email }: IdentityCloseProps) {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   href={`mailto:${email}`}
-                  className="font-mono text-sm text-brand-orange hover:text-brand-green transition-smooth"
+                  className="text-brand-orange hover:text-brand-green transition-smooth font-mono text-sm"
                 >
                   {email}
                 </motion.a>
@@ -89,10 +96,10 @@ export function IdentityClose({ email }: IdentityCloseProps) {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   onClick={() => {
-                    setRevealed(true)
-                    posthog.capture('contact_email_revealed')
+                    setRevealed(true);
+                    posthog.capture('contact_email_revealed');
                   }}
-                  className="font-mono text-sm text-brand-orange hover:text-brand-green transition-smooth"
+                  className="text-brand-orange hover:text-brand-green transition-smooth font-mono text-sm"
                 >
                   reveal_email
                   <span className="cursor-blink" aria-hidden="true" />
@@ -103,5 +110,5 @@ export function IdentityClose({ email }: IdentityCloseProps) {
         </motion.div>
       </motion.div>
     </section>
-  )
+  );
 }

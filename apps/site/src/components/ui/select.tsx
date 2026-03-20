@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import * as React from 'react';
+import { Select as SelectPrimitive } from '@base-ui/react/select';
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 const Select = SelectPrimitive.Root;
 
@@ -43,11 +43,11 @@ function SelectValue({
 
 function SelectTrigger({
   className,
-  size = "default",
+  size = 'default',
   children,
   ...props
 }: SelectPrimitive.Trigger.Props & {
-  size?: "sm" | "default";
+  size?: 'sm' | 'default';
 }) {
   return (
     <SelectPrimitive.Trigger
@@ -60,35 +60,26 @@ function SelectTrigger({
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon
-        render={<ChevronDownIcon className="size-4 opacity-50" />}
-      />
+      <SelectPrimitive.Icon render={<ChevronDownIcon className="size-4 opacity-50" />} />
     </SelectPrimitive.Trigger>
   );
 }
 
-function SelectPositioner({
-  className,
-  ...props
-}: SelectPrimitive.Positioner.Props) {
+function SelectPositioner({ className, ...props }: SelectPrimitive.Positioner.Props) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
         data-slot="select-positioner"
         alignItemWithTrigger={false}
         sideOffset={5}
-        className={cn("z-50", className)}
+        className={cn('z-50', className)}
         {...props}
       />
     </SelectPrimitive.Portal>
   );
 }
 
-function SelectContent({
-  className,
-  children,
-  ...props
-}: SelectPrimitive.Popup.Props) {
+function SelectContent({ className, children, ...props }: SelectPrimitive.Popup.Props) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -101,7 +92,7 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            "p-1 bg-popover text-popover-foreground data-[open]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[open]:fade-in-0 data-[closed]:zoom-out-95 data-[open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
+            'bg-popover text-popover-foreground data-[open]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[open]:fade-in-0 data-[closed]:zoom-out-95 data-[open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border p-1 shadow-md',
             className
           )}
           {...props}
@@ -114,24 +105,17 @@ function SelectContent({
   );
 }
 
-function SelectLabel({
-  className,
-  ...props
-}: SelectPrimitive.GroupLabel.Props) {
+function SelectLabel({ className, ...props }: SelectPrimitive.GroupLabel.Props) {
   return (
     <SelectPrimitive.GroupLabel
       data-slot="select-label"
-      className={cn("text-muted-foreground px-2 py-1.5 text-xs", className)}
+      className={cn('text-muted-foreground px-2 py-1.5 text-xs', className)}
       {...props}
     />
   );
 }
 
-function SelectItem({
-  className,
-  children,
-  ...props
-}: SelectPrimitive.Item.Props) {
+function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -151,29 +135,23 @@ function SelectItem({
   );
 }
 
-function SelectSeparator({
-  className,
-  ...props
-}: SelectPrimitive.Separator.Props) {
+function SelectSeparator({ className, ...props }: SelectPrimitive.Separator.Props) {
   return (
     <SelectPrimitive.Separator
       data-slot="select-separator"
-      className={cn("bg-border pointer-events-none -mx-1 my-1 h-px", className)}
+      className={cn('bg-border pointer-events-none -mx-1 my-1 h-px', className)}
       {...props}
     />
   );
 }
 
-function SelectScrollUpButton({
-  className,
-  ...props
-}: SelectPrimitive.ScrollUpArrow.Props) {
+function SelectScrollUpButton({ className, ...props }: SelectPrimitive.ScrollUpArrow.Props) {
   return (
     <SelectPrimitive.ScrollUpArrow
       data-slot="select-scroll-up-button"
       className={cn(
-        "w-full bg-popover z-51 text-center cursor-default h-6 flex items-center justify-center text-md border data-[direction=up]:border-b-0 data-[direction=down]:border-t-0 data-[direction=up]:rounded-t-md data-[direction=down]:rounded-b-md",
-        "before:content-[''] before:absolute before:w-full before:h-full before:left-0 data-[direction=up]:before:top-full data-[direction=down]:bottom-0 data-[direction=down]:before:-bottom-full",
+        'bg-popover text-md z-51 flex h-6 w-full cursor-default items-center justify-center border text-center data-[direction=down]:rounded-b-md data-[direction=down]:border-t-0 data-[direction=up]:rounded-t-md data-[direction=up]:border-b-0',
+        "before:absolute before:left-0 before:h-full before:w-full before:content-[''] data-[direction=down]:bottom-0 data-[direction=down]:before:-bottom-full data-[direction=up]:before:top-full",
         className
       )}
       {...props}
@@ -182,16 +160,13 @@ function SelectScrollUpButton({
     </SelectPrimitive.ScrollUpArrow>
   );
 }
-function SelectScrollDownButton({
-  className,
-  ...props
-}: SelectPrimitive.ScrollDownArrow.Props) {
+function SelectScrollDownButton({ className, ...props }: SelectPrimitive.ScrollDownArrow.Props) {
   return (
     <SelectPrimitive.ScrollDownArrow
       data-slot="select-scroll-down-button"
       className={cn(
-        "w-full bg-popover z-51 text-center cursor-default h-6 flex items-center justify-center text-md border data-[direction=up]:border-b-0 data-[direction=down]:border-t-0 data-[direction=up]:rounded-t-md data-[direction=down]:rounded-b-md",
-        "before:content-[''] before:absolute before:w-full before:h-full before:left-0 data-[direction=up]:before:top-full data-[direction=down]:bottom-0 data-[direction=down]:before:-bottom-full",
+        'bg-popover text-md z-51 flex h-6 w-full cursor-default items-center justify-center border text-center data-[direction=down]:rounded-b-md data-[direction=down]:border-t-0 data-[direction=up]:rounded-t-md data-[direction=up]:border-b-0',
+        "before:absolute before:left-0 before:h-full before:w-full before:content-[''] data-[direction=down]:bottom-0 data-[direction=down]:before:-bottom-full data-[direction=up]:before:top-full",
         className
       )}
       {...props}

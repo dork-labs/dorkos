@@ -1,5 +1,5 @@
-import { Suspense } from 'react'
-import { siteConfig } from '@/config/site'
+import { Suspense } from 'react';
+import { siteConfig } from '@/config/site';
 import {
   PresentationShell,
   StoryHero,
@@ -12,7 +12,7 @@ import {
   FutureVisionSection,
   MarketingHeader,
   MarketingFooter,
-} from '@/layers/features/marketing'
+} from '@/layers/features/marketing';
 
 // Reuse the same social links defined on the homepage
 const socialLinks = [
@@ -25,7 +25,7 @@ const socialLinks = [
       </svg>
     ),
   },
-]
+];
 
 /**
  * The DorkOS origin story -- Dorian's personal arc from LifeOS to multi-agent coordination.
@@ -55,5 +55,5 @@ export default function StoryPage() {
         </div>
       </PresentationShell>
     </Suspense>
-  )
+  );
 }

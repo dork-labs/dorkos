@@ -1,4 +1,4 @@
-import type { Project } from './types'
+import type { Project } from './types';
 
 export const projects: Project[] = [
   {
@@ -25,4 +25,4 @@ export const projects: Project[] = [
     description:
       'Discover and run commands from .claude/commands/ with a searchable palette. Your workflows, surfaced.',
   },
-]
+];

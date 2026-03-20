@@ -1,31 +1,31 @@
-'use client'
+'use client';
 
-import React, { useState } from 'react'
-import { motion } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
+import React, { useState } from 'react';
+import { motion } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
 import {
   VIEWPORT,
   STAGGER,
   SCALE_IN,
   DRAW_PATH,
-} from '@/layers/features/marketing/lib/motion-variants'
+} from '@/layers/features/marketing/lib/motion-variants';
 
 // ─── Geometry constants ────────────────────────────────────────────────────────
 
-const CX = 300
-const CY = 280
-const ORBIT_R = 168
-const CORE_R = 34
-const NODE_R = 22
+const CX = 300;
+const CY = 280;
+const ORBIT_R = 168;
+const CORE_R = 34;
+const NODE_R = 22;
 // Second, tighter dashed ring — decorative inner orbit
-const INNER_RING_R = 72
+const INNER_RING_R = 72;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Convert polar coords (origin = CX,CY) to SVG x,y. */
 function polar(r: number, angleDeg: number): { x: number; y: number } {
-  const rad = (angleDeg * Math.PI) / 180
-  return { x: CX + r * Math.cos(rad), y: CY + r * Math.sin(rad) }
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: CX + r * Math.cos(rad), y: CY + r * Math.sin(rad) };
 }
 
 /** Build an SVG arc path for a full circle (two arcs joined). */
@@ -35,44 +35,40 @@ function circlePath(cx: number, cy: number, r: number): string {
     `A ${r} ${r} 0 1 1 ${cx + r} ${cy}`,
     `A ${r} ${r} 0 1 1 ${cx - r} ${cy}`,
     'Z',
-  ].join(' ')
+  ].join(' ');
 }
 
 // ─── Node angle layout ─────────────────────────────────────────────────────────
 // 5 satellite modules at 72° spacing, starting at -90° (top)
-const SATELLITE_START_DEG = -90
-const SATELLITE_STEP_DEG = 72
+const SATELLITE_START_DEG = -90;
+const SATELLITE_STEP_DEG = 72;
 
 // ─── Label placement helpers ───────────────────────────────────────────────────
 
 /** Determine text-anchor based on horizontal position relative to center. */
 function anchorFor(x: number): 'start' | 'middle' | 'end' {
-  if (x < CX - 20) return 'end'
-  if (x > CX + 20) return 'start'
-  return 'middle'
+  if (x < CX - 20) return 'end';
+  if (x > CX + 20) return 'start';
+  return 'middle';
 }
 
 /** Push label outward from the node center so it clears the circle. */
-function labelOffset(
-  nx: number,
-  ny: number,
-  labelR: number,
-): { lx: number; ly: number } {
-  const dx = nx - CX
-  const dy = ny - CY
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1
+function labelOffset(nx: number, ny: number, labelR: number): { lx: number; ly: number } {
+  const dx = nx - CX;
+  const dy = ny - CY;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
   return {
     lx: nx + (dx / dist) * labelR,
     ly: ny + (dy / dist) * labelR,
-  }
+  };
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 interface StatusDotProps {
-  cx: number
-  cy: number
-  available: boolean
+  cx: number;
+  cy: number;
+  available: boolean;
 }
 
 /** Small status indicator dot rendered in SVG. */
@@ -85,13 +81,13 @@ function StatusDot({ cx, cy, available }: StatusDotProps) {
       fill={available ? 'var(--brand-green)' : 'var(--warm-gray-light)'}
       opacity={available ? 0.9 : 0.6}
     />
-  )
+  );
 }
 
 interface SpokeParticleProps {
-  path: string
-  dur: string
-  begin: string
+  path: string;
+  dur: string;
+  begin: string;
 }
 
 /** SMIL animateMotion particle that travels along a path indefinitely. */
@@ -100,13 +96,13 @@ function SpokeParticle({ path, dur, begin }: SpokeParticleProps) {
     <circle r="2.5" fill="var(--color-brand-orange)" opacity="0.75">
       <animateMotion path={path} dur={dur} repeatCount="indefinite" begin={begin} />
     </circle>
-  )
+  );
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export interface DiagramV1Props {
-  modules: SystemModule[]
+  modules: SystemModule[];
 }
 
 /**
@@ -114,40 +110,40 @@ export interface DiagramV1Props {
  * Uses Framer Motion for entrance + SMIL animateMotion for continuous particles.
  */
 export function DiagramV1({ modules }: DiagramV1Props) {
-  const [entranceDone, setEntranceDone] = useState(false)
+  const [entranceDone, setEntranceDone] = useState(false);
 
-  const coreModule = modules.find((m) => m.id === 'engine')
-  const satellites = modules.filter((m) => m.id !== 'engine')
+  const coreModule = modules.find((m) => m.id === 'engine');
+  const satellites = modules.filter((m) => m.id !== 'engine');
 
   // Pre-compute satellite geometry
   const satelliteNodes = satellites.map((mod, i) => {
-    const angleDeg = SATELLITE_START_DEG + i * SATELLITE_STEP_DEG
-    const { x, y } = polar(ORBIT_R, angleDeg)
+    const angleDeg = SATELLITE_START_DEG + i * SATELLITE_STEP_DEG;
+    const { x, y } = polar(ORBIT_R, angleDeg);
     // Spoke: center → node surface, pulled slightly inward so particle
     // starts at the inner-ring edge rather than deep in the core.
-    const startPt = polar(INNER_RING_R + 4, angleDeg)
-    const endPt = polar(ORBIT_R - NODE_R - 2, angleDeg)
-    const spokePath = `M ${startPt.x} ${startPt.y} L ${endPt.x} ${endPt.y}`
+    const startPt = polar(INNER_RING_R + 4, angleDeg);
+    const endPt = polar(ORBIT_R - NODE_R - 2, angleDeg);
+    const spokePath = `M ${startPt.x} ${startPt.y} L ${endPt.x} ${endPt.y}`;
 
-    const LABEL_CLEARANCE = NODE_R + 24
-    const { lx, ly } = labelOffset(x, y, LABEL_CLEARANCE)
-    const anchor = anchorFor(x)
+    const LABEL_CLEARANCE = NODE_R + 24;
+    const { lx, ly } = labelOffset(x, y, LABEL_CLEARANCE);
+    const anchor = anchorFor(x);
 
     // Status dot sits just outside the node, toward the orbit ring edge
-    const dotPt = polar(ORBIT_R + NODE_R + 10, angleDeg)
+    const dotPt = polar(ORBIT_R + NODE_R + 10, angleDeg);
 
-    return { mod, x, y, spokePath, lx, ly, anchor, dotPt, angleDeg }
-  })
+    return { mod, x, y, spokePath, lx, ly, anchor, dotPt, angleDeg };
+  });
 
   // Orbital ring path for SMIL particles — circle centered at CX, CY
   // We encode this as a path so animateMotion can follow it.
-  const orbitPathId = 'orbit-ring-path'
-  const orbitPathD = circlePath(CX, CY, ORBIT_R)
+  const orbitPathId = 'orbit-ring-path';
+  const orbitPathD = circlePath(CX, CY, ORBIT_R);
 
   return (
     <motion.svg
       viewBox="0 0 600 560"
-      className="w-full h-auto architecture-particles"
+      className="architecture-particles h-auto w-full"
       preserveAspectRatio="xMidYMid meet"
       aria-label="DorkOS radial orbit architecture diagram"
       initial="hidden"
@@ -189,13 +185,7 @@ export function DiagramV1({ modules }: DiagramV1Props) {
       </defs>
 
       {/* ── Layer 0: Ambient glow behind core ── */}
-      <motion.circle
-        cx={CX}
-        cy={CY}
-        r={80}
-        fill="url(#core-glow)"
-        variants={SCALE_IN}
-      />
+      <motion.circle cx={CX} cy={CY} r={80} fill="url(#core-glow)" variants={SCALE_IN} />
 
       {/* ── Layer 1: Decorative inner dashed ring ── */}
       <motion.circle
@@ -209,7 +199,9 @@ export function DiagramV1({ modules }: DiagramV1Props) {
         strokeDasharray="4 6"
         variants={DRAW_PATH}
         className={entranceDone ? 'architecture-dashes' : ''}
-        style={entranceDone ? { animationDuration: '8s', animationDirection: 'reverse' } : undefined}
+        style={
+          entranceDone ? { animationDuration: '8s', animationDirection: 'reverse' } : undefined
+        }
       />
 
       {/* ── Layer 2: Main orbital ring ── */}
@@ -240,7 +232,9 @@ export function DiagramV1({ modules }: DiagramV1Props) {
           variants={DRAW_PATH}
           custom={i}
           className={entranceDone ? 'architecture-dashes' : ''}
-          style={entranceDone ? { animationDelay: `${i * 0.2}s`, animationDuration: '2s' } : undefined}
+          style={
+            entranceDone ? { animationDelay: `${i * 0.2}s`, animationDuration: '2s' } : undefined
+          }
         />
       ))}
 
@@ -276,13 +270,7 @@ export function DiagramV1({ modules }: DiagramV1Props) {
       {satelliteNodes.map(({ mod, x, y, lx, ly, anchor, dotPt }) => (
         <motion.g key={mod.id} variants={SCALE_IN}>
           {/* Node shadow / depth ring */}
-          <circle
-            cx={x}
-            cy={y}
-            r={NODE_R + 5}
-            fill="var(--color-brand-orange)"
-            opacity="0.06"
-          />
+          <circle cx={x} cy={y} r={NODE_R + 5} fill="var(--color-brand-orange)" opacity="0.06" />
 
           {/* Node border ring */}
           <circle
@@ -327,7 +315,13 @@ export function DiagramV1({ modules }: DiagramV1Props) {
             textAnchor={anchor}
             dominantBaseline="middle"
             className="fill-warm-gray font-mono"
-            style={{ fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase' } as React.CSSProperties}
+            style={
+              {
+                fontSize: '9px',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+              } as React.CSSProperties
+            }
           >
             {mod.label}
           </text>
@@ -417,7 +411,13 @@ export function DiagramV1({ modules }: DiagramV1Props) {
           textAnchor="middle"
           dominantBaseline="middle"
           className="fill-warm-gray font-mono"
-          style={{ fontSize: '8px', letterSpacing: '0.08em', textTransform: 'uppercase' } as React.CSSProperties}
+          style={
+            {
+              fontSize: '8px',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            } as React.CSSProperties
+          }
         >
           {coreModule?.label ?? 'AI Server'}
         </text>
@@ -457,5 +457,5 @@ export function DiagramV1({ modules }: DiagramV1Props) {
         </text>
       </g>
     </motion.svg>
-  )
+  );
 }

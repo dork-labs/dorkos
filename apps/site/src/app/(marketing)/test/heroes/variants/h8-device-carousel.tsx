@@ -1,31 +1,31 @@
-'use client'
+'use client';
 
-import { useState, useRef } from 'react'
-import Link from 'next/link'
-import { motion, AnimatePresence } from 'motion/react'
-import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants'
+import { useState, useRef } from 'react';
+import Link from 'next/link';
+import { motion, AnimatePresence } from 'motion/react';
+import { REVEAL, STAGGER } from '@/layers/features/marketing/lib/motion-variants';
 
 interface HeroProps {
-  headline: string
-  subhead: string
-  ctaText: string
-  ctaHref: string
+  headline: string;
+  subhead: string;
+  ctaText: string;
+  ctaHref: string;
 }
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const BORDER = 'rgba(139, 90, 43, 0.12)'
-const BORDER_LIGHT = 'rgba(139, 90, 43, 0.08)'
-const ORANGE = '#E85D04'
-const CHARCOAL = '#1A1814'
-const CREAM_WHITE = '#FFFEFB'
-const CREAM_PRIMARY = '#F5F0E6'
-const CREAM_SECONDARY = '#EDE6D6'
-const WARM_GRAY = '#7A756A'
-const WARM_GRAY_MED = '#4A4640'
-const GREEN = '#228B22'
+const BORDER = 'rgba(139, 90, 43, 0.12)';
+const BORDER_LIGHT = 'rgba(139, 90, 43, 0.08)';
+const ORANGE = '#E85D04';
+const CHARCOAL = '#1A1814';
+const CREAM_WHITE = '#FFFEFB';
+const CREAM_PRIMARY = '#F5F0E6';
+const CREAM_SECONDARY = '#EDE6D6';
+const WARM_GRAY = '#7A756A';
+const WARM_GRAY_MED = '#4A4640';
+const GREEN = '#228B22';
 
 // ---------------------------------------------------------------------------
 // SVG Icons
@@ -33,10 +33,17 @@ const GREEN = '#228B22'
 
 function DeviceIcon({ active, children }: { active: boolean; children: React.ReactNode }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ color: active ? ORANGE : WARM_GRAY }}>
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      style={{ color: active ? ORANGE : WARM_GRAY }}
+    >
       {children}
     </svg>
-  )
+  );
 }
 
 function DesktopIcon({ active }: { active: boolean }) {
@@ -45,16 +52,24 @@ function DesktopIcon({ active }: { active: boolean }) {
       <rect x="1" y="2" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.25" />
       <path d="M5.5 13h5M8 11v2" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
     </DeviceIcon>
-  )
+  );
 }
 
 function TabletIcon({ active }: { active: boolean }) {
   return (
     <DeviceIcon active={active}>
-      <rect x="2.5" y="1" width="11" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.25" />
+      <rect
+        x="2.5"
+        y="1"
+        width="11"
+        height="14"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
       <circle cx="8" cy="13" r="0.75" fill="currentColor" />
     </DeviceIcon>
-  )
+  );
 }
 
 function PhoneIcon({ active }: { active: boolean }) {
@@ -64,7 +79,7 @@ function PhoneIcon({ active }: { active: boolean }) {
       <path d="M6.5 2.5h3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
       <circle cx="8" cy="13" r="0.75" fill="currentColor" />
     </DeviceIcon>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -75,50 +90,78 @@ function PhoneIcon({ active }: { active: boolean }) {
 function AgentStatus() {
   return (
     <div
-      className="flex items-center gap-1.5 px-2 py-1 rounded-[3px]"
+      className="flex items-center gap-1.5 rounded-[3px] px-2 py-1"
       style={{ background: CREAM_SECONDARY, border: `1px solid ${BORDER}` }}
     >
       <span
-        className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0"
+        className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full"
         style={{ background: GREEN }}
       />
       <span className="font-mono text-[9px] leading-none" style={{ color: WARM_GRAY }}>
         Agent running…
       </span>
     </div>
-  )
+  );
 }
 
 /** Reusable chat message pair. Pass `compact` for tablet/phone sizes. */
 function ChatMessages({ compact = false }: { compact?: boolean }) {
-  const pad = compact ? 'px-2 py-1.5' : 'px-3 py-2'
-  const size = compact ? 'text-[9px]' : 'text-[11px]'
+  const pad = compact ? 'px-2 py-1.5' : 'px-3 py-2';
+  const size = compact ? 'text-[9px]' : 'text-[11px]';
   return (
     <div className="flex flex-col gap-2">
       <div className="flex justify-end">
-        <div className={`max-w-[78%] ${pad} rounded-[5px] rounded-tr-[2px] font-mono ${size} leading-[1.45]`} style={{ background: CHARCOAL, color: CREAM_PRIMARY }}>
+        <div
+          className={`max-w-[78%] ${pad} rounded-[5px] rounded-tr-[2px] font-mono ${size} leading-[1.45]`}
+          style={{ background: CHARCOAL, color: CREAM_PRIMARY }}
+        >
           Fix the JWT refresh bug.
         </div>
       </div>
       <div className="flex justify-start">
-        <div className={`max-w-[82%] ${pad} rounded-[5px] rounded-tl-[2px] ${size} leading-[1.55]`} style={{ background: CREAM_PRIMARY, color: WARM_GRAY_MED, border: `1px solid ${BORDER}` }}>
-          {!compact && <div className="font-mono text-[9px] uppercase tracking-[0.1em] mb-1" style={{ color: ORANGE }}>Claude</div>}
-          Reading <code className="px-[3px] rounded-[2px] font-mono" style={{ background: CREAM_SECONDARY, fontSize: compact ? '8px' : '9px' }}>auth/middleware.ts</code>…
+        <div
+          className={`max-w-[82%] ${pad} rounded-[5px] rounded-tl-[2px] ${size} leading-[1.55]`}
+          style={{ background: CREAM_PRIMARY, color: WARM_GRAY_MED, border: `1px solid ${BORDER}` }}
+        >
+          {!compact && (
+            <div
+              className="mb-1 font-mono text-[9px] tracking-[0.1em] uppercase"
+              style={{ color: ORANGE }}
+            >
+              Claude
+            </div>
+          )}
+          Reading{' '}
+          <code
+            className="rounded-[2px] px-[3px] font-mono"
+            style={{ background: CREAM_SECONDARY, fontSize: compact ? '8px' : '9px' }}
+          >
+            auth/middleware.ts
+          </code>
+          …
         </div>
       </div>
-      <div className="flex items-center gap-1.5 px-2 py-1 rounded-[3px]" style={{ background: CREAM_PRIMARY, border: `1px solid ${BORDER}` }}>
-        <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: GREEN }} />
-        <span className="font-mono text-[9px] truncate" style={{ color: WARM_GRAY }}>Editing auth/middleware.ts</span>
+      <div
+        className="flex items-center gap-1.5 rounded-[3px] px-2 py-1"
+        style={{ background: CREAM_PRIMARY, border: `1px solid ${BORDER}` }}
+      >
+        <span
+          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full"
+          style={{ background: GREEN }}
+        />
+        <span className="truncate font-mono text-[9px]" style={{ color: WARM_GRAY }}>
+          Editing auth/middleware.ts
+        </span>
       </div>
     </div>
-  )
+  );
 }
 
 /** Shared input bar used by all device screens. */
 function InputBar({ compact = false }: { compact?: boolean }) {
   return (
     <div
-      className="flex items-center gap-2 px-2 py-2 border-t shrink-0"
+      className="flex shrink-0 items-center gap-2 border-t px-2 py-2"
       style={{ borderColor: BORDER_LIGHT }}
     >
       <div
@@ -128,15 +171,21 @@ function InputBar({ compact = false }: { compact?: boolean }) {
         {compact ? 'Message…' : 'Message Claude…'}
       </div>
       <div
-        className="w-6 h-6 rounded-[3px] flex items-center justify-center shrink-0"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[3px]"
         style={{ background: ORANGE }}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <path d="M1 5h8M6 2l3 3-3 3" stroke={CREAM_WHITE} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M1 5h8M6 2l3 3-3 3"
+            stroke={CREAM_WHITE}
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </div>
     </div>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -149,45 +198,79 @@ function DesktopFrame() {
     { label: 'Fix auth middleware', active: true },
     { label: 'Refactor API routes', active: false },
     { label: 'Add test coverage', active: false },
-  ]
+  ];
   return (
     <div
-      className="rounded-xl overflow-hidden shadow-floating flex flex-col w-full"
+      className="shadow-floating flex w-full flex-col overflow-hidden rounded-xl"
       style={{ background: CREAM_WHITE, border: `1px solid ${BORDER}`, maxHeight: '340px' }}
     >
       {/* Title bar */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b shrink-0" style={{ background: CREAM_SECONDARY, borderColor: BORDER }}>
-        <span className="w-2.5 h-2.5 rounded-full bg-[#FF5F57]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#FEBC2E]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#28C840]" />
-        <div className="flex-1 mx-auto max-w-[180px] rounded-[3px] px-2 py-0.5 font-mono text-[9px] text-center" style={{ background: CREAM_PRIMARY, color: WARM_GRAY }}>
+      <div
+        className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5"
+        style={{ background: CREAM_SECONDARY, borderColor: BORDER }}
+      >
+        <span className="h-2.5 w-2.5 rounded-full bg-[#FF5F57]" />
+        <span className="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]" />
+        <span className="h-2.5 w-2.5 rounded-full bg-[#28C840]" />
+        <div
+          className="mx-auto max-w-[180px] flex-1 rounded-[3px] px-2 py-0.5 text-center font-mono text-[9px]"
+          style={{ background: CREAM_PRIMARY, color: WARM_GRAY }}
+        >
           localhost:4242
         </div>
       </div>
       {/* App body */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-[136px] shrink-0 border-r flex flex-col" style={{ background: CREAM_SECONDARY, borderColor: BORDER }}>
-          <div className="px-2.5 py-2 border-b shrink-0" style={{ borderColor: BORDER }}>
-            <span className="font-mono text-[8px] tracking-[0.14em] uppercase" style={{ color: WARM_GRAY }}>Sessions</span>
+        <div
+          className="flex w-[136px] shrink-0 flex-col border-r"
+          style={{ background: CREAM_SECONDARY, borderColor: BORDER }}
+        >
+          <div className="shrink-0 border-b px-2.5 py-2" style={{ borderColor: BORDER }}>
+            <span
+              className="font-mono text-[8px] tracking-[0.14em] uppercase"
+              style={{ color: WARM_GRAY }}
+            >
+              Sessions
+            </span>
           </div>
-          <div className="flex-1 py-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden py-1">
             {sessions.map((s) => (
-              <div key={s.label} className="px-2.5 py-1.5 mx-1 my-0.5 rounded-[3px]" style={{ background: s.active ? CREAM_WHITE : 'transparent', borderLeft: s.active ? `2px solid ${ORANGE}` : '2px solid transparent' }}>
-                <div className="font-mono text-[9px] truncate" style={{ color: s.active ? CHARCOAL : WARM_GRAY }}>{s.label}</div>
+              <div
+                key={s.label}
+                className="mx-1 my-0.5 rounded-[3px] px-2.5 py-1.5"
+                style={{
+                  background: s.active ? CREAM_WHITE : 'transparent',
+                  borderLeft: s.active ? `2px solid ${ORANGE}` : '2px solid transparent',
+                }}
+              >
+                <div
+                  className="truncate font-mono text-[9px]"
+                  style={{ color: s.active ? CHARCOAL : WARM_GRAY }}
+                >
+                  {s.label}
+                </div>
               </div>
             ))}
           </div>
-          <div className="p-1.5 border-t shrink-0" style={{ borderColor: BORDER }}>
-            <div className="py-1 rounded-[3px] font-mono text-[8px] text-center" style={{ background: ORANGE, color: CREAM_WHITE }}>
+          <div className="shrink-0 border-t p-1.5" style={{ borderColor: BORDER }}>
+            <div
+              className="rounded-[3px] py-1 text-center font-mono text-[8px]"
+              style={{ background: ORANGE, color: CREAM_WHITE }}
+            >
               + New
             </div>
           </div>
         </div>
         {/* Main */}
-        <div className="flex-1 flex flex-col min-w-0" style={{ background: CREAM_WHITE }}>
-          <div className="px-3 py-2 border-b shrink-0 flex items-center justify-between" style={{ borderColor: BORDER_LIGHT }}>
-            <span className="font-mono text-[9px]" style={{ color: CHARCOAL }}>Fix auth middleware</span>
+        <div className="flex min-w-0 flex-1 flex-col" style={{ background: CREAM_WHITE }}>
+          <div
+            className="flex shrink-0 items-center justify-between border-b px-3 py-2"
+            style={{ borderColor: BORDER_LIGHT }}
+          >
+            <span className="font-mono text-[9px]" style={{ color: CHARCOAL }}>
+              Fix auth middleware
+            </span>
             <AgentStatus />
           </div>
           <div className="flex-1 overflow-hidden p-3">
@@ -197,37 +280,65 @@ function DesktopFrame() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 /** Tablet frame — icon rail + full-width chat. */
 function TabletFrame() {
   return (
     <div
-      className="rounded-xl overflow-hidden shadow-floating flex flex-col mx-auto"
-      style={{ background: CREAM_WHITE, border: `1px solid ${BORDER}`, width: '300px', maxHeight: '360px' }}
+      className="shadow-floating mx-auto flex flex-col overflow-hidden rounded-xl"
+      style={{
+        background: CREAM_WHITE,
+        border: `1px solid ${BORDER}`,
+        width: '300px',
+        maxHeight: '360px',
+      }}
     >
       {/* Status bar */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b shrink-0" style={{ background: CREAM_SECONDARY, borderColor: BORDER }}>
-        <span className="w-2 h-2 rounded-full bg-[#FF5F57]" />
-        <span className="w-2 h-2 rounded-full bg-[#FEBC2E]" />
-        <span className="w-2 h-2 rounded-full bg-[#28C840]" />
-        <span className="font-mono text-[8px] ml-auto" style={{ color: WARM_GRAY }}>DorkOS</span>
+      <div
+        className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2"
+        style={{ background: CREAM_SECONDARY, borderColor: BORDER }}
+      >
+        <span className="h-2 w-2 rounded-full bg-[#FF5F57]" />
+        <span className="h-2 w-2 rounded-full bg-[#FEBC2E]" />
+        <span className="h-2 w-2 rounded-full bg-[#28C840]" />
+        <span className="ml-auto font-mono text-[8px]" style={{ color: WARM_GRAY }}>
+          DorkOS
+        </span>
       </div>
       {/* Body */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Icon rail */}
-        <div className="w-9 shrink-0 border-r flex flex-col items-center py-2 gap-2" style={{ background: CREAM_SECONDARY, borderColor: BORDER }}>
+        <div
+          className="flex w-9 shrink-0 flex-col items-center gap-2 border-r py-2"
+          style={{ background: CREAM_SECONDARY, borderColor: BORDER }}
+        >
           {[ORANGE, WARM_GRAY, WARM_GRAY].map((color, i) => (
-            <div key={i} className="w-6 h-6 rounded-[4px] flex items-center justify-center" style={{ background: i === 0 ? CREAM_WHITE : 'transparent', border: i === 0 ? `1px solid ${BORDER}` : 'none' }}>
-              <div className="w-3 h-3 rounded-[2px]" style={{ background: color, opacity: i === 0 ? 1 : 0.4 }} />
+            <div
+              key={i}
+              className="flex h-6 w-6 items-center justify-center rounded-[4px]"
+              style={{
+                background: i === 0 ? CREAM_WHITE : 'transparent',
+                border: i === 0 ? `1px solid ${BORDER}` : 'none',
+              }}
+            >
+              <div
+                className="h-3 w-3 rounded-[2px]"
+                style={{ background: color, opacity: i === 0 ? 1 : 0.4 }}
+              />
             </div>
           ))}
         </div>
         {/* Chat */}
-        <div className="flex-1 flex flex-col min-w-0" style={{ background: CREAM_WHITE }}>
-          <div className="px-2.5 py-1.5 border-b shrink-0 flex items-center justify-between" style={{ borderColor: BORDER_LIGHT }}>
-            <span className="font-mono text-[9px]" style={{ color: CHARCOAL }}>Fix auth middleware</span>
+        <div className="flex min-w-0 flex-1 flex-col" style={{ background: CREAM_WHITE }}>
+          <div
+            className="flex shrink-0 items-center justify-between border-b px-2.5 py-1.5"
+            style={{ borderColor: BORDER_LIGHT }}
+          >
+            <span className="font-mono text-[9px]" style={{ color: CHARCOAL }}>
+              Fix auth middleware
+            </span>
             <AgentStatus />
           </div>
           <div className="flex-1 overflow-hidden p-2.5">
@@ -237,23 +348,36 @@ function TabletFrame() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 /** Phone frame — notch, full-height chat, bottom nav. */
 function PhoneFrame() {
   return (
     <div
-      className="rounded-[22px] overflow-hidden shadow-floating flex flex-col mx-auto"
-      style={{ background: CREAM_WHITE, border: `2px solid ${BORDER}`, width: '200px', maxHeight: '380px' }}
+      className="shadow-floating mx-auto flex flex-col overflow-hidden rounded-[22px]"
+      style={{
+        background: CREAM_WHITE,
+        border: `2px solid ${BORDER}`,
+        width: '200px',
+        maxHeight: '380px',
+      }}
     >
       {/* Notch bar */}
-      <div className="flex items-center justify-center pt-2 pb-1 shrink-0" style={{ background: CREAM_WHITE }}>
-        <div className="w-16 h-3.5 rounded-full" style={{ background: CHARCOAL }} />
+      <div
+        className="flex shrink-0 items-center justify-center pt-2 pb-1"
+        style={{ background: CREAM_WHITE }}
+      >
+        <div className="h-3.5 w-16 rounded-full" style={{ background: CHARCOAL }} />
       </div>
       {/* Header */}
-      <div className="px-3 py-1.5 border-b shrink-0 flex items-center justify-between" style={{ borderColor: BORDER_LIGHT }}>
-        <span className="font-mono text-[9px] font-medium" style={{ color: CHARCOAL }}>Session</span>
+      <div
+        className="flex shrink-0 items-center justify-between border-b px-3 py-1.5"
+        style={{ borderColor: BORDER_LIGHT }}
+      >
+        <span className="font-mono text-[9px] font-medium" style={{ color: CHARCOAL }}>
+          Session
+        </span>
         <AgentStatus />
       </div>
       {/* Chat area */}
@@ -264,18 +388,24 @@ function PhoneFrame() {
       <InputBar compact />
       {/* Bottom nav */}
       <div
-        className="flex items-center justify-around px-4 py-2 border-t shrink-0"
+        className="flex shrink-0 items-center justify-around border-t px-4 py-2"
         style={{ background: CREAM_SECONDARY, borderColor: BORDER }}
       >
         {[ORANGE, WARM_GRAY, WARM_GRAY].map((color, i) => (
           <div key={i} className="flex flex-col items-center gap-0.5">
-            <div className="w-4 h-4 rounded-[3px]" style={{ background: color, opacity: i === 0 ? 1 : 0.35 }} />
-            <div className="w-3 h-[2px] rounded-full" style={{ background: i === 0 ? ORANGE : WARM_GRAY, opacity: i === 0 ? 1 : 0.3 }} />
+            <div
+              className="h-4 w-4 rounded-[3px]"
+              style={{ background: color, opacity: i === 0 ? 1 : 0.35 }}
+            />
+            <div
+              className="h-[2px] w-3 rounded-full"
+              style={{ background: i === 0 ? ORANGE : WARM_GRAY, opacity: i === 0 ? 1 : 0.3 }}
+            />
           </div>
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +431,7 @@ const DEVICES = [
     Icon: PhoneIcon,
     Frame: PhoneFrame,
   },
-] as const
+] as const;
 
 // ---------------------------------------------------------------------------
 // Carousel slide variants (direction-aware)
@@ -312,7 +442,7 @@ function slideVariants(direction: 1 | -1) {
     enter: { x: direction * 60, opacity: 0 },
     center: { x: 0, opacity: 1 },
     exit: { x: direction * -60, opacity: 0 },
-  }
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -324,80 +454,88 @@ function slideVariants(direction: 1 | -1) {
  * Users click tabs or swipe to switch between device frames.
  */
 export function HeroV8({ headline, subhead, ctaText, ctaHref }: HeroProps) {
-  const [activeIndex, setActiveIndex] = useState(0)
-  const [direction, setDirection] = useState<1 | -1>(1)
-  const pointerStartX = useRef<number | null>(null)
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [direction, setDirection] = useState<1 | -1>(1);
+  const pointerStartX = useRef<number | null>(null);
 
   function goTo(index: number) {
-    setDirection(index > activeIndex ? 1 : -1)
-    setActiveIndex(index)
+    setDirection(index > activeIndex ? 1 : -1);
+    setActiveIndex(index);
   }
 
   function handlePointerDown(e: React.PointerEvent) {
-    pointerStartX.current = e.clientX
+    pointerStartX.current = e.clientX;
   }
 
   function handlePointerUp(e: React.PointerEvent) {
-    if (pointerStartX.current === null) return
-    const delta = e.clientX - pointerStartX.current
-    pointerStartX.current = null
-    if (Math.abs(delta) < 40) return
+    if (pointerStartX.current === null) return;
+    const delta = e.clientX - pointerStartX.current;
+    pointerStartX.current = null;
+    if (Math.abs(delta) < 40) return;
     if (delta < 0 && activeIndex < DEVICES.length - 1) {
-      goTo(activeIndex + 1)
+      goTo(activeIndex + 1);
     } else if (delta > 0 && activeIndex > 0) {
-      goTo(activeIndex - 1)
+      goTo(activeIndex - 1);
     }
   }
 
-  const ActiveFrame = DEVICES[activeIndex].Frame
-  const variants = slideVariants(direction)
+  const ActiveFrame = DEVICES[activeIndex].Frame;
+  const variants = slideVariants(direction);
 
   return (
-    <section className="relative min-h-[85vh] bg-cream-primary flex flex-col items-center justify-center px-6 py-16 overflow-hidden">
+    <section className="bg-cream-primary relative flex min-h-[85vh] flex-col items-center justify-center overflow-hidden px-6 py-16">
       {/* Subtle dot-grid background */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: `radial-gradient(circle, rgba(139,90,43,0.18) 1px, transparent 1px)`,
           backgroundSize: '24px 24px',
           maskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 40%, transparent 100%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 40%, transparent 100%)',
+          WebkitMaskImage:
+            'radial-gradient(ellipse 80% 70% at 50% 50%, black 40%, transparent 100%)',
         }}
       />
 
       {/* Content wrapper */}
       <motion.div
-        className="relative z-10 w-full max-w-5xl mx-auto flex flex-col items-center gap-10"
+        className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center gap-10"
         initial="hidden"
         animate="visible"
         variants={STAGGER}
       >
         {/* Headline + subhead */}
-        <div className="text-center max-w-[640px]">
-          <motion.p variants={REVEAL} className="font-mono text-2xs tracking-[0.2em] uppercase text-brand-orange mb-4">
+        <div className="max-w-[640px] text-center">
+          <motion.p
+            variants={REVEAL}
+            className="text-2xs text-brand-orange mb-4 font-mono tracking-[0.2em] uppercase"
+          >
             Any device. Any screen.
           </motion.p>
           <motion.h1
             variants={REVEAL}
-            className="font-bold text-charcoal tracking-[-0.04em] mb-5"
+            className="text-charcoal mb-5 font-bold tracking-[-0.04em]"
             style={{ fontSize: 'clamp(32px, 5.5vw, 64px)', lineHeight: 1.05 }}
           >
             {headline}
           </motion.h1>
-          <motion.p variants={REVEAL} className="text-warm-gray text-base font-light leading-[1.7]">
+          <motion.p variants={REVEAL} className="text-warm-gray text-base leading-[1.7] font-light">
             {subhead}
           </motion.p>
         </div>
 
         {/* Device tab selector */}
-        <motion.div variants={REVEAL} className="flex items-center gap-1 p-1 rounded-lg" style={{ background: CREAM_SECONDARY, border: `1px solid ${BORDER}` }}>
+        <motion.div
+          variants={REVEAL}
+          className="flex items-center gap-1 rounded-lg p-1"
+          style={{ background: CREAM_SECONDARY, border: `1px solid ${BORDER}` }}
+        >
           {DEVICES.map((device, i) => {
-            const isActive = i === activeIndex
+            const isActive = i === activeIndex;
             return (
               <button
                 key={device.id}
                 onClick={() => goTo(i)}
-                className="relative flex items-center gap-2 px-4 py-2 rounded-md font-mono text-button tracking-[0.06em] transition-smooth focus-visible:outline-none focus-visible:ring-2"
+                className="text-button transition-smooth relative flex items-center gap-2 rounded-md px-4 py-2 font-mono tracking-[0.06em] focus-visible:ring-2 focus-visible:outline-none"
                 style={{ color: isActive ? CHARCOAL : WARM_GRAY }}
                 aria-pressed={isActive}
                 aria-label={`View ${device.label} layout`}
@@ -417,13 +555,13 @@ export function HeroV8({ headline, subhead, ctaText, ctaHref }: HeroProps) {
                 {isActive && (
                   <motion.div
                     layoutId="device-tab-underline"
-                    className="absolute bottom-0 left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full"
+                    className="absolute bottom-0 left-1/2 h-[2px] w-8 -translate-x-1/2 rounded-full"
                     style={{ background: ORANGE }}
                     transition={{ type: 'spring', stiffness: 380, damping: 32 }}
                   />
                 )}
               </button>
-            )
+            );
           })}
         </motion.div>
 
@@ -444,7 +582,7 @@ export function HeroV8({ headline, subhead, ctaText, ctaHref }: HeroProps) {
               animate="center"
               exit="exit"
               transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              className="w-full flex justify-center"
+              className="flex w-full justify-center"
             >
               <div className="w-full">
                 <ActiveFrame />
@@ -460,7 +598,7 @@ export function HeroV8({ headline, subhead, ctaText, ctaHref }: HeroProps) {
               key={i}
               onClick={() => goTo(i)}
               aria-label={`Go to ${DEVICES[i].label}`}
-              className="rounded-full transition-smooth"
+              className="transition-smooth rounded-full"
               style={{
                 width: i === activeIndex ? '20px' : '6px',
                 height: '6px',
@@ -471,25 +609,30 @@ export function HeroV8({ headline, subhead, ctaText, ctaHref }: HeroProps) {
         </motion.div>
 
         {/* CTAs */}
-        <motion.div variants={REVEAL} className="flex flex-col sm:flex-row items-center gap-5">
+        <motion.div variants={REVEAL} className="flex flex-col items-center gap-5 sm:flex-row">
           <Link
             href={ctaHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center font-mono text-button tracking-[0.1em] text-brand-orange hover:text-brand-green transition-smooth"
+            className="text-button text-brand-orange hover:text-brand-green transition-smooth inline-flex items-center font-mono tracking-[0.1em]"
           >
             {ctaText}
             <span className="cursor-blink" aria-hidden="true" />
           </Link>
-          <span className="text-warm-gray-light font-mono text-2xs hidden sm:inline" aria-hidden="true">·</span>
+          <span
+            className="text-warm-gray-light text-2xs hidden font-mono sm:inline"
+            aria-hidden="true"
+          >
+            ·
+          </span>
           <Link
             href="/docs/getting-started/quickstart"
-            className="inline-flex items-center font-mono text-2xs tracking-[0.1em] text-warm-gray-light hover:text-brand-orange transition-smooth"
+            className="text-2xs text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center font-mono tracking-[0.1em]"
           >
             Read the docs &rarr;
           </Link>
         </motion.div>
       </motion.div>
     </section>
-  )
+  );
 }

@@ -1,20 +1,16 @@
-import * as React from "react";
-import { NavigationMenu as NavigationMenuPrimitive } from "@base-ui/react/navigation-menu";
-import { cva } from "class-variance-authority";
-import { ChevronDownIcon } from "lucide-react";
+import * as React from 'react';
+import { NavigationMenu as NavigationMenuPrimitive } from '@base-ui/react/navigation-menu';
+import { cva } from 'class-variance-authority';
+import { ChevronDownIcon } from 'lucide-react';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
-function NavigationMenu({
-  className,
-  children,
-  ...props
-}: NavigationMenuPrimitive.Root.Props) {
+function NavigationMenu({ className, children, ...props }: NavigationMenuPrimitive.Root.Props) {
   return (
     <NavigationMenuPrimitive.Root
       data-slot="navigation-menu"
       className={cn(
-        "group/navigation-menu relative flex max-w-max flex-1 items-center justify-center",
+        'group/navigation-menu relative flex max-w-max flex-1 items-center justify-center',
         className
       )}
       {...props}
@@ -24,37 +20,28 @@ function NavigationMenu({
   );
 }
 
-function NavigationMenuList({
-  className,
-  ...props
-}: NavigationMenuPrimitive.List.Props) {
+function NavigationMenuList({ className, ...props }: NavigationMenuPrimitive.List.Props) {
   return (
     <NavigationMenuPrimitive.List
       data-slot="navigation-menu-list"
-      className={cn(
-        "group flex flex-1 list-none items-center justify-center gap-1",
-        className
-      )}
+      className={cn('group flex flex-1 list-none items-center justify-center gap-1', className)}
       {...props}
     />
   );
 }
 
-function NavigationMenuItem({
-  className,
-  ...props
-}: NavigationMenuPrimitive.Item.Props) {
+function NavigationMenuItem({ className, ...props }: NavigationMenuPrimitive.Item.Props) {
   return (
     <NavigationMenuPrimitive.Item
       data-slot="navigation-menu-item"
-      className={cn("relative", className)}
+      className={cn('relative', className)}
       {...props}
     />
   );
 }
 
 const navigationMenuTriggerStyle = cva(
-  "group inline-flex h-9 w-max items-center justify-center rounded-md bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 data-[popup-open]:hover:bg-accent data-[popup-open]:text-accent-foreground data-[popup-open]:focus:bg-accent data-[popup-open]:bg-accent/50 focus-visible:ring-ring/50 outline-none transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1"
+  'group inline-flex h-9 w-max items-center justify-center rounded-md bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 data-[popup-open]:hover:bg-accent data-[popup-open]:text-accent-foreground data-[popup-open]:focus:bg-accent data-[popup-open]:bg-accent/50 focus-visible:ring-ring/50 outline-none transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1'
 );
 
 function NavigationMenuTrigger({
@@ -65,10 +52,10 @@ function NavigationMenuTrigger({
   return (
     <NavigationMenuPrimitive.Trigger
       data-slot="navigation-menu-trigger"
-      className={cn(navigationMenuTriggerStyle(), "group", className)}
+      className={cn(navigationMenuTriggerStyle(), 'group', className)}
       {...props}
     >
-      {children}{" "}
+      {children}{' '}
       <ChevronDownIcon
         className="relative top-[1px] ml-1 size-3 transition duration-300 group-data-[popup-open]:rotate-180"
         aria-hidden="true"
@@ -77,21 +64,18 @@ function NavigationMenuTrigger({
   );
 }
 
-function NavigationMenuContent({
-  className,
-  ...props
-}: NavigationMenuPrimitive.Content.Props) {
+function NavigationMenuContent({ className, ...props }: NavigationMenuPrimitive.Content.Props) {
   return (
     <NavigationMenuPrimitive.Content
       data-slot="navigation-menu-content"
       className={cn(
-        "w-[calc(100vw_-_40px)] h-full p-2 sm:w-max xs:min-w-[400px] ",
-        "transition-[opacity,transform,translate] duration-[var(--duration)] ease-[var(--easing)] ",
-        "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 ",
-        "data-[starting-style]:data-[activation-direction=left]:translate-x-[-50%] ",
-        "data-[starting-style]:data-[activation-direction=right]:translate-x-[50%] ",
-        "data-[ending-style]:data-[activation-direction=left]:translate-x-[50%] ",
-        "data-[ending-style]:data-[activation-direction=right]:translate-x-[-50%]",
+        'xs:min-w-[400px] h-full w-[calc(100vw_-_40px)] p-2 sm:w-max',
+        'transition-[opacity,transform,translate] duration-[var(--duration)] ease-[var(--easing)]',
+        'data-[ending-style]:opacity-0 data-[starting-style]:opacity-0',
+        'data-[starting-style]:data-[activation-direction=left]:translate-x-[-50%]',
+        'data-[starting-style]:data-[activation-direction=right]:translate-x-[50%]',
+        'data-[ending-style]:data-[activation-direction=left]:translate-x-[50%]',
+        'data-[ending-style]:data-[activation-direction=right]:translate-x-[-50%]',
         className
       )}
       {...props}
@@ -110,15 +94,15 @@ function NavigationMenuPositioner({
         data-slot="navigation-menu-positioner"
         sideOffset={10}
         collisionPadding={{ top: 5, bottom: 5, left: 20, right: 20 }}
-        collisionAvoidance={{ side: "none" }}
+        collisionAvoidance={{ side: 'none' }}
         className={cn(
           "z-50 box-border h-[var(--positioner-height)] w-[var(--positioner-width)] max-w-[var(--available-width)] transition-[top,left,right,bottom] duration-[var(--duration)] ease-[var(--easing)] before:absolute before:content-[''] data-[instant]:transition-none data-[side=bottom]:before:top-[-10px] data-[side=bottom]:before:right-0 data-[side=bottom]:before:left-0 data-[side=bottom]:before:h-2.5 data-[side=left]:before:top-0 data-[side=left]:before:right-[-10px] data-[side=left]:before:bottom-0 data-[side=left]:before:w-2.5 data-[side=right]:before:top-0 data-[side=right]:before:bottom-0 data-[side=right]:before:left-[-10px] data-[side=right]:before:w-2.5 data-[side=top]:before:right-0 data-[side=top]:before:bottom-[-10px] data-[side=top]:before:left-0 data-[side=top]:before:h-2.5",
           className
         )}
         style={
           {
-            "--duration": "0.35s",
-            "--easing": "cubic-bezier(0.22, 1, 0.36, 1)",
+            '--duration': '0.35s',
+            '--easing': 'cubic-bezier(0.22, 1, 0.36, 1)',
           } as React.CSSProperties
         }
         {...props}
@@ -137,7 +121,7 @@ function NavigationMenuPopup({
   return (
     <NavigationMenuPrimitive.Popup
       className={cn(
-        "data-[ending-style]:easing-[ease] relative h-[var(--popup-height)] origin-[var(--transform-origin)] rounded-lg bg-popover shadow-lg outline-1 outline-border transition-[opacity,transform,width,height,scale,translate] duration-[var(--duration)] ease-[var(--easing)] data-[ending-style]:scale-90 data-[ending-style]:opacity-0 data-[ending-style]:duration-150 data-[starting-style]:scale-90 data-[starting-style]:opacity-0 w-[var(--popup-width)] xs:w-[var(--popup-width)] dark:shadow-none dark:-outline-offset-1",
+        'data-[ending-style]:easing-[ease] bg-popover outline-border xs:w-[var(--popup-width)] relative h-[var(--popup-height)] w-[var(--popup-width)] origin-[var(--transform-origin)] rounded-lg shadow-lg outline-1 transition-[opacity,transform,width,height,scale,translate] duration-[var(--duration)] ease-[var(--easing)] data-[ending-style]:scale-90 data-[ending-style]:opacity-0 data-[ending-style]:duration-150 data-[starting-style]:scale-90 data-[starting-style]:opacity-0 dark:shadow-none dark:-outline-offset-1',
         className
       )}
       {...props}
@@ -148,22 +132,16 @@ function NavigationMenuPopup({
   );
 }
 
-function NavigationMenuViewport({
-  className,
-  ...props
-}: NavigationMenuPrimitive.Viewport.Props) {
+function NavigationMenuViewport({ className, ...props }: NavigationMenuPrimitive.Viewport.Props) {
   return (
     <NavigationMenuPrimitive.Viewport
-      className={cn("relative h-full w-full overflow-hidden", className)}
+      className={cn('relative h-full w-full overflow-hidden', className)}
       {...props}
     />
   );
 }
 
-function NavigationMenuLink({
-  className,
-  ...props
-}: NavigationMenuPrimitive.Link.Props) {
+function NavigationMenuLink({ className, ...props }: NavigationMenuPrimitive.Link.Props) {
   return (
     <NavigationMenuPrimitive.Link
       data-slot="navigation-menu-link"
@@ -176,15 +154,12 @@ function NavigationMenuLink({
   );
 }
 
-function NavigationMenuArrow({
-  className,
-  ...props
-}: NavigationMenuPrimitive.Arrow.Props) {
+function NavigationMenuArrow({ className, ...props }: NavigationMenuPrimitive.Arrow.Props) {
   return (
     <NavigationMenuPrimitive.Arrow
       data-slot="navigation-menu-arrow"
       className={cn(
-        "flex transition-[left] duration-[var(--duration)] ease-[var(--easing)] data-[side=bottom]:top-[-8px] data-[side=left]:right-[-13px] data-[side=left]:rotate-90 data-[side=right]:left-[-13px] data-[side=right]:-rotate-90 data-[side=top]:bottom-[-8px] data-[side=top]:rotate-180",
+        'flex transition-[left] duration-[var(--duration)] ease-[var(--easing)] data-[side=bottom]:top-[-8px] data-[side=left]:right-[-13px] data-[side=left]:rotate-90 data-[side=right]:left-[-13px] data-[side=right]:-rotate-90 data-[side=top]:bottom-[-8px] data-[side=top]:rotate-180',
         className
       )}
       {...props}
@@ -194,7 +169,7 @@ function NavigationMenuArrow({
   );
 }
 
-function ArrowSvg(props: React.ComponentProps<"svg">) {
+function ArrowSvg(props: React.ComponentProps<'svg'>) {
   return (
     <svg width="20" height="10" viewBox="0 0 20 10" fill="none" {...props}>
       <path

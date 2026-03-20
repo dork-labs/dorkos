@@ -1,5 +1,5 @@
-import { createOpenAPI } from 'fumadocs-openapi/server'
-import { createAPIPage } from 'fumadocs-openapi/ui'
+import { createOpenAPI } from 'fumadocs-openapi/server';
+import { createAPIPage } from 'fumadocs-openapi/ui';
 
 /**
  * OpenAPI server instance for loading and processing the DorkOS API spec.
@@ -8,11 +8,11 @@ import { createAPIPage } from 'fumadocs-openapi/ui'
  */
 export const openapi = createOpenAPI({
   input: ['../../docs/api/openapi.json'],
-})
+});
 
 /**
  * APIPage component factory bound to the DorkOS OpenAPI server.
  *
  * Used by the catch-all docs page to render interactive API reference pages.
  */
-export const APIPage = createAPIPage(openapi)
+export const APIPage = createAPIPage(openapi);

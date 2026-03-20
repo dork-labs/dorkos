@@ -1,1 +1,1 @@
-export { CookieConsentBanner } from './CookieConsentBanner'
+export { CookieConsentBanner } from './CookieConsentBanner';

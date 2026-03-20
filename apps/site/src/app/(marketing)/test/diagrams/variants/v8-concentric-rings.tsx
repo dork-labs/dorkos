@@ -1,35 +1,35 @@
-'use client'
+'use client';
 
-import { useState, useId } from 'react'
-import { motion } from 'motion/react'
-import type { SystemModule } from '@/layers/features/marketing/lib/modules'
+import { useState, useId } from 'react';
+import { motion } from 'motion/react';
+import type { SystemModule } from '@/layers/features/marketing/lib/modules';
 import {
   STAGGER,
   SCALE_IN,
   DRAW_PATH,
   VIEWPORT,
-} from '@/layers/features/marketing/lib/motion-variants'
+} from '@/layers/features/marketing/lib/motion-variants';
 
 // ─── Geometry constants ────────────────────────────────────────────────────────
 
-const CX = 300
-const CY = 300
-const RING_RADII = [100, 170, 240] as const
-const TICK_COUNT = 36 // one tick every 10°
-const CORE_R = 28
-const DOT_R_AVAILABLE = 7
-const DOT_R_COMING = 5
+const CX = 300;
+const CY = 300;
+const RING_RADII = [100, 170, 240] as const;
+const TICK_COUNT = 36; // one tick every 10°
+const CORE_R = 28;
+const DOT_R_AVAILABLE = 7;
+const DOT_R_COMING = 5;
 // Rotation period for the radar sweep (seconds)
-const SWEEP_PERIOD = 5
+const SWEEP_PERIOD = 5;
 
 // ─── Module layout ─────────────────────────────────────────────────────────────
 // Angles in degrees, 0 = right (3 o'clock), increasing clockwise.
 // We start from -90 (12 o'clock) for natural compass feel.
 
 interface ModuleLayout {
-  id: string
-  ring: 0 | 1 | 2 // index into RING_RADII
-  angleDeg: number
+  id: string;
+  ring: 0 | 1 | 2; // index into RING_RADII
+  angleDeg: number;
 }
 
 // Explicit placement for visual balance
@@ -40,14 +40,14 @@ const MODULE_LAYOUT: ModuleLayout[] = [
   { id: 'pulse', ring: 1, angleDeg: 30 },
   { id: 'mesh', ring: 2, angleDeg: -120 },
   { id: 'relay', ring: 2, angleDeg: 70 },
-]
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Convert polar coords (origin = CX,CY) to SVG x,y. */
 function polar(r: number, angleDeg: number): { x: number; y: number } {
-  const rad = (angleDeg * Math.PI) / 180
-  return { x: CX + r * Math.cos(rad), y: CY + r * Math.sin(rad) }
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: CX + r * Math.cos(rad), y: CY + r * Math.sin(rad) };
 }
 
 /** SVG path for a full circle using two arcs (compatible with pathLength). */
@@ -57,7 +57,7 @@ function circlePath(r: number): string {
     `A ${r} ${r} 0 1 1 ${CX + r} ${CY}`,
     `A ${r} ${r} 0 1 1 ${CX - r} ${CY}`,
     'Z',
-  ].join(' ')
+  ].join(' ');
 }
 
 /**
@@ -65,23 +65,23 @@ function circlePath(r: number): string {
  * centered at CX,CY, from radius 0 to maxR, opening from startDeg to endDeg.
  */
 function sectorPath(maxR: number, startDeg: number, sweepDeg: number): string {
-  const endDeg = startDeg + sweepDeg
-  const s = polar(maxR, startDeg)
-  const e = polar(maxR, endDeg)
-  const large = sweepDeg > 180 ? 1 : 0
+  const endDeg = startDeg + sweepDeg;
+  const s = polar(maxR, startDeg);
+  const e = polar(maxR, endDeg);
+  const large = sweepDeg > 180 ? 1 : 0;
   return [
     `M ${CX} ${CY}`,
     `L ${s.x} ${s.y}`,
     `A ${maxR} ${maxR} 0 ${large} 1 ${e.x} ${e.y}`,
     'Z',
-  ].join(' ')
+  ].join(' ');
 }
 
 /** Determine text-anchor for a label based on position relative to center. */
 function anchorFor(x: number): 'start' | 'middle' | 'end' {
-  if (x < CX - 20) return 'end'
-  if (x > CX + 20) return 'start'
-  return 'middle'
+  if (x < CX - 20) return 'end';
+  if (x > CX + 20) return 'start';
+  return 'middle';
 }
 
 /**
@@ -91,16 +91,16 @@ function anchorFor(x: number): 'start' | 'middle' | 'end' {
 function labelPos(
   nx: number,
   ny: number,
-  clearance: number,
+  clearance: number
 ): { lx: number; ly: number; anchor: 'start' | 'middle' | 'end' } {
-  const dx = nx - CX
-  const dy = ny - CY
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1
+  const dx = nx - CX;
+  const dy = ny - CY;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
   return {
     lx: nx + (dx / dist) * clearance,
     ly: ny + (dy / dist) * clearance,
     anchor: anchorFor(nx),
-  }
+  };
 }
 
 /**
@@ -109,28 +109,28 @@ function labelPos(
  */
 function revealDelay(angleDeg: number, entranceDelay: number): number {
   // Normalize to 0–360 range starting from -90° (top)
-  let normalized = (angleDeg + 90) % 360
-  if (normalized < 0) normalized += 360
+  let normalized = (angleDeg + 90) % 360;
+  if (normalized < 0) normalized += 360;
   // Fraction of the sweep period
-  return entranceDelay + (normalized / 360) * SWEEP_PERIOD
+  return entranceDelay + (normalized / 360) * SWEEP_PERIOD;
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 interface RingTicksProps {
-  r: number
-  count: number
-  id: string
+  r: number;
+  count: number;
+  id: string;
 }
 
 /** Tick marks along a ring at uniform angular intervals. */
 function RingTicks({ r, count, id }: RingTicksProps) {
   const ticks = Array.from({ length: count }, (_, i) => {
-    const deg = (i / count) * 360
-    const inner = polar(r - 4, deg)
-    const outer = polar(r + 4, deg)
-    return { inner, outer, key: `${id}-tick-${i}` }
-  })
+    const deg = (i / count) * 360;
+    const inner = polar(r - 4, deg);
+    const outer = polar(r + 4, deg);
+    return { inner, outer, key: `${id}-tick-${i}` };
+  });
   return (
     <g>
       {ticks.map(({ inner, outer, key }) => (
@@ -146,23 +146,23 @@ function RingTicks({ r, count, id }: RingTicksProps) {
         />
       ))}
     </g>
-  )
+  );
 }
 
 interface ModuleNodeProps {
-  mod: SystemModule
-  layout: ModuleLayout
-  revealDelaySec: number
+  mod: SystemModule;
+  layout: ModuleLayout;
+  revealDelaySec: number;
 }
 
 /** A single module dot + label on the radar display. */
 function ModuleNode({ mod, layout, revealDelaySec }: ModuleNodeProps) {
-  const r = RING_RADII[layout.ring]
-  const { x, y } = polar(r, layout.angleDeg)
-  const available = mod.status === 'available'
-  const dotR = available ? DOT_R_AVAILABLE : DOT_R_COMING
-  const clearance = dotR + 22
-  const { lx, ly, anchor } = labelPos(x, y, clearance)
+  const r = RING_RADII[layout.ring];
+  const { x, y } = polar(r, layout.angleDeg);
+  const available = mod.status === 'available';
+  const dotR = available ? DOT_R_AVAILABLE : DOT_R_COMING;
+  const clearance = dotR + 22;
+  const { lx, ly, anchor } = labelPos(x, y, clearance);
 
   return (
     <motion.g
@@ -172,13 +172,7 @@ function ModuleNode({ mod, layout, revealDelaySec }: ModuleNodeProps) {
       transition={{ delay: revealDelaySec, duration: 0.4, ease: 'easeOut' }}
     >
       {/* Glow halo behind dot */}
-      <circle
-        cx={x}
-        cy={y}
-        r={dotR + 6}
-        fill="#E85D04"
-        opacity={available ? 0.15 : 0.06}
-      />
+      <circle cx={x} cy={y} r={dotR + 6} fill="#E85D04" opacity={available ? 0.15 : 0.06} />
 
       {/* Main dot */}
       <circle
@@ -193,9 +187,7 @@ function ModuleNode({ mod, layout, revealDelaySec }: ModuleNodeProps) {
       />
 
       {/* Center pip for available modules */}
-      {available && (
-        <circle cx={x} cy={y} r={2.5} fill="#FFFEFB" opacity={0.9} />
-      )}
+      {available && <circle cx={x} cy={y} r={2.5} fill="#FFFEFB" opacity={0.9} />}
 
       {/* Module name label */}
       <text
@@ -232,7 +224,7 @@ function ModuleNode({ mod, layout, revealDelaySec }: ModuleNodeProps) {
         {mod.label}
       </text>
     </motion.g>
-  )
+  );
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
@@ -243,29 +235,29 @@ function ModuleNode({ mod, layout, revealDelaySec }: ModuleNodeProps) {
  * module reveal as the sweep first passes over each position.
  */
 export function DiagramV8({ modules }: { modules: SystemModule[] }) {
-  const uid = useId().replace(/:/g, '')
-  const [entranceDone, setEntranceDone] = useState(false)
+  const uid = useId().replace(/:/g, '');
+  const [entranceDone, setEntranceDone] = useState(false);
 
-  const coreModule = modules.find((m) => m.id === 'engine')
+  const coreModule = modules.find((m) => m.id === 'engine');
 
   // Build resolved node list: match layout entries to module data
   const nodes = MODULE_LAYOUT.flatMap((layout) => {
-    const mod = modules.find((m) => m.id === layout.id)
-    if (!mod) return []
+    const mod = modules.find((m) => m.id === layout.id);
+    if (!mod) return [];
     // Entrance animation for rings takes ~1.2s; add small stagger on top
-    const entranceDelay = 1.4
-    return [{ mod, layout, revealDelaySec: revealDelay(layout.angleDeg, entranceDelay) }]
-  })
+    const entranceDelay = 1.4;
+    return [{ mod, layout, revealDelaySec: revealDelay(layout.angleDeg, entranceDelay) }];
+  });
 
   // IDs for SVG defs (scoped with useId to avoid collisions if rendered twice)
-  const sweepGradId = `sweep-grad-${uid}`
-  const sweepMaskId = `sweep-mask-${uid}`
-  const glowFilterId = `glow-${uid}`
-  const coreGlowId = `core-glow-${uid}`
-  const sweepGroupId = `sweep-group-${uid}`
+  const sweepGradId = `sweep-grad-${uid}`;
+  const sweepMaskId = `sweep-mask-${uid}`;
+  const glowFilterId = `glow-${uid}`;
+  const coreGlowId = `core-glow-${uid}`;
+  const sweepGroupId = `sweep-group-${uid}`;
 
   // The sweep sector spans 110° so the tail fades naturally
-  const SWEEP_ANGLE = 110
+  const SWEEP_ANGLE = 110;
 
   return (
     <div
@@ -293,7 +285,7 @@ export function DiagramV8({ modules }: { modules: SystemModule[] }) {
 
       <motion.svg
         viewBox="0 0 600 600"
-        className="w-full h-full"
+        className="h-full w-full"
         preserveAspectRatio="xMidYMid meet"
         aria-label="DorkOS concentric rings radar architecture diagram"
         initial="hidden"
@@ -400,8 +392,8 @@ export function DiagramV8({ modules }: { modules: SystemModule[] }) {
 
         {/* ── Ring distance labels (compass-rose style, at 3 o'clock) ── */}
         {RING_RADII.map((r, i) => {
-          const labels = ['INNER', 'MID', 'OUTER']
-          const lx = CX + r + 6
+          const labels = ['INNER', 'MID', 'OUTER'];
+          const lx = CX + r + 6;
           return (
             <text
               key={`rlabel-${i}`}
@@ -416,7 +408,7 @@ export function DiagramV8({ modules }: { modules: SystemModule[] }) {
             >
               {labels[i]}
             </text>
-          )
+          );
         })}
 
         {/* ── Radar sweep sector (CSS-animated rotation) ── */}
@@ -441,22 +433,11 @@ export function DiagramV8({ modules }: { modules: SystemModule[] }) {
         </g>
 
         {/* ── Ambient glow at core ── */}
-        <motion.circle
-          cx={CX}
-          cy={CY}
-          r={70}
-          fill={`url(#${coreGlowId})`}
-          variants={SCALE_IN}
-        />
+        <motion.circle cx={CX} cy={CY} r={70} fill={`url(#${coreGlowId})`} variants={SCALE_IN} />
 
         {/* ── Module nodes ── */}
         {nodes.map(({ mod, layout, revealDelaySec }) => (
-          <ModuleNode
-            key={mod.id}
-            mod={mod}
-            layout={layout}
-            revealDelaySec={revealDelaySec}
-          />
+          <ModuleNode key={mod.id} mod={mod} layout={layout} revealDelaySec={revealDelaySec} />
         ))}
 
         {/* ── Engine node (always at center) ── */}
@@ -559,13 +540,7 @@ export function DiagramV8({ modules }: { modules: SystemModule[] }) {
           </text>
 
           {/* Engine status pip — bright green dot */}
-          <circle
-            cx={CX + CORE_R - 4}
-            cy={CY - CORE_R + 4}
-            r={4}
-            fill="#4ADE80"
-            opacity={0.9}
-          />
+          <circle cx={CX + CORE_R - 4} cy={CY - CORE_R + 4} r={4} fill="#4ADE80" opacity={0.9} />
         </motion.g>
 
         {/* ── Legend ── */}
@@ -575,7 +550,12 @@ export function DiagramV8({ modules }: { modules: SystemModule[] }) {
             x={14}
             y={5}
             dominantBaseline="middle"
-            style={{ fontSize: '8px', fontFamily: 'monospace', letterSpacing: '0.08em', fill: '#8B7355' }}
+            style={{
+              fontSize: '8px',
+              fontFamily: 'monospace',
+              letterSpacing: '0.08em',
+              fill: '#8B7355',
+            }}
           >
             AVAILABLE
           </text>
@@ -584,7 +564,12 @@ export function DiagramV8({ modules }: { modules: SystemModule[] }) {
             x={98}
             y={5}
             dominantBaseline="middle"
-            style={{ fontSize: '8px', fontFamily: 'monospace', letterSpacing: '0.08em', fill: '#5A4E3E' }}
+            style={{
+              fontSize: '8px',
+              fontFamily: 'monospace',
+              letterSpacing: '0.08em',
+              fill: '#5A4E3E',
+            }}
           >
             COMING SOON
           </text>
@@ -620,5 +605,5 @@ export function DiagramV8({ modules }: { modules: SystemModule[] }) {
         </text>
       </motion.svg>
     </div>
-  )
+  );
 }

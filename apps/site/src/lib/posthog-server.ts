@@ -1,7 +1,7 @@
-import { PostHog } from 'posthog-node'
-import { env } from '../env'
+import { PostHog } from 'posthog-node';
+import { env } from '../env';
 
-let posthogClient: PostHog | null = null
+let posthogClient: PostHog | null = null;
 
 export function getPostHogClient() {
   if (!posthogClient) {
@@ -11,13 +11,13 @@ export function getPostHogClient() {
       // we set flushAt to 1 and flushInterval to 0 to send events immediately
       flushAt: 1,
       flushInterval: 0,
-    })
+    });
   }
-  return posthogClient
+  return posthogClient;
 }
 
 export async function shutdownPostHog() {
   if (posthogClient) {
-    await posthogClient.shutdown()
+    await posthogClient.shutdown();
   }
 }

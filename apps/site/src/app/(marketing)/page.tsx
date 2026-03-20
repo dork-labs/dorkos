@@ -1,4 +1,4 @@
-import { siteConfig } from '@/config/site'
+import { siteConfig } from '@/config/site';
 import {
   Prelude,
   ActivityFeedHero,
@@ -6,6 +6,7 @@ import {
   PivotSection,
   TimelineSection,
   SubsystemsSection,
+  FeatureCatalogSection,
   HonestySection,
   InstallMoment,
   IdentityClose,
@@ -13,13 +14,14 @@ import {
   MarketingNav,
   MarketingHeader,
   MarketingFooter,
-} from '@/layers/features/marketing'
+} from '@/layers/features/marketing';
 
 const navLinks = [
   { label: 'about', href: '#about' },
+  { label: 'features', href: '/features' },
   { label: 'blog', href: '/blog' },
   { label: 'docs', href: '/docs' },
-]
+];
 
 const socialLinks = [
   {
@@ -40,7 +42,7 @@ const socialLinks = [
       </svg>
     ),
   },
-]
+];
 
 export default function HomePage() {
   return (
@@ -49,11 +51,7 @@ export default function HomePage() {
       <MarketingHeader />
 
       <main className="pt-8">
-        <ActivityFeedHero
-          ctaText="Install"
-          ctaHref="#install"
-          githubHref={siteConfig.github}
-        />
+        <ActivityFeedHero ctaText="Install" ctaHref="#install" githubHref={siteConfig.github} />
 
         <VillainSection />
 
@@ -62,6 +60,8 @@ export default function HomePage() {
         <TimelineSection />
 
         <SubsystemsSection />
+
+        <FeatureCatalogSection />
 
         <HonestySection />
 
@@ -72,12 +72,9 @@ export default function HomePage() {
         <InstallMoment />
       </main>
 
-      <MarketingFooter
-        email={siteConfig.contactEmail}
-        socialLinks={socialLinks}
-      />
+      <MarketingFooter email={siteConfig.contactEmail} socialLinks={socialLinks} />
 
       <MarketingNav links={navLinks} />
     </>
-  )
+  );
 }
