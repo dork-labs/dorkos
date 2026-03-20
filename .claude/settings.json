@@ -62,6 +62,14 @@
         "hooks": [
           {
             "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/create-checkpoint.sh"
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-docs-changed.sh"
+          },
+          {
+            "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/autonomous-check.mjs"
           }
         ]
