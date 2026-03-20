@@ -1,18 +1,25 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import type { StreamdownProps } from 'streamdown';
+
+// Mock Streamdown to inspect props passed to it
+const MockStreamdown = vi.fn((props: StreamdownProps) => (
+  <div data-testid="streamdown">{props.children}</div>
+));
+
+vi.mock('streamdown', () => ({
+  Streamdown: (props: StreamdownProps) => MockStreamdown(props),
+}));
+vi.mock('streamdown/styles.css', () => ({}));
+
 import { StreamingText } from '../ui/StreamingText';
+import type { TextEffectConfig } from '@/layers/shared/lib';
 
 afterEach(() => {
   cleanup();
+  MockStreamdown.mockClear();
 });
-
-// Mock Streamdown to avoid complex rendering in unit tests
-vi.mock('streamdown', () => ({
-  Streamdown: ({ children }: { children: string }) => (
-    <div data-testid="streamdown">{children}</div>
-  ),
-}));
 
 describe('StreamingText', () => {
   it('passes content to Streamdown component', () => {
@@ -59,5 +66,46 @@ describe('StreamingText', () => {
       '- **Array literals**: `numbers` is typed as `number[]`\n\nThis paragraph must also render.';
     render(<StreamingText content={content} />);
     expect(screen.getByTestId('streamdown').textContent).toBe(content);
+  });
+
+  it('passes animated config when textEffect mode is not none', () => {
+    render(<StreamingText content="Hello" isStreaming={true} />);
+    const call = MockStreamdown.mock.calls[0][0];
+    expect(call.animated).toEqual({
+      animation: 'blurIn',
+      duration: 150,
+      easing: 'ease-out',
+      sep: 'word',
+    });
+  });
+
+  it('passes animated=false when textEffect mode is none', () => {
+    const noEffect: TextEffectConfig = { mode: 'none' };
+    render(<StreamingText content="Hello" textEffect={noEffect} />);
+    const call = MockStreamdown.mock.calls[0][0];
+    expect(call.animated).toBe(false);
+  });
+
+  it('passes isAnimating=true when isStreaming is true', () => {
+    render(<StreamingText content="Hello" isStreaming={true} />);
+    const call = MockStreamdown.mock.calls[0][0];
+    expect(call.isAnimating).toBe(true);
+  });
+
+  it('passes isAnimating=false when isStreaming is false', () => {
+    render(<StreamingText content="Hello" isStreaming={false} />);
+    const call = MockStreamdown.mock.calls[0][0];
+    expect(call.isAnimating).toBe(false);
+  });
+
+  it('defaults to DEFAULT_TEXT_EFFECT (blur-in) when no textEffect prop provided', () => {
+    render(<StreamingText content="Hello" />);
+    const call = MockStreamdown.mock.calls[0][0];
+    expect(call.animated).toEqual({
+      animation: 'blurIn',
+      duration: 150,
+      easing: 'ease-out',
+      sep: 'word',
+    });
   });
 });

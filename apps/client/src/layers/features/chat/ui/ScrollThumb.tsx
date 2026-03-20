@@ -4,7 +4,7 @@ const FADE_DELAY_MS = 800;
 const MIN_THUMB_HEIGHT = 24;
 
 interface ScrollThumbProps {
-  scrollRef: React.RefObject<HTMLDivElement | null>;
+  scrollRef: React.RefObject<HTMLElement | null>;
 }
 
 /**

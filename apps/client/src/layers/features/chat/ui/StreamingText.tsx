@@ -2,11 +2,15 @@ import { createPortal } from 'react-dom';
 import { Streamdown } from 'streamdown';
 import type { LinkSafetyModalProps } from 'streamdown';
 import { ExternalLink, Copy, X } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
+import type { TextEffectConfig } from '@/layers/shared/lib';
+import 'streamdown/styles.css';
 
 interface StreamingTextProps {
   content: string;
   isStreaming?: boolean;
+  /** Text animation effect applied during streaming. Defaults to blur-in at word level. */
+  textEffect?: TextEffectConfig;
 }
 
 /** Portal-based link safety modal that escapes transform-based containing blocks */
@@ -84,10 +88,21 @@ const linkSafety = {
 };
 
 /** Renders markdown content via Streamdown with link safety confirmation and a streaming cursor. */
-export function StreamingText({ content, isStreaming = false }: StreamingTextProps) {
+export function StreamingText({
+  content,
+  isStreaming = false,
+  textEffect = DEFAULT_TEXT_EFFECT,
+}: StreamingTextProps) {
+  const animatedConfig = resolveStreamdownAnimation(textEffect);
+
   return (
     <div className={cn('relative', isStreaming && 'streaming-cursor')}>
-      <Streamdown shikiTheme={['github-light', 'github-dark']} linkSafety={linkSafety}>
+      <Streamdown
+        shikiTheme={['github-light', 'github-dark']}
+        linkSafety={linkSafety}
+        animated={animatedConfig}
+        isAnimating={isStreaming}
+      >
         {content}
       </Streamdown>
     </div>

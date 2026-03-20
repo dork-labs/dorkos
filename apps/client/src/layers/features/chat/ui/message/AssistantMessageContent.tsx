@@ -100,7 +100,7 @@ function AutoHideToolCall({
  * Reads session/interaction state from MessageContext instead of props.
  */
 export function AssistantMessageContent({ message }: { message: ChatMessage }) {
-  const { sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry, inputZoneToolCallId } =
+  const { sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry, inputZoneToolCallId, textEffect } =
     useMessageContext();
   const { expandToolCalls, autoHideToolCalls } = useAppStore();
   const parts = message.parts ?? [];
@@ -137,6 +137,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
               <StreamingText
                 content={part.text}
                 isStreaming={isStreaming && i === lastTextPartIndex}
+                textEffect={textEffect}
               />
             </div>
           );

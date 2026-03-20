@@ -2,6 +2,7 @@ import { motion } from 'motion/react';
 import type { ChatMessage, MessageGrouping } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
+import type { TextEffectConfig } from '@/layers/shared/lib';
 import { messageItem } from './message-variants';
 import { MessageProvider } from './MessageContext';
 import { UserMessageContent } from './UserMessageContent';
@@ -26,6 +27,8 @@ interface MessageItemProps {
   onRetry?: () => void;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId?: string | null;
+  /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
+  textEffect?: TextEffectConfig;
 }
 
 /** Format a timestamp string to a short time display (HH:MM). */
@@ -54,6 +57,7 @@ export function MessageItem({
   onToolDecided,
   onRetry,
   inputZoneToolCallId = null,
+  textEffect,
 }: MessageItemProps) {
   const isUser = message.role === 'user';
   const { showTimestamps } = useAppStore();
@@ -67,7 +71,7 @@ export function MessageItem({
 
   return (
     <MessageProvider
-      value={{ sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry, inputZoneToolCallId }}
+      value={{ sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry, inputZoneToolCallId, textEffect }}
     >
       <motion.div
         initial={isNew ? { opacity: 0, y: 8, x: isUser ? 12 : 0, scale: isUser ? 0.97 : 1 } : false}

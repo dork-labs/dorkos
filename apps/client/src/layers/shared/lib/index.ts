@@ -68,3 +68,9 @@ export {
   type ShortcutDef,
   type ShortcutGroup,
 } from './shortcuts';
+export {
+  DEFAULT_TEXT_EFFECT,
+  resolveStreamdownAnimation,
+  useTextEffectConfig,
+} from './text-effects';
+export type { TextEffectMode, TextEffectConfig } from './text-effects';

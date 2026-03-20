@@ -1,13 +1,15 @@
 import { MessageList } from '@/layers/features/chat/ui/MessageList';
 import { MessageCircle } from 'lucide-react';
+import type { TextEffectConfig } from '@/layers/shared/lib';
 import type { SimulatorResult } from './use-simulator';
 
 interface SimulatorChatPanelProps {
   sim: SimulatorResult;
+  textEffect?: TextEffectConfig;
 }
 
 /** Mirrors ChatPanel layout with real MessageList, powered by simulator state instead of useChatSession. */
-export function SimulatorChatPanel({ sim }: SimulatorChatPanelProps) {
+export function SimulatorChatPanel({ sim, textEffect }: SimulatorChatPanelProps) {
   return (
     <div className="mx-auto flex h-full w-full max-w-7xl flex-col">
       <div className="relative min-h-0 flex-1">
@@ -33,6 +35,7 @@ export function SimulatorChatPanel({ sim }: SimulatorChatPanelProps) {
             onToolRef={() => {}}
             onToolDecided={() => {}}
             onRetry={() => {}}
+            textEffect={textEffect}
           />
         )}
       </div>

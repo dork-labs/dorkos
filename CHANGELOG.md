@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add per-word text animation and spring-based smooth scroll
+
 ### Changed
 
 ### Fixed

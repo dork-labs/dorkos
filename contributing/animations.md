@@ -12,6 +12,7 @@ This project uses [Motion](https://motion.dev/) (version 12.x, formerly Framer M
 | Animation utilities (CSS)    | `apps/client/src/index.css` (transition classes, keyframes) |
 | Tailwind animation utilities | `tw-animate-css` (imported in index.css)                    |
 | Accordion animations         | CSS keyframes in `index.css`                                |
+| Text effect config           | `apps/client/src/layers/shared/lib/text-effects.ts`         |
 | Common UI patterns           | `apps/client/src/layers/shared/ui/` (dropdowns, tooltips)   |
 
 ## When to Use What
@@ -476,6 +477,51 @@ Key details:
 - Spring: `stiffness: 400`, `damping: 35` (slightly softer than dialog entrance)
 - Pair with a container size transition (e.g., `maxWidth: 480px → 720px`) for the parent
 - Used in: command palette preview panel, sidebars, detail views
+
+## Text Streaming Effects
+
+The chat uses `streamdown`'s built-in animation system for per-word text animation during LLM streaming. The system is controlled by `TextEffectConfig` from `shared/lib/text-effects.ts`.
+
+### TextEffectMode
+
+| Mode | Animation | Description |
+|---|---|---|
+| `none` | Disabled | Text appears instantly (default for `prefers-reduced-motion`) |
+| `fade` | `fadeIn` | Words fade in from transparent |
+| `blur-in` | `blurIn` | Words blur-in from defocused (default) |
+| `slide-up` | `slideUp` | Words slide up from below |
+
+### Configuration
+
+```typescript
+import { DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
+import type { TextEffectConfig } from '@/layers/shared/lib';
+
+// Default: blur-in at word level, 150ms, ease-out
+const config: TextEffectConfig = {
+  mode: 'blur-in',
+  duration: 150,
+  easing: 'ease-out',
+  sep: 'word',
+};
+
+// Convert to streamdown's animated prop format
+const animated = resolveStreamdownAnimation(config);
+// Returns: { animation: 'blurIn', duration: 150, easing: 'ease-out', sep: 'word' }
+// Or returns false when mode is 'none'
+```
+
+### Data Flow
+
+`MessageList` (optional `textEffect` prop) → `MessageItem` → `MessageContext` → `AssistantMessageContent` → `StreamingText` → `Streamdown` (`animated` + `isAnimating` props)
+
+### Reduced Motion
+
+`useTextEffectConfig()` automatically returns `mode: 'none'` when `prefers-reduced-motion: reduce` is active. Streamdown's `isAnimating={false}` on completed messages ensures zero residual animation DOM overhead.
+
+### Dev Simulator
+
+The simulator at `/dev/simulator` includes a Text Effect dropdown and Animation toggle for real-time visual QA of all effect modes across all scenarios.
 
 ## Anti-Patterns
 

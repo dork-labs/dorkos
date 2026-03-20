@@ -1,15 +1,15 @@
 import {
-  useRef,
   useEffect,
   useState,
-  useCallback,
   useMemo,
   useImperativeHandle,
   forwardRef,
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useStickToBottom } from 'use-stick-to-bottom';
 import type { ChatMessage, MessageGrouping } from '../model/use-chat-session';
 import type { PermissionMode } from '@dorkos/shared/types';
+import type { TextEffectConfig } from '@/layers/shared/lib';
 import { MessageItem } from './message';
 import type { InteractiveToolHandle } from './message';
 import { InferenceIndicator } from './InferenceIndicator';
@@ -65,6 +65,8 @@ interface MessageListProps {
   onRetry?: () => void;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId?: string | null;
+  /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
+  textEffect?: TextEffectConfig;
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
@@ -87,15 +89,17 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     onToolDecided,
     onRetry,
     inputZoneToolCallId,
+    textEffect,
   },
   ref
 ) {
-  const parentRef = useRef<HTMLDivElement>(null);
   const [historyCount, setHistoryCount] = useState<number | null>(null);
-  const isAtBottomRef = useRef(true);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const rafIdRef = useRef<number>(0);
   const groupings = useMemo(() => computeGrouping(messages), [messages]);
+
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom({
+    resize: 'smooth',
+    initial: 'smooth',
+  });
 
   useEffect(() => {
     if (historyCount === null && messages.length > 0) {
@@ -105,81 +109,25 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   const virtualizer = useVirtualizer({
     count: messages.length,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => scrollRef.current,
     estimateSize: () => 80,
     overscan: 5,
     measureElement: (el) => el?.getBoundingClientRect().height ?? 80,
   });
 
-  const isTouchActiveRef = useRef(false);
-  const isUserScrollingRef = useRef(false);
-  const clearScrollIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Track scroll position and report to parent
-  const handleScroll = useCallback(() => {
-    const container = parentRef.current;
-    if (!container) return;
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight;
-    const isAtBottom = distanceFromBottom < 200;
-
-    // Only disengage auto-scroll when the user has explicitly scrolled up.
-    // Layout reflow events from TanStack Virtual measurement also fire the
-    // scroll event — gating behind isUserScrollingRef prevents these from
-    // spuriously flipping the flag.
-    const newValue = isAtBottom || isUserScrollingRef.current ? isAtBottom : isAtBottomRef.current;
-    const changed = isAtBottomRef.current !== newValue;
-    isAtBottomRef.current = newValue;
-    if (changed) {
-      onScrollStateChange?.({ isAtBottom: newValue, distanceFromBottom });
-    }
-  }, [onScrollStateChange]);
-
+  // Sync isAtBottom state to the onScrollStateChange callback for useScrollOverlay compatibility.
   useEffect(() => {
-    const container = parentRef.current;
-    if (!container) return;
-    const onTouchStart = () => {
-      isTouchActiveRef.current = true;
-      // Mark user scroll intent on touch
-      isUserScrollingRef.current = true;
-      if (clearScrollIntentTimerRef.current) clearTimeout(clearScrollIntentTimerRef.current);
-      clearScrollIntentTimerRef.current = setTimeout(() => {
-        isUserScrollingRef.current = false;
-      }, 150);
-    };
-    const onTouchEnd = () => {
-      isTouchActiveRef.current = false;
-    };
-    const onWheel = () => {
-      // wheel only fires for user-initiated scroll, never for programmatic scrollTop assignment
-      isUserScrollingRef.current = true;
-      if (clearScrollIntentTimerRef.current) clearTimeout(clearScrollIntentTimerRef.current);
-      clearScrollIntentTimerRef.current = setTimeout(() => {
-        isUserScrollingRef.current = false;
-      }, 150);
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    container.addEventListener('touchstart', onTouchStart, { passive: true });
-    container.addEventListener('touchend', onTouchEnd, { passive: true });
-    container.addEventListener('touchcancel', onTouchEnd, { passive: true });
-    container.addEventListener('wheel', onWheel, { passive: true });
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      container.removeEventListener('touchstart', onTouchStart);
-      container.removeEventListener('touchend', onTouchEnd);
-      container.removeEventListener('touchcancel', onTouchEnd);
-      container.removeEventListener('wheel', onWheel);
-      if (clearScrollIntentTimerRef.current) clearTimeout(clearScrollIntentTimerRef.current);
-    };
-  }, [handleScroll]);
+    onScrollStateChange?.({
+      isAtBottom,
+      distanceFromBottom: isAtBottom ? 0 : 200,
+    });
+  }, [isAtBottom, onScrollStateChange]);
 
   // When the scroll container becomes visible again (e.g. switching Obsidian
   // sidebar tabs), the virtualizer loses its scroll position. Detect
   // visibility changes and scroll to bottom when re-shown.
   useEffect(() => {
-    const container = parentRef.current;
+    const container = scrollRef.current;
     if (!container || messages.length === 0) return;
     let wasHidden = false;
     const observer = new IntersectionObserver(
@@ -190,10 +138,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           wasHidden = false;
           // Small delay so the virtualizer can re-measure after layout
           requestAnimationFrame(() => {
-            const scrollEl = parentRef.current;
-            if (scrollEl) {
-              scrollEl.scrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
-            }
+            scrollToBottom();
           });
         }
       },
@@ -201,54 +146,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     );
     observer.observe(container);
     return () => observer.disconnect();
-  }, [messages.length]);
-
-  // Auto-scroll via ResizeObserver: fires on any content height change
-  useEffect(() => {
-    const contentEl = contentRef.current;
-    if (!contentEl) return;
-
-    const observer = new ResizeObserver(() => {
-      if (isAtBottomRef.current && !isTouchActiveRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-        // queueMicrotask lets the virtualizer finish measurement before the RAF
-        // fires, reducing the window where scrollHeight fluctuates mid-scroll.
-        queueMicrotask(() => {
-          rafIdRef.current = requestAnimationFrame(() => {
-            const scrollEl = parentRef.current;
-            if (scrollEl) {
-              scrollEl.scrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
-            }
-          });
-        });
-      }
-    });
-
-    observer.observe(contentEl);
-    return () => {
-      observer.disconnect();
-      cancelAnimationFrame(rafIdRef.current);
-    };
-  }, []);
-
-  // Fallback: scroll on new message addition (ResizeObserver may not fire synchronously)
-  useEffect(() => {
-    if (messages.length > 0 && isAtBottomRef.current && !isTouchActiveRef.current) {
-      requestAnimationFrame(() => {
-        const scrollEl = parentRef.current;
-        if (scrollEl) {
-          scrollEl.scrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
-        }
-      });
-    }
-  }, [messages.length]);
-
-  const scrollToBottom = useCallback(() => {
-    const scrollEl = parentRef.current;
-    if (scrollEl) {
-      scrollEl.scrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
-    }
-  }, []);
+  }, [messages.length, scrollToBottom]);
 
   useImperativeHandle(
     ref,
@@ -260,7 +158,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   return (
     <div data-testid="message-list" className="relative h-full">
-      <div ref={parentRef} className="chat-scroll-area hide-scrollbar h-full overflow-y-auto pt-12">
+      <div
+        ref={scrollRef}
+        className="chat-scroll-area hide-scrollbar h-full overflow-y-auto pt-12"
+        style={{ overflowAnchor: 'none' }}
+      >
         <div
           ref={contentRef}
           style={{
@@ -301,6 +203,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   onToolDecided={onToolDecided}
                   onRetry={onRetry}
                   inputZoneToolCallId={inputZoneToolCallId}
+                  textEffect={textEffect}
                 />
               </div>
             );
@@ -322,7 +225,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           </div>
         </div>
       </div>
-      <ScrollThumb scrollRef={parentRef} />
+      <ScrollThumb scrollRef={scrollRef} />
     </div>
   );
 });

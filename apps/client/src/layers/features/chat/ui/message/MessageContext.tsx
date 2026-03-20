@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo } from 'react';
+import type { TextEffectConfig } from '@/layers/shared/lib';
 import type { InteractiveToolHandle } from './types';
 
 /**
@@ -15,6 +16,8 @@ interface MessageContextValue {
   onRetry?: () => void;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId: string | null;
+  /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
+  textEffect?: TextEffectConfig;
 }
 
 const MessageCtx = createContext<MessageContextValue | null>(null);
@@ -43,6 +46,7 @@ export function MessageProvider({
       value.onToolDecided,
       value.onRetry,
       value.inputZoneToolCallId,
+      value.textEffect,
     ]
   );
   return <MessageCtx value={memoized}>{children}</MessageCtx>;
